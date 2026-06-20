@@ -6,9 +6,9 @@ import { AppService } from "./modules/app";
 import { AppSetupService } from "./modules/app-setup";
 import { CapturePreviewService } from "./modules/capture-preview";
 import { ClientLogService } from "./modules/client-log";
-import { CrashLogService } from "./modules/crash-log";
 import { DatabaseService } from "./modules/database";
 import { resolveMainDatabasePath } from "./modules/database/Database.paths";
+import { DiagLogService } from "./modules/diag-log";
 import { EditorService } from "./modules/editor";
 import { MainWindowService } from "./modules/main-window";
 import { ManagedRecorderService } from "./modules/managed-recorder";
@@ -27,6 +27,7 @@ import {
   configureAppLogFile,
   createSafePathLogFields,
   getAppLogFilePath,
+  logError,
   logInfo,
   logWarn,
 } from "./utils/app-log";
@@ -58,7 +59,7 @@ function initializeLocalDiagnostics(): void {
   try {
     app.setAppLogsPath();
     configureAppLogFile(join(app.getPath("logs"), "main.log"));
-    CrashLogService.getInstance().initialize({ startReporter: false });
+    DiagLogService.getInstance().initialize({ startReporter: true });
     logInfo("startup", "Local diagnostics initialized", {
       ...createSafePathLogFields(getAppLogFilePath(), "appLog"),
       ...createSafePathLogFields(app.getPath("crashDumps"), "crashDump"),
@@ -81,9 +82,6 @@ async function bootstrap(): Promise<void> {
 
   if (process.env.E2E_TESTING !== "true") {
     await SentryService.getInstance().initialize();
-    CrashLogService.getInstance().initialize({
-      startReporter: !SentryService.getInstance().isInitialized(),
-    });
     logInfo("startup", "Sentry initialized", {
       initialized: SentryService.getInstance().isInitialized(),
     });
@@ -187,6 +185,8 @@ void bootstrap().catch((error) => {
       tags: { module: "main", operation: "bootstrap" },
     },
   );
-  console.error("[Main] Fatal startup error", error);
+  logError("startup", "Fatal startup error", {
+    error: error instanceof Error ? error.message : String(error),
+  });
   app.quit();
 });

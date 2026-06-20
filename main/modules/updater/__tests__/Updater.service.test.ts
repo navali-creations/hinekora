@@ -597,6 +597,7 @@ Second paragraph
   });
 
   it("handles GitHub fetch failures without update info", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const service = createPackagedLinuxUpdater({
       fetch: createJsonFetch({ message: "nope" }, false),
     });
@@ -609,6 +610,15 @@ Second paragraph
 
     await expect(internals.fetchLatestRelease()).resolves.toBeNull();
     await expect(internals.fetchRecentReleases()).resolves.toEqual([]);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "WARN [updater] GitHub API responded with an error",
+      ),
+      expect.objectContaining({
+        status: 500,
+        statusText: "Server Error",
+      }),
+    );
 
     vi.spyOn(internals, "fetchLatestRelease").mockResolvedValue(null);
     await expect(internals.checkForUpdatesViaGitHub()).resolves.toBeUndefined();

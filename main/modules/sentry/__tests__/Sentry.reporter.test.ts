@@ -57,8 +57,10 @@ describe("Sentry reporter", () => {
 
     await vi.waitFor(() => {
       expect(warn).toHaveBeenCalledWith(
-        "[Sentry] SDK unavailable:",
-        expect.stringContaining("error when mocking a module"),
+        expect.stringContaining("WARN [sentry] SDK unavailable"),
+        expect.objectContaining({
+          error: expect.stringContaining("error when mocking a module"),
+        }),
       );
     });
   });

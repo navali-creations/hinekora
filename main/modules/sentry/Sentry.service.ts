@@ -5,6 +5,7 @@ import {
   formatSentryErrorMessage,
   initSentry,
 } from "~/main/modules/sentry/Sentry.reporter";
+import { logInfo, logWarn } from "~/main/utils/app-log";
 import { maskPath } from "~/main/utils/mask-path";
 
 import pkgJson from "../../../package.json" with { type: "json" };
@@ -23,6 +24,7 @@ const PATH_REGEX = new RegExp(
     `(?:\\/(?:home|Users|tmp)(?:\\/${PATH_SEGMENT.source})+)`,
   "gi",
 );
+const SENTRY_LOG_SCOPE = "sentry";
 
 function scrubPaths(text: string): string {
   return text.replace(PATH_REGEX, (match) => maskPath(match, PATH_ANCHORS));
@@ -141,10 +143,9 @@ class SentryService {
         this.initialized = true;
       })
       .catch((error) => {
-        console.warn(
-          "[SentryService] Failed to initialize crash reporting:",
-          formatSentryErrorMessage(error),
-        );
+        logWarn(SENTRY_LOG_SCOPE, "Failed to initialize crash reporting", {
+          error: formatSentryErrorMessage(error),
+        });
       })
       .finally(() => {
         this.initializationPromise = null;
@@ -173,14 +174,13 @@ class SentryService {
     try {
       await closeSentry(2000);
     } catch (error) {
-      console.warn(
-        "[SentryService] Failed to close crash reporting:",
-        formatSentryErrorMessage(error),
-      );
+      logWarn(SENTRY_LOG_SCOPE, "Failed to close crash reporting", {
+        error: formatSentryErrorMessage(error),
+      });
     }
 
     this.disabled = true;
-    console.log("[SentryService] Crash reporting disabled by user preference");
+    logInfo(SENTRY_LOG_SCOPE, "Crash reporting disabled by user preference");
   }
 }
 

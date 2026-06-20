@@ -5,6 +5,7 @@ export * from "./capture-preview";
 export * from "./client-log";
 export * from "./database";
 export * from "./death-clips-overlay";
+export * from "./diag-log";
 export * from "./editor";
 export * from "./grid-lines-overlay";
 export * from "./main-window";

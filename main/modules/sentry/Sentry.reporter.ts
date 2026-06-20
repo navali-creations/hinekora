@@ -1,3 +1,5 @@
+import { logWarn } from "~/main/utils/app-log";
+
 type SentryModule = typeof import("@sentry/electron/main");
 type CaptureExceptionArgs = Parameters<SentryModule["captureException"]>;
 type CaptureMessageArgs = Parameters<SentryModule["captureMessage"]>;
@@ -12,7 +14,9 @@ function loadSentryModule(): Promise<SentryModule> {
 }
 
 function logSentryLoadFailure(error: unknown): void {
-  console.warn("[Sentry] SDK unavailable:", formatSentryErrorMessage(error));
+  logWarn("sentry", "SDK unavailable", {
+    error: formatSentryErrorMessage(error),
+  });
 }
 
 function formatSentryErrorMessage(error: unknown): string {

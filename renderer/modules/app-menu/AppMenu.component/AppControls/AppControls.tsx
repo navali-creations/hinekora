@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import clsx from "clsx";
 import {
   FiCopy,
   FiGithub,
@@ -17,8 +18,9 @@ import {
 } from "react-icons/ri";
 import { RxCaretDown } from "react-icons/rx";
 
+import { createRecorderOverlayDisabledReason } from "~/renderer/modules/managed-recorder/ManagedRecorder.components/CaptureModePageHeader/CaptureModePageHeader.utils";
 import UpdateIndicator from "~/renderer/modules/updater/UpdateIndicator/UpdateIndicator";
-import { useAppMenu } from "~/renderer/store";
+import { useAppMenu, useManagedRecorderSelector } from "~/renderer/store";
 
 import DiskSpaceWarning from "../DiskSpaceWarning/DiskSpaceWarning";
 import WhatsNewModal from "../WhatsNewModal/WhatsNewModal";
@@ -32,6 +34,9 @@ const CLOSE_ICON_SIZE = 16;
 const APPBAR_BUTTON_CLASS = "no-drag btn btn-ghost btn-sm";
 
 const AppControls = () => {
+  const recorderStatus = useManagedRecorderSelector(
+    (managedRecorder) => managedRecorder.status,
+  );
   const {
     minimize,
     maximize,
@@ -42,8 +47,15 @@ const AppControls = () => {
     toggleRecorderOverlay,
     openWhatsNew,
   } = useAppMenu();
+  const recorderOverlayDisabledReason =
+    createRecorderOverlayDisabledReason(recorderStatus);
+  const isRecorderOverlayDisabled = recorderOverlayDisabledReason !== null;
 
   const handleToggleRecorderOverlay = () => {
+    if (isRecorderOverlayDisabled) {
+      return;
+    }
+
     void toggleRecorderOverlay();
   };
 
@@ -66,9 +78,9 @@ const AppControls = () => {
   const handleClose = () => {
     close();
   };
-  const overlayTooltip = isRecorderOverlayVisible
-    ? "Hide Overlay"
-    : "Show Overlay";
+  const overlayTooltip =
+    recorderOverlayDisabledReason ??
+    (isRecorderOverlayVisible ? "Hide Overlay" : "Show Overlay");
 
   return (
     <div className="flex gap-0">
@@ -77,9 +89,13 @@ const AppControls = () => {
       <div className="tooltip tooltip-bottom" data-tip={overlayTooltip}>
         <button
           type="button"
-          className={APPBAR_BUTTON_CLASS}
+          className={clsx(
+            APPBAR_BUTTON_CLASS,
+            "disabled:cursor-not-allowed disabled:opacity-40",
+          )}
           data-onboarding="overlay-icon"
           aria-pressed={isRecorderOverlayVisible}
+          disabled={isRecorderOverlayDisabled}
           title={overlayTooltip}
           onClick={handleToggleRecorderOverlay}
         >

@@ -107,8 +107,10 @@ describe("SentryService", () => {
 
     expect(service.isInitialized()).toBe(false);
     expect(console.warn).toHaveBeenCalledWith(
-      "[SentryService] Failed to initialize crash reporting:",
-      "SDK unavailable",
+      expect.stringContaining(
+        "WARN [sentry] Failed to initialize crash reporting",
+      ),
+      expect.objectContaining({ error: "SDK unavailable" }),
     );
 
     await service.initialize();
@@ -131,8 +133,10 @@ describe("SentryService", () => {
     expect(sentryMocks.closeSentry).toHaveBeenCalledWith(2000);
     expect(service.isInitialized()).toBe(true);
     expect(service.isDisabled()).toBe(true);
-    expect(console.log).toHaveBeenCalledWith(
-      "[SentryService] Crash reporting disabled by user preference",
+    expect(console.info).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "INFO [sentry] Crash reporting disabled by user preference",
+      ),
     );
   });
 
@@ -165,8 +169,8 @@ describe("SentryService", () => {
 
     expect(service.isDisabled()).toBe(true);
     expect(console.warn).toHaveBeenCalledWith(
-      "[SentryService] Failed to close crash reporting:",
-      "close failed",
+      expect.stringContaining("WARN [sentry] Failed to close crash reporting"),
+      expect.objectContaining({ error: "close failed" }),
     );
   });
 });

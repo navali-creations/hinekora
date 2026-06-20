@@ -4,6 +4,8 @@ import { dirname, join, resolve } from "node:path";
 import { app, autoUpdater, type BrowserWindow, shell } from "electron";
 
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
+import { logError, logInfo, logWarn } from "~/main/utils/app-log";
+import { safeErrorMessage } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 import { resolveDevFile } from "~/main/utils/resolve-dev-path";
 
@@ -54,6 +56,7 @@ const RECENT_RELEASES_LIMIT = 5;
 const GITHUB_FETCH_TIMEOUT_MS = 10_000;
 const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/latest`;
 const GITHUB_RELEASE_PATH_PREFIX = `/${GITHUB_OWNER}/${GITHUB_REPO}/releases/`;
+const UPDATER_LOG_SCOPE = "updater";
 
 class UpdaterService {
   private static _instance: UpdaterService;
@@ -94,23 +97,25 @@ class UpdaterService {
     this.mainWindow = mainWindow;
 
     if (!app.isPackaged) {
-      console.log("[Updater] Skipping auto-update setup — app is not packaged");
+      logInfo(UPDATER_LOG_SCOPE, "Skipping auto-update setup", {
+        reason: "app is not packaged",
+      });
       this.registerIpcHandlers();
       return;
     }
 
     if (process.platform === "linux") {
       // Linux: use GitHub API polling (no autoUpdater support)
-      console.log("[Updater] Linux detected — using GitHub API version check");
+      logInfo(UPDATER_LOG_SCOPE, "Linux detected; using GitHub API checks");
       this.registerIpcHandlers();
       this.startPeriodicChecks();
       return;
     }
 
     if (!["win32", "darwin"].includes(process.platform)) {
-      console.log(
-        `[Updater] autoUpdater does not support platform '${process.platform}'`,
-      );
+      logInfo(UPDATER_LOG_SCOPE, "Native autoUpdater unsupported", {
+        platform: process.platform,
+      });
       this.registerIpcHandlers();
       return;
     }
@@ -128,7 +133,7 @@ class UpdaterService {
       process.platform
     }-${process.arch}/${app.getVersion()}`;
 
-    console.log(`[Updater] Setting feed URL: ${feedURL}`);
+    logInfo(UPDATER_LOG_SCOPE, "Setting feed URL", { feedURL });
     autoUpdater.setFeedURL({ url: feedURL });
     this.autoUpdaterConfigured = true;
 
@@ -171,11 +176,11 @@ class UpdaterService {
 
   private wireAutoUpdaterEvents(): void {
     autoUpdater.on("checking-for-update", () => {
-      console.log("[Updater] Checking for update...");
+      logInfo(UPDATER_LOG_SCOPE, "Checking for update");
     });
 
     autoUpdater.on("update-available", () => {
-      console.log("[Updater] Update available — downloading...");
+      logInfo(UPDATER_LOG_SCOPE, "Update available; downloading");
       this.updateStatus = "downloading";
 
       // We don't get granular download progress from Squirrel, so we send an
@@ -185,14 +190,16 @@ class UpdaterService {
     });
 
     autoUpdater.on("update-not-available", () => {
-      console.log("[Updater] No update available.");
+      logInfo(UPDATER_LOG_SCOPE, "No update available");
       this.updateStatus = "idle";
     });
 
     autoUpdater.on(
       "update-downloaded",
       (_event, releaseNotes, releaseName, _releaseDate, updateURL) => {
-        console.log(`[Updater] Update downloaded: ${releaseName}`);
+        logInfo(UPDATER_LOG_SCOPE, "Update downloaded", {
+          releaseName: releaseName || null,
+        });
 
         this.updateDownloaded = true;
         this.updateStatus = "ready";
@@ -226,7 +233,9 @@ class UpdaterService {
     );
 
     autoUpdater.on("error", (err) => {
-      console.error("[Updater] Error:", err.message);
+      logError(UPDATER_LOG_SCOPE, "Native updater error", {
+        error: safeErrorMessage(err),
+      });
       this.updateStatus = "error";
 
       // Don't crash the app — just log it. The user can retry via the UI.
@@ -290,7 +299,9 @@ class UpdaterService {
           const releases = await this.fetchRecentReleases();
           return releases.map((release) => this.toLatestReleaseInfo(release));
         } catch (error) {
-          console.error("[Updater] Failed to fetch recent releases:", error);
+          logError(UPDATER_LOG_SCOPE, "Failed to fetch recent releases", {
+            error: safeErrorMessage(error),
+          });
           return [];
         }
       },
@@ -310,7 +321,9 @@ class UpdaterService {
           const releases = this.parseChangelog(content);
           return { success: true, releases };
         } catch (error) {
-          console.error("[Updater] Failed to read CHANGELOG.md:", error);
+          logError(UPDATER_LOG_SCOPE, "Failed to read CHANGELOG.md", {
+            error: safeErrorMessage(error),
+          });
           return {
             success: false,
             releases: [],
@@ -333,7 +346,9 @@ class UpdaterService {
    */
   public checkForUpdates(): UpdateInfo | null {
     if (!app.isPackaged) {
-      console.log("[Updater] Skipping check — not packaged");
+      logInfo(UPDATER_LOG_SCOPE, "Skipping update check", {
+        reason: "app is not packaged",
+      });
       return null;
     }
 
@@ -347,16 +362,18 @@ class UpdaterService {
     }
 
     if (!this.autoUpdaterConfigured) {
-      console.log(
-        "[Updater] Skipping check — native autoUpdater is not configured",
-      );
+      logInfo(UPDATER_LOG_SCOPE, "Skipping update check", {
+        reason: "native autoUpdater is not configured",
+      });
       return null;
     }
 
     try {
       autoUpdater.checkForUpdates();
     } catch (err) {
-      console.error("[Updater] checkForUpdates failed:", err);
+      logError(UPDATER_LOG_SCOPE, "checkForUpdates failed", {
+        error: safeErrorMessage(err),
+      });
     }
 
     return this.lastUpdateInfo;
@@ -380,7 +397,7 @@ class UpdaterService {
     }
 
     try {
-      console.log("[Updater] Quitting and installing update...");
+      logInfo(UPDATER_LOG_SCOPE, "Quitting and installing update");
       // autoUpdater.quitAndInstall() will:
       // 1. Quit the running app
       // 2. Squirrel applies the update (atomic file swap)
@@ -390,7 +407,7 @@ class UpdaterService {
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "Unknown install error";
-      console.error("[Updater] Install failed:", message);
+      logError(UPDATER_LOG_SCOPE, "Install failed", { error: message });
       return { success: false, error: message };
     }
   }
@@ -416,13 +433,16 @@ class UpdaterService {
       );
 
       if (!updateAvailable) {
-        console.log(`[Updater] App is up to date (v${currentVersion})`);
+        logInfo(UPDATER_LOG_SCOPE, "App is up to date", {
+          currentVersion,
+        });
         return;
       }
 
-      console.log(
-        `[Updater] Update available: v${currentVersion} -> v${latestVersion}`,
-      );
+      logInfo(UPDATER_LOG_SCOPE, "Update available", {
+        currentVersion,
+        latestVersion,
+      });
 
       const info: UpdateInfo = {
         updateAvailable: true,
@@ -443,7 +463,9 @@ class UpdaterService {
 
       this.mainWindow?.webContents.send(UpdaterChannel.OnUpdateAvailable, info);
     } catch (error) {
-      console.error("[Updater] GitHub API check failed:", error);
+      logError(UPDATER_LOG_SCOPE, "GitHub API check failed", {
+        error: safeErrorMessage(error),
+      });
     }
   }
 
@@ -462,9 +484,10 @@ class UpdaterService {
     });
 
     if (!response.ok) {
-      console.warn(
-        `[Updater] GitHub API responded with ${response.status}: ${response.statusText}`,
-      );
+      logWarn(UPDATER_LOG_SCOPE, "GitHub API responded with an error", {
+        status: response.status,
+        statusText: response.statusText,
+      });
       return null;
     }
 
@@ -486,9 +509,10 @@ class UpdaterService {
     });
 
     if (!response.ok) {
-      console.warn(
-        `[Updater] GitHub API responded with ${response.status}: ${response.statusText}`,
-      );
+      logWarn(UPDATER_LOG_SCOPE, "GitHub API responded with an error", {
+        status: response.status,
+        statusText: response.statusText,
+      });
       return [];
     }
 
@@ -502,7 +526,7 @@ class UpdaterService {
   private openReleasePage(): { success: boolean; error?: string } {
     const url = this.resolveTrustedReleaseUrl(this.lastUpdateInfo?.releaseUrl);
 
-    console.log(`[Updater] Opening release page: ${url}`);
+    logInfo(UPDATER_LOG_SCOPE, "Opening release page", { url });
     void shell.openExternal(url);
     return { success: true };
   }
@@ -525,9 +549,9 @@ class UpdaterService {
     );
 
     if (!hasSquirrelUpdateExe) {
-      console.log(
-        "[Updater] Skipping Windows auto-update setup — Squirrel Update.exe not found",
-      );
+      logInfo(UPDATER_LOG_SCOPE, "Skipping Windows auto-update setup", {
+        reason: "Squirrel Update.exe not found",
+      });
     }
 
     return hasSquirrelUpdateExe;

@@ -14,7 +14,10 @@ import {
 } from "~/renderer/components/TabsBoxTabs/TabsBoxTabs";
 import { useManagedRecorderShallow } from "~/renderer/store";
 
-type CaptureMode = "session" | "rewind";
+import {
+  type CaptureMode,
+  createCapturePrimaryDisabledReason,
+} from "./CaptureModePageHeader.utils";
 
 interface CaptureModePageHeaderProps {
   title: string;
@@ -64,6 +67,10 @@ function CaptureModePageHeader({
     isBusy ||
     (isSelectedSession && isRewindActive) ||
     (isSelectedRewind && isSessionActive);
+  const primaryDisabledReason = createCapturePrimaryDisabledReason({
+    selectedMode,
+    status,
+  });
   const alertTitle = isSelectedSession
     ? "Session Recording selected."
     : "Rewind selected.";
@@ -136,21 +143,26 @@ function CaptureModePageHeader({
               />
             </div>
 
-            <button
-              className="btn btn-primary btn-sm no-drag"
-              type="button"
-              disabled={primaryDisabled}
-              onClick={handlePrimaryAction}
+            <div
+              className="tooltip tooltip-left no-drag"
+              data-tip={primaryDisabled ? primaryDisabledReason : ""}
             >
-              {isBusy ? (
-                <Loader2 className="animate-spin" size={16} />
-              ) : isSelectedModeActive ? (
-                <Square size={16} />
-              ) : (
-                <Play size={16} />
-              )}
-              {primaryLabel}
-            </button>
+              <button
+                className="btn btn-primary btn-sm disabled:cursor-not-allowed disabled:opacity-50"
+                type="button"
+                disabled={primaryDisabled}
+                onClick={handlePrimaryAction}
+              >
+                {isBusy ? (
+                  <Loader2 className="animate-spin" size={16} />
+                ) : isSelectedModeActive ? (
+                  <Square size={16} />
+                ) : (
+                  <Play size={16} />
+                )}
+                {primaryLabel}
+              </button>
+            </div>
           </div>
         }
       />

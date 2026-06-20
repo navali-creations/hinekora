@@ -15,6 +15,7 @@ import { GameLogSettingsCard } from "../../Settings.components/GameLogSettingsCa
 import { PrivacySettingsCard } from "../../Settings.components/PrivacySettingsCard/PrivacySettingsCard";
 import { ProfileTransferSettingsCard } from "../../Settings.components/ProfileTransferSettingsCard/ProfileTransferSettingsCard";
 import { StorageSettingsCard } from "../../Settings.components/StorageSettingsCard/StorageSettingsCard";
+import { TroubleshootingSettingsCard } from "../../Settings.components/TroubleshootingSettingsCard/TroubleshootingSettingsCard";
 
 const settingsCategories = [
   "Game",
@@ -22,6 +23,7 @@ const settingsCategories = [
   "Data & Storage",
   "Privacy",
   "Profiles",
+  "Troubleshooting",
 ] as const;
 type SettingsCategory = (typeof settingsCategories)[number];
 const getSettingsCategorySlug = (category: SettingsCategory) =>
@@ -84,6 +86,9 @@ function SettingsPage() {
                   <ProfilesPanel />
                   <ProfileTransferSettingsCard />
                 </>
+              )}
+              {activeCategory === "Troubleshooting" && (
+                <TroubleshootingSettingsCard />
               )}
             </div>
           </div>

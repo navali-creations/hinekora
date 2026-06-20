@@ -4,6 +4,7 @@ import type {
   SetupState,
   StepValidationResult,
 } from "~/main/modules/app-setup/AppSetup.types";
+import type { DiagLogRevealResult } from "~/main/modules/diag-log/DiagLog.dto";
 import type {
   EditorCopyToClipboardInput,
   EditorCreateProjectInput,
@@ -110,6 +111,9 @@ declare global {
         onStatusChanged: (
           callback: (status: ClientLogStatus) => void,
         ) => () => void;
+      };
+      diagLog: {
+        revealLogFile: () => Promise<DiagLogRevealResult>;
       };
       editor: {
         copyExport: (exportId: string) => Promise<EditorExportFileActionResult>;

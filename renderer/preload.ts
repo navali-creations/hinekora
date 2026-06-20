@@ -4,6 +4,7 @@ import { AppAPI } from "~/main/modules/app/App.api";
 import { AppSetupAPI } from "~/main/modules/app-setup/AppSetup.api";
 import { CapturePreviewAPI } from "~/main/modules/capture-preview/CapturePreview.api";
 import { ClientLogAPI } from "~/main/modules/client-log/ClientLog.api";
+import { DiagLogAPI } from "~/main/modules/diag-log/DiagLog.api";
 import { EditorAPI } from "~/main/modules/editor/Editor.api";
 import { MainWindowAPI } from "~/main/modules/main-window/MainWindow.api";
 import { ManagedRecorderAPI } from "~/main/modules/managed-recorder/ManagedRecorder.api";
@@ -22,6 +23,7 @@ const fullApi = {
   appSetup: AppSetupAPI,
   capturePreview: CapturePreviewAPI,
   clientLog: ClientLogAPI,
+  diagLog: DiagLogAPI,
   editor: EditorAPI,
   mainWindow: MainWindowAPI,
   managedRecorder: ManagedRecorderAPI,
