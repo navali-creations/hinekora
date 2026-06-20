@@ -14,6 +14,7 @@ permissions:
 env:
   CI: true
   NODE_VERSION: 24.15.0
+  NODE_MODULES_CACHE_VERSION: v1
 
 jobs:
   release:
@@ -37,6 +38,12 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
+
+      - name: Cache node_modules
+        uses: actions/cache@v5
+        with:
+          path: node_modules
+          key: node-modules-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ env.NODE_MODULES_CACHE_VERSION }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install dependencies without lifecycle scripts
         run: pnpm install --frozen-lockfile --ignore-scripts
