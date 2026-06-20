@@ -410,6 +410,7 @@ Second paragraph
   });
 
   it("refuses install when no native update has been downloaded", () => {
+    setPlatform("win32");
     const service = new UpdaterService();
 
     expect(service.installUpdate()).toEqual({

@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, renameSync, statSync } from "node:fs";
-import { basename, delimiter, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { app, BrowserWindow, screen } from "electron";
 
@@ -69,6 +69,7 @@ const RECORDING_FILE_STABLE_MS = 1_000;
 const REPLAY_CONVERSION_STOP_DELAY_MS = 250;
 const MANAGED_REPLAY_BUFFER_LIMIT_SECONDS = 60;
 const NATIVE_RECORDING_RESOLUTION = "native";
+const WINDOWS_PATH_DELIMITER = ";";
 const FALLBACK_RECORDING_RESOLUTION: ManagedRecorderResolution = {
   width: 1920,
   height: 1080,
@@ -748,14 +749,16 @@ class ManagedRecorderService {
     const runtimeBinPath = join(runtimePath, "bin");
     const currentPath = process.env.Path ?? process.env.PATH ?? "";
     const currentPathEntries = currentPath
-      .split(delimiter)
+      .split(WINDOWS_PATH_DELIMITER)
       .map((entry) => entry.trim().toLowerCase());
     const hasRuntimeBinPath = currentPathEntries.includes(
       runtimeBinPath.toLowerCase(),
     );
     const nextPath = hasRuntimeBinPath
       ? currentPath
-      : [runtimeBinPath, currentPath].filter(Boolean).join(delimiter);
+      : [runtimeBinPath, currentPath]
+          .filter(Boolean)
+          .join(WINDOWS_PATH_DELIMITER);
 
     process.env.Path = nextPath;
     process.env.PATH = nextPath;

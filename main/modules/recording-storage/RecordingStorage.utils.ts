@@ -5,6 +5,7 @@ import {
   join,
   relative,
   resolve,
+  win32,
 } from "node:path";
 
 import {
@@ -79,9 +80,14 @@ function resolveRecordingStorageRoot(
   configuredPath: string | null,
   videosPath: string,
 ): string {
-  return resolve(
-    configuredPath ?? join(videosPath, DEFAULT_RECORDING_DIRECTORY_NAME),
-  );
+  const root =
+    configuredPath ?? join(videosPath, DEFAULT_RECORDING_DIRECTORY_NAME);
+
+  return isCrossPlatformAbsolute(root) ? root : resolve(root);
+}
+
+function isCrossPlatformAbsolute(path: string): boolean {
+  return isAbsolute(path) || win32.isAbsolute(path);
 }
 
 function resolveRecordingStorageMediaDirectory(

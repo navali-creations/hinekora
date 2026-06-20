@@ -1,5 +1,3 @@
-import { basename } from "node:path";
-
 import type { RunRecordingDetail } from "~/main/modules/recording-storage";
 import type { ReplayClipDetail } from "~/main/modules/replay-clips";
 
@@ -38,7 +36,7 @@ function createEditorAssetFromReplayClip(
     id: detail.clip.id,
     kind: "clip",
     mediaUrl: detail.mediaUrl,
-    name: path ? basename(path) : clipLabel,
+    name: path ? getCrossPlatformBasename(path) : clipLabel,
     sizeBytes: detail.clip.sizeBytes,
     sourceGame: detail.clip.sourceGame,
     sourceLeague: detail.clip.sourceLeague,
@@ -73,6 +71,15 @@ function createEditorAssetKey(
   id: string,
 ): string {
   return `${kind}:${id}`;
+}
+
+function getCrossPlatformBasename(path: string): string {
+  return (
+    path
+      .split(/[\\/]+/)
+      .filter(Boolean)
+      .at(-1) ?? path
+  );
 }
 
 function sortEditorAssets(assets: EditorMediaAsset[]): EditorMediaAsset[] {
