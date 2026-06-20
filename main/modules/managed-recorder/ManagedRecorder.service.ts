@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, renameSync, statSync } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, normalize, resolve } from "node:path";
 
 import { app, BrowserWindow, screen } from "electron";
 
@@ -636,6 +636,7 @@ class ManagedRecorderService {
     }
     logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Resolved noobs runtime", {
       ...createSafePathLogFields(runtimePath, "runtime"),
+      runtimeLocation: describeNoobsRuntimeLocation(runtimePath),
       initialized: this.status.initialized,
     });
     logInfoSync(
@@ -1565,7 +1566,22 @@ class ManagedRecorderService {
     const configured = process.env.HINEKORA_NOOBS_PATH?.trim();
     const resourcesPath =
       typeof process.resourcesPath === "string" ? process.resourcesPath : null;
-    const candidates = [
+
+    const packagedCandidates = [
+      resourcesPath
+        ? resolve(
+            resourcesPath,
+            "app.asar.unpacked",
+            "node_modules",
+            "noobs",
+            "dist",
+          )
+        : null,
+      resourcesPath
+        ? resolve(resourcesPath, "node_modules", "noobs", "dist")
+        : null,
+    ];
+    const developmentCandidates = [
       configured && !app.isPackaged ? resolve(configured) : null,
       resolve(currentDir, "../../node_modules/noobs/dist"),
       resolve(
@@ -1577,21 +1593,19 @@ class ManagedRecorderService {
         "dist",
       ),
       resolve(process.cwd(), "node_modules", "noobs", "dist"),
-      resourcesPath
-        ? resolve(resourcesPath, "node_modules", "noobs", "dist")
-        : null,
-      resourcesPath
-        ? resolve(
-            resourcesPath,
-            "app.asar.unpacked",
-            "node_modules",
-            "noobs",
-            "dist",
-          )
-        : null,
+      ...packagedCandidates,
     ].filter((candidate): candidate is string => candidate !== null);
+    const candidates = app.isPackaged
+      ? packagedCandidates.filter(
+          (candidate): candidate is string => candidate !== null,
+        )
+      : developmentCandidates;
 
-    return candidates.find((candidate) => existsSync(candidate)) ?? null;
+    return (
+      candidates.find(
+        (candidate) => existsSync(candidate) && !isAsarVirtualPath(candidate),
+      ) ?? null
+    );
   }
 
   private handleSignal(signal: NoobsSignal): void {
@@ -1721,3 +1735,30 @@ class ManagedRecorderService {
 }
 
 export { ManagedRecorderService };
+
+function isAsarVirtualPath(path: string): boolean {
+  const normalized = normalize(path).replaceAll("\\", "/");
+
+  return (
+    normalized.includes("/app.asar/") &&
+    !normalized.includes("/app.asar.unpacked/")
+  );
+}
+
+function describeNoobsRuntimeLocation(path: string): string {
+  const normalized = normalize(path).replaceAll("\\", "/");
+
+  if (normalized.includes("/app.asar.unpacked/")) {
+    return "asar-unpacked";
+  }
+
+  if (normalized.includes("/app.asar/")) {
+    return "asar-virtual";
+  }
+
+  if (normalized.includes("/node_modules/noobs/dist")) {
+    return "node-modules";
+  }
+
+  return "custom";
+}

@@ -1422,6 +1422,12 @@ describe("ManagedRecorderService", () => {
 
   it("resolves replay output directories and packaged noobs resources", () => {
     const resourcesPath = join(directory, "resources");
+    const resourcesRuntimePath = join(
+      resourcesPath,
+      "node_modules",
+      "noobs",
+      "dist",
+    );
     const unpackedRuntimePath = join(
       resourcesPath,
       "app.asar.unpacked",
@@ -1429,6 +1435,7 @@ describe("ManagedRecorderService", () => {
       "noobs",
       "dist",
     );
+    mkdirSync(resourcesRuntimePath, { recursive: true });
     mkdirSync(unpackedRuntimePath, { recursive: true });
     const originalResourcesPath = process.resourcesPath;
     const service = createService() as unknown as {
@@ -1448,13 +1455,13 @@ describe("ManagedRecorderService", () => {
       expect(service.resolveOutputDirectoryForReplayKind("manual")).toBe(
         join(directory, "Manual Clips"),
       );
-      expect(service.resolveNoobsRuntimePath()).toContain(
-        join("node_modules", "noobs", "dist"),
-      );
+      electronMocks.isPackaged = true;
+      expect(service.resolveNoobsRuntimePath()).toBe(unpackedRuntimePath);
       Object.defineProperty(process, "resourcesPath", {
         configurable: true,
         value: undefined,
       });
+      electronMocks.isPackaged = false;
       expect(service.resolveNoobsRuntimePath()).toContain(
         join("node_modules", "noobs", "dist"),
       );
