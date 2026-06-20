@@ -1,3 +1,13 @@
+## 0.0.4
+
+### Patch Changes
+
+- [`9171579`](https://github.com/navali-creations/hinekora/commit/91715798d485ff46c69540b7a6073f05f4f42cc4) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Rewind recording startup in installed builds.
+
+  Hinekora now starts the packaged recorder from the correct installed runtime files, avoiding a crash when pressing Start in the released app.
+
 ## 0.0.3
 
 ### Patch Changes
