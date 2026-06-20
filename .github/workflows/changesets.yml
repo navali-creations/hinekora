@@ -51,8 +51,8 @@ jobs:
       - name: Create version PR
         uses: changesets/action@v1
         with:
-          commit: "[ci] release"
-          title: "[ci] release"
+          commit: "[skip ci] release"
+          title: "[skip ci] release"
           version: pnpm exec changeset version
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
