@@ -1,0 +1,113 @@
+import type { CropRegion, OverlayPlacement, Profile } from "~/types";
+
+export const cropNumberFields = ["x", "y", "width", "height"] as const;
+export type CropNumberField = (typeof cropNumberFields)[number];
+
+export const placementNumberFields = ["x", "y", "scale", "opacity"] as const;
+export type PlacementNumberField = (typeof placementNumberFields)[number];
+
+interface PlacementViewport {
+  width: number;
+  height: number;
+}
+
+interface SelectionPlacementViewport {
+  viewportWidth?: number;
+  viewportHeight?: number;
+}
+
+export function isCropNumberField(
+  value: string | undefined,
+): value is CropNumberField {
+  return cropNumberFields.includes(value as CropNumberField);
+}
+
+export function isPlacementNumberField(
+  value: string | undefined,
+): value is PlacementNumberField {
+  return placementNumberFields.includes(value as PlacementNumberField);
+}
+
+export function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+export function createPlacementForCrop(
+  crop: CropRegion,
+  placementIndex: number,
+  viewport?: PlacementViewport,
+): OverlayPlacement {
+  const cascadeOffset = placementIndex * 18;
+  const fallbackOffset = 24 + cascadeOffset;
+  const x =
+    viewport && viewport.width > 0
+      ? clamp(
+          Math.round((viewport.width - crop.width) / 2 + cascadeOffset),
+          0,
+          Math.max(0, viewport.width - crop.width),
+        )
+      : fallbackOffset;
+  const y =
+    viewport && viewport.height > 0
+      ? clamp(
+          Math.round((viewport.height - crop.height) / 2 + cascadeOffset),
+          0,
+          Math.max(0, viewport.height - crop.height),
+        )
+      : fallbackOffset;
+
+  return {
+    id: crypto.randomUUID(),
+    cropRegionId: crop.id,
+    x,
+    y,
+    scale: 1,
+    opacity: 1,
+  };
+}
+
+export function resolveSelectionPlacementViewport(
+  selection: SelectionPlacementViewport,
+): PlacementViewport | undefined {
+  if (
+    typeof selection.viewportWidth !== "number" ||
+    typeof selection.viewportHeight !== "number" ||
+    !Number.isFinite(selection.viewportWidth) ||
+    !Number.isFinite(selection.viewportHeight) ||
+    selection.viewportWidth <= 0 ||
+    selection.viewportHeight <= 0
+  ) {
+    return undefined;
+  }
+
+  return {
+    width: selection.viewportWidth,
+    height: selection.viewportHeight,
+  };
+}
+
+export function getSelectedProfile(
+  profiles: Profile[],
+  selectedProfileId: string | null,
+): Profile | null {
+  return (
+    profiles.find((profile) => profile.id === selectedProfileId) ??
+    profiles[0] ??
+    null
+  );
+}
+
+export function resolveActiveAuraCropRegionId(
+  profile: Profile | null,
+  selectedAuraCropRegionId: string | null,
+): string | null {
+  if (!profile || profile.cropRegions.length === 0) {
+    return null;
+  }
+
+  return profile.cropRegions.some(
+    (region) => region.id === selectedAuraCropRegionId,
+  )
+    ? selectedAuraCropRegionId
+    : (profile.cropRegions[0]?.id ?? null);
+}

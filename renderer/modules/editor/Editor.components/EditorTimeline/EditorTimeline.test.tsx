@@ -1,0 +1,168 @@
+import { act } from "react";
+import { createRoot, type Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createEditorTestProject } from "../../Editor.slice/Editor.slice.test-utils";
+
+const dragMocks = vi.hoisted(() => ({
+  handleTimelinePointerDown: vi.fn(),
+  handleTimelinePointerEnd: vi.fn(),
+  handleTimelinePointerMove: vi.fn(),
+  useEditorTimelineDrag: vi.fn(),
+}));
+const storeMocks = vi.hoisted(() => ({
+  useEditorShallow: vi.fn(),
+}));
+
+vi.mock("~/renderer/store", () => ({
+  useEditorShallow: storeMocks.useEditorShallow,
+}));
+
+vi.mock(
+  "../../Editor.hooks/useEditorTimelineDrag/useEditorTimelineDrag",
+  () => ({
+    useEditorTimelineDrag: dragMocks.useEditorTimelineDrag,
+  }),
+);
+vi.mock("../EditorPlaybackControls/EditorPlaybackControls", () => ({
+  EditorPlaybackControls: () => <div data-testid="playback-controls" />,
+}));
+vi.mock(
+  "../EditorTimelineClipDragPreview/EditorTimelineClipDragPreview",
+  () => ({
+    EditorTimelineClipDragPreview: () => <div data-testid="drag-preview" />,
+  }),
+);
+vi.mock("../EditorTimelineGap/EditorTimelineGap", () => ({
+  EditorTimelineGap: ({ gap }: { gap: { id: string } }) => (
+    <div data-testid={`gap-${gap.id}`} />
+  ),
+}));
+vi.mock("../EditorTimelineHoverMarker/EditorTimelineHoverMarker", () => ({
+  EditorTimelineHoverMarker: ({
+    hoverSeconds,
+  }: {
+    hoverSeconds: number | null;
+  }) => <div data-testid="hover-marker">{hoverSeconds ?? "none"}</div>,
+}));
+vi.mock("../EditorTimelinePlayhead/EditorTimelinePlayhead", () => ({
+  EditorTimelinePlayhead: () => <div data-testid="playhead" />,
+}));
+vi.mock("../EditorTimelineTools/EditorTimelineTools", () => ({
+  EditorTimelineTools: () => <div data-testid="timeline-tools" />,
+}));
+vi.mock("../EditorTimelineVideoTrack/EditorTimelineVideoTrack", () => ({
+  EditorTimelineVideoTrack: ({
+    track,
+    visibleDurationSeconds,
+  }: {
+    track: { clips: unknown[]; id: string; label: string };
+    visibleDurationSeconds: number;
+  }) => (
+    <div
+      data-testid={`track-${track.id}`}
+      data-visible-duration={visibleDurationSeconds}
+    >
+      {track.label}:{track.clips.length}
+    </div>
+  ),
+}));
+vi.mock("../EditorTimelineZoomControls/EditorTimelineZoomControls", () => ({
+  EditorTimelineZoomControls: () => <div data-testid="zoom-controls" />,
+}));
+
+import { EditorTimeline } from "./EditorTimeline";
+
+let container: HTMLDivElement;
+let root: Root;
+
+function configureEditorState(overrides: Record<string, unknown> = {}) {
+  storeMocks.useEditorShallow.mockImplementation((selector) =>
+    selector({
+      project: createEditorTestProject(),
+      selectedClipId: "timeline-1",
+      zoom: 1,
+      ...overrides,
+    }),
+  );
+}
+
+async function renderTimeline() {
+  await act(async () => {
+    root.render(<EditorTimeline />);
+  });
+}
+
+describe("EditorTimeline", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    dragMocks.useEditorTimelineDrag.mockReturnValue({
+      clipDragPreview: null,
+      handleTimelinePointerDown: dragMocks.handleTimelinePointerDown,
+      handleTimelinePointerEnd: dragMocks.handleTimelinePointerEnd,
+      handleTimelinePointerMove: dragMocks.handleTimelinePointerMove,
+      timelineGridRef: { current: null },
+    });
+    configureEditorState();
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      bottom: 220,
+      height: 220,
+      left: 0,
+      right: 1_132,
+      top: 0,
+      width: 1_132,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+  });
+
+  afterEach(() => {
+    root.unmount();
+    document.body.replaceChildren();
+    vi.restoreAllMocks();
+  });
+
+  it("renders timeline controls and video tracks", async () => {
+    await renderTimeline();
+
+    expect(container.querySelector('[data-testid="timeline-tools"]')).not.toBe(
+      null,
+    );
+    expect(
+      container.querySelector('[data-testid="playback-controls"]'),
+    ).not.toBe(null);
+    expect(container.querySelector('[data-testid="zoom-controls"]')).not.toBe(
+      null,
+    );
+    expect(
+      container.querySelector('[data-testid="track-video-track"]')?.textContent,
+    ).toBe("Video:1");
+    expect(
+      container
+        .querySelector('[data-testid="track-video-track"]')
+        ?.getAttribute("data-visible-duration"),
+    ).toBe("10");
+  });
+
+  it("resolves hover seconds from the marker zone", async () => {
+    await renderTimeline();
+    const markerZone = container.querySelector<HTMLElement>(
+      "[data-timeline-marker-zone]",
+    );
+
+    await act(async () => {
+      markerZone?.dispatchEvent(
+        new MouseEvent("pointermove", { bubbles: true, clientX: 632 }),
+      );
+    });
+
+    expect(dragMocks.handleTimelinePointerMove).toHaveBeenCalledTimes(1);
+    expect(
+      container.querySelector('[data-testid="hover-marker"]')?.textContent,
+    ).toBe("5");
+  });
+});

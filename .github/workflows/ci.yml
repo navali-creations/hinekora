@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "!.changeset/**"
+      - ".env.example"
+      - "LICENSE"
+      - ".gitignore"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**/*.md"
+      - "!.changeset/**"
+      - ".env.example"
+      - "LICENSE"
+      - ".gitignore"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CI: true
+  # Electron Forge currently fails to complete packaging on Node 24.16+.
+  # Keep hosted CI pinned until https://github.com/electron/forge/issues/4277 is fixed.
+  NODE_VERSION: 24.15.0
+
+jobs:
+  checks:
+    name: Checks and Tests
+    if: "!contains(github.event.head_commit.message, '[ci] release')"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run Biome checks
+        run: pnpm check
+
+      - name: Run type checks
+        run: pnpm typecheck
+
+      - name: Run main-process tests
+        run: pnpm test:main
+
+      - name: Run renderer tests
+        run: pnpm test:renderer
+
+  package-windows:
+    name: Windows Package Check
+    needs: checks
+    if: "!contains(github.event.head_commit.message, '[ci] release')"
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Package Windows app
+        run: pnpm package

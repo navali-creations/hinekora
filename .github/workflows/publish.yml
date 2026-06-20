@@ -1,0 +1,182 @@
+name: Publish
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "package.json"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Expected package.json version to publish, for example 0.1.0"
+        required: false
+        type: string
+      force:
+        description: "Publish the current package.json version even if this commit did not bump it"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+env:
+  CI: true
+  # Electron Forge currently fails to complete packaging on Node 24.16+.
+  # Keep hosted CI pinned until https://github.com/electron/forge/issues/4277 is fixed.
+  NODE_VERSION: 24.15.0
+
+jobs:
+  check-version:
+    name: Check if version changed
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      should_publish: ${{ steps.check.outputs.should_publish }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+
+      - name: Check version change
+        id: check
+        env:
+          FORCE_PUBLISH: ${{ github.event_name == 'workflow_dispatch' && inputs.force || false }}
+          REQUESTED_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || '' }}
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          echo "Current version: $CURRENT_VERSION"
+          echo "Force publish: $FORCE_PUBLISH"
+
+          git show HEAD~1:package.json > /tmp/prev-package.json 2>/dev/null || echo '{"version":"0.0.0"}' > /tmp/prev-package.json
+          PREVIOUS_VERSION=$(node -p "require('/tmp/prev-package.json').version")
+          echo "Previous version: $PREVIOUS_VERSION"
+
+          if [ -n "$REQUESTED_VERSION" ] && [ "$REQUESTED_VERSION" != "$CURRENT_VERSION" ]; then
+            echo "::error::Requested version $REQUESTED_VERSION does not match package.json version $CURRENT_VERSION"
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
+          if [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
+            echo "Version changed from $PREVIOUS_VERSION to $CURRENT_VERSION"
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          elif [ "$FORCE_PUBLISH" = "true" ]; then
+            echo "Version unchanged, but force publish was requested for $CURRENT_VERSION"
+            echo "should_publish=true" >> "$GITHUB_OUTPUT"
+            echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+          else
+            echo "Version unchanged"
+            echo "should_publish=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  make-windows:
+    name: Build Windows Distributables
+    needs: check-version
+    if: needs.check-version.outputs.should_publish == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Create .env file
+        shell: powershell
+        run: |
+          # PowerShell 5.x -Encoding utf8 writes a BOM (EF BB BF), which can
+          # corrupt the first env-var name for Vite/dotenv. Use .NET to write
+          # BOM-free UTF-8 instead.
+          $lines = @(
+            "VITE_UMAMI_ID=${{ secrets.VITE_UMAMI_ID }}"
+            "VITE_SENTRY_DSN=${{ secrets.SENTRY_DSN }}"
+          )
+          $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+          [System.IO.File]::WriteAllLines(
+            (Join-Path $PWD '.env'),
+            $lines,
+            $utf8NoBom
+          )
+
+      - name: Make Windows distributables
+        run: pnpm make
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+      - name: Verify Windows distributables
+        shell: powershell
+        run: |
+          Write-Host "Windows build artifacts:"
+          Get-ChildItem ".\out\make" -Recurse -File |
+            Sort-Object FullName |
+            ForEach-Object { Write-Host $_.FullName }
+
+          $installers = Get-ChildItem ".\out\make" -Recurse -File |
+            Where-Object { $_.Extension -in ".exe", ".nupkg" }
+
+          if (-not $installers) {
+            Write-Host "::error::No Windows installer artifacts found under out\make"
+            exit 1
+          }
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: distributables-windows
+          path: out/make/**/*
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: [check-version, make-windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Extract release notes from CHANGELOG.md
+        id: changelog
+        shell: bash
+        run: |
+          VERSION="${{ needs.check-version.outputs.version }}"
+          NOTES=$(tr -d '\r' < CHANGELOG.md | awk "BEGIN{found=0} /^## ${VERSION}$/{found=1; next} /^## /{if(found) exit} found{print}")
+
+          if [ -z "$NOTES" ]; then
+            NOTES="Release v${VERSION}"
+          fi
+
+          echo "notes<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$NOTES" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ needs.check-version.outputs.version }}
+          name: Hinekora v${{ needs.check-version.outputs.version }}
+          body: ${{ steps.changelog.outputs.notes }}
+          files: artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

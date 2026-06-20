@@ -1,0 +1,445 @@
+import EventEmitter from "node:events";
+import fs from "node:fs";
+
+import { BrowserWindow } from "electron";
+
+import { WindowName } from "~/main/modules/main-window/MainWindow.types";
+import { OverlayWindowsService } from "~/main/modules/overlay-windows";
+import { ReplayClipsService } from "~/main/modules/replay-clips";
+import { SettingsStoreService } from "~/main/modules/settings-store";
+import {
+  createSafePathLogFields,
+  createTextHash,
+  logError,
+  logInfo,
+  logWarn,
+} from "~/main/utils/app-log";
+import {
+  assertObject,
+  assertString,
+  handleValidationError,
+  safeErrorMessage,
+} from "~/main/utils/ipc-validation";
+import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
+
+import type { ClientLogStatus, GameId } from "~/types";
+import { ClientLogChannel } from "./ClientLog.channels";
+import type {
+  ClientLogActiveGameInput,
+  ClientLogDeathEvent,
+  ClientLogPathInput,
+} from "./ClientLog.dto";
+import {
+  findLatestFocusState,
+  hashDeathLine,
+  parseClientLogEvents,
+} from "./ClientLog.matcher";
+import { extractCompleteLogLines } from "./ClientLog.reader";
+
+const CLIENT_LOG_SCOPE = "client-log";
+const CLIENT_LOG_WATCH_INTERVAL_MS = 1_000;
+const CLIENT_LOG_READ_CHUNK_BYTES = 64 * 1024;
+const CLIENT_LOG_MAX_PARTIAL_LINE_CHARS = 64 * 1024;
+const CLIENT_LOG_FOCUS_STATE_TAIL_BYTES = 8 * 1024;
+
+class ClientLogService extends EventEmitter {
+  private static instance: ClientLogService | null = null;
+
+  private status: ClientLogStatus = {
+    activeGame: "poe1",
+    path: null,
+    watching: false,
+    lastError: null,
+  };
+  private fd: number | null = null;
+  private lastKnownSize = 0;
+  private partialLine = "";
+  private isProcessing = false;
+  private lastUnavailableLogAt = 0;
+
+  static getInstance(): ClientLogService {
+    if (!ClientLogService.instance) {
+      ClientLogService.instance = new ClientLogService();
+    }
+
+    return ClientLogService.instance;
+  }
+
+  constructor() {
+    super();
+    this.setupHandlers();
+  }
+
+  initializeFromSettings(): void {
+    const settings = SettingsStoreService.getInstance().get();
+    const path =
+      settings.activeGame === "poe1"
+        ? settings.poe1ClientTxtPath
+        : settings.poe2ClientTxtPath;
+
+    this.status = {
+      ...this.status,
+      activeGame: settings.activeGame,
+      path,
+    };
+
+    if (path) {
+      this.watchFile(path, settings.activeGame);
+    } else {
+      logWarn(
+        CLIENT_LOG_SCOPE,
+        "Client log watcher was not started: path missing",
+        {
+          activeGame: settings.activeGame,
+        },
+      );
+    }
+  }
+
+  getStatus(): ClientLogStatus {
+    return this.status;
+  }
+
+  setPath(input: ClientLogPathInput): ClientLogStatus {
+    const settings = SettingsStoreService.getInstance();
+    settings.update({
+      activeGame: input.game,
+      ...(input.game === "poe1"
+        ? { poe1ClientTxtPath: input.path }
+        : { poe2ClientTxtPath: input.path }),
+    });
+
+    this.watchFile(input.path, input.game);
+    logInfo(CLIENT_LOG_SCOPE, "Client log path updated", {
+      game: input.game,
+      ...createSafePathLogFields(input.path, "clientLog"),
+    });
+
+    return this.status;
+  }
+
+  setActiveGame(input: ClientLogActiveGameInput): ClientLogStatus {
+    const settingsStore = SettingsStoreService.getInstance();
+    const settings = settingsStore.update({ activeGame: input.game });
+    const path =
+      input.game === "poe1"
+        ? settings.poe1ClientTxtPath
+        : settings.poe2ClientTxtPath;
+
+    if (!path) {
+      this.stopWatchFile();
+      this.status = {
+        activeGame: input.game,
+        path: null,
+        watching: false,
+        lastError: null,
+      };
+      logWarn(
+        CLIENT_LOG_SCOPE,
+        "Client log watcher was not started: path missing",
+        {
+          activeGame: input.game,
+        },
+      );
+      this.publishStatus();
+
+      return this.status;
+    }
+
+    this.watchFile(path, input.game);
+
+    return this.status;
+  }
+
+  watchFile(filePath: string, game: GameId): void {
+    this.stopWatchFile();
+    this.status = {
+      activeGame: game,
+      path: filePath,
+      watching: true,
+      lastError: null,
+    };
+    this.lastUnavailableLogAt = 0;
+    this.openFileDescriptor(filePath);
+    this.setPoeFocusActive(
+      this.readLatestFocusStateFromRecentFileTail(filePath) ?? false,
+    );
+    logInfo(CLIENT_LOG_SCOPE, "Client log watcher started", {
+      game,
+      initialSize: this.lastKnownSize,
+      opened: this.fd !== null,
+      ...createSafePathLogFields(filePath, "clientLog"),
+    });
+
+    fs.watchFile(
+      filePath,
+      { interval: CLIENT_LOG_WATCH_INTERVAL_MS },
+      async (curr) => {
+        if (this.isProcessing) {
+          return;
+        }
+
+        if (curr.size === 0 && curr.birthtimeMs === 0) {
+          this.closeFileDescriptor();
+          this.lastKnownSize = 0;
+          this.partialLine = "";
+          this.logFileUnavailable(filePath, game);
+          return;
+        }
+
+        if (curr.size <= this.lastKnownSize) {
+          if (curr.size < this.lastKnownSize) {
+            logWarn(
+              CLIENT_LOG_SCOPE,
+              "Client log file was truncated or rotated",
+              {
+                game,
+                previousSize: this.lastKnownSize,
+                currentSize: curr.size,
+                ...createSafePathLogFields(filePath, "clientLog"),
+              },
+            );
+            this.openFileDescriptor(filePath);
+          }
+          return;
+        }
+
+        this.isProcessing = true;
+        try {
+          await this.processNewBytes(filePath, curr.size, game);
+        } catch (error) {
+          logError(CLIENT_LOG_SCOPE, "Client log processing failed", {
+            game,
+            error: safeErrorMessage(error),
+          });
+          this.status = {
+            ...this.status,
+            lastError: safeErrorMessage(error),
+          };
+          this.publishStatus();
+        } finally {
+          this.isProcessing = false;
+        }
+      },
+    );
+
+    this.publishStatus();
+  }
+
+  stopWatchFile(): void {
+    if (this.status.watching && this.status.path) {
+      logInfo(CLIENT_LOG_SCOPE, "Client log watcher stopped", {
+        activeGame: this.status.activeGame,
+        ...createSafePathLogFields(this.status.path, "clientLog"),
+      });
+      fs.unwatchFile(this.status.path);
+    }
+    this.closeFileDescriptor();
+    this.lastKnownSize = 0;
+    this.partialLine = "";
+    this.isProcessing = false;
+    this.status = { ...this.status, watching: false };
+  }
+
+  private openFileDescriptor(filePath: string): void {
+    this.closeFileDescriptor();
+    try {
+      this.fd = fs.openSync(filePath, "r");
+      this.lastKnownSize = fs.fstatSync(this.fd).size;
+    } catch (error) {
+      this.fd = null;
+      this.lastKnownSize = 0;
+      logError(CLIENT_LOG_SCOPE, "Client log file open failed", {
+        error: safeErrorMessage(error),
+        ...createSafePathLogFields(filePath, "clientLog"),
+      });
+    }
+    this.partialLine = "";
+  }
+
+  private logFileUnavailable(filePath: string, game: GameId): void {
+    const now = Date.now();
+    if (now - this.lastUnavailableLogAt < 10_000) {
+      return;
+    }
+
+    this.lastUnavailableLogAt = now;
+    logWarn(CLIENT_LOG_SCOPE, "Client log file is unavailable", {
+      game,
+      ...createSafePathLogFields(filePath, "clientLog"),
+    });
+  }
+
+  private closeFileDescriptor(): void {
+    if (this.fd !== null) {
+      try {
+        fs.closeSync(this.fd);
+      } catch {
+        // The fd may already be invalid after deletion or rotation.
+      }
+      this.fd = null;
+    }
+  }
+
+  private async processNewBytes(
+    filePath: string,
+    currentSize: number,
+    game: GameId,
+  ): Promise<void> {
+    if (this.fd === null) {
+      this.openFileDescriptor(filePath);
+      return;
+    }
+
+    let position = this.lastKnownSize;
+    while (position < currentSize) {
+      const bytesToRead = Math.min(
+        CLIENT_LOG_READ_CHUNK_BYTES,
+        currentSize - position,
+      );
+      const buffer = Buffer.allocUnsafe(bytesToRead);
+      const bytesRead = fs.readSync(this.fd, buffer, 0, bytesToRead, position);
+      if (bytesRead <= 0) {
+        break;
+      }
+
+      position += bytesRead;
+      this.lastKnownSize = position;
+      this.processLogChunk(buffer.toString("utf-8", 0, bytesRead), game);
+    }
+  }
+
+  private processLogChunk(chunk: string, game: GameId): void {
+    const result = extractCompleteLogLines(this.partialLine + chunk);
+    this.partialLine = this.normalizePartialLine(result.partialLine);
+    const textToParse = result.textToParse;
+    if (!textToParse) {
+      return;
+    }
+
+    const parsedEvents = parseClientLogEvents(textToParse);
+    for (const focusEvent of parsedEvents.focusEvents) {
+      this.setPoeFocusActive(focusEvent.focused);
+    }
+
+    const deathLines = parsedEvents.deathLines;
+    if (deathLines.length > 0) {
+      logInfo(CLIENT_LOG_SCOPE, "Death log lines matched", {
+        game,
+        count: deathLines.length,
+        chunkHash: createTextHash(textToParse),
+      });
+    }
+
+    for (const line of deathLines) {
+      const deathEvent: ClientLogDeathEvent = {
+        game,
+        line,
+        lineHash: hashDeathLine(line),
+        detectedAt: new Date().toISOString(),
+      };
+      logInfo(CLIENT_LOG_SCOPE, "Dispatching death event", {
+        game,
+        lineHash: deathEvent.lineHash,
+      });
+      this.emit("death", deathEvent);
+      void ReplayClipsService.getInstance().handleDeathEvent(deathEvent);
+    }
+  }
+
+  private normalizePartialLine(line: string): string {
+    return line.length > CLIENT_LOG_MAX_PARTIAL_LINE_CHARS
+      ? line.slice(-CLIENT_LOG_MAX_PARTIAL_LINE_CHARS)
+      : line;
+  }
+
+  private readLatestFocusStateFromRecentFileTail(
+    filePath: string,
+  ): boolean | null {
+    if (this.fd === null || this.lastKnownSize <= 0) {
+      return null;
+    }
+
+    const bytesToRead = Math.min(
+      this.lastKnownSize,
+      CLIENT_LOG_FOCUS_STATE_TAIL_BYTES,
+    );
+    const buffer = Buffer.alloc(bytesToRead);
+    const position = this.lastKnownSize - bytesToRead;
+
+    try {
+      const bytesRead = fs.readSync(this.fd, buffer, 0, bytesToRead, position);
+      return findLatestFocusState(buffer.toString("utf-8", 0, bytesRead));
+    } catch (error) {
+      logWarn(CLIENT_LOG_SCOPE, "Client log focus state read failed", {
+        error: safeErrorMessage(error),
+        ...createSafePathLogFields(filePath, "clientLog"),
+      });
+      return null;
+    }
+  }
+
+  private setPoeFocusActive(active: boolean): void {
+    OverlayWindowsService.getInstance().setPoeFocusActive(active);
+  }
+
+  private setupHandlers(): void {
+    registerGuardedIpcHandler(
+      ClientLogChannel.GetStatus,
+      [WindowName.Main],
+      () => this.getStatus(),
+    );
+    registerGuardedIpcHandler(
+      ClientLogChannel.SetPath,
+      [WindowName.Main],
+      (_event, input: unknown) => {
+        try {
+          assertObject(input, "client log path", ClientLogChannel.SetPath);
+          if (input.game !== "poe1" && input.game !== "poe2") {
+            throw new Error("game must be poe1 or poe2");
+          }
+          assertString(input.path, "path", ClientLogChannel.SetPath, {
+            min: 1,
+            max: 2_048,
+          });
+
+          return this.setPath(input as unknown as ClientLogPathInput);
+        } catch (error) {
+          return handleValidationError(error);
+        }
+      },
+    );
+    registerGuardedIpcHandler(
+      ClientLogChannel.SetActiveGame,
+      [WindowName.Main],
+      (_event, input: unknown) => {
+        try {
+          assertObject(
+            input,
+            "client log active game",
+            ClientLogChannel.SetActiveGame,
+          );
+          if (input.game !== "poe1" && input.game !== "poe2") {
+            throw new Error("game must be poe1 or poe2");
+          }
+
+          return this.setActiveGame(
+            input as unknown as ClientLogActiveGameInput,
+          );
+        } catch (error) {
+          return handleValidationError(error);
+        }
+      },
+    );
+  }
+
+  private publishStatus(): void {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send(ClientLogChannel.StatusChanged, this.status);
+      }
+    }
+  }
+}
+
+export { ClientLogService };

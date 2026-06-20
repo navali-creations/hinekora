@@ -1,0 +1,17 @@
+.tabBorderHalf::after {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 75%;
+  height: 3px;
+  border-radius: 6px;
+  background-color: currentColor;
+  opacity: 0;
+  content: "";
+  transform: translateX(-50%);
+  transition: opacity 0.2s ease;
+}
+
+.tabBorderHalf:global(.tab-active)::after {
+  opacity: 1;
+}

@@ -1,0 +1,117 @@
+import clsx from "clsx";
+import { FiCheck, FiClipboard } from "react-icons/fi";
+
+import { useEditorShallow } from "~/renderer/store";
+
+import { useEditorCopyActionState } from "../../Editor.hooks/useEditorCopyActionState/useEditorCopyActionState";
+import { createCopyDisabledReason } from "./EditorCopyActions.utils";
+
+interface EditorCopyActionsProps {
+  variant?: "button" | "menu";
+}
+
+function EditorCopyActions({ variant = "button" }: EditorCopyActionsProps) {
+  const { copyProjectToClipboard, exportStatus, project, selectedClipId } =
+    useEditorShallow((editor) => ({
+      copyProjectToClipboard: editor.copyProjectToClipboard,
+      exportStatus: editor.exportState.status,
+      project: editor.project,
+      selectedClipId: editor.selectedClipId,
+    }));
+  const { copyState, isCopied, isCopying, runCopyAction } =
+    useEditorCopyActionState();
+  const isDisabled =
+    !project || !selectedClipId || isCopying || exportStatus === "exporting";
+  const disabledReason = createCopyDisabledReason({
+    exportStatus,
+    isCopying,
+    project,
+    selectedClipId,
+  });
+  let copyLabel = "Copy to clipboard";
+  if (isCopying) {
+    copyLabel = "Processing";
+  } else if (isCopied) {
+    copyLabel = "Copied to clipboard";
+  } else if (copyState === "failed") {
+    copyLabel = "Copy failed";
+  }
+
+  const handleCopy = () => {
+    if (isDisabled) {
+      return;
+    }
+
+    runCopyAction(copyProjectToClipboard, {
+      onCrash: (error) => {
+        console.warn("[editor] Copy current edit crashed", { error });
+      },
+      onFailure: (error) => {
+        console.warn("[editor] Copy current edit failed", {
+          error,
+        });
+      },
+    });
+  };
+
+  const button = (
+    <button
+      className={clsx(
+        "no-drag",
+        variant === "menu"
+          ? "flex h-8 w-full cursor-pointer items-center justify-between gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-base-300 disabled:cursor-not-allowed disabled:opacity-45"
+          : "btn btn-ghost btn-sm",
+      )}
+      disabled={isDisabled}
+      type="button"
+      onClick={handleCopy}
+    >
+      <span>{copyLabel}</span>
+      {isCopying ? (
+        <span className="loading loading-spinner loading-xs" />
+      ) : isCopied ? (
+        <FiCheck size={15} />
+      ) : (
+        <FiClipboard size={15} />
+      )}
+    </button>
+  );
+
+  if (variant === "menu") {
+    if (!disabledReason) {
+      return button;
+    }
+
+    return (
+      <div
+        className="tooltip tooltip-left no-drag block w-full"
+        data-tip={disabledReason}
+      >
+        <span
+          aria-disabled="true"
+          className="flex h-8 w-full cursor-not-allowed items-center justify-between gap-3 rounded-md px-3 text-left text-base-content/45 text-sm"
+        >
+          <span>{copyLabel}</span>
+          {isCopying ? (
+            <span className="loading loading-spinner loading-xs" />
+          ) : isCopied ? (
+            <FiCheck size={15} />
+          ) : (
+            <FiClipboard size={15} />
+          )}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="tooltip tooltip-left no-drag"
+      data-tip={disabledReason ?? "Copies the video in its current state"}
+    >
+      {button}
+    </div>
+  );
+}
+
+export { EditorCopyActions };

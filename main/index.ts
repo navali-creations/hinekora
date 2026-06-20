@@ -1,0 +1,188 @@
+import { join } from "node:path";
+
+import { app, protocol } from "electron";
+
+import { AppService } from "./modules/app";
+import { AppSetupService } from "./modules/app-setup";
+import { CapturePreviewService } from "./modules/capture-preview";
+import { ClientLogService } from "./modules/client-log";
+import { CrashLogService } from "./modules/crash-log";
+import { DatabaseService } from "./modules/database";
+import { EditorService } from "./modules/editor";
+import { MainWindowService } from "./modules/main-window";
+import { ManagedRecorderService } from "./modules/managed-recorder";
+import { OverlayWindowsService } from "./modules/overlay-windows";
+import { PoeProcessService } from "./modules/poe-process";
+import { ProfilesService } from "./modules/profiles";
+import { RecordingStorageService } from "./modules/recording-storage";
+import { ReplayClipsService } from "./modules/replay-clips";
+import { SentryService } from "./modules/sentry";
+import { captureSentryException } from "./modules/sentry/Sentry.reporter";
+import { SettingsStoreService } from "./modules/settings-store";
+import { StateTransferService } from "./modules/state-transfer";
+import { StorageService } from "./modules/storage";
+import { UpdaterService } from "./modules/updater";
+import {
+  configureAppLogFile,
+  createSafePathLogFields,
+  getAppLogFilePath,
+  logInfo,
+  logWarn,
+} from "./utils/app-log";
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: "hinekora-media",
+    privileges: {
+      standard: true,
+      secure: true,
+      stream: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+  {
+    scheme: "hinekora-editor-export",
+    privileges: {
+      standard: true,
+      secure: true,
+      stream: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+    },
+  },
+]);
+
+function initializeLocalDiagnostics(): void {
+  try {
+    app.setAppLogsPath();
+    configureAppLogFile(join(app.getPath("logs"), "main.log"));
+    CrashLogService.getInstance().initialize({ startReporter: false });
+    logInfo("startup", "Local diagnostics initialized", {
+      ...createSafePathLogFields(getAppLogFilePath(), "appLog"),
+      ...createSafePathLogFields(app.getPath("crashDumps"), "crashDump"),
+    });
+  } catch (error) {
+    logWarn("startup", "Local diagnostics initialization failed", {
+      error: error instanceof Error ? error.message : "Diagnostics failed",
+    });
+  }
+}
+
+async function bootstrap(): Promise<void> {
+  const singleInstanceLocked = app.requestSingleInstanceLock();
+  if (!singleInstanceLocked) {
+    app.quit();
+    return;
+  }
+
+  initializeLocalDiagnostics();
+
+  if (process.env.E2E_TESTING !== "true") {
+    await SentryService.getInstance().initialize();
+    CrashLogService.getInstance().initialize({
+      startReporter: !SentryService.getInstance().isInitialized(),
+    });
+    logInfo("startup", "Sentry initialized", {
+      initialized: SentryService.getInstance().isInitialized(),
+    });
+  }
+
+  await app.whenReady();
+
+  logInfo("startup", "App ready", {
+    isPackaged: app.isPackaged,
+    platform: process.platform,
+    arch: process.arch,
+  });
+
+  const databasePath = join(app.getPath("userData"), "hinekora.sqlite");
+  DatabaseService.getInstance(databasePath);
+  logInfo("startup", "Database initialized", {
+    ...createSafePathLogFields(databasePath, "database"),
+  });
+
+  const appService = AppService.getInstance();
+  appService.registerShutdownCleanup();
+  appService.registerSystemPowerCleanup();
+  logInfo("startup", "App service initialized");
+
+  AppSetupService.getInstance();
+  logInfo("startup", "App setup initialized");
+
+  CapturePreviewService.getInstance();
+  logInfo("startup", "Capture preview initialized");
+
+  const settingsStore = SettingsStoreService.getInstance();
+  const settings = settingsStore.get();
+  settingsStore.applyStartupSettings(settings);
+  if (!settings.telemetryCrashReporting) {
+    await SentryService.getInstance().disable();
+  }
+  logInfo("startup", "Settings store initialized");
+
+  const profilesService = ProfilesService.getInstance();
+  profilesService.ensureDefaultProfile();
+  logInfo("startup", "Profiles initialized");
+
+  ManagedRecorderService.getInstance();
+  logInfo("startup", "Managed recorder initialized");
+
+  RecordingStorageService.getInstance();
+  logInfo("startup", "Recording storage initialized");
+
+  StorageService.getInstance();
+  logInfo("startup", "Storage initialized");
+
+  ReplayClipsService.getInstance();
+  logInfo("startup", "Replay clips initialized");
+
+  EditorService.getInstance();
+  logInfo("startup", "Editor initialized");
+
+  const overlayWindows = OverlayWindowsService.getInstance();
+  logInfo("startup", "Overlay windows initialized");
+
+  StateTransferService.getInstance();
+  logInfo("startup", "State transfer initialized");
+
+  UpdaterService.getInstance();
+  logInfo("startup", "Updater initialized");
+
+  ClientLogService.getInstance().initializeFromSettings();
+  logInfo("startup", "Client log initialized");
+
+  await MainWindowService.getInstance().createMainWindow();
+  logInfo("startup", "Main window created");
+
+  logInfo("startup", "Aura overlay request initialized", {
+    requested: overlayWindows.requestPersistentAuraOverlay(),
+  });
+
+  PoeProcessService.getInstance().initialize();
+  logInfo("startup", "PoE process monitor started");
+
+  await overlayWindows.showRecorderOverlay();
+  logInfo("startup", "Recorder overlay requested");
+
+  app.on("activate", () => {
+    void MainWindowService.getInstance().createMainWindow();
+  });
+}
+
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
+    app.quit();
+  }
+});
+
+void bootstrap().catch((error) => {
+  captureSentryException(
+    error instanceof Error ? error : new Error(String(error)),
+    {
+      tags: { module: "main", operation: "bootstrap" },
+    },
+  );
+  console.error("[Main] Fatal startup error", error);
+  app.quit();
+});

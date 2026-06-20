@@ -1,0 +1,12 @@
+nodeLinker: hoisted
+overrides:
+  esbuild: 0.28.1
+onlyBuiltDependencies:
+  - electron
+  - esbuild
+  - noobs
+allowBuilds:
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  noobs: true

@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "types": ["node", "vite/client", "vitest/globals"],
+    "baseUrl": ".",
+    "paths": {
+      "~/main/*": ["main/*"],
+      "~/renderer/*": ["renderer/*"],
+      "~/types": ["types/index.ts"],
+      "~/types/*": ["types/*"],
+      "~/*": ["./*"]
+    },
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "main/**/*.ts",
+    "renderer/**/*.ts",
+    "renderer/**/*.tsx",
+    "types/**/*.ts",
+    "forge.config.ts",
+    "forge.env.d.ts",
+    "vite.main.config.mts",
+    "vite.preload.config.mts",
+    "vite.renderer.config.mts",
+    "vitest.config.ts",
+    "vitest.main.config.mts",
+    "vitest.renderer.config.mts"
+  ]
+}

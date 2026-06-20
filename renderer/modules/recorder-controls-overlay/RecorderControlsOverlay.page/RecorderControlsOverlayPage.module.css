@@ -1,0 +1,44 @@
+.overlay {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: center;
+  overflow: hidden;
+  width: 100vw;
+  height: 100vh;
+  border: var(--border) solid
+    color-mix(in oklch, var(--color-primary) 34%, var(--color-neutral));
+  border-radius: var(--radius-box);
+  padding: 0.75rem;
+  background: color-mix(in oklch, var(--color-neutral) 88%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-app-region: drag;
+}
+
+.actions {
+  display: flex;
+  gap: 0.375rem;
+}
+
+.iconButton {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  -webkit-app-region: no-drag;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  color: var(--color-primary);
+  font-size: 0.8125rem;
+}
+
+.statusText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

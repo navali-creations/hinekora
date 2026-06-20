@@ -1,0 +1,38 @@
+import type {
+  BoundStoreStateCreator,
+  StateTransferSlice,
+} from "~/renderer/store/store.types";
+
+export const createStateTransferSlice: BoundStoreStateCreator<
+  StateTransferSlice
+> = (set) => ({
+  stateTransfer: {
+    preview: null,
+    lastMessage: null,
+    exportPortable: async () => {
+      const result = await window.electron.stateTransfer.exportPortable();
+      set((state) => {
+        state.stateTransfer.lastMessage = result.ok
+          ? `Exported to ${result.path}`
+          : (result.error ?? "Export canceled");
+      });
+    },
+    previewImport: async () => {
+      const preview = await window.electron.stateTransfer.previewImport();
+      set((state) => {
+        state.stateTransfer.preview = preview;
+        state.stateTransfer.lastMessage = preview
+          ? "Import ready to apply"
+          : "Import canceled";
+      });
+    },
+    importPortable: async (mode) => {
+      const result = await window.electron.stateTransfer.importPortable(mode);
+      set((state) => {
+        state.stateTransfer.lastMessage = result.ok
+          ? "Import applied"
+          : (result.error ?? "Import failed");
+      });
+    },
+  },
+});

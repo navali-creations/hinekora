@@ -1,0 +1,306 @@
+.layoutPreview {
+  --crop-preview-source-color: #22d3ee;
+
+  display: grid;
+  gap: 0.75rem;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.legend {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: var(--color-primary);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.legendItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.legendItem::before {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 0.1875rem;
+  content: "";
+}
+
+.sourceLegend::before {
+  border: var(--border) dashed var(--crop-preview-source-color);
+  background: color-mix(
+    in oklch,
+    var(--crop-preview-source-color) 38%,
+    transparent
+  );
+}
+
+.auraLegend::before {
+  border: var(--border) solid var(--color-primary);
+  background: color-mix(in oklch, var(--color-primary) 38%, transparent);
+}
+
+.stage {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  min-height: 160px;
+  border: var(--border) solid
+    color-mix(in oklch, var(--color-base-content) 14%, var(--color-neutral));
+  border-radius: var(--radius-box);
+  background:
+    linear-gradient(
+      90deg,
+      color-mix(
+          in oklch,
+          color-mix(
+              in oklch,
+              var(--color-base-content) 14%,
+              var(--color-neutral)
+            )
+            36%,
+          transparent
+        )
+        1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(
+          in oklch,
+          color-mix(
+              in oklch,
+              var(--color-base-content) 14%,
+              var(--color-neutral)
+            )
+            36%,
+          transparent
+        )
+        1px,
+      transparent 1px
+    ),
+    var(--color-base-300);
+  background-size:
+    24px 24px,
+    24px 24px,
+    auto;
+}
+
+.sourceSurface {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  opacity: 0.32;
+  pointer-events: none;
+  user-select: none;
+}
+
+.box {
+  position: absolute;
+  overflow: hidden;
+  min-width: 24px;
+  min-height: 18px;
+  border: var(--border) solid var(--crop-preview-accent);
+  padding: 2px;
+  color: var(--color-base-content);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  touch-action: none;
+  white-space: nowrap;
+}
+
+.sourceBox {
+  border-color: var(--crop-preview-source-color);
+  border-style: dashed;
+  background: color-mix(
+    in oklch,
+    var(--crop-preview-source-color) 12%,
+    transparent
+  );
+}
+
+.selectedSourceBox {
+  border-color: transparent;
+  box-shadow:
+    0 0 14px
+    color-mix(in oklch, var(--crop-preview-source-color) 54%, transparent),
+    0 0 26px
+    color-mix(in oklch, var(--crop-preview-source-color) 28%, transparent);
+}
+
+.selectedSourceBox::after {
+  position: absolute;
+  inset: -1px;
+  z-index: 2;
+  content: "";
+  background:
+    linear-gradient(
+        90deg,
+        var(--crop-preview-source-color) 50%,
+        transparent 0
+      )
+      repeat-x,
+    linear-gradient(
+        90deg,
+        var(--crop-preview-source-color) 50%,
+        transparent 0
+      )
+      repeat-x,
+    linear-gradient(
+        180deg,
+        var(--crop-preview-source-color) 50%,
+        transparent 0
+      )
+      repeat-y,
+    linear-gradient(
+        180deg,
+        var(--crop-preview-source-color) 50%,
+        transparent 0
+      )
+      repeat-y;
+  background-position:
+    0 0,
+    12px 100%,
+    0 12px,
+    100% 0;
+  background-size:
+    12px 2px,
+    12px 2px,
+    2px 12px,
+    2px 12px;
+  pointer-events: none;
+  animation: sourceBoxMarch 720ms linear infinite;
+}
+
+.auraBox {
+  border-color: color-mix(
+    in oklch,
+    var(--crop-preview-accent) 38%,
+    transparent
+  );
+  background: color-mix(in oklch, var(--color-base-300) 16%, transparent);
+  box-shadow:
+    0 0 0 1px
+    color-mix(in oklch, var(--crop-preview-accent) 18%, transparent),
+    0 0 14px
+    color-mix(in oklch, var(--crop-preview-accent) 24%, transparent);
+}
+
+.selectedBox {
+  border-color: var(--crop-preview-accent);
+  box-shadow: 0 0 18px
+    color-mix(in oklch, var(--crop-preview-accent) 42%, transparent);
+}
+
+.selectedAuraBox {
+  border-color: transparent;
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-primary) 80%, transparent),
+    0 0 18px color-mix(in oklch, var(--color-primary) 70%, transparent),
+    0 0 34px color-mix(in oklch, var(--crop-preview-accent) 46%, transparent);
+  animation: selectedAuraGlow 920ms ease-in-out infinite alternate;
+}
+
+.boxSurface {
+  position: absolute;
+  max-width: none;
+  object-fit: fill;
+  opacity: 0.88;
+  pointer-events: none;
+  user-select: none;
+}
+
+.boxLabel {
+  position: absolute;
+  z-index: 4;
+  max-width: min(14rem, calc(100% - 8px));
+  overflow: hidden;
+  border-radius: 0.25rem;
+  padding: 2px 5px;
+  color: var(--color-base-content);
+  font-size: 10px;
+  background: color-mix(in oklch, var(--color-base-300) 86%, transparent);
+  pointer-events: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resizeHandle {
+  position: absolute;
+  z-index: 3;
+  width: 14px;
+  height: 14px;
+  border: var(--border) solid var(--color-base-300);
+  border-radius: 50%;
+  background: var(--color-secondary);
+  box-shadow: 0 0 0 1px
+    color-mix(in oklch, var(--color-primary) 72%, transparent);
+  opacity: 0;
+  transition: opacity 120ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sourceBox:hover .resizeHandle,
+.resizeHandle:hover {
+  opacity: 1;
+}
+
+.resizeHandleNw {
+  top: 2px;
+  left: 2px;
+  cursor: nwse-resize;
+}
+
+.resizeHandleNe {
+  top: 2px;
+  right: 2px;
+  cursor: nesw-resize;
+}
+
+.resizeHandleSw {
+  bottom: 2px;
+  left: 2px;
+  cursor: nesw-resize;
+}
+
+.resizeHandleSe {
+  right: 2px;
+  bottom: 2px;
+  cursor: nwse-resize;
+}
+
+@keyframes selectedAuraGlow {
+  from {
+    box-shadow:
+      0 0 0 1px transparent,
+      0 0 10px color-mix(in oklch, var(--crop-preview-accent) 36%, transparent),
+      0 0 18px color-mix(in oklch, var(--color-primary) 12%, transparent);
+  }
+
+  to {
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--color-primary) 88%, transparent),
+      0 0 20px color-mix(in oklch, var(--color-primary) 74%, transparent),
+      0 0 36px color-mix(in oklch, var(--crop-preview-accent) 48%, transparent);
+  }
+}
+
+@keyframes sourceBoxMarch {
+  to {
+    background-position:
+      12px 0,
+      0 100%,
+      0 0,
+      100% 12px;
+  }
+}
