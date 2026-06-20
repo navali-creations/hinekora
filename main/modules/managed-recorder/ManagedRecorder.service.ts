@@ -20,6 +20,7 @@ import {
   createSafePathLogFields,
   logError,
   logInfo,
+  logInfoSync,
   logWarn,
 } from "~/main/utils/app-log";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
@@ -166,21 +167,40 @@ class ManagedRecorderService {
     }
 
     this.setStatus({ isStartingRecording: true, error: null });
-    logInfo(MANAGED_RECORDER_LOG_SCOPE, "Starting replay buffer", {
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Replay buffer start requested", {
       outputDirectorySet: this.status.outputDirectory !== null,
+      initialized: this.status.initialized,
     });
 
     try {
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Initializing recorder for replay buffer",
+      );
       await this.initialize();
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Recorder initialization ready", {
+        initialized: this.status.initialized,
+        runtimePathSet: this.status.runtimePath !== null,
+        outputDirectorySet: this.status.outputDirectory !== null,
+      });
       if (!this.noobs) {
         throw new Error("noobs module is not installed");
       }
 
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Calling noobs.SetBuffering for replay buffer",
+      );
       this.noobs.SetBuffering(true);
       this.activeRecordingMode = "buffer";
       const session = this.prepareRecordingSession(this.activeRecordingMode);
       this.activeRecordingBaselinePaths = session.existingRecordingPaths;
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.StartBuffer", {
+        ...createSafePathLogFields(session.directory, "session"),
+        existingRecordingCount: session.existingRecordingPaths.size,
+      });
       this.noobs.StartBuffer();
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.StartBuffer returned");
       this.setStatus({
         bufferActive: true,
         recording: true,
@@ -614,13 +634,28 @@ class ManagedRecorderService {
         "Packaged OBS runtime is missing. Add noobs/libOBS packaging before managed recording can run.",
       );
     }
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Resolved noobs runtime", {
+      ...createSafePathLogFields(runtimePath, "runtime"),
+      initialized: this.status.initialized,
+    });
+    logInfoSync(
+      MANAGED_RECORDER_LOG_SCOPE,
+      "Configuring noobs process environment",
+    );
     this.configureNoobsProcessEnvironment(runtimePath);
 
     const outputDirectory = this.resolveOutputDirectory();
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Ensuring recorder output paths", {
+      ...createSafePathLogFields(outputDirectory, "outputDirectory"),
+    });
     this.ensureOutputDirectories(outputDirectory);
 
     if (!this.noobs) {
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Loading noobs native module");
       this.noobs = await loadNoobsApi(importNoobsModule);
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Noobs native module loaded", {
+        loaded: this.noobs !== null,
+      });
     }
 
     if (!this.noobs) {
@@ -630,11 +665,25 @@ class ManagedRecorderService {
     if (!this.status.initialized) {
       const logPath = join(app.getPath("userData"), "managed-recorder-logs");
       mkdirSync(logPath, { recursive: true });
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Initializing noobs runtime", {
+        ...createSafePathLogFields(logPath, "noobsLogDirectory"),
+      });
       this.initializeNoobsRuntime(runtimePath, logPath);
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.Init returned");
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Calling noobs.SetBuffering during initialization",
+      );
       this.noobs.SetBuffering(true);
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Initial noobs.SetBuffering returned",
+      );
     }
 
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Configuring capture source");
     this.configureCaptureSource();
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Capture source ready");
 
     this.setStatus({
       available: true,
@@ -672,13 +721,26 @@ class ManagedRecorderService {
       settings.recordingOutputResolution,
     );
 
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.ResetVideoContext", {
+      fps: settings.recordingFps,
+      width: outputResolution.width,
+      height: outputResolution.height,
+    });
     this.noobs?.ResetVideoContext?.(
       settings.recordingFps,
       outputResolution.width,
       outputResolution.height,
     );
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.ResetVideoContext returned");
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Fitting capture source to canvas");
     this.fitCaptureSourceToCanvas(outputResolution);
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Capture source fit returned");
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.SetRecordingCfg", {
+      ...createSafePathLogFields(outputDirectory, "outputDirectory"),
+      container: MANAGED_RECORDING_CONTAINER,
+    });
     this.noobs?.SetRecordingCfg?.(outputDirectory, MANAGED_RECORDING_CONTAINER);
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.SetRecordingCfg returned");
     const requestedVideoEncoder = settings.recordingEncoder;
     const availableVideoEncoders = this.listAvailableVideoEncoders();
     const videoEncoder = resolveManagedVideoEncoder(
@@ -691,9 +753,17 @@ class ManagedRecorderService {
         ? settings.recordingRunQuality
         : settings.recordingClipQuality,
     );
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.SetVideoEncoder", {
+      requestedEncoder: requestedVideoEncoder,
+      encoder: videoEncoder,
+      rateControl: videoEncoderSettings.rate_control,
+      crf: videoEncoderSettings.crf ?? null,
+      cqp: videoEncoderSettings.cqp ?? null,
+    });
     this.noobs?.SetVideoEncoder?.(videoEncoder, {
       ...videoEncoderSettings,
     });
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.SetVideoEncoder returned");
     this.setStatus({ encoder: videoEncoder });
     logInfo(MANAGED_RECORDER_LOG_SCOPE, "Configured video encoder", {
       requestedEncoder: requestedVideoEncoder,
@@ -716,7 +786,20 @@ class ManagedRecorderService {
 
   private listAvailableVideoEncoders(): string[] {
     try {
-      return this.noobs?.ListVideoEncoders?.() ?? [];
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Calling noobs.ListVideoEncoders",
+      );
+      const encoders = this.noobs?.ListVideoEncoders?.() ?? [];
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "noobs.ListVideoEncoders returned",
+        {
+          encoderCount: encoders.length,
+        },
+      );
+
+      return encoders;
     } catch (error) {
       logWarn(MANAGED_RECORDER_LOG_SCOPE, "Failed to list video encoders", {
         error: safeErrorMessage(error),
@@ -737,6 +820,9 @@ class ManagedRecorderService {
 
     try {
       process.chdir(obsStatePath);
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.Init", {
+        ...createSafePathLogFields(obsStatePath, "obsStateDirectory"),
+      });
       this.noobs.Init(runtimePath, logPath, (signal) => {
         this.handleSignal(signal);
       });
@@ -792,17 +878,37 @@ class ManagedRecorderService {
       sourceType,
     });
 
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.CreateSource", {
+      targetKind: target.kind,
+      sourceType,
+    });
     const sourceName = this.noobs.CreateSource("Hinekora Capture", sourceType);
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.CreateSource returned");
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.GetSourceSettings", {
+      sourceType,
+    });
     const settings = this.noobs.GetSourceSettings(sourceName);
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.GetSourceSettings returned");
     const configuredSettings =
       target.kind === "window"
         ? this.createWindowSourceSettings(sourceName, settings, target)
         : this.createDisplaySourceSettings(sourceName, settings, target);
 
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.SetSourceSettings", {
+      targetKind: target.kind,
+      sourceType,
+    });
     this.noobs.SetSourceSettings(sourceName, configuredSettings);
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.SetSourceSettings returned");
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.AddSourceToScene");
     this.noobs.AddSourceToScene(sourceName);
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.AddSourceToScene returned");
     this.captureSourceName = sourceName;
     this.captureSourceKey = sourceKey;
+    logInfoSync(
+      MANAGED_RECORDER_LOG_SCOPE,
+      "Reading capture source resolution",
+    );
     this.captureSourceResolution = this.readCaptureSourceResolution(sourceName);
     logInfo(MANAGED_RECORDER_LOG_SCOPE, "Capture source configured", {
       targetKind: target.kind,
@@ -888,7 +994,20 @@ class ManagedRecorderService {
 
   private readSourceProperties(sourceName: string): NoobsProperty[] {
     try {
-      return this.noobs?.GetSourceProperties?.(sourceName) ?? [];
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Calling noobs.GetSourceProperties",
+      );
+      const properties = this.noobs?.GetSourceProperties?.(sourceName) ?? [];
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "noobs.GetSourceProperties returned",
+        {
+          propertyCount: properties.length,
+        },
+      );
+
+      return properties;
     } catch {
       return [];
     }
@@ -898,7 +1017,11 @@ class ManagedRecorderService {
     sourceName: string,
   ): ManagedRecorderResolution | null {
     try {
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.GetSourcePos");
       const position = this.noobs?.GetSourcePos?.(sourceName);
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.GetSourcePos returned", {
+        hasPosition: position !== undefined && position !== null,
+      });
       if (
         position &&
         Number.isFinite(position.width) &&
@@ -934,10 +1057,17 @@ class ManagedRecorderService {
       canvas;
 
     this.captureSourceResolution = source;
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.SetSourcePos", {
+      sourceWidth: source.width,
+      sourceHeight: source.height,
+      canvasWidth: canvas.width,
+      canvasHeight: canvas.height,
+    });
     this.noobs.SetSourcePos(
       this.captureSourceName,
       createFittedSceneItemPosition(source, canvas),
     );
+    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.SetSourcePos returned");
     logInfo(MANAGED_RECORDER_LOG_SCOPE, "Fitted capture source to canvas", {
       targetKind: target.kind,
       sourceWidth: source.width,

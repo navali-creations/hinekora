@@ -16,6 +16,7 @@ function writeLog(
   scope: string,
   message: string,
   fields: LogFields,
+  options: { sync?: boolean } = {},
 ): void {
   const timestamp = new Date().toISOString();
   const prefix = `${timestamp} ${level.toUpperCase()} [${scope}] ${message}`;
@@ -29,18 +30,19 @@ function writeLog(
 
   if (fieldsToLog) {
     logger(prefix, fieldsToLog);
-    writeFileLog(level, prefix, fieldsToLog);
+    writeFileLog(level, prefix, fieldsToLog, options.sync);
     return;
   }
 
   logger(prefix);
-  writeFileLog(level, prefix);
+  writeFileLog(level, prefix, undefined, options.sync);
 }
 
 function writeFileLog(
   level: LogLevel,
   prefix: string,
   fields?: LogFields,
+  sync = false,
 ): void {
   if (!logFilePath) {
     return;
@@ -49,7 +51,7 @@ function writeFileLog(
   const currentLogFilePath = logFilePath;
   const line = `${prefix}${fields ? ` ${JSON.stringify(fields)}` : ""}${EOL}`;
 
-  if (level !== "info") {
+  if (sync || level !== "info") {
     writeFileLogSync(currentLogFilePath, line);
     return;
   }
@@ -96,6 +98,14 @@ export function logInfo(
   fields: LogFields = {},
 ): void {
   writeLog("info", scope, message, normalizeLogFields(fields));
+}
+
+export function logInfoSync(
+  scope: string,
+  message: string,
+  fields: LogFields = {},
+): void {
+  writeLog("info", scope, message, normalizeLogFields(fields), { sync: true });
 }
 
 export function logWarn(

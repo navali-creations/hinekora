@@ -12,6 +12,7 @@ import {
   getAppLogFilePath,
   logError,
   logInfo,
+  logInfoSync,
   logWarn,
   resetAppLogFileForTests,
 } from "./app-log";
@@ -87,6 +88,22 @@ describe("app-log", () => {
     const contents = readFileSync(logPath, "utf8");
     expect(contents).toContain('WARN [startup] Warning {"value":"warn"}');
     expect(contents).toContain('ERROR [startup] Error {"value":"error"}');
+
+    rmSync(directory, { force: true, recursive: true });
+  });
+
+  it("can write info logs synchronously for native crash boundaries", () => {
+    const directory = mkdtempSync(join(tmpdir(), "hinekora-log-"));
+    const logPath = join(directory, "main.log");
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+
+    configureAppLogFile(logPath);
+    logInfoSync("native", "Before native call", { value: "checkpoint" });
+
+    const contents = readFileSync(logPath, "utf8");
+    expect(contents).toContain(
+      'INFO [native] Before native call {"value":"checkpoint"}',
+    );
 
     rmSync(directory, { force: true, recursive: true });
   });

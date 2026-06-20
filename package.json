@@ -3,7 +3,7 @@
   "productName": "Hinekora",
   "version": "0.0.1",
   "private": true,
-  "description": "Performance-first Path of Exile overlay and death replay capture prototype.",
+  "description": "Hinekora is a desktop companion app for Path of Exile players who want clean gameplay recording, quick death clips, simple replay editing, and aura overlays",
   "main": ".vite/build/main.js",
   "packageManager": "pnpm@11.5.2",
   "engines": {

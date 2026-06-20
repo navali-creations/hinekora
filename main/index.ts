@@ -8,6 +8,7 @@ import { CapturePreviewService } from "./modules/capture-preview";
 import { ClientLogService } from "./modules/client-log";
 import { CrashLogService } from "./modules/crash-log";
 import { DatabaseService } from "./modules/database";
+import { resolveMainDatabasePath } from "./modules/database/Database.paths";
 import { EditorService } from "./modules/editor";
 import { MainWindowService } from "./modules/main-window";
 import { ManagedRecorderService } from "./modules/managed-recorder";
@@ -96,7 +97,10 @@ async function bootstrap(): Promise<void> {
     arch: process.arch,
   });
 
-  const databasePath = join(app.getPath("userData"), "hinekora.sqlite");
+  const databasePath = resolveMainDatabasePath(
+    app.getPath("userData"),
+    app.isPackaged,
+  );
   DatabaseService.getInstance(databasePath);
   logInfo("startup", "Database initialized", {
     ...createSafePathLogFields(databasePath, "database"),
