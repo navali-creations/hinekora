@@ -1,7 +1,7 @@
 {
   "name": "hinekora",
   "productName": "Hinekora",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "private": true,
   "description": "Performance-first Path of Exile overlay and death replay capture prototype.",
   "main": ".vite/build/main.js",
