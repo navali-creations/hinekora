@@ -1,3 +1,13 @@
+## 0.0.9
+
+### Patch Changes
+
+- [`b7ae6a1`](https://github.com/navali-creations/hinekora/commit/b7ae6a1829407289aa47aaae7738a7e7a01d3d5a) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** App icon polish.
+
+  - **App identity:** Refreshed app icons are included across packaged app assets.
+
 ## 0.0.8
 
 ### Patch Changes
