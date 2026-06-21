@@ -168,6 +168,29 @@ describe("DiagLogService", () => {
     );
   });
 
+  it("logs process lifecycle events synchronously", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    DiagLogService.getInstance().initialize({ startReporter: false });
+    const beforeExitHandler = process.listeners("beforeExit").at(-1) as
+      | ((code: number) => void)
+      | undefined;
+    const exitHandler = process.listeners("exit").at(-1) as
+      | ((code: number) => void)
+      | undefined;
+
+    beforeExitHandler?.(11);
+    exitHandler?.(12);
+
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("INFO [diag-log] Main process beforeExit"),
+      expect.objectContaining({ code: 11 }),
+    );
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("INFO [diag-log] Main process exit"),
+      expect.objectContaining({ code: 12 }),
+    );
+  });
+
   it("records an unclean run marker and reports it on the next launch", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const runStatePath = join(directory, "last-run.json");
@@ -176,6 +199,7 @@ describe("DiagLogService", () => {
       JSON.stringify({
         clean: false,
         pid: 123,
+        exitedAt: "2026-06-20T12:05:00.000Z",
         startedAt: "2026-06-20T12:00:00.000Z",
         version: "0.0.0",
       }),
@@ -199,6 +223,36 @@ describe("DiagLogService", () => {
     });
   });
 
+  it("ignores invalid previous run markers", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const runStatePath = join(directory, "last-run.json");
+
+    writeFileSync(
+      runStatePath,
+      JSON.stringify({
+        clean: true,
+        pid: 123,
+        startedAt: "2026-06-20T12:00:00.000Z",
+        version: "0.0.0",
+      }),
+    );
+    DiagLogService.getInstance().initialize({ startReporter: false });
+    expect(warn).not.toHaveBeenCalled();
+
+    DiagLogService.resetForTests();
+    warn.mockClear();
+    writeFileSync(runStatePath, JSON.stringify({ clean: false }));
+    DiagLogService.getInstance().initialize({ startReporter: false });
+    expect(warn).not.toHaveBeenCalled();
+
+    DiagLogService.resetForTests();
+    warn.mockClear();
+    writeFileSync(runStatePath, "{not-json");
+    DiagLogService.getInstance().initialize({ startReporter: false });
+
+    expect(warn).not.toHaveBeenCalled();
+  });
+
   it("marks the run clean when Electron is about to quit", () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const runStatePath = join(directory, "last-run.json");
@@ -212,6 +266,85 @@ describe("DiagLogService", () => {
     });
     expect(info).toHaveBeenCalledWith(
       expect.stringContaining("INFO [diag-log] App run marked clean"),
+    );
+  });
+
+  it("marks the run clean when no startup timestamp has been recorded yet", () => {
+    const runStatePath = join(directory, "last-run.json");
+    const service = DiagLogService.getInstance() as unknown as {
+      handleAppWillQuit(): void;
+    };
+
+    service.handleAppWillQuit();
+
+    expect(JSON.parse(readFileSync(runStatePath, "utf8"))).toMatchObject({
+      clean: true,
+      pid: process.pid,
+      startedAt: expect.any(String),
+    });
+  });
+
+  it("logs clean renderer and child process exits as informational diagnostics", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    DiagLogService.getInstance().initialize({ startReporter: false });
+
+    emitAppEvent(
+      "render-process-gone",
+      {},
+      {
+        getType: () => "window",
+        getURL: () => "not-a-url",
+        id: 8,
+      },
+      { exitCode: 0, reason: "clean-exit" },
+    );
+    emitAppEvent(
+      "render-process-gone",
+      {},
+      {
+        getType: () => "window",
+        getURL: () => {
+          throw new Error("unavailable");
+        },
+        id: 9,
+      },
+      { exitCode: 0, reason: "clean-exit" },
+    );
+    emitAppEvent(
+      "child-process-gone",
+      {},
+      {
+        exitCode: 0,
+        reason: "clean-exit",
+        type: "Utility",
+      },
+    );
+
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("INFO [diag-log] Renderer process exited"),
+      expect.objectContaining({
+        exitCode: 0,
+        reason: "clean-exit",
+        urlHash: expect.any(String),
+        urlScheme: null,
+        webContentsId: 8,
+      }),
+    );
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("INFO [diag-log] Renderer process exited"),
+      expect.objectContaining({
+        urlHash: null,
+        urlScheme: null,
+        webContentsId: 9,
+      }),
+    );
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("INFO [diag-log] Child process exited"),
+      expect.objectContaining({
+        name: null,
+        serviceName: null,
+        type: "Utility",
+      }),
     );
   });
 

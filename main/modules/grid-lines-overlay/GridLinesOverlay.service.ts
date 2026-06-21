@@ -8,6 +8,7 @@ import {
   createOverlayWebPreferences,
   loadOverlayRenderer,
 } from "~/main/modules/overlay-windows/OverlayWindow.shared";
+import { logInfo } from "~/main/utils/app-log";
 import {
   registerIpcWindowRole,
   unregisterIpcWindowRole,
@@ -17,6 +18,7 @@ import type { CropRegionSelection } from "../overlay-windows/OverlayWindows.dto"
 
 const MIN_CROP_SIZE = 8;
 const CROP_SELECTION_FOCUS_RESTORE_DELAY_MS = 1_500;
+const GRID_LINES_OVERLAY_SCOPE = "grid-lines-overlay";
 
 class GridLinesOverlayService {
   private cropSelectorWindow: BrowserWindow | null = null;
@@ -129,6 +131,7 @@ class GridLinesOverlayService {
     cropSelectorWindow.setFullScreenable(false);
     cropSelectorWindow.on("closed", () => {
       unregisterIpcWindowRole(cropSelectorWebContents);
+      logInfo(GRID_LINES_OVERLAY_SCOPE, "Crop selector overlay closed");
       if (this.cropSelectorWindow === cropSelectorWindow) {
         this.cropSelectorWindow = null;
       }
@@ -141,6 +144,7 @@ class GridLinesOverlayService {
       cropSelectorWindow,
       `#/${WindowName.CropSelectorOverlay}`,
     );
+    logInfo(GRID_LINES_OVERLAY_SCOPE, "Crop selector overlay opened");
   }
 
   private closeWindow(): void {

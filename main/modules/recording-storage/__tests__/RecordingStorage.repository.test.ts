@@ -140,6 +140,76 @@ describe("RecordingStorageRepository", () => {
     expect(repository.getItemById(small.id)).toEqual(
       expect.objectContaining({ exists: false, sizeBytes: 0 }),
     );
+    repository.updateFileState(small.path, { exists: true, sizeBytes: 12 });
+    expect(repository.getItemById(small.id)).toEqual(
+      expect.objectContaining({ exists: true, sizeBytes: 12 }),
+    );
+    expect(
+      repository
+        .listRunRecordingSyncItems()
+        .find((item) => item.path === small.path),
+    ).toEqual(
+      expect.objectContaining({ exists: true, mtimeMs: 0, sizeBytes: 12 }),
+    );
+    database.db
+      .prepare("UPDATE run_recordings SET file_name = '' WHERE id = ?")
+      .run(small.id);
+    expect(repository.getItemById(small.id)).toEqual(
+      expect.objectContaining({ fileName: "small.mkv" }),
+    );
+    expect(
+      repository.listLibraryPage({
+        pageIndex: 0,
+        pageSize: 10,
+        sortBy: "createdAt",
+        sortDirection: "desc",
+      }).totalCount,
+    ).toBe(3);
+
+    database.close();
+  });
+
+  it("handles invalid durations and cleanup target boundaries", () => {
+    const database = new DatabaseService(":memory:");
+    const repository = new RecordingStorageRepository(database);
+
+    repository.upsertRunRecording({
+      path: "recordings/invalid-duration.mkv",
+      sourceGame: "poe1",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:00:00.000Z",
+      stoppedAt: "2026-06-12T09:59:00.000Z",
+      mtimeMs: 10,
+      sizeBytes: 50,
+    });
+    repository.upsertRunRecording({
+      path: "recordings/small-extra.mkv",
+      sourceGame: "poe1",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T11:00:00.000Z",
+      stoppedAt: "2026-06-12T11:01:00.000Z",
+      mtimeMs: 20,
+      sizeBytes: 10,
+    });
+
+    expect(
+      repository
+        .listRunRecordingItems()
+        .find((item) => item.path.endsWith("invalid-duration.mkv")),
+    ).toEqual(expect.objectContaining({ durationSeconds: null }));
+    expect(
+      repository.selectCleanupCandidates({
+        limitBytes: 50,
+      }),
+    ).toMatchObject({
+      files: [
+        expect.objectContaining({
+          path: resolve("recordings/invalid-duration.mkv"),
+        }),
+      ],
+      freedBytes: 50,
+      usageBytes: 60,
+    });
 
     database.close();
   });

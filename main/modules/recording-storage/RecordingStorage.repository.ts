@@ -244,7 +244,7 @@ class RecordingStorageRepository {
       game: row.source_game,
       leagueName: row.source_league,
       recordingCount: Number(row.recording_count),
-      sizeBytes: Number(row.size_bytes ?? 0),
+      sizeBytes: Number(row.size_bytes),
     }));
   }
 
@@ -311,7 +311,7 @@ class RecordingStorageRepository {
       ),
     );
 
-    return Number(row?.count ?? 0);
+    return Number((row as { count: number }).count);
   }
 
   listLeagues(filter: RunRecordingLibraryFilter = {}): string[] {

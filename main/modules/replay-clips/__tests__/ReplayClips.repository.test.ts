@@ -103,6 +103,15 @@ describe("ReplayClipsRepository", () => {
       "Hardcore",
       "Standard",
     ]);
+    expect(
+      repository.listLibraryPage({
+        pageIndex: 0,
+        pageSize: 10,
+        sortBy: "createdAt",
+        sortDirection: "desc",
+      }).totalCount,
+    ).toBe(3);
+    expect(repository.count()).toBe(3);
 
     repository.updateSize("small", 40);
     expect(repository.get("small")).toEqual(

@@ -234,6 +234,29 @@ describe("StorageService", () => {
     );
   });
 
+  it("ignores missing clip files while collecting storage info", () => {
+    const deathClipDirectory = join(storageRoot, "Death Clips");
+    mkdirSync(deathClipDirectory);
+    const emptyClipPath = join(deathClipDirectory, "empty.mp4");
+    writeFileSync(emptyClipPath, "");
+    replayClipsRepository.upsert(
+      createReplayClip({
+        processedClipPath: join(storageRoot, "missing.mp4"),
+        sizeBytes: 0,
+      }),
+    );
+    replayClipsRepository.upsert(
+      createReplayClip({
+        id: "empty-clip",
+        processedClipPath: emptyClipPath,
+        sizeBytes: 0,
+      }),
+    );
+    const service = new StorageService();
+
+    expect(service.getInfo().mediaSizeBytes).toBe(0);
+  });
+
   it("counts filesystem-only full recordings in the active game league", () => {
     const deathClipDirectory = join(storageRoot, "Death Clips");
     const fullRecordingDirectory = join(storageRoot, "Full Recordings");

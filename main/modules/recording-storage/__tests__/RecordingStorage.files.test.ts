@@ -85,9 +85,11 @@ describe("RecordingStorage.files", () => {
     expect(createProtectedPathSet([managedPath, "", managedPath])).toEqual(
       new Set([resolve(managedPath)]),
     );
+    expect(createProtectedPathSet()).toEqual(new Set());
     expect(createProtectedDirectories([clipDirectoryPath, ""])).toEqual([
       resolve(clipDirectoryPath),
     ]);
+    expect(createProtectedDirectories()).toEqual([]);
   });
 
   it("removes empty parent directories without crossing the storage root", () => {

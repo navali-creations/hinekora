@@ -11,6 +11,7 @@ const stoppedPoeProcessState: PoeProcessState = {
 
 export const createPoeProcessSlice: BoundStoreStateCreator<PoeProcessSlice> = (
   set,
+  get,
 ) => ({
   poeProcess: {
     state: stoppedPoeProcessState,
@@ -28,6 +29,7 @@ export const createPoeProcessSlice: BoundStoreStateCreator<PoeProcessSlice> = (
           store.poeProcess.state = state;
           store.poeProcess.error = null;
         });
+        void get().capturePreview.refresh({ force: true });
       };
 
       const unsubscribeStart =

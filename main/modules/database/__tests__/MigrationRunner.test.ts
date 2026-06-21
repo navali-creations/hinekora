@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { type Migration, MigrationRunner, migrations } from "../migrations";
 import { migration_20260618_000000_replay_clip_kind } from "../migrations/20260618_000000_replay_clip_kind";
+import { migration_20260620_000000_media_library_performance } from "../migrations/20260620_000000_media_library_performance";
 
 let database: DatabaseSync | null = null;
 
@@ -155,6 +156,44 @@ describe("MigrationRunner", () => {
     expect(
       indexExists(db, "idx_replay_clips_kind_game_league_created_at"),
     ).toBe(true);
+  });
+
+  it("keeps media library performance migration idempotent on upgraded tables", () => {
+    const db = createDatabase();
+
+    db.exec(`
+      CREATE TABLE replay_clips (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL DEFAULT 'death',
+        source_game TEXT NOT NULL DEFAULT 'poe2',
+        source_league TEXT NOT NULL DEFAULT 'Standard',
+        size_bytes INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE run_recordings (
+        id TEXT PRIMARY KEY,
+        source_game TEXT NOT NULL,
+        source_league TEXT NOT NULL,
+        duration_seconds INTEGER,
+        exists_on_disk INTEGER NOT NULL DEFAULT 0,
+        file_name TEXT NOT NULL DEFAULT '',
+        mtime_ms INTEGER NOT NULL DEFAULT 0,
+        size_bytes INTEGER NOT NULL DEFAULT 0
+      );
+    `);
+
+    migration_20260620_000000_media_library_performance.up(db);
+
+    expect(columnNames(db, "replay_clips")).toContain("size_bytes");
+    expect(columnNames(db, "run_recordings")).toEqual(
+      expect.arrayContaining([
+        "duration_seconds",
+        "exists_on_disk",
+        "file_name",
+        "mtime_ms",
+        "size_bytes",
+      ]),
+    );
+    expect(indexExists(db, "idx_run_recordings_cleanup")).toBe(true);
   });
 
   it("rolls back Hinekora migrations in reverse order", () => {

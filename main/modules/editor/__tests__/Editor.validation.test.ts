@@ -262,6 +262,27 @@ describe("Editor validation", () => {
       validateEditorSaveProjectInput({
         project: {
           ...project,
+          assets: [asset, { ...asset, id: "asset-copy" }],
+        },
+      }),
+    ).toThrow("asset keys must be unique");
+    expect(() =>
+      validateEditorSaveProjectInput({
+        project: {
+          ...project,
+          tracks: [
+            {
+              ...track,
+              clips: [clip, { ...clip }],
+            },
+          ],
+        },
+      }),
+    ).toThrow("clip ids must be unique");
+    expect(() =>
+      validateEditorSaveProjectInput({
+        project: {
+          ...project,
           tracks: [
             {
               ...track,

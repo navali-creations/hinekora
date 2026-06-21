@@ -30,7 +30,11 @@ import {
   type ManagedRecorderStatus,
 } from "~/types";
 import { ManagedRecorderChannel } from "../ManagedRecorder.channels";
-import { ManagedRecorderService } from "../ManagedRecorder.service";
+import {
+  describeNoobsRuntimeLocation,
+  isAsarVirtualPath,
+  ManagedRecorderService,
+} from "../ManagedRecorder.service";
 
 const electronMocks = vi.hoisted(() => ({
   getAllDisplays: vi.fn(),
@@ -1496,6 +1500,27 @@ describe("ManagedRecorderService", () => {
       vi.doUnmock("node:fs");
       vi.resetModules();
     }
+  });
+
+  it("classifies noobs runtime paths", () => {
+    expect(isAsarVirtualPath("C:\\app\\resources\\app.asar\\dist")).toBe(true);
+    expect(
+      isAsarVirtualPath("C:\\app\\resources\\app.asar.unpacked\\dist"),
+    ).toBe(false);
+    expect(
+      describeNoobsRuntimeLocation(
+        "C:\\app\\resources\\app.asar.unpacked\\node_modules\\noobs\\dist",
+      ),
+    ).toBe("asar-unpacked");
+    expect(
+      describeNoobsRuntimeLocation(
+        "C:\\app\\resources\\app.asar\\node_modules\\noobs\\dist",
+      ),
+    ).toBe("asar-virtual");
+    expect(
+      describeNoobsRuntimeLocation("C:\\repo\\node_modules\\noobs\\dist"),
+    ).toBe("node-modules");
+    expect(describeNoobsRuntimeLocation("C:\\runtime")).toBe("custom");
   });
 
   it("initializes the packaged runtime through existing seams", async () => {

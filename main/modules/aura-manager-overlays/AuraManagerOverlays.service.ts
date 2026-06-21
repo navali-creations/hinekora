@@ -10,12 +10,15 @@ import {
 } from "~/main/modules/overlay-windows/OverlayWindow.shared";
 import { OverlayWindowsChannel } from "~/main/modules/overlay-windows/OverlayWindows.channels";
 import { ProfilesService } from "~/main/modules/profiles";
+import { logInfo } from "~/main/utils/app-log";
 import {
   registerIpcWindowRole,
   unregisterIpcWindowRole,
 } from "~/main/utils/ipc-window-roles";
 
 import type { OverlayPlacement, Profile } from "~/types";
+
+const AURA_OVERLAY_SCOPE = "aura-manager-overlays";
 
 function isNavigationAbortedError(error: unknown): boolean {
   return (
@@ -170,6 +173,7 @@ class AuraManagerOverlaysService {
     window.setContentProtection(true);
     window.on("closed", () => {
       unregisterIpcWindowRole(auraWebContents);
+      logInfo(AURA_OVERLAY_SCOPE, "Aura overlay closed");
       if (this.auraWindow === window) {
         this.auraWindow = null;
         this.auraWindowProfileId = undefined;
@@ -244,6 +248,7 @@ class AuraManagerOverlaysService {
     }
 
     this.coordinator.showGameOverlayWindow(window);
+    logInfo(AURA_OVERLAY_SCOPE, "Aura overlay opened");
     this.applyWindowInteractivity();
   }
 

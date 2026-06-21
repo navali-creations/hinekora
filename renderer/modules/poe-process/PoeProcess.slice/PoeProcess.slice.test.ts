@@ -9,10 +9,23 @@ import { createBoundStoreForTests } from "~/renderer/test/createBoundStoreForTes
 
 import { createPoeProcessSlice } from "./PoeProcess.slice";
 
+const refreshCapturePreview = vi.fn();
+
 function createTestStore() {
   return createBoundStoreForTests(
     (set, get, api) =>
-      createPoeProcessSlice(set, get, api) as unknown as BoundStore,
+      ({
+        ...createPoeProcessSlice(set, get, api),
+        capturePreview: {
+          error: null,
+          hydrate: vi.fn(),
+          isLoading: false,
+          refresh: refreshCapturePreview,
+          select: vi.fn(),
+          selectedSourceId: null,
+          sources: [],
+        },
+      }) as unknown as BoundStore,
   );
 }
 
@@ -41,6 +54,7 @@ describe("PoeProcess slice", () => {
       isRunning: true,
       processName: "PathOfExile2Steam.exe",
     });
+    refreshCapturePreview.mockResolvedValue(undefined);
 
     Object.defineProperty(window, "electron", {
       configurable: true,
@@ -91,6 +105,7 @@ describe("PoeProcess slice", () => {
       isRunning: false,
       processName: "",
     });
+    expect(refreshCapturePreview).toHaveBeenCalledWith({ force: true });
 
     listeners.error?.({ error: "process failed" });
     expect(store.getState().poeProcess.error).toBe("process failed");

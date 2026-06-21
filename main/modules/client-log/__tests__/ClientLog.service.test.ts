@@ -25,9 +25,21 @@ const electronMocks = vi.hoisted(() => ({
   getAllWindows: vi.fn(),
 }));
 
+const poeProcessMocks = vi.hoisted(() => ({
+  refreshState: vi.fn(),
+}));
+
 vi.mock("electron", () => ({
   BrowserWindow: {
     getAllWindows: electronMocks.getAllWindows,
+  },
+}));
+
+vi.mock("~/main/modules/poe-process", () => ({
+  PoeProcessService: {
+    getInstance: () => ({
+      refreshState: poeProcessMocks.refreshState,
+    }),
   },
 }));
 
@@ -42,6 +54,11 @@ beforeEach(() => {
   electronMocks.getAllWindows.mockReturnValue([
     { isDestroyed: () => false, webContents: { send } },
   ]);
+  poeProcessMocks.refreshState.mockReset();
+  poeProcessMocks.refreshState.mockResolvedValue({
+    isRunning: true,
+    processName: "PathOfExile2Steam.exe",
+  });
   vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
     setPoeFocusActive,
   } as unknown as OverlayWindowsService);
@@ -136,6 +153,38 @@ describe("ClientLogService", () => {
       ClientLogChannel.StatusChanged,
       expect.objectContaining({ activeGame: "poe2", watching: false }),
     );
+    expect(poeProcessMocks.refreshState).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs safe warnings when process refresh after game switch fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    poeProcessMocks.refreshState.mockRejectedValueOnce(
+      new Error("process refresh failed"),
+    );
+    const update = vi.fn().mockReturnValue({
+      ...createDefaultSettings(),
+      activeGame: "poe2",
+      poe2ClientTxtPath: null,
+    });
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      update,
+    } as unknown as SettingsStoreService);
+    const service = new ClientLogService();
+
+    service.setActiveGame({ game: "poe2" });
+    warn.mockClear();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "WARN [client-log] PoE process refresh after game switch failed",
+      ),
+      expect.objectContaining({
+        activeGame: "poe2",
+        error: "process refresh failed",
+      }),
+    );
   });
 
   it("updates configured client log paths and publishes watcher status", () => {
@@ -229,6 +278,7 @@ describe("ClientLogService", () => {
       watching: true,
     });
     expect(update).toHaveBeenCalledWith({ activeGame: "poe1" });
+    expect(poeProcessMocks.refreshState).toHaveBeenCalledTimes(1);
     service.stopWatchFile();
   });
 

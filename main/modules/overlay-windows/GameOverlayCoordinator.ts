@@ -16,6 +16,7 @@ interface GameOverlayParticipant {
 
 class GameOverlayCoordinator {
   private readonly participants: GameOverlayParticipant[] = [];
+  private readonly focusedOverlayIds = new Set<string>();
   private poeFocusActive = false;
   private gameRunningActive = false;
   private restoringGameOverlays = false;
@@ -35,6 +36,21 @@ class GameOverlayCoordinator {
     void this.applyFocusGateToGameOverlays();
   }
 
+  setOverlayFocusActive(overlayId: string, active: boolean): void {
+    const hadFocus = this.focusedOverlayIds.has(overlayId);
+    if (active === hadFocus) {
+      return;
+    }
+
+    if (active) {
+      this.focusedOverlayIds.add(overlayId);
+    } else {
+      this.focusedOverlayIds.delete(overlayId);
+    }
+
+    void this.applyFocusGateToGameOverlays();
+  }
+
   setGameRunningActive(active: boolean): void {
     if (this.gameRunningActive === active) {
       return;
@@ -46,7 +62,9 @@ class GameOverlayCoordinator {
 
   canShowGameOverlays(): boolean {
     const focusAllowed =
-      !SHOULD_GATE_GAME_OVERLAYS_TO_POE_FOCUS || this.poeFocusActive;
+      !SHOULD_GATE_GAME_OVERLAYS_TO_POE_FOCUS ||
+      this.poeFocusActive ||
+      this.focusedOverlayIds.size > 0;
     const runningAllowed =
       !SHOULD_GATE_GAME_OVERLAYS_TO_GAME_RUNNING || this.gameRunningActive;
 

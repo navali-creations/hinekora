@@ -207,13 +207,18 @@ async function findRunningProcess(
   processNames: readonly string[],
   options: ProcessDetectionOptions = {},
 ): Promise<string | null> {
+  return (await findRunningProcesses(processNames, options))[0] ?? null;
+}
+
+async function findRunningProcesses(
+  processNames: readonly string[],
+  options: ProcessDetectionOptions = {},
+): Promise<string[]> {
   const { platform } = resolveProcessDetectionOptions(options);
   const processList = await listRunningProcesses(options);
 
-  return (
-    processNames.find((processName) =>
-      hasProcessName(processList, processName, platform),
-    ) ?? null
+  return processNames.filter((processName) =>
+    hasProcessName(processList, processName, platform),
   );
 }
 
@@ -255,6 +260,7 @@ export type {
 };
 export {
   findRunningProcess,
+  findRunningProcesses,
   hasProcessName,
   isProcessRunning,
   listRunningProcesses,

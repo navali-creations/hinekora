@@ -18,6 +18,7 @@ import type { ReplayClip } from "~/types";
 const CLIP_PREVIEW_WIDTH = 560;
 const CLIP_PREVIEW_HEIGHT = 396;
 const CLIP_PREVIEW_GAP = 8;
+const CLIP_PREVIEW_OVERLAY_FOCUS_ID = "clip-preview";
 
 class DeathClipsOverlayService {
   private clipPreviewWindow: BrowserWindow | null = null;
@@ -103,7 +104,23 @@ class DeathClipsOverlayService {
     );
     configureGameOverlayWindow(clipPreviewWindow);
     clipPreviewWindow.setContentProtection(true);
+    clipPreviewWindow.on("focus", () => {
+      this.coordinator.setOverlayFocusActive(
+        CLIP_PREVIEW_OVERLAY_FOCUS_ID,
+        true,
+      );
+    });
+    clipPreviewWindow.on("blur", () => {
+      this.coordinator.setOverlayFocusActive(
+        CLIP_PREVIEW_OVERLAY_FOCUS_ID,
+        false,
+      );
+    });
     clipPreviewWindow.on("closed", () => {
+      this.coordinator.setOverlayFocusActive(
+        CLIP_PREVIEW_OVERLAY_FOCUS_ID,
+        false,
+      );
       unregisterIpcWindowRole(clipPreviewWebContents);
       if (this.clipPreviewWindow === clipPreviewWindow) {
         this.clipPreviewWindow = null;

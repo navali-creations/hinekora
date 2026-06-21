@@ -742,6 +742,13 @@ describe("GameOverlayCoordinator", () => {
     expect(participant.restoreRequestedOverlay).toHaveBeenCalledTimes(1);
     expect(participant.suspendRequestedOverlay).toHaveBeenCalledTimes(1);
 
+    coordinator.setOverlayFocusActive("recorder", true);
+    await flushTimers();
+    coordinator.setOverlayFocusActive("recorder", false);
+
+    expect(participant.restoreRequestedOverlay).toHaveBeenCalledTimes(2);
+    expect(participant.suspendRequestedOverlay).toHaveBeenCalledTimes(2);
+
     const service = new OverlayWindowsService();
     service.setPoeFocusActive(true);
     await flushTimers();

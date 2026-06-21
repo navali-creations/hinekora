@@ -13,7 +13,21 @@ vi.mock("~/renderer/store", () => ({
   useEditorShallow: storeMocks.useEditorShallow,
 }));
 
-import { EditorSaveActions } from "./EditorSaveActions";
+vi.mock("../EditorCopyActions/EditorCopyActions", () => ({
+  EditorCopyActions: ({ variant }: { variant: string }) => (
+    <button type="button">Copy {variant}</button>
+  ),
+}));
+vi.mock("../EditorDeleteEditAction/EditorDeleteEditAction", () => ({
+  EditorDeleteEditAction: () => <button type="button">Delete edit</button>,
+}));
+vi.mock("../EditorNewEditAction/EditorNewEditAction", () => ({
+  EditorNewEditAction: ({ variant }: { variant: string }) => (
+    <button type="button">New edit {variant}</button>
+  ),
+}));
+
+import { EditorActionsMenu } from "./EditorActionsMenu";
 
 const project: EditorProject = {
   activeClipId: "timeline-1",
@@ -47,27 +61,26 @@ const project: EditorProject = {
 let container: HTMLDivElement;
 let root: Root;
 
-function configureEditorState(overrides: Record<string, unknown> = {}) {
+function configureEditorState() {
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
       exportProject: storeMocks.exportProject,
       exportState: { status: "idle" },
       project,
       selectedClipId: "timeline-1",
-      ...overrides,
     }),
   );
 }
 
-async function renderSaveActions(variant?: "button" | "menu") {
+async function renderActionsMenu() {
   await act(async () => {
     root.render(
-      variant ? <EditorSaveActions variant={variant} /> : <EditorSaveActions />,
+      <EditorActionsMenu isHistoryVisible={false} onToggleHistory={vi.fn()} />,
     );
   });
 }
 
-describe("EditorSaveActions", () => {
+describe("EditorActionsMenu save integration", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.append(container);
@@ -93,60 +106,13 @@ describe("EditorSaveActions", () => {
     vi.clearAllMocks();
   });
 
-  it("is disabled when no timeline clip is selected", async () => {
-    configureEditorState({ selectedClipId: null });
-    await renderSaveActions();
-
-    const button = container.querySelector("button");
-
-    expect(button?.disabled).toBe(true);
-    expect(
-      container.querySelector("[data-tip]")?.getAttribute("data-tip"),
-    ).toBe("Select a timeline clip before saving.");
-  });
-
-  it("renders disabled menu save as a flat tooltip row", async () => {
-    configureEditorState({ selectedClipId: null });
-    await renderSaveActions("menu");
-
-    const tooltip = container.querySelector(
-      '[data-tip="Select a timeline clip before saving."]',
-    );
-    const disabledRow = tooltip?.querySelector('[aria-disabled="true"]');
-    const saveButtons = Array.from(container.querySelectorAll("button")).filter(
+  it("keeps the save dialog open after the dropdown menu closes", async () => {
+    await renderActionsMenu();
+    const details = container.querySelector("details");
+    details?.setAttribute("open", "");
+    const saveButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.trim() === "Save",
     );
-
-    expect(disabledRow?.textContent).toContain("Save");
-    expect(disabledRow?.className).toContain("text-base-content/45");
-    expect(saveButtons).toHaveLength(0);
-  });
-
-  it("submits a new 1080p export with the selected clip name", async () => {
-    await renderSaveActions();
-    const saveButton = container.querySelector("button");
-
-    await act(async () => {
-      saveButton?.click();
-    });
-    const submitButton = Array.from(
-      document.body.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("Export video"));
-
-    await act(async () => {
-      submitButton?.click();
-    });
-
-    expect(storeMocks.exportProject).toHaveBeenCalledWith({
-      fileName: "asset-1.mp4",
-      mode: "new-file",
-      resolution: "1080p",
-    });
-  });
-
-  it("portals the save dialog outside the menu row", async () => {
-    await renderSaveActions("menu");
-    const saveButton = container.querySelector("button");
 
     await act(async () => {
       saveButton?.click();
@@ -154,6 +120,7 @@ describe("EditorSaveActions", () => {
 
     const dialog = document.body.querySelector("dialog");
 
+    expect(details?.open).toBe(false);
     expect(dialog?.open).toBe(true);
     expect(container.querySelector("dialog")).toBeNull();
   });

@@ -211,6 +211,33 @@ describe("DeathClipsOverlayService", () => {
     expect(destroyedPreviewWindow.loadFile).not.toHaveBeenCalled();
   });
 
+  it("keeps the clip preview overlay visible while its window is focused", async () => {
+    const clipWindow = createFakeWindow({ visible: true });
+    electronMocks.browserWindowFactory.mockReturnValue(clipWindow);
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+
+    await service.showClip(createClip());
+    const focusListener = clipWindow.on.mock.calls.find(
+      ([eventName]) => eventName === "focus",
+    )?.[1];
+    const blurListener = clipWindow.on.mock.calls.find(
+      ([eventName]) => eventName === "blur",
+    )?.[1];
+
+    focusListener?.();
+    clipWindow.setOpacity.mockClear();
+    clipWindow.setIgnoreMouseEvents.mockClear();
+
+    coordinator.setPoeFocusActive(false);
+    expect(clipWindow.setOpacity).not.toHaveBeenCalledWith(0);
+    expect(clipWindow.setIgnoreMouseEvents).not.toHaveBeenCalledWith(true);
+
+    blurListener?.();
+    expect(clipWindow.setOpacity).toHaveBeenCalledWith(0);
+    expect(clipWindow.setIgnoreMouseEvents).toHaveBeenCalledWith(true);
+  });
+
   it("positions clip preview above, below, or inside the active display", async () => {
     let anchorBounds = {
       x: 10,

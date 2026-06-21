@@ -169,6 +169,42 @@ describe("ReplayClipsService file actions", () => {
     expect(service.getClip("missing")).toBeNull();
   });
 
+  it("lists recent replay details for the editor media rail", () => {
+    const path = join(root, "2026-06-12_10-30-00-death-10s.mp4");
+    writeFileSync(path, "clip-data");
+    repository.upsert(
+      createReplayClip({
+        id: "clip-1",
+        kind: "death",
+        originalObsPath: path,
+        processedClipPath: path,
+      }),
+    );
+    repository.upsert(
+      createReplayClip({
+        id: "missing-media",
+        kind: "death",
+        originalObsPath: join(root, "missing.mp4"),
+        processedClipPath: null,
+      }),
+    );
+
+    expect(
+      service.listRecentEditorReplayDetails({ kind: "death", limit: 10 }),
+    ).toEqual(
+      expect.arrayContaining([
+        {
+          clip: expect.objectContaining({ id: "clip-1", sizeBytes: 9 }),
+          mediaUrl: "hinekora-media://replay-clip/clip-1",
+        },
+        {
+          clip: expect.objectContaining({ id: "missing-media", sizeBytes: 0 }),
+          mediaUrl: null,
+        },
+      ]),
+    );
+  });
+
   it("delegates clip library filtering to the repository", () => {
     repository.upsert(
       createReplayClip({ id: "death-clip", kind: "death", sourceGame: "poe2" }),

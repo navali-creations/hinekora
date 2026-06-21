@@ -1,6 +1,8 @@
 import { type Dirent, readdirSync, statSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 
+import { detectPathOfExileWindowTitle } from "~/main/utils/path-of-exile-window-title";
+
 import {
   type CaptureTarget,
   normalizeRecordingEncoderChoice,
@@ -466,6 +468,17 @@ function findMatchingPropertyItem(
   items: ManagedRecorderListItem[],
   target: CaptureTarget,
 ): ManagedRecorderListItem | null {
+  const poeWindowGame = detectPathOfExileWindowTarget(target);
+  if (poeWindowGame) {
+    const poeWindowItem =
+      items.find((item) =>
+        isMatchingPathOfExileWindowItem(item, poeWindowGame),
+      ) ?? null;
+    if (poeWindowItem) {
+      return poeWindowItem;
+    }
+  }
+
   const targetTokens = createCaptureTargetMatchTokens(target);
 
   return (
@@ -478,6 +491,47 @@ function findMatchingPropertyItem(
       );
     }) ?? null
   );
+}
+
+function detectPathOfExileWindowTarget(
+  target: CaptureTarget,
+): "poe1" | "poe2" | null {
+  if (target.kind !== "window") {
+    return null;
+  }
+
+  return detectPathOfExileWindowTitle(target.label);
+}
+
+function isMatchingPathOfExileWindowItem(
+  item: ManagedRecorderListItem,
+  game: "poe1" | "poe2",
+): boolean {
+  return [item.name, String(item.value)].some((value) => {
+    return detectPathOfExileWindowTitleFromObsProperty(value) === game;
+  });
+}
+
+function detectPathOfExileWindowTitleFromObsProperty(
+  value: string,
+): "poe1" | "poe2" | null {
+  const normalized = value.trim().replace(/\s+/g, " ").toLowerCase();
+  const bracketTitle = /^\[[^\]]+\]:\s*(.+)$/.exec(normalized)?.[1] ?? null;
+  const candidates = [
+    normalized,
+    normalized.split(":")[0]!.trim(),
+    bracketTitle ?? "",
+    bracketTitle?.split(":")[0]?.trim() ?? "",
+  ];
+
+  for (const candidate of candidates) {
+    const game = detectPathOfExileWindowTitle(candidate);
+    if (game) {
+      return game;
+    }
+  }
+
+  return null;
 }
 
 function createCaptureTargetMatchTokens(target: CaptureTarget): string[] {

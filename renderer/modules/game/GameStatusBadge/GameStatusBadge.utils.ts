@@ -8,10 +8,7 @@ function resolvePoeProcessGame(processName: string): GameId | null {
     return null;
   }
 
-  if (
-    normalized === "pathofexilesteam.exe" ||
-    normalized === "pathofexile.exe"
-  ) {
+  if (normalized === "pathofexilesteam.exe") {
     return null;
   }
 

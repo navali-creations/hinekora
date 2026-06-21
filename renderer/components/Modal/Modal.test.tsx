@@ -30,7 +30,7 @@ describe("Modal", () => {
       );
     });
 
-    const modalBox = container.querySelector(".modal-box");
+    const modalBox = document.body.querySelector(".modal-box");
 
     expect(modalBox?.classList.contains("bg-base-100")).toBe(true);
     expect(modalBox?.classList.contains("bg-base-300")).toBe(false);

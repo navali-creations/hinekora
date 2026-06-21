@@ -130,6 +130,35 @@ describe("ManagedRecorder utils", () => {
     ).toBe("window_capture");
   });
 
+  it("matches normalized PoE1 capture targets to the real OBS window title", () => {
+    expect(
+      selectWindow(
+        [
+          {
+            name: "window",
+            items: [
+              {
+                name: "[PathOfExile2Steam.exe]: Path of Exile 2",
+                value: "Path of Exile 2:POEWindowClass:PathOfExile2Steam.exe",
+              },
+              {
+                name: "[PathOfExileSteam.exe]: Path of Exile",
+                value: "Path of Exile:POEWindowClass:PathOfExileSteam.exe",
+              },
+            ],
+          },
+        ],
+        {
+          kind: "window",
+          id: "window:1234:0",
+          label: "Path of Exile 1",
+        },
+      ),
+    ).toMatchObject({
+      value: "Path of Exile:POEWindowClass:PathOfExileSteam.exe",
+    });
+  });
+
   it("parses Electron screen capture source indexes", () => {
     expect(parseScreenCaptureSourceIndex("screen:0:0")).toBe(0);
     expect(parseScreenCaptureSourceIndex("screen:2:1")).toBe(2);
@@ -382,6 +411,26 @@ describe("ManagedRecorder utils", () => {
         id: "window:missing:0",
         label: "Missing",
       }),
+    ).toBeNull();
+    expect(
+      selectWindow(
+        [
+          {
+            name: "window",
+            items: [
+              {
+                name: "[notepad.exe]: Notes",
+                value: "Notes:Notepad:notepad.exe",
+              },
+            ],
+          },
+        ],
+        {
+          kind: "window",
+          id: "window:poe:0",
+          label: "Path of Exile 2",
+        },
+      ),
     ).toBeNull();
   });
 

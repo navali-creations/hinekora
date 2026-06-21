@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { CaptureTarget } from "~/types";
 import {
   extractDisplayId,
+  isPathOfExileWindowTarget,
   resolveDisplayByScreenSourceIndex,
   resolveNativeDisplayResolution,
   resolveStoredCaptureTargetResolution,
@@ -133,6 +134,33 @@ describe("ManagedRecorder display helpers", () => {
       height: 900,
     });
     expect(options.getDisplays).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the primary display for Path of Exile window targets without stored geometry", () => {
+    const options = createOptions();
+    const target: CaptureTarget = {
+      kind: "window",
+      id: "window:poe:1",
+      label: "Path of Exile 1",
+      width: null,
+      height: null,
+    };
+
+    expect(isPathOfExileWindowTarget(target)).toBe(true);
+    expect(resolveNativeDisplayResolution(target, options)).toEqual({
+      width: 2560,
+      height: 1440,
+    });
+  });
+
+  it("does not treat display targets as Path of Exile window targets", () => {
+    expect(
+      isPathOfExileWindowTarget({
+        kind: "display",
+        id: "screen:0:0",
+        label: "Path of Exile 2",
+      }),
+    ).toBe(false);
   });
 
   it("returns null when no native display resolution can be resolved", () => {

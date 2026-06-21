@@ -186,7 +186,7 @@ class ReplayClipsRepository {
       clipCount: Number(row.clip_count),
       game: row.source_game,
       leagueName: row.source_league,
-      sizeBytes: Number(row.size_bytes ?? 0),
+      sizeBytes: Number(row.size_bytes),
     }));
   }
 
@@ -219,7 +219,7 @@ class ReplayClipsRepository {
       ),
     );
 
-    return Number(row?.count ?? 0);
+    return Number((row as { count: number }).count);
   }
 
   listLeagues(filter: ReplayClipListFilter = {}): string[] {

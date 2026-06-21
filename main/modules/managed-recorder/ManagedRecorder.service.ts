@@ -1734,7 +1734,11 @@ class ManagedRecorderService {
   }
 }
 
-export { ManagedRecorderService };
+export {
+  describeNoobsRuntimeLocation,
+  isAsarVirtualPath,
+  ManagedRecorderService,
+};
 
 function isAsarVirtualPath(path: string): boolean {
   const normalized = normalize(path).replaceAll("\\", "/");

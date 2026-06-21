@@ -8,8 +8,10 @@ import {
 describe("GameStatusBadge utils", () => {
   it("maps PoE process names to game ids", () => {
     expect(resolvePoeProcessGame("PathOfExileSteam.exe")).toBeNull();
+    expect(resolvePoeProcessGame("PathOfExile.exe")).toBe("poe1");
     expect(resolvePoeProcessGame("PathOfExile_x64Steam.exe")).toBe("poe1");
     expect(resolvePoeProcessGame("PathOfExile2Steam.exe")).toBe("poe2");
+    expect(resolvePoeProcessGame("PathOfExile2.exe")).toBe("poe2");
     expect(resolvePoeProcessGame("steam.exe")).toBeNull();
   });
 

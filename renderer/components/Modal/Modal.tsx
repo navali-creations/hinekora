@@ -101,23 +101,17 @@ const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
     onClose?.();
   };
 
-  const scrim =
-    isScrimMounted && typeof document !== "undefined"
-      ? createPortal(
-          <div
-            aria-hidden="true"
-            className={clsx(
-              "pointer-events-none fixed inset-0 z-40 bg-base-300/45 backdrop-blur-sm transition-opacity duration-300",
-              isScrimVisible ? "opacity-100" : "opacity-0",
-            )}
-          />,
-          document.body,
-        )
-      : null;
-
-  return (
+  const modal = (
     <>
-      {scrim}
+      {isScrimMounted && (
+        <div
+          aria-hidden="true"
+          className={clsx(
+            "pointer-events-none fixed inset-0 z-40 bg-base-300/45 backdrop-blur-sm transition-opacity duration-300",
+            isScrimVisible ? "opacity-100" : "opacity-0",
+          )}
+        />
+      )}
       <dialog
         ref={dialogRef}
         className="modal modal-bottom !bg-transparent outline-none focus:outline-none focus-visible:outline-none sm:modal-middle"
@@ -149,6 +143,12 @@ const Modal = forwardRef<ModalHandle, ModalProps>(function Modal(
       </dialog>
     </>
   );
+
+  if (typeof document === "undefined") {
+    return modal;
+  }
+
+  return createPortal(modal, document.body);
 });
 
 export { Modal };

@@ -7,6 +7,7 @@ import { CapturePreviewService } from "../CapturePreview.service";
 
 const electronMocks = vi.hoisted(() => ({
   getAllDisplays: vi.fn(),
+  getPrimaryDisplay: vi.fn(),
   getSources: vi.fn(),
 }));
 
@@ -20,6 +21,7 @@ vi.mock("electron", () => ({
   },
   screen: {
     getAllDisplays: electronMocks.getAllDisplays,
+    getPrimaryDisplay: electronMocks.getPrimaryDisplay,
   },
 }));
 
@@ -48,6 +50,19 @@ function createThumbnail(dataUrl: string | null) {
   };
 }
 
+function createDisplay(
+  id: number,
+  width: number,
+  height: number,
+  scaleFactor = 1,
+): Electron.Display {
+  return {
+    id,
+    scaleFactor,
+    size: { width, height },
+  } as Electron.Display;
+}
+
 function createSource(
   input: Pick<Electron.DesktopCapturerSource, "id" | "name"> & {
     displayId?: string;
@@ -63,6 +78,7 @@ function createSource(
 }
 
 beforeEach(() => {
+  electronMocks.getPrimaryDisplay.mockReturnValue(createDisplay(1, 1920, 1080));
   processMocks.detectPoeProcessState.mockResolvedValue({
     isRunning: true,
     processName: "PathOfExile2Steam.exe",
@@ -71,6 +87,7 @@ beforeEach(() => {
 
 afterEach(() => {
   electronMocks.getAllDisplays.mockReset();
+  electronMocks.getPrimaryDisplay.mockReset();
   electronMocks.getSources.mockReset();
   processMocks.detectPoeProcessState.mockReset();
   vi.restoreAllMocks();
@@ -91,13 +108,9 @@ describe("CapturePreviewService", () => {
   });
 
   it("lists renderer-ready Path of Exile capture sources", async () => {
-    electronMocks.getAllDisplays.mockReturnValue([
-      {
-        id: 1,
-        size: { width: 1920, height: 1080 },
-        scaleFactor: 1.5,
-      },
-    ] as Electron.Display[]);
+    const primaryDisplay = createDisplay(1, 1920, 1080, 1.5);
+    electronMocks.getAllDisplays.mockReturnValue([primaryDisplay]);
+    electronMocks.getPrimaryDisplay.mockReturnValue(primaryDisplay);
     electronMocks.getSources.mockResolvedValue([
       createSource({
         id: "screen:1:0",
@@ -148,8 +161,8 @@ describe("CapturePreviewService", () => {
         name: "Path of Exile 2",
         kind: "window",
         displayId: null,
-        width: null,
-        height: null,
+        width: 2880,
+        height: 1620,
         thumbnailDataUrl: null,
       },
     ]);
@@ -428,12 +441,12 @@ describe("CapturePreviewService", () => {
     ).resolves.toEqual([
       {
         displayId: null,
-        height: null,
+        height: 1080,
         id: "window:poe:1",
         kind: "window",
         name: "Path of Exile 1",
         thumbnailDataUrl: null,
-        width: null,
+        width: 1920,
       },
     ]);
     await expect(

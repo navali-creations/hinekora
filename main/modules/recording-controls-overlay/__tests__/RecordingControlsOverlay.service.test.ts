@@ -119,6 +119,7 @@ describe("RecordingControlsOverlayService", () => {
       expect.objectContaining({
         width: 360,
         height: 96,
+        focusable: true,
         x: 1540,
         y: 24,
         webPreferences: expect.objectContaining({ sandbox: true }),
@@ -200,6 +201,35 @@ describe("RecordingControlsOverlayService", () => {
 
     expect(recorderWindow.setIgnoreMouseEvents).toHaveBeenCalledWith(false);
     expect(recorderWindow.setOpacity).toHaveBeenCalledWith(1);
+  });
+
+  it("keeps the recorder overlay visible while its window is focused", async () => {
+    const recorderWindow = createFakeWindow({ visible: true });
+    electronMocks.browserWindowFactory.mockReturnValue(recorderWindow);
+    const coordinator = new GameOverlayCoordinator();
+    const service = new RecordingControlsOverlayService(coordinator);
+    coordinator.setGameRunningActive(true);
+    coordinator.setPoeFocusActive(true);
+
+    await service.show();
+    const focusListener = recorderWindow.on.mock.calls.find(
+      ([eventName]) => eventName === "focus",
+    )?.[1];
+    const blurListener = recorderWindow.on.mock.calls.find(
+      ([eventName]) => eventName === "blur",
+    )?.[1];
+
+    focusListener?.();
+    recorderWindow.setOpacity.mockClear();
+    recorderWindow.setIgnoreMouseEvents.mockClear();
+
+    coordinator.setPoeFocusActive(false);
+    expect(recorderWindow.setOpacity).not.toHaveBeenCalledWith(0);
+    expect(recorderWindow.setIgnoreMouseEvents).not.toHaveBeenCalledWith(true);
+
+    blurListener?.();
+    expect(recorderWindow.setOpacity).toHaveBeenCalledWith(0);
+    expect(recorderWindow.setIgnoreMouseEvents).toHaveBeenCalledWith(true);
   });
 
   it("recreates a requested recorder overlay after system suspend closes the native window", async () => {

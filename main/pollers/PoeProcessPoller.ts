@@ -1,10 +1,10 @@
 import { desktopCapturer } from "electron";
 
-import { detectPathOfExileWindowTitle } from "~/main/modules/capture-preview/CapturePreview.sources";
+import { detectPathOfExileWindowTitle } from "~/main/utils/path-of-exile-window-title";
 
 import type { GameId } from "~/types";
 import {
-  findRunningProcess,
+  findRunningProcesses,
   listWindowsProcessWindowTitles,
 } from "./isProcessRunning";
 import { ProcessPoller, type ProcessState } from "./ProcessPoller";
@@ -23,13 +23,10 @@ const POE_PROCESS_NAMES = [
 const POE_PROCESS_POLL_INTERVAL_MS = 5_000;
 
 const POE_PROCESS_NAME_BY_WINDOW_GAME: Record<GameId, string> = {
-  poe1: "PathOfExileSteam.exe",
+  poe1: "PathOfExile_x64Steam.exe",
   poe2: "PathOfExile2Steam.exe",
 };
-const AMBIGUOUS_POE_PROCESS_NAMES = new Set([
-  "pathofexilesteam.exe",
-  "pathofexile.exe",
-]);
+const AMBIGUOUS_POE_PROCESS_NAMES = new Set(["pathofexilesteam.exe"]);
 
 function resolvePoeProcessGame(processName: string): GameId | null {
   const normalized = processName.toLowerCase();
@@ -52,37 +49,106 @@ function isAmbiguousPoeProcessName(processName: string): boolean {
   return AMBIGUOUS_POE_PROCESS_NAMES.has(processName.toLowerCase());
 }
 
+function createPoeProcessStateForGame(game: GameId): ProcessState {
+  return {
+    isRunning: true,
+    processName: POE_PROCESS_NAME_BY_WINDOW_GAME[game],
+  };
+}
+
+function getFirstGame(candidates: Iterable<GameId>): GameId | null {
+  return new Set(candidates).values().next().value ?? null;
+}
+
+function findPreferredGame(
+  candidates: Iterable<GameId>,
+  preferredGames: readonly GameId[],
+): GameId | null {
+  const candidateSet = new Set(candidates);
+  for (const preferredGame of preferredGames) {
+    if (candidateSet.has(preferredGame)) {
+      return preferredGame;
+    }
+  }
+
+  return null;
+}
+
+function createPreferredGames(
+  lastKnownGame: GameId | null,
+  fallbackGame: GameId | null,
+): GameId[] {
+  return [fallbackGame, lastKnownGame].filter(
+    (game, index, games): game is GameId =>
+      game !== null && games.indexOf(game) === index,
+  );
+}
+
 async function detectPoeProcessState(
   lastKnownGame: GameId | null = null,
   fallbackGame: GameId | null = null,
 ): Promise<ProcessState> {
-  const processName = await findRunningProcess(POE_PROCESS_NAMES);
-  if (processName === null) {
+  const processNames = await findRunningProcesses(POE_PROCESS_NAMES);
+  if (processNames.length === 0) {
     return {
       isRunning: false,
       processName: "",
     };
   }
 
-  const windowGame = await detectRunningPoeWindowGame();
-  const processWindowGame =
-    windowGame ?? (await detectPoeProcessWindowGame(processName));
-  const processGame =
-    processWindowGame ??
-    (isAmbiguousPoeProcessName(processName)
-      ? (lastKnownGame ?? fallbackGame)
-      : null);
+  const preferredGames = createPreferredGames(lastKnownGame, fallbackGame);
+  const processGames = processNames.flatMap((processName): GameId[] => {
+    const game = resolvePoeProcessGame(processName);
+
+    return game ? [game] : [];
+  });
+  const ambiguousProcessNames = processNames.filter(isAmbiguousPoeProcessName);
+  const preferredProcessGame = findPreferredGame(processGames, preferredGames);
+  if (preferredProcessGame) {
+    return createPoeProcessStateForGame(preferredProcessGame);
+  }
+  if (preferredGames.length === 0 || ambiguousProcessNames.length === 0) {
+    const firstProcessGame = getFirstGame(processGames);
+    if (firstProcessGame) {
+      return createPoeProcessStateForGame(firstProcessGame);
+    }
+  }
+
+  const windowGames = await detectRunningPoeWindowGames();
+  const preferredWindowGame = findPreferredGame(windowGames, preferredGames);
+  if (preferredWindowGame) {
+    return createPoeProcessStateForGame(preferredWindowGame);
+  }
+
+  const processWindowGames = await detectPoeProcessWindowGames(
+    ambiguousProcessNames,
+  );
+  const preferredProcessWindowGame = findPreferredGame(
+    processWindowGames,
+    preferredGames,
+  );
+  if (preferredProcessWindowGame) {
+    return createPoeProcessStateForGame(preferredProcessWindowGame);
+  }
+
+  const firstWindowGame =
+    getFirstGame(windowGames) ?? getFirstGame(processWindowGames);
+  if (firstWindowGame) {
+    return createPoeProcessStateForGame(firstWindowGame);
+  }
+
+  if (ambiguousProcessNames.length > 0 && preferredGames[0]) {
+    return createPoeProcessStateForGame(preferredGames[0]);
+  }
 
   return {
     isRunning: true,
-    processName:
-      processGame === null
-        ? processName
-        : POE_PROCESS_NAME_BY_WINDOW_GAME[processGame],
+    processName: processNames[0] as string,
   };
 }
 
-async function detectRunningPoeWindowGame(): Promise<GameId | null> {
+async function detectRunningPoeWindowGames(): Promise<GameId[]> {
+  const games: GameId[] = [];
   try {
     const sources = await desktopCapturer.getSources({
       types: ["window"],
@@ -91,15 +157,33 @@ async function detectRunningPoeWindowGame(): Promise<GameId | null> {
 
     for (const source of sources) {
       const game = detectPathOfExileWindowTitle(source.name);
-      if (game) {
-        return game;
+      if (game && !games.includes(game)) {
+        games.push(game);
       }
     }
   } catch {
-    return null;
+    return [];
   }
 
-  return null;
+  return games;
+}
+
+async function detectRunningPoeWindowGame(): Promise<GameId | null> {
+  return (await detectRunningPoeWindowGames())[0] ?? null;
+}
+
+async function detectPoeProcessWindowGames(
+  processNames: readonly string[],
+): Promise<GameId[]> {
+  const games: GameId[] = [];
+  for (const processName of processNames) {
+    const game = await detectPoeProcessWindowGame(processName);
+    if (game && !games.includes(game)) {
+      games.push(game);
+    }
+  }
+
+  return games;
 }
 
 async function detectPoeProcessWindowGame(

@@ -627,6 +627,19 @@ describe("MainWindowService", () => {
     expect(fakeWindow.webContents.reloadIgnoringCache).toHaveBeenCalledTimes(1);
   });
 
+  it("does not reopen main window devtools when they are already open", () => {
+    const service = new MainWindowService();
+    const fakeWindow = new FakeWindow();
+    const internals = service as unknown as {
+      openMainWindowDevTools(window: FakeWindow): void;
+    };
+    fakeWindow.webContents.isDevToolsOpened.mockReturnValue(true);
+
+    internals.openMainWindowDevTools(fakeWindow);
+
+    expect(fakeWindow.webContents.openDevTools).not.toHaveBeenCalled();
+  });
+
   it("registers IPC handlers for window controls", async () => {
     const { handlers } = mockIpcMainHandlers();
     const fakeWindow = new FakeWindow();

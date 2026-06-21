@@ -9,6 +9,7 @@ import { logWarn } from "~/main/utils/app-log";
 import {
   createDisplayDimensionsLookup,
   type DisplayDimensions,
+  getNativeDisplayDimensions,
 } from "~/main/utils/display-geometry";
 import {
   assertOptionalBoolean,
@@ -88,6 +89,9 @@ class CapturePreviewService {
   ): Promise<CapturePreviewSource[]> {
     const startedAtMs = Date.now();
     const displayDimensions = this.createDisplayDimensionsLookup();
+    const primaryDisplayDimensions = getNativeDisplayDimensions(
+      screen.getPrimaryDisplay(),
+    );
     const [sources, poeProcessState] = await Promise.all([
       desktopCapturer.getSources({
         types: ["screen", "window"],
@@ -98,9 +102,12 @@ class CapturePreviewService {
 
     const sourceInputs = sources.slice(0, 64).map((source) => {
       const displayId = source.display_id || null;
+      const poeGame = detectPathOfExileWindowTitle(source.name);
       const dimensions = displayId
         ? (displayDimensions.get(displayId) ?? null)
-        : null;
+        : poeGame
+          ? primaryDisplayDimensions
+          : null;
 
       return {
         id: source.id,

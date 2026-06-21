@@ -5,6 +5,7 @@ import { BrowserWindow } from "electron";
 
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
+import { PoeProcessService } from "~/main/modules/poe-process";
 import { ReplayClipsService } from "~/main/modules/replay-clips";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import {
@@ -142,11 +143,13 @@ class ClientLogService extends EventEmitter {
         },
       );
       this.publishStatus();
+      this.refreshPoeProcessStateAfterActiveGameChange(input.game);
 
       return this.status;
     }
 
     this.watchFile(path, input.game);
+    this.refreshPoeProcessStateAfterActiveGameChange(input.game);
 
     return this.status;
   }
@@ -439,6 +442,32 @@ class ClientLogService extends EventEmitter {
         window.webContents.send(ClientLogChannel.StatusChanged, this.status);
       }
     }
+  }
+
+  private refreshPoeProcessStateAfterActiveGameChange(game: GameId): void {
+    void PoeProcessService.getInstance()
+      .refreshState()
+      .then((state) => {
+        logInfo(
+          CLIENT_LOG_SCOPE,
+          "PoE process state refreshed after game switch",
+          {
+            activeGame: game,
+            processRunning: state.isRunning,
+            processName: state.processName,
+          },
+        );
+      })
+      .catch((error) => {
+        logWarn(
+          CLIENT_LOG_SCOPE,
+          "PoE process refresh after game switch failed",
+          {
+            activeGame: game,
+            error: safeErrorMessage(error),
+          },
+        );
+      });
   }
 }
 

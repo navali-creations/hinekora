@@ -122,6 +122,32 @@ describe("Editor mapper", () => {
     });
   });
 
+  it("keeps path labels when a path has no basename", () => {
+    const clipDetail: ReplayClipDetail = {
+      mediaUrl: "hinekora-media://replay-clip/root-path",
+      clip: {
+        id: "root-path",
+        kind: "death",
+        status: "ready",
+        sourceGame: "poe1",
+        sourceLeague: "Standard",
+        deathTimestamp: "2026-06-12T10:00:00.000Z",
+        triggerLineHash: "hash",
+        originalObsPath: "/",
+        processedClipPath: null,
+        targetDurationSeconds: 10,
+        sizeBytes: 1,
+        error: null,
+        createdAt: "2026-06-12T10:01:00.000Z",
+        updatedAt: "2026-06-12T10:01:00.000Z",
+      },
+    };
+
+    expect(createEditorAssetFromReplayClip(clipDetail)).toMatchObject({
+      name: "/",
+    });
+  });
+
   it("builds a sequential editor project timeline", () => {
     const assets = [
       {

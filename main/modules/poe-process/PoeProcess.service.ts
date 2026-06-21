@@ -69,7 +69,10 @@ class PoeProcessService {
     }
 
     try {
-      return await this.poller.pollNow();
+      const state = await this.poller.pollNow();
+      this.handleStateChanged(PoeProcessChannel.GetState, state);
+
+      return state;
     } catch (error) {
       logWarn(POE_PROCESS_SCOPE, "PoE process refresh failed", {
         error: safeErrorMessage(error),
@@ -94,14 +97,14 @@ class PoeProcessService {
       this.handleStateChanged(PoeProcessChannel.Start, state);
     });
 
-    this.poller.on("stop", (previousState: ProcessState) => {
+    this.poller.on("stop", (_previousState: ProcessState) => {
       if (!this.shouldHandlePollerEvent()) {
         return;
       }
 
       this.currentState = STOPPED_POE_PROCESS_STATE;
       this.syncGameRunningConsumers();
-      this.sendToRenderer(PoeProcessChannel.Stop, previousState);
+      this.sendToRenderer(PoeProcessChannel.Stop, STOPPED_POE_PROCESS_STATE);
     });
 
     this.poller.on("data", (state: ProcessState) => {

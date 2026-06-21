@@ -45,7 +45,8 @@ function resolveNativeDisplayResolution(
     displayByScreenIndex ??
     (target.kind === "display" && target.id === "primary"
       ? options.getPrimaryDisplay()
-      : null);
+      : null) ??
+    (isPathOfExileWindowTarget(target) ? options.getPrimaryDisplay() : null);
 
   if (display) {
     const displayResolution = getNativeDisplayDimensions(display);
@@ -104,9 +105,24 @@ function resolveStoredCaptureTargetResolution(
   };
 }
 
+function isPathOfExileWindowTarget(target: CaptureTarget): boolean {
+  if (target.kind !== "window") {
+    return false;
+  }
+
+  const label = target.label.trim().replace(/\s+/g, " ").toLowerCase();
+
+  return (
+    label === "path of exile" ||
+    label === "path of exile 1" ||
+    label === "path of exile 2"
+  );
+}
+
 export type { NativeDisplayResolutionOptions };
 export {
   extractDisplayId,
+  isPathOfExileWindowTarget,
   resolveDisplayByScreenSourceIndex,
   resolveNativeDisplayResolution,
   resolveStoredCaptureTargetResolution,

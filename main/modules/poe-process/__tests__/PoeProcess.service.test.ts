@@ -233,7 +233,7 @@ describe("PoeProcessService", () => {
     expect(service.getState()).toEqual({ isRunning: false, processName: "" });
     expect(window.webContents.send).toHaveBeenCalledWith(
       PoeProcessChannel.Stop,
-      { isRunning: true, processName: "PathOfExileSteam.exe" },
+      { isRunning: false, processName: "" },
     );
   });
 
@@ -283,6 +283,8 @@ describe("PoeProcessService", () => {
   });
 
   it("refreshes process state through the poller", async () => {
+    const window = createWindow({});
+    electronMocks.getAllWindows.mockReturnValue([window]);
     const service = new PoeProcessService();
     pollerMocks.pollNow.mockResolvedValue({
       isRunning: true,
@@ -293,6 +295,45 @@ describe("PoeProcessService", () => {
       isRunning: true,
       processName: "PathOfExile2Steam.exe",
     });
+    expect(serviceMocks.overlaySetGameRunningActive).toHaveBeenLastCalledWith(
+      true,
+    );
+    expect(serviceMocks.recorderSetGameRunningState).toHaveBeenLastCalledWith(
+      true,
+    );
+    expect(window.webContents.send).toHaveBeenCalledWith(
+      PoeProcessChannel.GetState,
+      { isRunning: true, processName: "PathOfExile2Steam.exe" },
+    );
+  });
+
+  it("resyncs consumers when the active game changes but process state does not", async () => {
+    serviceMocks.getSettings.mockReturnValue({ activeGame: "poe1" });
+    const service = new PoeProcessService();
+    service.initialize();
+
+    getPollerListener("start")({
+      isRunning: true,
+      processName: "PathOfExile2Steam.exe",
+    });
+    expect(serviceMocks.overlaySetGameRunningActive).toHaveBeenLastCalledWith(
+      false,
+    );
+
+    serviceMocks.getSettings.mockReturnValue({ activeGame: "poe2" });
+    pollerMocks.pollNow.mockResolvedValue({
+      isRunning: true,
+      processName: "PathOfExile2Steam.exe",
+    });
+
+    await service.refreshState();
+
+    expect(serviceMocks.overlaySetGameRunningActive).toHaveBeenLastCalledWith(
+      true,
+    );
+    expect(serviceMocks.recorderSetGameRunningState).toHaveBeenLastCalledWith(
+      true,
+    );
   });
 
   it("keeps current state when refresh fails", async () => {

@@ -1,3 +1,5 @@
+import { detectPathOfExileWindowTitle } from "~/main/utils/path-of-exile-window-title";
+
 import type { CapturePreviewSource } from "~/types";
 
 interface CapturePreviewSourceInput {
@@ -56,19 +58,6 @@ function normalizeCapturePreviewSources(
       },
     ];
   });
-}
-
-function detectPathOfExileWindowTitle(name: string): "poe1" | "poe2" | null {
-  const normalized = name.trim().replace(/\s+/g, " ").toLowerCase();
-  if (normalized === "path of exile 2") {
-    return "poe2";
-  }
-
-  if (normalized === "path of exile") {
-    return "poe1";
-  }
-
-  return null;
 }
 
 export type { CapturePreviewSourceInput };

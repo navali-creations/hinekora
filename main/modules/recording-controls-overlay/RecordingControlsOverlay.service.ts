@@ -20,6 +20,7 @@ const RECORDER_OVERLAY_WIDTH = 360;
 const RECORDER_OVERLAY_HEIGHT = 96;
 const RECORDER_OVERLAY_RIGHT_MARGIN = 20;
 const RECORDER_OVERLAY_TOP_MARGIN = 24;
+const RECORDER_OVERLAY_FOCUS_ID = "recorder-controls";
 
 class RecordingControlsOverlayService {
   private recorderWindow: BrowserWindow | null = null;
@@ -123,7 +124,7 @@ class RecordingControlsOverlayService {
       resizable: false,
       alwaysOnTop: true,
       skipTaskbar: true,
-      focusable: false,
+      focusable: true,
       show: false,
       webPreferences: createOverlayWebPreferences(),
     });
@@ -133,7 +134,14 @@ class RecordingControlsOverlayService {
     registerIpcWindowRole(recorderWebContents, WindowName.RecorderOverlay);
     configureGameOverlayWindow(recorderWindow);
     recorderWindow.setContentProtection(true);
+    recorderWindow.on("focus", () => {
+      this.coordinator.setOverlayFocusActive(RECORDER_OVERLAY_FOCUS_ID, true);
+    });
+    recorderWindow.on("blur", () => {
+      this.coordinator.setOverlayFocusActive(RECORDER_OVERLAY_FOCUS_ID, false);
+    });
     recorderWindow.on("closed", () => {
+      this.coordinator.setOverlayFocusActive(RECORDER_OVERLAY_FOCUS_ID, false);
       unregisterIpcWindowRole(recorderWebContents);
       const preserveRequest = this.preserveRequestOnClose;
       this.preserveRequestOnClose = false;

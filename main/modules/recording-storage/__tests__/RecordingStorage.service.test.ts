@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -178,6 +179,113 @@ describe("RecordingStorageService", () => {
     });
     expect(service.getRecording("missing")).toBeNull();
     expect(service.getRecordingMediaPath("missing")).toBeNull();
+  });
+
+  it("lists recent recording details for the editor media rail", () => {
+    const filePath = join(root, "2026-06-12_10-30-00.mp4");
+    const missingPath = join(root, "2026-06-12_10-31-00.mp4");
+    writeFileSync(filePath, "run");
+    repository.upsertRunRecording({
+      path: filePath,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:30:00.000Z",
+      stoppedAt: "2026-06-12T10:31:00.000Z",
+    });
+    repository.upsertRunRecording({
+      path: missingPath,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:31:00.000Z",
+      stoppedAt: "2026-06-12T10:32:00.000Z",
+    });
+
+    const details = service.listRecentEditorRecordingDetails(10);
+
+    expect(details).toEqual(
+      expect.arrayContaining([
+        {
+          mediaUrl: null,
+          recording: expect.objectContaining({
+            path: resolve(missingPath),
+          }),
+        },
+        {
+          mediaUrl: expect.stringMatching(
+            /^hinekora-media:\/\/run-recording\//,
+          ),
+          recording: expect.objectContaining({
+            path: resolve(filePath),
+            sizeBytes: 3,
+          }),
+        },
+      ]),
+    );
+  });
+
+  it("keeps matching recording metadata unchanged during library sync", () => {
+    const filePath = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(filePath, "run");
+    const stats = statSync(filePath);
+    repository.upsertRunRecording({
+      path: filePath,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:30:00.000Z",
+      stoppedAt: "2026-06-12T10:31:00.000Z",
+      exists: true,
+      mtimeMs: stats.mtimeMs,
+      sizeBytes: stats.size,
+    });
+
+    expect(service.listRecordings()).toEqual([
+      expect.objectContaining({
+        path: resolve(filePath),
+        sizeBytes: 3,
+      }),
+    ]);
+  });
+
+  it("registers directory and missing recording paths as unavailable files", () => {
+    const filePath = join(root, "recording.mp4");
+    const directoryPath = join(root, "folder.mp4");
+    const missingPath = join(root, "missing.mp4");
+    writeFileSync(filePath, "run");
+    mkdirSync(directoryPath);
+
+    const fileRecording = service.registerRunRecording({
+      path: filePath,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:29:00.000Z",
+      stoppedAt: "2026-06-12T10:30:00.000Z",
+    });
+    expect(repository.getItemById(fileRecording.id)).toMatchObject({
+      exists: true,
+      sizeBytes: 3,
+    });
+    const directoryRecording = service.registerRunRecording({
+      path: directoryPath,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:30:00.000Z",
+      stoppedAt: "2026-06-12T10:31:00.000Z",
+    });
+    expect(repository.getItemById(directoryRecording.id)).toMatchObject({
+      exists: false,
+      sizeBytes: 0,
+    });
+    const missingRecording = service.registerRunRecording({
+      path: missingPath,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:31:00.000Z",
+      stoppedAt: "2026-06-12T10:32:00.000Z",
+    });
+    expect(repository.getItemById(missingRecording.id)).toMatchObject({
+      exists: false,
+      sizeBytes: 0,
+    });
   });
 
   it("returns paged recording library data sorted in the main process", () => {

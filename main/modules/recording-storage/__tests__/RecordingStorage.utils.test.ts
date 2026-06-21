@@ -75,5 +75,8 @@ describe("RecordingStorage utils", () => {
     expect(
       resolveRecordingStorageRoot(join("D:", "Recordings"), "ignored"),
     ).toBe(join("D:", "Recordings"));
+    expect(resolveRecordingStorageRoot("relative-recordings", "ignored")).toBe(
+      join(process.cwd(), "relative-recordings"),
+    );
   });
 });

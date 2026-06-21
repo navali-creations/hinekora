@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   type ExecFileRunner,
   findRunningProcess,
+  findRunningProcesses,
   hasProcessName,
   isProcessRunning,
   listRunningProcesses,
@@ -131,6 +132,12 @@ describe("process detection", () => {
         platform: "win32",
       }),
     ).resolves.toBe("PathOfExile2Steam.exe");
+    await expect(
+      findRunningProcesses(["PathOfExileSteam.exe", "PathOfExile2Steam.exe"], {
+        execFileRunner,
+        platform: "win32",
+      }),
+    ).resolves.toEqual(["PathOfExile2Steam.exe"]);
     await expect(
       isProcessRunning("PathOfExile2Steam.exe", {
         execFileRunner,
