@@ -1,5 +1,7 @@
+import { act } from "react";
+import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const storeMocks = vi.hoisted(() => ({
   setAuraOverlayLocked: vi.fn(),
@@ -9,6 +11,13 @@ const storeMocks = vi.hoisted(() => ({
   useProfilesShallow: vi.fn(),
   useSettingsSelector: vi.fn(),
   updateProfile: vi.fn(),
+}));
+
+const electronMocks = vi.hoisted(() => ({
+  minimize: vi.fn(),
+  selectCropRegion: vi.fn(),
+  setAuraLocked: vi.fn(),
+  showAura: vi.fn(),
 }));
 
 vi.mock("~/renderer/store", () => ({
@@ -34,6 +43,19 @@ const profile = {
 
 describe("CropEditorActions", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
+    electronMocks.minimize.mockResolvedValue(undefined);
+    electronMocks.selectCropRegion.mockResolvedValue({
+      x: 100,
+      y: 120,
+      width: 50,
+      height: 60,
+      viewportWidth: 1920,
+      viewportHeight: 1080,
+    });
+    electronMocks.setAuraLocked.mockResolvedValue(undefined);
+    electronMocks.showAura.mockResolvedValue(undefined);
+    storeMocks.updateProfile.mockResolvedValue(undefined);
     storeMocks.useProfilesShallow.mockImplementation((selector) =>
       selector({
         items: [profile],
@@ -64,6 +86,24 @@ describe("CropEditorActions", () => {
         },
       }),
     );
+    Object.defineProperty(window, "electron", {
+      configurable: true,
+      value: {
+        mainWindow: {
+          minimize: electronMocks.minimize,
+        },
+        overlayWindows: {
+          selectCropRegion: electronMocks.selectCropRegion,
+          setAuraLocked: electronMocks.setAuraLocked,
+          showAura: electronMocks.showAura,
+        },
+      },
+    });
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
+    vi.restoreAllMocks();
   });
 
   it("renders the disabled add aura page action with its explanation", () => {
@@ -74,5 +114,121 @@ describe("CropEditorActions", () => {
     expect(html).toContain("Unlock");
     expect(html).toContain("Start the selected Path of Exile game");
     expect(html).toContain("disabled");
+  });
+
+  it("unlocks the aura overlay before selecting a new aura region", async () => {
+    storeMocks.usePoeProcessSelector.mockImplementation((selector) =>
+      selector({
+        state: {
+          isRunning: true,
+          processName: "PathOfExile.exe",
+        },
+      }),
+    );
+    vi.spyOn(crypto, "randomUUID")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<CropEditorActions />);
+      await Promise.resolve();
+    });
+
+    const addButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Add new aura"),
+    );
+
+    expect(addButton).toBeDefined();
+    await act(async () => {
+      addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const unlockCallOrder =
+      electronMocks.setAuraLocked.mock.invocationCallOrder[0];
+    const selectCallOrder =
+      electronMocks.selectCropRegion.mock.invocationCallOrder[0];
+
+    expect(storeMocks.setAuraOverlayLocked).toHaveBeenCalledWith(false);
+    expect(electronMocks.setAuraLocked).toHaveBeenCalledWith(false);
+    expect(unlockCallOrder).toBeDefined();
+    expect(selectCallOrder).toBeDefined();
+    expect(unlockCallOrder).toBeLessThan(selectCallOrder ?? 0);
+    expect(electronMocks.minimize).toHaveBeenCalledTimes(1);
+    expect(electronMocks.selectCropRegion).toHaveBeenCalledTimes(1);
+    expect(storeMocks.updateProfile).toHaveBeenCalledWith({
+      id: "profile-1",
+      cropRegions: [
+        {
+          id: "00000000-0000-4000-8000-000000000001",
+          label: "Aura 1",
+          x: 100,
+          y: 120,
+          width: 50,
+          height: 60,
+        },
+      ],
+      overlayPlacements: [
+        expect.objectContaining({
+          id: "00000000-0000-4000-8000-000000000002",
+          cropRegionId: "00000000-0000-4000-8000-000000000001",
+          x: 935,
+          y: 510,
+          scale: 1,
+          opacity: 1,
+        }),
+      ],
+    });
+    expect(storeMocks.selectAura).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
+    );
+    expect(electronMocks.showAura).toHaveBeenCalledTimes(1);
+    expect(electronMocks.showAura).toHaveBeenCalledWith("profile-1");
+  });
+
+  it("keeps an already unlocked aura overlay unlocked without another lock call", async () => {
+    storeMocks.useCropEditorShallow.mockImplementation((selector) =>
+      selector({
+        auraOverlayLocked: false,
+        selectAura: storeMocks.selectAura,
+        setAuraOverlayLocked: storeMocks.setAuraOverlayLocked,
+      }),
+    );
+    storeMocks.usePoeProcessSelector.mockImplementation((selector) =>
+      selector({
+        state: {
+          isRunning: true,
+          processName: "PathOfExile.exe",
+        },
+      }),
+    );
+    electronMocks.selectCropRegion.mockResolvedValue(null);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<CropEditorActions />);
+      await Promise.resolve();
+    });
+
+    const addButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Add new aura"),
+    );
+
+    await act(async () => {
+      addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(storeMocks.setAuraOverlayLocked).not.toHaveBeenCalled();
+    expect(electronMocks.setAuraLocked).not.toHaveBeenCalled();
+    expect(electronMocks.selectCropRegion).toHaveBeenCalledTimes(1);
   });
 });

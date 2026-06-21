@@ -3,9 +3,8 @@ import type { ChangeEvent } from "react";
 import { FiPlus as Plus } from "react-icons/fi";
 
 import {
-  createPlacementForCrop,
+  createAuraProfileUpdateFromSelection,
   getSelectedProfile,
-  resolveSelectionPlacementViewport,
 } from "~/renderer/modules/crop-editor/CropEditor.utils/CropEditor.utils";
 import { isPoeProcessStateForGame } from "~/renderer/modules/game/GameStatusBadge/GameStatusBadge.utils";
 import { trackEvent } from "~/renderer/modules/umami";
@@ -15,8 +14,6 @@ import {
   useProfilesShallow,
   useSettingsSelector,
 } from "~/renderer/store";
-
-import type { CropRegion } from "~/types";
 
 function CropEditorActions() {
   const { profileItems, selectedProfileId, selectProfile, updateProfile } =
@@ -56,6 +53,10 @@ function CropEditorActions() {
       return;
     }
 
+    if (auraOverlayLocked) {
+      await setAuraLocked(false, { showAuraWhenUnlocked: false });
+    }
+
     trackEvent("aura-capture-started", {
       game: activeGame,
     });
@@ -66,25 +67,12 @@ function CropEditorActions() {
       return;
     }
 
-    const crop: CropRegion = {
-      id: crypto.randomUUID(),
-      label: `Aura ${profile.cropRegions.length + 1}`,
-      x: selection.x,
-      y: selection.y,
-      width: selection.width,
-      height: selection.height,
-    };
-    const placement = createPlacementForCrop(
-      crop,
-      profile.overlayPlacements.length,
-      resolveSelectionPlacementViewport(selection),
+    const { crop, profileUpdate } = createAuraProfileUpdateFromSelection(
+      profile,
+      selection,
     );
 
-    await updateProfile({
-      id: profile.id,
-      cropRegions: [...profile.cropRegions, crop],
-      overlayPlacements: [...profile.overlayPlacements, placement],
-    });
+    await updateProfile(profileUpdate);
     selectAura(crop.id);
     await window.electron.overlayWindows.showAura(profile.id);
     trackEvent("aura-created", {
@@ -92,10 +80,13 @@ function CropEditorActions() {
     });
   };
 
-  const setAuraLocked = async (locked: boolean) => {
+  const setAuraLocked = async (
+    locked: boolean,
+    options: { showAuraWhenUnlocked?: boolean } = {},
+  ) => {
     setAuraOverlayLocked(locked);
     await window.electron.overlayWindows.setAuraLocked(locked);
-    if (!locked && profile) {
+    if (!locked && profile && options.showAuraWhenUnlocked !== false) {
       await window.electron.overlayWindows.showAura(profile.id);
     }
     trackEvent("aura-overlay-lock-changed", {

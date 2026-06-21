@@ -16,6 +16,25 @@ interface SelectionPlacementViewport {
   viewportHeight?: number;
 }
 
+interface AuraSourceSelection extends SelectionPlacementViewport {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+type AuraProfile = Pick<Profile, "id" | "cropRegions" | "overlayPlacements">;
+
+interface AuraProfileUpdateFromSelection {
+  crop: CropRegion;
+  placement: OverlayPlacement;
+  profileUpdate: {
+    id: string;
+    cropRegions: CropRegion[];
+    overlayPlacements: OverlayPlacement[];
+  };
+}
+
 export function isCropNumberField(
   value: string | undefined,
 ): value is CropNumberField {
@@ -63,6 +82,35 @@ export function createPlacementForCrop(
     y,
     scale: 1,
     opacity: 1,
+  };
+}
+
+export function createAuraProfileUpdateFromSelection(
+  profile: AuraProfile,
+  selection: AuraSourceSelection,
+): AuraProfileUpdateFromSelection {
+  const crop: CropRegion = {
+    id: crypto.randomUUID(),
+    label: `Aura ${profile.cropRegions.length + 1}`,
+    x: selection.x,
+    y: selection.y,
+    width: selection.width,
+    height: selection.height,
+  };
+  const placement = createPlacementForCrop(
+    crop,
+    profile.overlayPlacements.length,
+    resolveSelectionPlacementViewport(selection),
+  );
+
+  return {
+    crop,
+    placement,
+    profileUpdate: {
+      id: profile.id,
+      cropRegions: [...profile.cropRegions, crop],
+      overlayPlacements: [...profile.overlayPlacements, placement],
+    },
   };
 }
 

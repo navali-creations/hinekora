@@ -172,6 +172,57 @@ describe("CropLayoutPreview utils", () => {
     ).toEqual({ width: 2560, height: 1440 });
   });
 
+  it("filters preview boxes to the selected aura when requested", () => {
+    const preview = createCropLayoutPreview(
+      {
+        id: "profile-1",
+        name: "Default",
+        game: "poe1",
+        targetFps: 30,
+        captureTarget: null,
+        cropRegions: [
+          crop,
+          {
+            id: "crop-2",
+            label: "Buff",
+            x: 400,
+            y: 120,
+            width: 80,
+            height: 40,
+          },
+        ],
+        overlayPlacements: [
+          {
+            id: "placement-1",
+            cropRegionId: "crop-1",
+            x: 12,
+            y: 14,
+            scale: 1,
+            opacity: 1,
+          },
+          {
+            id: "placement-2",
+            cropRegionId: "crop-2",
+            x: 20,
+            y: 24,
+            scale: 1,
+            opacity: 1,
+          },
+        ],
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      },
+      { width: 2560, height: 1440 },
+      "crop-2",
+    );
+
+    expect(preview.boxes).toHaveLength(2);
+    expect(preview.boxes.every((box) => box.cropRegionId === "crop-2")).toBe(
+      true,
+    );
+    expect(preview.boxes.map((box) => box.kind)).toEqual(["source", "aura"]);
+  });
+
   it("resolves the source bounds from the active profile capture target", () => {
     expect(
       resolveCropPreviewSourceBounds(

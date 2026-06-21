@@ -4,10 +4,12 @@ interface CropEditorSlice {
   cropEditor: {
     auraOverlayLocked: boolean;
     selectedAuraCropRegionId: string | null;
+    showAllAurasInPreview: boolean;
     hydrate: () => Promise<void>;
     startListening: () => () => void;
     setAuraOverlayLocked: (locked: boolean) => void;
     selectAura: (cropRegionId: string | null) => void;
+    setShowAllAurasInPreview: (showAllAurasInPreview: boolean) => void;
   };
 }
 
@@ -17,6 +19,7 @@ export const createCropEditorSlice: BoundStoreStateCreator<CropEditorSlice> = (
   cropEditor: {
     auraOverlayLocked: true,
     selectedAuraCropRegionId: null,
+    showAllAurasInPreview: false,
     hydrate: async () => {
       const auraOverlayLocked =
         await window.electron.overlayWindows.isAuraLocked();
@@ -38,6 +41,11 @@ export const createCropEditorSlice: BoundStoreStateCreator<CropEditorSlice> = (
     selectAura: (selectedAuraCropRegionId) => {
       set((state) => {
         state.cropEditor.selectedAuraCropRegionId = selectedAuraCropRegionId;
+      });
+    },
+    setShowAllAurasInPreview: (showAllAurasInPreview) => {
+      set((state) => {
+        state.cropEditor.showAllAurasInPreview = showAllAurasInPreview;
       });
     },
   },

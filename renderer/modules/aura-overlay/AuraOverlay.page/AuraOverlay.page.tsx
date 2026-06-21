@@ -5,13 +5,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useDesktopCaptureStream } from "~/renderer/modules/capture-preview/CapturePreview.hooks/useDesktopCaptureStream/useDesktopCaptureStream";
 import { resolveCapturePreviewSourceId } from "~/renderer/modules/capture-preview/CapturePreview.utils/CapturePreview.utils";
 import { getSelectedCropLayoutProfile } from "~/renderer/modules/crop-editor/CropEditor.components/CropLayoutPreview/CropLayoutPreview.utils";
-import {
-  createPlacementForCrop,
-  resolveSelectionPlacementViewport,
-} from "~/renderer/modules/crop-editor/CropEditor.utils/CropEditor.utils";
+import { createAuraProfileUpdateFromSelection } from "~/renderer/modules/crop-editor/CropEditor.utils/CropEditor.utils";
 import { useCapturePreviewShallow, useProfilesShallow } from "~/renderer/store";
 
-import type { CropRegion, OverlayPlacement } from "~/types";
+import type { OverlayPlacement } from "~/types";
 import {
   type AuraResizeCorner,
   type AuraVideoSize,
@@ -405,25 +402,12 @@ function AuraOverlayPage() {
           return;
         }
 
-        const crop: CropRegion = {
-          id: crypto.randomUUID(),
-          label: `Aura ${profile.cropRegions.length + 1}`,
-          x: selection.x,
-          y: selection.y,
-          width: selection.width,
-          height: selection.height,
-        };
-        const placement = createPlacementForCrop(
-          crop,
-          profile.overlayPlacements.length,
-          resolveSelectionPlacementViewport(selection),
+        const { profileUpdate } = createAuraProfileUpdateFromSelection(
+          profile,
+          selection,
         );
 
-        await updateProfile({
-          id: profile.id,
-          cropRegions: [...profile.cropRegions, crop],
-          overlayPlacements: [...profile.overlayPlacements, placement],
-        });
+        await updateProfile(profileUpdate);
         await window.electron.overlayWindows.showAura(profile.id);
       })
       .catch(() => {})

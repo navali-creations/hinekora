@@ -9,6 +9,7 @@ const renderer = resolve(__dirname, "renderer");
 
 export default defineConfig({
   root: renderer,
+  envDir: __dirname,
   plugins: [
     tanstackRouter({
       target: "react",

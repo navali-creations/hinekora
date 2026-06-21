@@ -15,23 +15,14 @@ import {
   type CropPreviewBounds,
   type CropResizeCorner,
   createCropLayoutPreview,
-  createCropPreviewBoxLabelStyle,
-  createCropPreviewBoxStyle,
   createCropPreviewStageStyle,
-  createCropPreviewSurfaceStyle,
   cropResizeCorners,
-  formatCropPreviewBoxLabel,
   getSelectedCropLayoutProfile,
   resizeCropRegionFromCorner,
   resolveCropPreviewSourceBounds,
 } from "./CropLayoutPreview.utils";
-
-const resizeCornerClassNames: Record<CropResizeCorner, string> = {
-  nw: styles.resizeHandleNw ?? "",
-  ne: styles.resizeHandleNe ?? "",
-  sw: styles.resizeHandleSw ?? "",
-  se: styles.resizeHandleSe ?? "",
-};
+import { CropPreviewAuraVisibilityToggle } from "./CropPreviewAuraVisibilityToggle/CropPreviewAuraVisibilityToggle";
+import { CropPreviewBoxLayer } from "./CropPreviewBoxLayer/CropPreviewBoxLayer";
 
 interface ResizeState {
   regionId: string;
@@ -63,9 +54,11 @@ function CropLayoutPreview() {
       sources: capturePreview.sources,
     }),
   );
-  const selectedAuraCropRegionId = useCropEditorShallow(
-    (cropEditor) => cropEditor.selectedAuraCropRegionId,
-  );
+  const { selectedAuraCropRegionId, showAllAurasInPreview } =
+    useCropEditorShallow((cropEditor) => ({
+      selectedAuraCropRegionId: cropEditor.selectedAuraCropRegionId,
+      showAllAurasInPreview: cropEditor.showAllAurasInPreview,
+    }));
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
   const profile = getSelectedCropLayoutProfile(profileItems, selectedProfileId);
@@ -93,8 +86,15 @@ function CropLayoutPreview() {
     return createCropLayoutPreview(
       previewProfile,
       resolveCropPreviewSourceBounds(previewProfile, sources, selectedSourceId),
+      showAllAurasInPreview ? null : activeAuraCropRegionId,
     );
-  }, [previewProfile, selectedSourceId, sources]);
+  }, [
+    activeAuraCropRegionId,
+    previewProfile,
+    selectedSourceId,
+    showAllAurasInPreview,
+    sources,
+  ]);
   const sourceImageUrl =
     sources.find((source) => source.id === selectedSourceId)
       ?.thumbnailDataUrl ?? null;
@@ -194,6 +194,7 @@ function CropLayoutPreview() {
             Aura position
           </span>
         </div>
+        <CropPreviewAuraVisibilityToggle />
       </div>
       <div
         className={styles.stage}
@@ -203,61 +204,15 @@ function CropLayoutPreview() {
         {sourceImageUrl && (
           <img alt="" className={styles.sourceSurface} src={sourceImageUrl} />
         )}
-        {preview.boxes.map((box) => (
-          <div
-            className={clsx(
-              styles.box,
-              box.kind === "source" ? styles.sourceBox : styles.auraBox,
-              box.kind === "source" &&
-                box.cropRegionId === activeAuraCropRegionId &&
-                styles.selectedSourceBox,
-              box.kind === "aura" &&
-                box.cropRegionId === activeAuraCropRegionId &&
-                styles.selectedBox,
-              box.kind === "aura" &&
-                box.cropRegionId === activeAuraCropRegionId &&
-                styles.selectedAuraBox,
-            )}
-            key={box.id}
-            style={createCropPreviewBoxStyle(box, preview.bounds)}
-          >
-            {sourceImageUrl && (
-              <img
-                alt=""
-                className={styles.boxSurface}
-                src={sourceImageUrl}
-                style={createCropPreviewSurfaceStyle(box, preview.bounds)}
-              />
-            )}
-            {box.kind === "source" &&
-              cropResizeCorners.map((corner) => (
-                <span
-                  aria-hidden="true"
-                  className={clsx(
-                    styles.resizeHandle,
-                    resizeCornerClassNames[corner],
-                  )}
-                  data-corner={corner}
-                  data-region-id={box.id}
-                  key={corner}
-                  onPointerCancel={handleResizePointerCancel}
-                  onPointerDown={handleResizePointerDown}
-                  onPointerMove={handleResizePointerMove}
-                  onPointerUp={handleResizePointerUp}
-                />
-              ))}
-          </div>
-        ))}
-        {preview.boxes.map((box) => (
-          <span
-            className={styles.boxLabel}
-            key={`${box.id}-label`}
-            style={createCropPreviewBoxLabelStyle(box, preview.bounds)}
-            title={formatCropPreviewBoxLabel(box)}
-          >
-            {formatCropPreviewBoxLabel(box)}
-          </span>
-        ))}
+        <CropPreviewBoxLayer
+          activeAuraCropRegionId={activeAuraCropRegionId}
+          preview={preview}
+          sourceImageUrl={sourceImageUrl}
+          onResizePointerCancel={handleResizePointerCancel}
+          onResizePointerDown={handleResizePointerDown}
+          onResizePointerMove={handleResizePointerMove}
+          onResizePointerUp={handleResizePointerUp}
+        />
       </div>
     </div>
   );

@@ -52,14 +52,16 @@ describe("CropEditor slice", () => {
     expect(unsubscribe).toHaveBeenCalled();
   });
 
-  it("updates lock and aura selection locally", () => {
+  it("updates lock, aura selection, and preview visibility locally", () => {
     const store = createTestStore();
 
     store.getState().cropEditor.setAuraOverlayLocked(false);
     store.getState().cropEditor.selectAura("crop-1");
+    store.getState().cropEditor.setShowAllAurasInPreview(true);
     store.getState().cropEditor.selectAura(null);
 
     expect(store.getState().cropEditor.auraOverlayLocked).toBe(false);
     expect(store.getState().cropEditor.selectedAuraCropRegionId).toBeNull();
+    expect(store.getState().cropEditor.showAllAurasInPreview).toBe(true);
   });
 });

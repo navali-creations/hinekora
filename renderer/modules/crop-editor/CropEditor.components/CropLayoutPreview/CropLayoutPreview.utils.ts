@@ -62,6 +62,7 @@ export function getSelectedCropLayoutProfile(
 export function createCropLayoutPreview(
   profile: Profile,
   sourceBounds: CropPreviewBounds | null = null,
+  visibleCropRegionId: string | null = null,
 ): CropLayoutPreviewModel {
   const sourceBoxes = profile.cropRegions.map((crop, index) => ({
     ...crop,
@@ -75,7 +76,10 @@ export function createCropLayoutPreview(
     toneIndex: index,
   }));
   const auraBoxes = createAuraBoxes(profile);
-  const boxes = [...sourceBoxes, ...auraBoxes];
+  const boxes = [...sourceBoxes, ...auraBoxes].filter(
+    (box) =>
+      visibleCropRegionId === null || box.cropRegionId === visibleCropRegionId,
+  );
 
   return {
     bounds: getLayoutBounds(boxes, sourceBounds ?? layoutFallbackBounds),

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Profile } from "~/types";
 import {
+  createAuraProfileUpdateFromSelection,
   createPlacementForCrop,
   getSelectedProfile,
   resolveActiveAuraCropRegionId,
@@ -79,6 +80,43 @@ describe("CropEditor utils", () => {
       y: 60,
       scale: 1,
       opacity: 1,
+    });
+  });
+
+  it("creates an aura crop, placement, and profile update from a selection", () => {
+    vi.spyOn(crypto, "randomUUID")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
+
+    const result = createAuraProfileUpdateFromSelection(profile, {
+      x: 100,
+      y: 120,
+      width: 50,
+      height: 60,
+      viewportWidth: 1920,
+      viewportHeight: 1080,
+    });
+
+    expect(result.crop).toEqual({
+      id: "00000000-0000-4000-8000-000000000001",
+      label: "Aura 3",
+      x: 100,
+      y: 120,
+      width: 50,
+      height: 60,
+    });
+    expect(result.placement).toEqual({
+      id: "00000000-0000-4000-8000-000000000002",
+      cropRegionId: "00000000-0000-4000-8000-000000000001",
+      x: 953,
+      y: 528,
+      scale: 1,
+      opacity: 1,
+    });
+    expect(result.profileUpdate).toEqual({
+      id: "profile-1",
+      cropRegions: [...profile.cropRegions, result.crop],
+      overlayPlacements: [...profile.overlayPlacements, result.placement],
     });
   });
 
