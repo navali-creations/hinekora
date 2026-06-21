@@ -131,7 +131,10 @@ function EditorTimeline() {
   };
 
   return (
-    <section className="col-span-full flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-200">
+    <section
+      className="col-span-full flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-200"
+      data-onboarding="editor-timeline"
+    >
       <div className="grid h-12 grid-cols-[1fr_auto_1fr] items-center border-base-content/10 border-b px-3">
         <EditorTimelineTools />
         <EditorPlaybackControls />

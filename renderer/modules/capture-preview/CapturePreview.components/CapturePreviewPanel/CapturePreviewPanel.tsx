@@ -194,7 +194,10 @@ function CapturePreviewPanel() {
       </div>
 
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-        <label className="grid gap-1.5 text-primary text-[0.8125rem]">
+        <label
+          className="grid gap-1.5 text-primary text-[0.8125rem]"
+          data-onboarding="capture-source"
+        >
           Source
           <select
             className="select select-bordered select-sm w-full"

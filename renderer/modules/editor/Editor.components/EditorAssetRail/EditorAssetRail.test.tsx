@@ -100,6 +100,9 @@ describe("EditorAssetRail", () => {
       'select[aria-label="Media type"]',
     );
 
+    expect(
+      container.querySelector('[data-onboarding="editor-my-media"]'),
+    ).not.toBe(null);
     expect(assetCardText()).toContain("death.mp4");
     expect(assetCardText()).not.toContain("run.mp4");
 

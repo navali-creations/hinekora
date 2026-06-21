@@ -12,18 +12,21 @@ describe("SettingsStoreRepository", () => {
     expect(repository.get()).toMatchObject({
       activeGame: "poe1",
       deathClipSeconds: 10,
+      onboardingDismissedBeacons: [],
     });
 
     repository.setMany({
       activeGame: "poe2",
       activeLeague: "Mercenaries",
       deathClipSeconds: 15,
+      onboardingDismissedBeacons: ["game-selector"],
     });
 
     expect(repository.get()).toMatchObject({
       activeGame: "poe2",
       activeLeague: "Mercenaries",
       deathClipSeconds: 15,
+      onboardingDismissedBeacons: ["game-selector"],
     });
 
     repository.replace({

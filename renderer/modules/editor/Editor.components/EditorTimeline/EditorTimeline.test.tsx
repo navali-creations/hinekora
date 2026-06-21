@@ -129,6 +129,9 @@ describe("EditorTimeline", () => {
   it("renders timeline controls and video tracks", async () => {
     await renderTimeline();
 
+    expect(
+      container.querySelector('[data-onboarding="editor-timeline"]'),
+    ).not.toBe(null);
     expect(container.querySelector('[data-testid="timeline-tools"]')).not.toBe(
       null,
     );

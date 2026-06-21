@@ -200,6 +200,10 @@ export const AppSettingsSchema = z.object({
   telemetryCrashReporting: z.boolean().default(false),
   telemetryUsageAnalytics: z.boolean().default(false),
   lastSeenAppVersion: z.string().min(1).max(64).nullable().default(null),
+  onboardingDismissedBeacons: z
+    .array(z.string().min(1).max(128))
+    .max(128)
+    .default([]),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
 

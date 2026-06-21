@@ -105,13 +105,16 @@ jobs:
 
       - name: Create .env file
         shell: powershell
+        env:
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_UMAMI_ID: ${{ secrets.VITE_UMAMI_ID }}
         run: |
           # PowerShell 5.x -Encoding utf8 writes a BOM (EF BB BF), which can
           # corrupt the first env-var name for Vite/dotenv. Use .NET to write
           # BOM-free UTF-8 instead.
           $lines = @(
-            "VITE_UMAMI_ID=${{ secrets.VITE_UMAMI_ID }}"
-            "VITE_SENTRY_DSN=${{ secrets.SENTRY_DSN }}"
+            "VITE_UMAMI_ID=$env:VITE_UMAMI_ID"
+            "VITE_SENTRY_DSN=$env:VITE_SENTRY_DSN"
           )
           $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
           [System.IO.File]::WriteAllLines(
@@ -124,6 +127,48 @@ jobs:
         run: pnpm make
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+
+      - name: Assert telemetry env embedded in bundles
+        shell: powershell
+        env:
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_UMAMI_ID: ${{ secrets.VITE_UMAMI_ID }}
+        run: |
+          function Assert-Embedded($Label, $Needle, $Content) {
+            if ([string]::IsNullOrWhiteSpace($Needle)) {
+              Write-Host "::error::$Label cannot be checked because the expected value is empty"
+              exit 1
+            }
+
+            if ($Content.Contains($Needle)) {
+              Write-Host "[ok] $Label is embedded in the bundle"
+              return
+            }
+
+            Write-Host "::error::$Label was NOT embedded in the bundle"
+            exit 1
+          }
+
+          $mainBundle = ".vite\build\main.js"
+          if (-not (Test-Path $mainBundle)) {
+            Write-Host "::error::Main bundle not found at $mainBundle"
+            exit 1
+          }
+          $mainContent = [System.IO.File]::ReadAllText((Resolve-Path $mainBundle).Path)
+          Assert-Embedded "VITE_SENTRY_DSN in main" $env:VITE_SENTRY_DSN $mainContent
+
+          $rendererDir = ".vite\renderer\main_window"
+          if (-not (Test-Path $rendererDir)) {
+            Write-Host "::error::Renderer bundle directory not found at $rendererDir"
+            exit 1
+          }
+
+          $rendererContent = Get-ChildItem $rendererDir -Recurse -Filter "*.js" |
+            ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) }
+          $rendererAll = $rendererContent -join "`n"
+
+          Assert-Embedded "VITE_SENTRY_DSN in renderer" $env:VITE_SENTRY_DSN $rendererAll
+          Assert-Embedded "VITE_UMAMI_ID in renderer" $env:VITE_UMAMI_ID $rendererAll
 
       - name: Verify Windows distributables
         shell: powershell

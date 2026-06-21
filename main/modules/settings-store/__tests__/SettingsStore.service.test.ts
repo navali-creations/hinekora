@@ -40,11 +40,13 @@ describe("SettingsStoreService", () => {
           activeGame: "poe2",
           activeLeague: "Mercenaries",
           deathClipSeconds: 12,
+          onboardingDismissedBeacons: ["game-selector"],
         }),
       ).toMatchObject({
         activeGame: "poe2",
         activeLeague: "Mercenaries",
         deathClipSeconds: 12,
+        onboardingDismissedBeacons: ["game-selector"],
       });
       expect(() => service.update({ deathClipSeconds: 999 })).toThrow();
     } finally {

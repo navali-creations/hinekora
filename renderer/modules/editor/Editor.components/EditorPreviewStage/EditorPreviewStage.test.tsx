@@ -72,6 +72,7 @@ describe("EditorPreviewStage", () => {
   it("shows an empty preview while the playhead is inside a timeline gap", () => {
     const html = renderToStaticMarkup(<EditorPreviewStage />);
 
+    expect(html).toContain('data-onboarding="editor-preview-source"');
     expect(html).not.toContain("<video");
     expect(html).toContain("No clip selected");
   });

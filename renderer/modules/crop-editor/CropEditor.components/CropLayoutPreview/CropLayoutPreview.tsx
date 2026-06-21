@@ -182,7 +182,11 @@ function CropLayoutPreview() {
   return (
     <div className={styles.layoutPreview} aria-label="Aura layout preview">
       <div className={styles.toolbar}>
-        <div className={styles.legend} aria-hidden="true">
+        <div
+          className={styles.legend}
+          aria-hidden="true"
+          data-onboarding="aura-source-position"
+        >
           <span className={clsx(styles.legendItem, styles.sourceLegend)}>
             Source area
           </span>

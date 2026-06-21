@@ -8,7 +8,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { AppChrome } from "~/renderer/components/AppChrome/AppChrome";
 import AppSetupAppBar from "~/renderer/modules/app-setup/AppSetup.components/AppSetupAppBar/AppSetupAppBar";
-import { useAppSetup, useRootActions } from "~/renderer/store";
+import { BeaconHost } from "~/renderer/modules/onboarding";
+import { useAppMenu, useAppSetup, useRootActions } from "~/renderer/store";
+import "@repere/react/styles.css";
 
 function RootLayout() {
   const navigate = useNavigate();
@@ -19,6 +21,7 @@ function RootLayout() {
   const [isSlow, setIsSlow] = useState(false);
   const slowTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const { hydrate, startListeners } = useRootActions();
+  const { isWhatsNewOpen } = useAppMenu();
   const { isSetupComplete, setupState } = useAppSetup();
   const isSetupMode = !setupState?.isComplete;
 
@@ -91,9 +94,12 @@ function RootLayout() {
   }
 
   return (
-    <AppChrome>
-      <Outlet />
-    </AppChrome>
+    <>
+      <AppChrome>
+        <Outlet />
+      </AppChrome>
+      <BeaconHost enabled={!isHydrating && !isWhatsNewOpen} />
+    </>
   );
 }
 

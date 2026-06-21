@@ -120,6 +120,7 @@ function CaptureModePageHeader({
             <div
               aria-label="Capture mode"
               className="tabs tabs-box tabs-sm min-w-0 flex-auto bg-base-200"
+              data-onboarding="capture-mode"
               role="tablist"
             >
               <TabsBoxTabs
@@ -146,6 +147,7 @@ function CaptureModePageHeader({
             <div
               className="tooltip tooltip-left no-drag"
               data-tip={primaryDisabled ? primaryDisabledReason : ""}
+              data-onboarding="start-recording"
             >
               <button
                 className="btn btn-primary btn-sm disabled:cursor-not-allowed disabled:opacity-50"
@@ -168,7 +170,7 @@ function CaptureModePageHeader({
       />
 
       <div
-        className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2 rounded-lg border border-[oklch(78.9%_0.154_211.53)] bg-[oklch(20.8%_0.042_265.755)] px-4 py-3 text-[0.8125rem] text-[oklch(78.9%_0.154_211.53)] leading-relaxed shadow-sm"
+        className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2 rounded-lg border border-info bg-secondary px-4 py-3 text-[0.8125rem] text-info leading-relaxed shadow-sm"
         role="status"
       >
         <Info size={18} />

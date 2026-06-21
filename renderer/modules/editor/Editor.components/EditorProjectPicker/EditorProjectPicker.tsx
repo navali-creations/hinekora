@@ -69,7 +69,7 @@ function EditorProjectPicker() {
 
   return (
     <>
-      <div className="join no-drag">
+      <div className="join no-drag" data-onboarding="editor-profiles">
         <select
           aria-label="Editor project"
           className="select select-bordered select-sm join-item w-48"

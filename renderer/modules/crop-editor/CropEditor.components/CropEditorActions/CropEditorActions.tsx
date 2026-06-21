@@ -105,6 +105,7 @@ function CropEditorActions() {
       <select
         aria-label="Aura profile"
         className="select select-bordered select-sm no-drag w-[min(180px,38vw)]"
+        data-onboarding="aura-profile-select"
         disabled={profileItems.length === 0}
         value={profile?.id ?? ""}
         onChange={handleProfileChange}
@@ -122,6 +123,7 @@ function CropEditorActions() {
       <div
         className="tooltip tooltip-bottom no-drag"
         data-tip="Lock keeps auras click-through for gameplay. Unlock lets you drag and resize aura positions."
+        data-onboarding="aura-lock-toggle"
       >
         <div
           className="tabs tabs-box tabs-xs [--tab-height:calc(var(--size-field,0.25rem)*7)]"
@@ -153,6 +155,7 @@ function CropEditorActions() {
           canAddNewAura && "before:hidden after:hidden",
         )}
         data-tip={canAddNewAura ? "" : addAuraTooltip}
+        data-onboarding="aura-new-aura"
       >
         <button
           className="btn btn-primary btn-sm disabled:cursor-not-allowed disabled:opacity-50"

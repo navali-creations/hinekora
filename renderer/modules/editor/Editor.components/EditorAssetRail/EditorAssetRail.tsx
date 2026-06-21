@@ -58,7 +58,10 @@ function EditorAssetRail() {
   }, [selectedAssetCategory]);
 
   return (
-    <aside className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-200">
+    <aside
+      className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-200"
+      data-onboarding="editor-my-media"
+    >
       <div className="flex items-center justify-between border-base-content/10 border-b p-3">
         <div>
           <h2 className="m-0 font-semibold text-sm">My media</h2>

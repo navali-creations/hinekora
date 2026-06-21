@@ -13,7 +13,10 @@ function EditorPreviewStage() {
   } = useEditorPreviewPlayback();
 
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-300">
+    <section
+      className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-300"
+      data-onboarding="editor-preview-source"
+    >
       <div
         className="grid min-h-0 flex-1 place-items-center overflow-hidden bg-black p-4"
         ref={stageRef}

@@ -20,6 +20,27 @@ export const useAppMenu = () => useSlice("appMenu");
 
 export const useAppSetup = () => useSlice("appSetup");
 
+export const useOnboardingState = () =>
+  useBoundStore(
+    useShallow((state) => ({
+      dismissedBeacons: state.onboarding.dismissedBeacons,
+      isLoading: state.onboarding.isLoading,
+      error: state.onboarding.error,
+      beaconHostRefreshKey: state.onboarding.beaconHostRefreshKey,
+    })),
+  );
+
+export const useOnboardingActions = () =>
+  useBoundStore(
+    useShallow((state) => ({
+      dismiss: state.onboarding.dismiss,
+      dismissAll: state.onboarding.dismissAll,
+      resetOne: state.onboarding.resetOne,
+      resetAll: state.onboarding.resetAll,
+      refreshBeaconHost: state.onboarding.refreshBeaconHost,
+    })),
+  );
+
 export const useProfilesShallow = <T>(
   selector: (profiles: BoundStore["profiles"]) => T,
 ) => useBoundStore(useShallow((state) => selector(state.profiles)));

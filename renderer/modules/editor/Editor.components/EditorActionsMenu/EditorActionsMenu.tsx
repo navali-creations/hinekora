@@ -36,6 +36,7 @@ function EditorActionsMenu({
       <summary
         aria-label="More editor actions"
         className="btn btn-primary btn-sm list-none [&::-webkit-details-marker]:hidden"
+        data-onboarding="editor-more-options"
       >
         <FiMoreHorizontal size={17} />
       </summary>

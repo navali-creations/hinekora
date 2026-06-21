@@ -56,6 +56,9 @@ describe("EditorActionsMenu", () => {
     const content = container.textContent ?? "";
     const dividers = container.querySelectorAll('li[aria-hidden="true"]');
 
+    expect(
+      container.querySelector('[data-onboarding="editor-more-options"]'),
+    ).not.toBe(null);
     expect(content.indexOf("Save menu")).toBeLessThan(
       content.indexOf("Copy menu"),
     );

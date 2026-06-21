@@ -11,6 +11,7 @@ import { createClientLogSlice } from "~/renderer/modules/client-log/ClientLog.sl
 import { createCropEditorSlice } from "~/renderer/modules/crop-editor/CropEditor.slice/CropEditor.slice";
 import { createEditorSlice } from "~/renderer/modules/editor/Editor.slice/Editor.slice";
 import { createManagedRecorderSlice } from "~/renderer/modules/managed-recorder/ManagedRecorder.slice/ManagedRecorder.slice";
+import { createOnboardingSlice } from "~/renderer/modules/onboarding";
 import { createPoeProcessSlice } from "~/renderer/modules/poe-process/PoeProcess.slice/PoeProcess.slice";
 import { createProfilesSlice } from "~/renderer/modules/profiles/Profiles.slice/Profiles.slice";
 import { createRecordingStorageSlice } from "~/renderer/modules/recording-storage/RecordingStorage.slice/RecordingStorage.slice";
@@ -40,6 +41,7 @@ export const useBoundStore = create<BoundStore>()(
       const appSetupSlice = createAppSetupSlice(...args);
       const profilesSlice = createProfilesSlice(...args);
       const cropEditorSlice = createCropEditorSlice(...args);
+      const onboardingSlice = createOnboardingSlice(...args);
       const editorSlice = createEditorSlice(...args);
       const capturePreviewSlice = createCapturePreviewSlice(...args);
       const managedRecorderSlice = createManagedRecorderSlice(...args);
@@ -58,6 +60,7 @@ export const useBoundStore = create<BoundStore>()(
         ...appSetupSlice,
         ...profilesSlice,
         ...cropEditorSlice,
+        ...onboardingSlice,
         ...editorSlice,
         ...capturePreviewSlice,
         ...managedRecorderSlice,
@@ -75,6 +78,7 @@ export const useBoundStore = create<BoundStore>()(
           await Promise.all([
             appMenuSlice.appMenu.hydrate(),
             appSetupSlice.appSetup.hydrate(),
+            onboardingSlice.onboarding.hydrate(),
             cropEditorSlice.cropEditor.hydrate(),
             managedRecorderSlice.managedRecorder.hydrate(),
             poeProcessSlice.poeProcess.hydrate(),

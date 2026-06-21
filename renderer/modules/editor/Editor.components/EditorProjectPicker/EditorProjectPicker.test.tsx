@@ -100,6 +100,10 @@ describe("EditorProjectPicker", () => {
       'select[aria-label="Editor project"]',
     );
 
+    expect(
+      container.querySelector('[data-onboarding="editor-profiles"]'),
+    ).not.toBe(null);
+
     await act(async () => {
       if (!select) {
         throw new Error("Expected project selector to render");

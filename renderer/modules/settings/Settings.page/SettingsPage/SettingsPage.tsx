@@ -12,6 +12,7 @@ import { ProfilesPanel } from "~/renderer/modules/profiles/Profiles.components/P
 
 import { AppSettingsCard } from "../../Settings.components/AppSettingsCard/AppSettingsCard";
 import { GameLogSettingsCard } from "../../Settings.components/GameLogSettingsCard/GameLogSettingsCard";
+import { HelpSettingsCard } from "../../Settings.components/HelpSettingsCard/HelpSettingsCard";
 import { PrivacySettingsCard } from "../../Settings.components/PrivacySettingsCard/PrivacySettingsCard";
 import { ProfileTransferSettingsCard } from "../../Settings.components/ProfileTransferSettingsCard/ProfileTransferSettingsCard";
 import { StorageSettingsCard } from "../../Settings.components/StorageSettingsCard/StorageSettingsCard";
@@ -22,6 +23,7 @@ const settingsCategories = [
   "App",
   "Data & Storage",
   "Privacy",
+  "Help",
   "Profiles",
   "Troubleshooting",
 ] as const;
@@ -81,6 +83,7 @@ function SettingsPage() {
               {activeCategory === "App" && <AppSettingsCard />}
               {activeCategory === "Data & Storage" && <StorageSettingsCard />}
               {activeCategory === "Privacy" && <PrivacySettingsCard />}
+              {activeCategory === "Help" && <HelpSettingsCard />}
               {activeCategory === "Profiles" && (
                 <>
                   <ProfilesPanel />

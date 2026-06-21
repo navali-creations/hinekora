@@ -14,6 +14,9 @@ importers:
       '@dnd-kit/react':
         specifier: ^0.5.0
         version: 0.5.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      '@repere/react':
+        specifier: 0.3.3
+        version: 0.3.3(motion@12.40.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       '@sentry/electron':
         specifier: ^7.13.0
         version: 7.13.0
@@ -26,6 +29,9 @@ importers:
       kysely:
         specifier: ^0.29.2
         version: 0.29.2
+      motion:
+        specifier: ^12.40.0
+        version: 12.40.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       node-addon-api:
         specifier: ^8.8.0
         version: 8.8.0
@@ -123,9 +129,6 @@ importers:
       lodash:
         specifier: ^4.18.1
         version: 4.18.1
-      motion:
-        specifier: ^12.40.0
-        version: 12.40.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
       react:
         specifier: ^19.2.7
         version: 19.2.7
@@ -834,6 +837,16 @@ packages:
     resolution: {integrity: sha512-ZPW2gRiwpPzEfgeZgaekhqXrbW+Y2RJKHVqUmlhZhKzRNCcvR6DykzylDrynpArKKRQtLxoZy36fK7U0p3pdgQ==}
     peerDependencies:
       '@opentelemetry/api': ^1.8
+
+  '@repere/core@0.2.3':
+    resolution: {integrity: sha512-K2M5Ev9NTRYkd4P7EtuR9Qg6FpvP6r6bfL1Zdeltx9zqExCWjcksFUgP0gFepB9oln0AUviZb1MkFKLsEo/MVQ==}
+
+  '@repere/react@0.3.3':
+    resolution: {integrity: sha512-Uzh8dGgI8bLqvBgU5LyRnC/1PdGcyw8aR/W8DzmkzfYoN7Vi9JaJonaOcQiBFSJ9yBHoQMSCh49YjO6b5c0CWw==}
+    peerDependencies:
+      motion: ^12.0.0
+      react: ^18.0.0 || ^19.0.0
+      react-dom: ^18.0.0 || ^19.0.0
 
   '@rolldown/binding-android-arm64@1.0.3':
     resolution: {integrity: sha512-454rs7jHngixp/NMxd5srYD57OnzSlZ/eFTETjORQHLwJG1lRtmNOJcBerZlfu4GjKqeq8aCCIQrMdHyhI51Hw==}
@@ -4225,6 +4238,15 @@ snapshots:
       '@opentelemetry/instrumentation': 0.207.0(@opentelemetry/api@1.9.1)
     transitivePeerDependencies:
       - supports-color
+
+  '@repere/core@0.2.3': {}
+
+  '@repere/react@0.3.3(motion@12.40.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7))(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
+    dependencies:
+      '@repere/core': 0.2.3
+      motion: 12.40.0(react-dom@19.2.7(react@19.2.7))(react@19.2.7)
+      react: 19.2.7
+      react-dom: 19.2.7(react@19.2.7)
 
   '@rolldown/binding-android-arm64@1.0.3':
     optional: true

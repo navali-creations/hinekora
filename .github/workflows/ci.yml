@@ -33,6 +33,38 @@ env:
   NODE_MODULES_CACHE_VERSION: v1
 
 jobs:
+  validate-release-secrets:
+    name: Validate Release Secrets
+    if: >-
+      !contains(github.event.head_commit.message, '[ci] release') &&
+      (
+        github.event_name == 'push' ||
+        github.event_name == 'workflow_dispatch' ||
+        github.event.pull_request.head.repo.full_name == github.repository
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Validate release secrets
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          VITE_SENTRY_DSN: ${{ secrets.VITE_SENTRY_DSN }}
+          VITE_UMAMI_ID: ${{ secrets.VITE_UMAMI_ID }}
+        run: |
+          missing=0
+
+          for secret_name in SENTRY_AUTH_TOKEN VITE_SENTRY_DSN VITE_UMAMI_ID; do
+            secret_value="${!secret_name}"
+            if [ -z "${secret_value//[[:space:]]/}" ]; then
+              echo "::error::${secret_name} repository secret is not set or is empty"
+              missing=1
+            fi
+          done
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
   biome:
     name: Biome
     if: "!contains(github.event.head_commit.message, '[ci] release')"

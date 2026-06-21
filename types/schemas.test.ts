@@ -35,6 +35,7 @@ describe("shared schemas", () => {
       telemetryCrashReporting: false,
       telemetryUsageAnalytics: false,
       lastSeenAppVersion: null,
+      onboardingDismissedBeacons: [],
     });
   });
 

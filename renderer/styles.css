@@ -1,5 +1,6 @@
 /* Hallmark: macrostructure=Night Operator Console; tone=tactical; anchor hue=sand */
 @import "tailwindcss";
+@import "./styles/animations.css";
 @plugin "daisyui/index.js";
 
 @font-face {
@@ -28,8 +29,8 @@
   --color-accent-content: #f0e4d2;
   --color-neutral: oklch(22.8% 0.013 107.4);
   --color-neutral-content: #f0e4d2;
-  --color-info: #49535c;
-  --color-info-content: #f0e4d2;
+  --color-info: oklch(78.9% 0.154 211.53);
+  --color-info-content: oklch(14.7% 0.004 49.25);
   --color-success: #96826c;
   --color-success-content: #080909;
   --color-warning: #96826c;
@@ -58,8 +59,8 @@
   --color-accent-content: #f0e4d2;
   --color-neutral: oklch(21.6% 0.006 56.043);
   --color-neutral-content: #f0e4d2;
-  --color-info: #49535c;
-  --color-info-content: #f0e4d2;
+  --color-info: oklch(78.9% 0.154 211.53);
+  --color-info-content: oklch(14.7% 0.004 49.25);
   --color-success: #96826c;
   --color-success-content: #080909;
   --color-warning: #96826c;
@@ -135,20 +136,6 @@ body.is-clip-preview-route #root {
 .no-drag {
   -webkit-app-region: no-drag;
   app-region: no-drag;
-}
-
-@keyframes indeterminate {
-  0% {
-    transform: translateX(-100%);
-  }
-
-  50% {
-    transform: translateX(120%);
-  }
-
-  100% {
-    transform: translateX(300%);
-  }
 }
 
 @keyframes editor-drop-target-flash {

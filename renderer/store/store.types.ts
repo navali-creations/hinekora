@@ -19,6 +19,7 @@ import type { AppMenuSlice } from "~/renderer/modules/app-menu/AppMenu.slice/App
 import type { ChangelogSlice } from "~/renderer/modules/changelog/Changelog.slice/Changelog.slice";
 import type { CropEditorSlice } from "~/renderer/modules/crop-editor/CropEditor.slice/CropEditor.slice";
 import type { EditorSlice } from "~/renderer/modules/editor/Editor.slice/Editor.slice.types";
+import type { OnboardingSlice } from "~/renderer/modules/onboarding";
 import type { StorageSlice } from "~/renderer/modules/settings/Storage.slice/Storage.slice";
 import type { UpdaterSlice } from "~/renderer/modules/updater/Updater.slice/Updater.slice";
 
@@ -190,6 +191,7 @@ export type BoundStore = AppMenuSlice &
   AppSetupSlice &
   ProfilesSlice &
   CropEditorSlice &
+  OnboardingSlice &
   EditorSlice &
   CapturePreviewSlice &
   ManagedRecorderSlice &

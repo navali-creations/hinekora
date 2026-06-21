@@ -13,10 +13,12 @@ const storeMocks = vi.hoisted(() => ({
   setHoveredTimelineGap: vi.fn(),
   undoProjectChange: vi.fn(),
   useEditorShallow: vi.fn(),
+  useSettingsSelector: vi.fn(),
 }));
 
 vi.mock("~/renderer/store", () => ({
   useEditorShallow: storeMocks.useEditorShallow,
+  useSettingsSelector: storeMocks.useSettingsSelector,
 }));
 
 vi.mock("../../Editor.components/EditorAssetRail/EditorAssetRail", () => ({
@@ -156,6 +158,13 @@ describe("EditorPage shortcuts", () => {
     document.body.append(container);
     root = createRoot(container);
     configureEditorState();
+    storeMocks.useSettingsSelector.mockImplementation((selector) =>
+      selector({
+        value: {
+          activeGame: "poe2",
+        },
+      }),
+    );
   });
 
   afterEach(() => {
