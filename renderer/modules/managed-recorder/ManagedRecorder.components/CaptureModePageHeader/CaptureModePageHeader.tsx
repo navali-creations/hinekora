@@ -1,5 +1,4 @@
 import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
 import {
   FiInfo as Info,
   FiLoader as Loader2,
@@ -22,22 +21,23 @@ import {
 interface CaptureModePageHeaderProps {
   title: string;
   subtitle: ReactNode;
-  defaultMode?: CaptureMode;
 }
 
 function CaptureModePageHeader({
   title,
   subtitle,
-  defaultMode = "rewind",
 }: CaptureModePageHeaderProps) {
-  const [selectedMode, setSelectedMode] = useState<CaptureMode>(defaultMode);
   const {
+    captureMode: selectedMode,
+    setCaptureMode,
     startBuffer,
     startRunRecording,
     status,
     stopBuffer,
     stopRunRecording,
   } = useManagedRecorderShallow((managedRecorder) => ({
+    captureMode: managedRecorder.captureMode,
+    setCaptureMode: managedRecorder.setCaptureMode,
     startBuffer: managedRecorder.startBuffer,
     startRunRecording: managedRecorder.startRunRecording,
     status: managedRecorder.status,
@@ -78,17 +78,6 @@ function CaptureModePageHeader({
     ? "Records everything from start to stop. Death clips and manual clips are off in this mode, but you can cut clips from the saved recording later."
     : "Keeps only the last 60 seconds ready for death clips or manual clips. It does not save a full recording, so it uses much less disk space.";
 
-  useEffect(() => {
-    if (isSessionActive) {
-      setSelectedMode("session");
-      return;
-    }
-
-    if (isRewindActive) {
-      setSelectedMode("rewind");
-    }
-  }, [isRewindActive, isSessionActive]);
-
   const handleCaptureModeChange = (mode: CaptureMode) => {
     if (mode === "session" && isRewindActive) {
       return;
@@ -98,7 +87,7 @@ function CaptureModePageHeader({
       return;
     }
 
-    setSelectedMode(mode);
+    void setCaptureMode(mode);
   };
 
   const handlePrimaryAction = () => {

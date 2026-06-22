@@ -1959,6 +1959,7 @@ describe("ManagedRecorderService", () => {
     const startBuffer = vi
       .spyOn(service, "startBuffer")
       .mockResolvedValue(status);
+    const setCaptureMode = vi.spyOn(service, "setCaptureMode");
     const stopBuffer = vi
       .spyOn(service, "stopBuffer")
       .mockResolvedValue(status);
@@ -1979,17 +1980,33 @@ describe("ManagedRecorderService", () => {
     ).toMatchObject({
       outputDirectory: directory,
     });
+    expect(
+      await handlers.get(ManagedRecorderChannel.GetCaptureMode)?.({}),
+    ).toBe("rewind");
+    expect(
+      await handlers.get(ManagedRecorderChannel.SetCaptureMode)?.(
+        {},
+        "session",
+      ),
+    ).toBe("session");
     await handlers.get(ManagedRecorderChannel.StartBuffer)?.({});
     await handlers.get(ManagedRecorderChannel.StopBuffer)?.({});
     await handlers.get(ManagedRecorderChannel.StartRunRecording)?.({});
     await handlers.get(ManagedRecorderChannel.StopRunRecording)?.({});
     await handlers.get(ManagedRecorderChannel.SaveReplay)?.({});
 
+    expect(setCaptureMode).toHaveBeenCalledWith("session");
     expect(startBuffer).toHaveBeenCalled();
     expect(stopBuffer).toHaveBeenCalled();
     expect(startRunRecording).toHaveBeenCalled();
     expect(stopRunRecording).toHaveBeenCalled();
     expect(saveReplay).toHaveBeenCalledWith(10, "manual");
+    expect(
+      await handlers.get(ManagedRecorderChannel.SetCaptureMode)?.({}, "bad"),
+    ).toEqual({
+      ok: false,
+      error: "captureMode must be session or rewind",
+    });
   });
 
   it("resolves recorder geometry and file helper edge cases", () => {
@@ -2304,6 +2321,24 @@ describe("ManagedRecorderService", () => {
     internals.handleSignal({ type: "output", id: "warning", code: 2 });
     internals.handleSignal({ type: "output", id: "missing-code" });
     internals.handleSignal({ type: "other", id: "ignored", code: 0 });
+  });
+
+  it("publishes capture mode changes only to live windows", () => {
+    const service = createService();
+    const liveSend = vi.fn();
+    const destroyedSend = vi.fn();
+    electronMocks.getAllWindows.mockReturnValue([
+      { isDestroyed: () => true, webContents: { send: destroyedSend } },
+      { isDestroyed: () => false, webContents: { send: liveSend } },
+    ]);
+
+    expect(service.setCaptureMode("session")).toBe("session");
+
+    expect(liveSend).toHaveBeenCalledWith(
+      ManagedRecorderChannel.CaptureModeChanged,
+      "session",
+    );
+    expect(destroyedSend).not.toHaveBeenCalled();
   });
 
   it("falls back to maximum duration for invalid recording timestamps", () => {

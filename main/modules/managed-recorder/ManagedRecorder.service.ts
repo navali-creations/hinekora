@@ -23,13 +23,17 @@ import {
   logInfoSync,
   logWarn,
 } from "~/main/utils/app-log";
-import { safeErrorMessage } from "~/main/utils/ipc-validation";
+import {
+  handleValidationError,
+  safeErrorMessage,
+} from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 
 import type { CaptureTarget, GameId, ManagedRecorderStatus } from "~/types";
 import { ManagedRecorderChannel } from "./ManagedRecorder.channels";
 import { resolveNativeDisplayResolution } from "./ManagedRecorder.display";
 import type {
+  ManagedRecorderCaptureMode,
   ManagedReplayKind,
   ManagedReplaySaveResult,
 } from "./ManagedRecorder.dto";
@@ -120,6 +124,7 @@ class ManagedRecorderService {
     runRecordingStartedAt: null,
     error: "Packaged OBS runtime is not installed yet",
   };
+  private captureMode: ManagedRecorderCaptureMode = "rewind";
   private activeRecordingMode: ManagedRecordingMode | null = null;
   private captureSourceName: string | null = null;
   private captureSourceKey: string | null = null;
@@ -148,6 +153,16 @@ class ManagedRecorderService {
     this.refreshRuntimeAvailability();
 
     return this.status;
+  }
+
+  getCaptureMode(): ManagedRecorderCaptureMode {
+    return this.captureMode;
+  }
+
+  setCaptureMode(mode: ManagedRecorderCaptureMode): ManagedRecorderCaptureMode {
+    this.updateCaptureMode(mode);
+
+    return this.captureMode;
   }
 
   async startBuffer(): Promise<ManagedRecorderStatus> {
@@ -201,6 +216,7 @@ class ManagedRecorderService {
       });
       this.noobs.StartBuffer();
       logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.StartBuffer returned");
+      this.updateCaptureMode("rewind");
       this.setStatus({
         bufferActive: true,
         recording: true,
@@ -306,6 +322,7 @@ class ManagedRecorderService {
       const session = this.prepareRecordingSession(this.activeRecordingMode);
       this.activeRecordingBaselinePaths = session.existingRecordingPaths;
       this.noobs.StartRecording(0);
+      this.updateCaptureMode("session");
       this.setStatus({
         bufferActive: false,
         recording: true,
@@ -1613,6 +1630,7 @@ class ManagedRecorderService {
 
     if (signal.id === "start") {
       if (this.activeRecordingMode === "run") {
+        this.updateCaptureMode("session");
         this.setStatus({
           bufferActive: false,
           recording: true,
@@ -1622,6 +1640,7 @@ class ManagedRecorderService {
         return;
       }
 
+      this.updateCaptureMode("rewind");
       this.setStatus({
         bufferActive: true,
         recording: true,
@@ -1666,9 +1685,25 @@ class ManagedRecorderService {
 
   private setupHandlers(): void {
     registerGuardedIpcHandler(
+      ManagedRecorderChannel.GetCaptureMode,
+      [WindowName.Main, WindowName.RecorderOverlay],
+      () => this.getCaptureMode(),
+    );
+    registerGuardedIpcHandler(
       ManagedRecorderChannel.GetStatus,
       [WindowName.Main, WindowName.RecorderOverlay],
       () => this.getStatus(),
+    );
+    registerGuardedIpcHandler(
+      ManagedRecorderChannel.SetCaptureMode,
+      [WindowName.Main, WindowName.RecorderOverlay],
+      (_event, mode) => {
+        try {
+          return this.setCaptureMode(parseCaptureMode(mode));
+        } catch (error) {
+          return handleValidationError(error);
+        }
+      },
     );
     registerGuardedIpcHandler(
       ManagedRecorderChannel.StartBuffer,
@@ -1682,12 +1717,12 @@ class ManagedRecorderService {
     );
     registerGuardedIpcHandler(
       ManagedRecorderChannel.StartRunRecording,
-      [WindowName.Main],
+      [WindowName.Main, WindowName.RecorderOverlay],
       () => this.startRunRecording(),
     );
     registerGuardedIpcHandler(
       ManagedRecorderChannel.StopRunRecording,
-      [WindowName.Main],
+      [WindowName.Main, WindowName.RecorderOverlay],
       () => this.stopRunRecording(),
     );
     registerGuardedIpcHandler(
@@ -1703,6 +1738,15 @@ class ManagedRecorderService {
   private setStatus(update: Partial<ManagedRecorderStatus>): void {
     this.status = { ...this.status, ...update };
     this.publishStatus();
+  }
+
+  private updateCaptureMode(mode: ManagedRecorderCaptureMode): void {
+    if (this.captureMode === mode) {
+      return;
+    }
+
+    this.captureMode = mode;
+    this.publishCaptureMode();
   }
 
   private cleanupRecordingStorage(protectedPaths: Array<string | null>): void {
@@ -1728,6 +1772,17 @@ class ManagedRecorderService {
         window.webContents.send(
           ManagedRecorderChannel.StatusChanged,
           this.status,
+        );
+      }
+    }
+  }
+
+  private publishCaptureMode(): void {
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send(
+          ManagedRecorderChannel.CaptureModeChanged,
+          this.captureMode,
         );
       }
     }
@@ -1765,4 +1820,12 @@ function describeNoobsRuntimeLocation(path: string): string {
   }
 
   return "custom";
+}
+
+function parseCaptureMode(value: unknown): ManagedRecorderCaptureMode {
+  if (value === "session" || value === "rewind") {
+    return value;
+  }
+
+  throw new Error("captureMode must be session or rewind");
 }

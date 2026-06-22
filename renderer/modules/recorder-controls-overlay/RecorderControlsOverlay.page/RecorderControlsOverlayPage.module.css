@@ -1,15 +1,14 @@
 .overlay {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 0.75rem;
+  display: flex;
   align-items: center;
+  gap: 0.375rem;
   overflow: hidden;
   width: 100vw;
   height: 100vh;
   border: var(--border) solid
     color-mix(in oklch, var(--color-primary) 34%, var(--color-neutral));
   border-radius: var(--radius-box);
-  padding: 0.75rem;
+  padding: 0.375rem 0.5rem;
   background: color-mix(in oklch, var(--color-neutral) 88%, transparent);
   backdrop-filter: blur(10px);
   -webkit-app-region: drag;
@@ -17,28 +16,33 @@
 
 .actions {
   display: flex;
+  align-items: center;
   gap: 0.375rem;
+  min-width: 0;
 }
 
 .iconButton {
-  width: 34px;
-  height: 34px;
-  min-height: 34px;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
   padding: 0;
   -webkit-app-region: no-drag;
 }
 
-.status {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-  color: var(--color-primary);
-  font-size: 0.8125rem;
+.profileSelect {
+  width: 188px;
+  height: 30px;
+  min-height: 30px;
+  padding-inline-start: 0.5rem;
+  padding-inline-end: 1.5rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  -webkit-app-region: no-drag;
 }
 
-.statusText {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 0.125rem;
+  background: color-mix(in oklch, var(--color-primary) 34%, transparent);
 }

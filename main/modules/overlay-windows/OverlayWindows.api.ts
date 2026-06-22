@@ -2,7 +2,10 @@ import { ipcRenderer } from "electron";
 
 import type { OverlayPlacement } from "~/types";
 import { OverlayWindowsChannel } from "./OverlayWindows.channels";
-import type { CropRegionSelection } from "./OverlayWindows.dto";
+import type {
+  CropRegionSelection,
+  ShowAuraOverlayOptions,
+} from "./OverlayWindows.dto";
 
 const OverlayWindowsAPI = {
   showRecorder: (): Promise<void> =>
@@ -30,8 +33,13 @@ const OverlayWindowsAPI = {
   },
   hideClipPreview: (): Promise<void> =>
     ipcRenderer.invoke(OverlayWindowsChannel.HideClipPreview),
-  showAura: (profileId?: string): Promise<void> =>
-    ipcRenderer.invoke(OverlayWindowsChannel.ShowAura, profileId),
+  showAura: (
+    profileId?: string,
+    options?: ShowAuraOverlayOptions,
+  ): Promise<void> =>
+    options === undefined
+      ? ipcRenderer.invoke(OverlayWindowsChannel.ShowAura, profileId)
+      : ipcRenderer.invoke(OverlayWindowsChannel.ShowAura, profileId, options),
   isAuraLocked: (): Promise<boolean> =>
     ipcRenderer.invoke(OverlayWindowsChannel.IsAuraLocked),
   setAuraLocked: (locked: boolean): Promise<void> =>

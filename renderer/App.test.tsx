@@ -63,6 +63,7 @@ function renderApp() {
 
 describe("App overlay bootstrap", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     window.location.hash = "#/aura-overlay?profileId=profile-1";
     storeMocks.hydrateManagedRecorder.mockResolvedValue(undefined);
     storeMocks.hydrateProfiles.mockResolvedValue(undefined);
@@ -123,5 +124,21 @@ describe("App overlay bootstrap", () => {
     expect(hydrateCallOrder).toBeDefined();
     expect(refreshCallOrder).toBeDefined();
     expect(hydrateCallOrder ?? 0).toBeLessThan(refreshCallOrder ?? 0);
+  });
+
+  it("hydrates recorder overlay recorder, clips, and profiles state", async () => {
+    window.location.hash = "#/recorder-overlay";
+    const { root } = renderApp();
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    expect(storeMocks.hydrateManagedRecorder).toHaveBeenCalledTimes(1);
+    expect(storeMocks.hydrateProfiles).toHaveBeenCalledTimes(1);
+    expect(storeMocks.hydrateReplayClips).toHaveBeenCalledTimes(1);
+    expect(storeMocks.startManagedRecorderListener).toHaveBeenCalledTimes(1);
+    expect(storeMocks.startProfilesListener).toHaveBeenCalledTimes(1);
+    expect(storeMocks.startReplayClipsListener).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,5 +1,8 @@
 enum ManagedRecorderChannel {
+  CaptureModeChanged = "managed-recorder:capture-mode-changed",
+  GetCaptureMode = "managed-recorder:get-capture-mode",
   GetStatus = "managed-recorder:get-status",
+  SetCaptureMode = "managed-recorder:set-capture-mode",
   StartBuffer = "managed-recorder:start-buffer",
   StopBuffer = "managed-recorder:stop-buffer",
   StartRunRecording = "managed-recorder:start-run-recording",

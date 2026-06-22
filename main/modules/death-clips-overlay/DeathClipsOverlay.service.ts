@@ -103,7 +103,6 @@ class DeathClipsOverlayService {
       WindowName.ClipPreviewOverlay,
     );
     configureGameOverlayWindow(clipPreviewWindow);
-    clipPreviewWindow.setContentProtection(true);
     clipPreviewWindow.on("focus", () => {
       this.coordinator.setOverlayFocusActive(
         CLIP_PREVIEW_OVERLAY_FOCUS_ID,

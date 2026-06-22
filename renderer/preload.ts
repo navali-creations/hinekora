@@ -47,13 +47,26 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
   if (hash.includes("recorder-overlay")) {
     return {
       managedRecorder: {
+        getCaptureMode: ManagedRecorderAPI.getCaptureMode,
         getStatus: ManagedRecorderAPI.getStatus,
+        onCaptureModeChanged: ManagedRecorderAPI.onCaptureModeChanged,
+        setCaptureMode: ManagedRecorderAPI.setCaptureMode,
         startBuffer: ManagedRecorderAPI.startBuffer,
+        startRunRecording: ManagedRecorderAPI.startRunRecording,
         stopBuffer: ManagedRecorderAPI.stopBuffer,
+        stopRunRecording: ManagedRecorderAPI.stopRunRecording,
         onStatusChanged: ManagedRecorderAPI.onStatusChanged,
       },
       overlayWindows: {
         hideRecorder: OverlayWindowsAPI.hideRecorder,
+        isAuraLocked: OverlayWindowsAPI.isAuraLocked,
+        onAuraLockChanged: OverlayWindowsAPI.onAuraLockChanged,
+        setAuraLocked: OverlayWindowsAPI.setAuraLocked,
+        showAura: OverlayWindowsAPI.showAura,
+      },
+      profiles: {
+        list: ProfilesAPI.list,
+        onChanged: ProfilesAPI.onChanged,
       },
       replayClips: {
         list: ReplayClipsAPI.list,

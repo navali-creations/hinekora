@@ -16,8 +16,8 @@ import {
 
 import { OverlayWindowsChannel } from "../overlay-windows/OverlayWindows.channels";
 
-const RECORDER_OVERLAY_WIDTH = 360;
-const RECORDER_OVERLAY_HEIGHT = 96;
+const RECORDER_OVERLAY_WIDTH = 420;
+const RECORDER_OVERLAY_HEIGHT = 56;
 const RECORDER_OVERLAY_RIGHT_MARGIN = 20;
 const RECORDER_OVERLAY_TOP_MARGIN = 24;
 const RECORDER_OVERLAY_FOCUS_ID = "recorder-controls";
@@ -117,8 +117,8 @@ class RecordingControlsOverlayService {
 
     this.recorderWindow = new BrowserWindow({
       ...anchorBounds,
-      minWidth: 280,
-      minHeight: 72,
+      minWidth: 400,
+      minHeight: 52,
       frame: false,
       transparent: true,
       resizable: false,
@@ -133,7 +133,6 @@ class RecordingControlsOverlayService {
     const recorderWebContents = recorderWindow.webContents;
     registerIpcWindowRole(recorderWebContents, WindowName.RecorderOverlay);
     configureGameOverlayWindow(recorderWindow);
-    recorderWindow.setContentProtection(true);
     recorderWindow.on("focus", () => {
       this.coordinator.setOverlayFocusActive(RECORDER_OVERLAY_FOCUS_ID, true);
     });

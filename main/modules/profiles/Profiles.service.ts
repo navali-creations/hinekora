@@ -104,7 +104,7 @@ class ProfilesService {
   private setupHandlers(): void {
     registerGuardedIpcHandler(
       ProfilesChannel.List,
-      [WindowName.Main, WindowName.AuraOverlay],
+      [WindowName.Main, WindowName.AuraOverlay, WindowName.RecorderOverlay],
       () => this.list(),
     );
     registerGuardedIpcHandler(

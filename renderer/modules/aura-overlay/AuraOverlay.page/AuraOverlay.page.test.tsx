@@ -1,5 +1,5 @@
 import { act } from "react";
-import { createRoot } from "react-dom/client";
+import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -67,7 +67,22 @@ const profile = {
   updatedAt: new Date(0).toISOString(),
 };
 
+async function flushPromises(count = 5): Promise<void> {
+  for (let index = 0; index < count; index += 1) {
+    await Promise.resolve();
+  }
+}
+
 describe("AuraOverlayPage", () => {
+  let roots: Root[] = [];
+
+  const createTestRoot = (container: HTMLElement): Root => {
+    const root = createRoot(container);
+    roots.push(root);
+
+    return root;
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
     window.location.hash = "#/aura-overlay?profileId=profile-1";
@@ -106,7 +121,13 @@ describe("AuraOverlayPage", () => {
     });
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    await act(async () => {
+      for (const root of roots) {
+        root.unmount();
+      }
+    });
+    roots = [];
     document.body.replaceChildren();
     vi.restoreAllMocks();
   });
@@ -134,11 +155,11 @@ describe("AuraOverlayPage", () => {
       .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
     const container = document.createElement("div");
     document.body.append(container);
-    const root = createRoot(container);
+    const root = createTestRoot(container);
 
     await act(async () => {
       root.render(<AuraOverlayPage />);
-      await Promise.resolve();
+      await flushPromises();
     });
 
     const addButton = [...container.querySelectorAll("button")].find(
@@ -148,9 +169,60 @@ describe("AuraOverlayPage", () => {
     expect(addButton).toBeDefined();
     await act(async () => {
       addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-      await Promise.resolve();
-      await Promise.resolve();
-      await Promise.resolve();
+      await flushPromises();
+    });
+
+    expect(electronMocks.selectCropRegion).toHaveBeenCalledTimes(1);
+    expect(storeMocks.updateProfile).toHaveBeenCalledWith({
+      id: "profile-1",
+      cropRegions: [
+        profile.cropRegions[0],
+        {
+          id: "00000000-0000-4000-8000-000000000001",
+          label: "Aura 2",
+          x: 100,
+          y: 120,
+          width: 50,
+          height: 60,
+        },
+      ],
+      overlayPlacements: [
+        profile.overlayPlacements[0],
+        expect.objectContaining({
+          id: "00000000-0000-4000-8000-000000000002",
+          cropRegionId: "00000000-0000-4000-8000-000000000001",
+          x: 953,
+          y: 528,
+          scale: 1,
+          opacity: 1,
+        }),
+      ],
+    });
+    expect(electronMocks.showAura).toHaveBeenCalledWith("profile-1");
+  });
+
+  it("starts add aura selection from the route request", async () => {
+    window.location.hash =
+      "#/aura-overlay?profileId=profile-1&startAddingAura=1&addAuraRequestId=1";
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    electronMocks.selectCropRegion.mockResolvedValue({
+      x: 100,
+      y: 120,
+      width: 50,
+      height: 60,
+      viewportWidth: 1920,
+      viewportHeight: 1080,
+    });
+    vi.spyOn(crypto, "randomUUID")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
     });
 
     expect(electronMocks.selectCropRegion).toHaveBeenCalledTimes(1);

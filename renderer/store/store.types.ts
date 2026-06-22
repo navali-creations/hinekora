@@ -4,6 +4,7 @@ import type {
   SetupState,
   StepValidationResult,
 } from "~/main/modules/app-setup/AppSetup.types";
+import type { ManagedRecorderCaptureMode } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
 import type { PoeProcessState } from "~/main/modules/poe-process/PoeProcess.dto";
 import type {
   RecordingStorageUsage,
@@ -90,8 +91,10 @@ export interface CapturePreviewSlice {
 
 export interface ManagedRecorderSlice {
   managedRecorder: {
+    captureMode: ManagedRecorderCaptureMode;
     status: ManagedRecorderStatus | null;
     hydrate: () => Promise<void>;
+    setCaptureMode: (mode: ManagedRecorderCaptureMode) => Promise<void>;
     startBuffer: () => Promise<void>;
     stopBuffer: () => Promise<void>;
     startRunRecording: () => Promise<void>;

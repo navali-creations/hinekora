@@ -1,6 +1,8 @@
+import type { ManagedRecorderCaptureMode } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
+
 import type { ManagedRecorderStatus } from "~/types";
 
-type CaptureMode = "session" | "rewind";
+type CaptureMode = ManagedRecorderCaptureMode;
 type RecorderReadinessTarget = "overlay" | "recording";
 
 interface CaptureModeDisabledReasonInput {

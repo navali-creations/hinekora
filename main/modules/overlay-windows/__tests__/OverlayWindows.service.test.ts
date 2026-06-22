@@ -18,6 +18,7 @@ import {
   suspendGameOverlayWindow,
 } from "../OverlayWindow.shared";
 import { OverlayWindowsChannel } from "../OverlayWindows.channels";
+import type { ShowAuraOverlayOptions } from "../OverlayWindows.dto";
 import { OverlayWindowsService } from "../OverlayWindows.service";
 
 const electronMocks = vi.hoisted(() => {
@@ -251,7 +252,7 @@ describe("OverlayWindowsService", () => {
       isLocked(): boolean;
       setGameRunningActive(active: boolean): void;
       setLocked(locked: boolean): void;
-      show(profileId?: string): Promise<void>;
+      show(profileId?: string, options?: ShowAuraOverlayOptions): Promise<void>;
     };
     vi.spyOn(recordingControlsOverlay, "show").mockResolvedValue(undefined);
     vi.spyOn(recordingControlsOverlay, "hide").mockImplementation(
@@ -290,6 +291,9 @@ describe("OverlayWindowsService", () => {
       service.showManualClipPreviewOverlay(clip),
     ).resolves.toBeUndefined();
     await expect(service.showAuraOverlay("profile-1")).resolves.toBeUndefined();
+    await expect(
+      service.showAuraOverlay("profile-1", { startAddingAura: true }),
+    ).resolves.toBeUndefined();
     service.setAuraOverlayLocked(false);
     expect(service.isAuraOverlayLocked()).toBe(false);
     service.hideClipPreviewOverlay();
@@ -307,6 +311,9 @@ describe("OverlayWindowsService", () => {
     expect(deathClipsOverlay.showClip).toHaveBeenCalledWith(clip);
     expect(deathClipsOverlay.showClip).toHaveBeenCalledTimes(2);
     expect(manualClipsOverlay.showClip).toHaveBeenCalledWith(clip);
+    expect(auraManagerOverlays.show).toHaveBeenCalledWith("profile-1", {
+      startAddingAura: true,
+    });
     expect(deathClipsOverlay.hide).toHaveBeenCalledTimes(1);
   });
 
@@ -358,8 +365,8 @@ describe("OverlayWindowsService", () => {
     recorderWindow.getBounds.mockReturnValue({
       x: 20,
       y: 30,
-      width: 360,
-      height: 96,
+      width: 420,
+      height: 56,
     });
     electronMocks.browserWindowFactory.mockReturnValue(clipWindow);
     const service = new OverlayWindowsService();
@@ -373,7 +380,7 @@ describe("OverlayWindowsService", () => {
     expect(electronMocks.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         x: 20,
-        y: 134,
+        y: 94,
         width: 560,
         height: 396,
       }),
@@ -419,8 +426,14 @@ describe("OverlayWindowsService", () => {
       await handlers.get(OverlayWindowsChannel.IsRecorderVisible)?.({}),
     ).toBe(true);
     handlers.get(OverlayWindowsChannel.HideClipPreview)?.({});
-    await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, 123);
+    await handlers.get(OverlayWindowsChannel.ShowAura)?.({});
     await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, "profile-1");
+    await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, "profile-1", {
+      startAddingAura: true,
+    });
+    await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, "profile-1", {
+      startAddingAura: false,
+    });
     expect(await handlers.get(OverlayWindowsChannel.IsAuraLocked)?.({})).toBe(
       false,
     );
@@ -454,6 +467,10 @@ describe("OverlayWindowsService", () => {
     expect(hideClipPreviewOverlay).toHaveBeenCalled();
     expect(showAuraOverlay).toHaveBeenCalledWith(undefined);
     expect(showAuraOverlay).toHaveBeenCalledWith("profile-1");
+    expect(showAuraOverlay).toHaveBeenCalledWith("profile-1", {
+      startAddingAura: true,
+    });
+    expect(showAuraOverlay).toHaveBeenCalledWith("profile-1", {});
     expect(setAuraOverlayLocked).toHaveBeenCalledWith(false);
     expect(setAuraOverlayLocked).toHaveBeenCalledWith(true);
     expect(previewAuraPlacement).toHaveBeenCalledWith(
@@ -479,6 +496,32 @@ describe("OverlayWindowsService", () => {
     ).toEqual({
       ok: false,
       error: "locked must be a boolean",
+    });
+    expect(
+      await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, 123),
+    ).toEqual({
+      ok: false,
+      error: "profileId must be a string",
+    });
+    expect(
+      await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, ""),
+    ).toEqual({
+      ok: false,
+      error: "profileId is too short",
+    });
+    expect(
+      await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, "x".repeat(129)),
+    ).toEqual({
+      ok: false,
+      error: "profileId is too long",
+    });
+    expect(
+      await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, "profile-1", {
+        startAddingAura: "yes",
+      }),
+    ).toEqual({
+      ok: false,
+      error: "startAddingAura must be a boolean",
     });
   });
 

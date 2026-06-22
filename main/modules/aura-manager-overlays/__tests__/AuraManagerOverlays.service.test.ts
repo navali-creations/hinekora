@@ -238,6 +238,33 @@ describe("AuraManagerOverlaysService", () => {
     });
   });
 
+  it("reloads the current aura profile when add aura mode is requested", async () => {
+    const profile = createAuraProfile({ id: "profile-1" });
+    vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+      list: () => [profile],
+      update: vi.fn(),
+    } as unknown as ProfilesService);
+    const auraWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(auraWindow);
+    const coordinator = new GameOverlayCoordinator();
+    const service = new AuraManagerOverlaysService(coordinator);
+    coordinator.setGameRunningActive(true);
+    service.setGameRunningActive(true);
+    coordinator.setPoeFocusActive(true);
+
+    await service.show(profile.id);
+    await service.show(profile.id, { startAddingAura: true });
+
+    expect(electronMocks.BrowserWindow).toHaveBeenCalledTimes(1);
+    expect(auraWindow.loadFile).toHaveBeenCalledTimes(2);
+    expect(auraWindow.loadFile).toHaveBeenNthCalledWith(1, expect.any(String), {
+      hash: `/${WindowName.AuraOverlay}?profileId=profile-1`,
+    });
+    expect(auraWindow.loadFile).toHaveBeenNthCalledWith(2, expect.any(String), {
+      hash: `/${WindowName.AuraOverlay}?profileId=profile-1&startAddingAura=1&addAuraRequestId=1`,
+    });
+  });
+
   it("toggles the aura overlay between click-through and editable modes", async () => {
     const profile = createAuraProfile();
     vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
@@ -263,6 +290,9 @@ describe("AuraManagerOverlaysService", () => {
     auraWindow.setIgnoreMouseEvents.mockClear();
     auraWindow.webContents.send.mockClear();
     mainWindow.webContents.send.mockClear();
+
+    service.setInputPassthrough(false);
+    expect(auraWindow.setIgnoreMouseEvents).not.toHaveBeenCalled();
 
     service.setLocked(false);
     expect(auraWindow.setIgnoreMouseEvents).toHaveBeenCalledWith(false);
@@ -380,6 +410,34 @@ describe("AuraManagerOverlaysService", () => {
     service.setGameRunningActive(true);
     await service.show(noRenderableProfile.id);
     expect(electronMocks.BrowserWindow).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows an unlocked aura overlay even when the profile has no renderable placements", async () => {
+    const profile = createAuraProfile({
+      cropRegions: [],
+      overlayPlacements: [],
+    });
+    vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+      list: () => [profile],
+      update: vi.fn(),
+    } as unknown as ProfilesService);
+    const auraWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(auraWindow);
+    const coordinator = new GameOverlayCoordinator();
+    const service = new AuraManagerOverlaysService(coordinator);
+    coordinator.setGameRunningActive(true);
+    service.setGameRunningActive(true);
+    coordinator.setPoeFocusActive(true);
+
+    service.setLocked(false);
+    await service.show(profile.id);
+
+    expect(electronMocks.BrowserWindow).toHaveBeenCalledTimes(1);
+    expect(auraWindow.loadFile).toHaveBeenCalledWith(expect.any(String), {
+      hash: `/${WindowName.AuraOverlay}?profileId=profile-1`,
+    });
+    expect(auraWindow.showInactive).toHaveBeenCalled();
+    expect(auraWindow.setIgnoreMouseEvents).toHaveBeenLastCalledWith(false);
   });
 
   it("does not show requested auras until the active game is running", async () => {

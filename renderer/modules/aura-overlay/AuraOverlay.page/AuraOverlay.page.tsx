@@ -15,6 +15,8 @@ import {
   auraResizeCorners,
   createAuraPreviewConstraints,
   createAuraVideoStyle,
+  isAuraResizeCorner,
+  readAuraRouteParams,
   readAuraVideoSize,
   resizeAuraPlacementFromCorner,
 } from "./AuraOverlay.page.utils";
@@ -52,12 +54,6 @@ const auraResizeCornerClassNames: Record<AuraResizeCorner, string> = {
   se: styles.resizeHandleSe ?? "",
 };
 
-function isAuraResizeCorner(
-  value: string | undefined,
-): value is AuraResizeCorner {
-  return auraResizeCorners.includes(value as AuraResizeCorner);
-}
-
 function AuraOverlayPage() {
   const { profileItems, selectedProfileId, updateProfile } = useProfilesShallow(
     (profiles) => ({
@@ -72,12 +68,11 @@ function AuraOverlayPage() {
       sources: capturePreview.sources,
     }),
   );
-  const routeParams = useMemo(
-    () => new URLSearchParams(window.location.hash.split("?")[1] ?? ""),
-    [],
-  );
+  const [routeParams, setRouteParams] = useState(readAuraRouteParams);
   const routeProfileId = routeParams.get("profileId");
   const routePlacementId = routeParams.get("placementId");
+  const routeStartAddingAura = routeParams.get("startAddingAura") === "1";
+  const routeAddAuraRequestId = routeParams.get("addAuraRequestId");
   const profile =
     (routeProfileId
       ? profileItems.find((item) => item.id === routeProfileId)
@@ -95,6 +90,8 @@ function AuraOverlayPage() {
     placement: OverlayPlacement;
   } | null>(null);
   const previewFrameRef = useRef<number | null>(null);
+  const handledAddAuraRequestRef = useRef<string | null>(null);
+  const addingAuraRef = useRef(false);
 
   const captureSourceId = useMemo(
     () =>
@@ -352,6 +349,18 @@ function AuraOverlayPage() {
   );
 
   useEffect(() => {
+    const handleHashChange = () => {
+      setRouteParams(readAuraRouteParams());
+    };
+
+    window.addEventListener("hashchange", handleHashChange);
+
+    return () => {
+      window.removeEventListener("hashchange", handleHashChange);
+    };
+  }, []);
+
+  useEffect(() => {
     let disposed = false;
 
     void window.electron.overlayWindows
@@ -389,11 +398,12 @@ function AuraOverlayPage() {
       .catch(() => setAuraOverlayLocked(false));
   };
 
-  const handleAddAuraClick = () => {
-    if (!profile || addingAura) {
-      return;
+  const startAddAuraSelection = useCallback(() => {
+    if (!profile || addingAuraRef.current) {
+      return false;
     }
 
+    addingAuraRef.current = true;
     setAddingAura(true);
     void window.electron.overlayWindows
       .selectCropRegion()
@@ -411,7 +421,36 @@ function AuraOverlayPage() {
         await window.electron.overlayWindows.showAura(profile.id);
       })
       .catch(() => {})
-      .finally(() => setAddingAura(false));
+      .finally(() => {
+        addingAuraRef.current = false;
+        setAddingAura(false);
+      });
+
+    return true;
+  }, [profile, updateProfile]);
+
+  useEffect(() => {
+    if (!routeStartAddingAura || !profile) {
+      return;
+    }
+
+    const requestId = routeAddAuraRequestId ?? "initial";
+    if (handledAddAuraRequestRef.current === requestId) {
+      return;
+    }
+
+    if (startAddAuraSelection()) {
+      handledAddAuraRequestRef.current = requestId;
+    }
+  }, [
+    profile,
+    routeAddAuraRequestId,
+    routeStartAddingAura,
+    startAddAuraSelection,
+  ]);
+
+  const handleAddAuraClick = () => {
+    startAddAuraSelection();
   };
 
   return (

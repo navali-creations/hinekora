@@ -39,9 +39,14 @@ function App() {
     const unsubscribers: Array<() => void> = [];
 
     if (isRecorderOverlay) {
-      void Promise.all([hydrateManagedRecorder(), hydrateReplayClips()]);
+      void Promise.all([
+        hydrateManagedRecorder(),
+        hydrateProfiles(),
+        hydrateReplayClips(),
+      ]);
       unsubscribers.push(
         startManagedRecorderListener(),
+        startProfilesListener(),
         startReplayClipsListener(),
       );
     } else if (isClipPreviewOverlay) {

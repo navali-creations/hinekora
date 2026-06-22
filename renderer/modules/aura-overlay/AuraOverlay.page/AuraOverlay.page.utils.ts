@@ -11,6 +11,18 @@ interface AuraVideoSize {
 
 export const auraResizeCorners: AuraResizeCorner[] = ["nw", "ne", "sw", "se"];
 
+export function readAuraRouteParams(
+  hash = window.location.hash,
+): URLSearchParams {
+  return new URLSearchParams(hash.split("?")[1] ?? "");
+}
+
+export function isAuraResizeCorner(
+  value: string | undefined,
+): value is AuraResizeCorner {
+  return auraResizeCorners.includes(value as AuraResizeCorner);
+}
+
 export function createAuraPreviewConstraints(
   sourceId: string,
 ): MediaStreamConstraints {

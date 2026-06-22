@@ -6,6 +6,8 @@ import { ManualClipsOverlayService } from "~/main/modules/manual-clips-overlay";
 import { ProfilesService } from "~/main/modules/profiles";
 import { RecordingControlsOverlayService } from "~/main/modules/recording-controls-overlay";
 import {
+  assertObject,
+  assertOptionalBoolean,
   assertString,
   handleValidationError,
 } from "~/main/utils/ipc-validation";
@@ -19,7 +21,10 @@ import {
 } from "~/types";
 import { GameOverlayCoordinator } from "./GameOverlayCoordinator";
 import { OverlayWindowsChannel } from "./OverlayWindows.channels";
-import type { CropRegionSelection } from "./OverlayWindows.dto";
+import type {
+  CropRegionSelection,
+  ShowAuraOverlayOptions,
+} from "./OverlayWindows.dto";
 
 class OverlayWindowsService {
   private static instance: OverlayWindowsService | null = null;
@@ -102,9 +107,14 @@ class OverlayWindowsService {
     this.deathClipsOverlay.hide();
   }
 
-  showAuraOverlay(profileId?: string): Promise<void> {
+  showAuraOverlay(
+    profileId?: string,
+    options?: ShowAuraOverlayOptions,
+  ): Promise<void> {
     this.persistentAuraOverlayRequested = true;
-    return this.auraManagerOverlays.show(profileId);
+    return options === undefined
+      ? this.auraManagerOverlays.show(profileId)
+      : this.auraManagerOverlays.show(profileId, options);
   }
 
   requestPersistentAuraOverlay(): boolean {
@@ -152,7 +162,11 @@ class OverlayWindowsService {
   }
 
   selectCropRegion(): Promise<CropRegionSelection | null> {
-    return this.gridLinesOverlay.selectCropRegion();
+    this.auraManagerOverlays.setInputPassthrough(true);
+
+    return this.gridLinesOverlay.selectCropRegion().finally(() => {
+      this.auraManagerOverlays.setInputPassthrough(false);
+    });
   }
 
   completeCropRegionSelection(selection: unknown): void {
@@ -191,20 +205,28 @@ class OverlayWindowsService {
     );
     registerGuardedIpcHandler(
       OverlayWindowsChannel.ShowAura,
-      [WindowName.Main, WindowName.AuraOverlay],
-      (_event, profileId) =>
-        this.showAuraOverlay(
-          typeof profileId === "string" ? profileId : undefined,
-        ),
+      [WindowName.Main, WindowName.AuraOverlay, WindowName.RecorderOverlay],
+      (_event, profileId, options) => {
+        try {
+          const normalizedProfileId = parseOptionalShowAuraProfileId(profileId);
+          const parsedOptions = parseShowAuraOverlayOptions(options);
+
+          return parsedOptions === undefined
+            ? this.showAuraOverlay(normalizedProfileId)
+            : this.showAuraOverlay(normalizedProfileId, parsedOptions);
+        } catch (error) {
+          return handleValidationError(error);
+        }
+      },
     );
     registerGuardedIpcHandler(
       OverlayWindowsChannel.IsAuraLocked,
-      [WindowName.Main, WindowName.AuraOverlay],
+      [WindowName.Main, WindowName.AuraOverlay, WindowName.RecorderOverlay],
       () => this.isAuraOverlayLocked(),
     );
     registerGuardedIpcHandler(
       OverlayWindowsChannel.SetAuraLocked,
-      [WindowName.Main, WindowName.AuraOverlay],
+      [WindowName.Main, WindowName.AuraOverlay, WindowName.RecorderOverlay],
       (_event, locked) => {
         try {
           if (typeof locked !== "boolean") {
@@ -274,6 +296,38 @@ function hasRenderableAuraPlacements(profile: Profile): boolean {
   return profile.overlayPlacements.some((placement) =>
     cropRegionIds.has(placement.cropRegionId),
   );
+}
+
+function parseOptionalShowAuraProfileId(
+  profileId: unknown,
+): string | undefined {
+  if (profileId === undefined) {
+    return undefined;
+  }
+
+  assertString(profileId, "profileId", OverlayWindowsChannel.ShowAura, {
+    min: 1,
+    max: 128,
+  });
+
+  return profileId;
+}
+
+function parseShowAuraOverlayOptions(
+  options: unknown,
+): ShowAuraOverlayOptions | undefined {
+  if (options === undefined) {
+    return undefined;
+  }
+
+  assertObject(options, "show aura options", OverlayWindowsChannel.ShowAura);
+  assertOptionalBoolean(
+    options.startAddingAura,
+    "startAddingAura",
+    OverlayWindowsChannel.ShowAura,
+  );
+
+  return options.startAddingAura === true ? { startAddingAura: true } : {};
 }
 
 export { OverlayWindowsService };

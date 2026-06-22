@@ -17,8 +17,14 @@ import type {
   EditorWorkspace,
   EditorWorkspaceQuery,
 } from "~/main/modules/editor/Editor.dto";
-import type { ManagedReplaySaveResult } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
-import type { CropRegionSelection } from "~/main/modules/overlay-windows/OverlayWindows.dto";
+import type {
+  ManagedRecorderCaptureMode,
+  ManagedReplaySaveResult,
+} from "~/main/modules/managed-recorder/ManagedRecorder.dto";
+import type {
+  CropRegionSelection,
+  ShowAuraOverlayOptions,
+} from "~/main/modules/overlay-windows/OverlayWindows.dto";
 import type {
   PoeProcessError,
   PoeProcessState,
@@ -147,7 +153,11 @@ declare global {
         openDevTools: () => Promise<void>;
       };
       managedRecorder: {
+        getCaptureMode: () => Promise<ManagedRecorderCaptureMode>;
         getStatus: () => Promise<ManagedRecorderStatus>;
+        setCaptureMode: (
+          mode: ManagedRecorderCaptureMode,
+        ) => Promise<ManagedRecorderCaptureMode>;
         startBuffer: () => Promise<ManagedRecorderStatus>;
         stopBuffer: () => Promise<ManagedRecorderStatus>;
         startRunRecording: () => Promise<ManagedRecorderStatus>;
@@ -155,6 +165,9 @@ declare global {
         saveReplay: () => Promise<ManagedReplaySaveResult>;
         onStatusChanged: (
           callback: (status: ManagedRecorderStatus) => void,
+        ) => () => void;
+        onCaptureModeChanged: (
+          callback: (mode: ManagedRecorderCaptureMode) => void,
         ) => () => void;
       };
       overlayWindows: {
@@ -166,7 +179,10 @@ declare global {
           callback: (isVisible: boolean) => void,
         ) => () => void;
         hideClipPreview: () => Promise<void>;
-        showAura: (profileId?: string) => Promise<void>;
+        showAura: (
+          profileId?: string,
+          options?: ShowAuraOverlayOptions,
+        ) => Promise<void>;
         isAuraLocked: () => Promise<boolean>;
         setAuraLocked: (locked: boolean) => Promise<void>;
         onAuraLockChanged: (callback: (locked: boolean) => void) => () => void;

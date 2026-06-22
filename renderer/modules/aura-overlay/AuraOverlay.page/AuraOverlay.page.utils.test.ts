@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   createAuraVideoStyle,
+  isAuraResizeCorner,
+  readAuraRouteParams,
   readAuraVideoSize,
   resizeAuraPlacementFromCorner,
 } from "./AuraOverlay.page.utils";
@@ -45,6 +47,21 @@ describe("AuraOverlay utils", () => {
 
   it("ignores aura video elements before dimensions are available", () => {
     expect(readAuraVideoSize({ videoWidth: 0, videoHeight: 0 })).toBeNull();
+  });
+
+  it("reads aura overlay route query parameters from a hash", () => {
+    const params = readAuraRouteParams(
+      "#/aura-overlay?profileId=profile-1&startAddingAura=1",
+    );
+
+    expect(params.get("profileId")).toBe("profile-1");
+    expect(params.get("startAddingAura")).toBe("1");
+  });
+
+  it("recognizes supported aura resize corners", () => {
+    expect(isAuraResizeCorner("nw")).toBe(true);
+    expect(isAuraResizeCorner("middle")).toBe(false);
+    expect(isAuraResizeCorner(undefined)).toBe(false);
   });
 
   it("resizes a aura placement from a corner by updating scale", () => {

@@ -88,7 +88,7 @@
 
 .addButton:disabled {
   opacity: 0.55;
-  cursor: wait;
+  cursor: default;
 }
 
 .lockButton {

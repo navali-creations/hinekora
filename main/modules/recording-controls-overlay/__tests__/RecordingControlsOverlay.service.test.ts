@@ -42,7 +42,7 @@ function createFakeWindow(
 ) {
   return {
     close: vi.fn(),
-    getBounds: vi.fn(() => ({ x: 100, y: 100, width: 360, height: 96 })),
+    getBounds: vi.fn(() => ({ x: 100, y: 100, width: 420, height: 56 })),
     getNativeWindowHandle: vi.fn(() => {
       const buffer = Buffer.alloc(8);
       buffer.writeBigUInt64LE(1234n);
@@ -117,10 +117,10 @@ describe("RecordingControlsOverlayService", () => {
 
     expect(electronMocks.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
-        width: 360,
-        height: 96,
+        width: 420,
+        height: 56,
         focusable: true,
-        x: 1540,
+        x: 1480,
         y: 24,
         webPreferences: expect.objectContaining({ sandbox: true }),
       }),
@@ -133,8 +133,8 @@ describe("RecordingControlsOverlayService", () => {
     expect(service.createAnchorBounds()).toEqual({
       x: 100,
       y: 100,
-      width: 360,
-      height: 96,
+      width: 420,
+      height: 56,
     });
     expect(service.isVisible()).toBe(true);
     expect(mainWindow.webContents.send).toHaveBeenCalledWith(

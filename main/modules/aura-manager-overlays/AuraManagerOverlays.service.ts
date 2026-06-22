@@ -9,6 +9,7 @@ import {
   loadOverlayRenderer,
 } from "~/main/modules/overlay-windows/OverlayWindow.shared";
 import { OverlayWindowsChannel } from "~/main/modules/overlay-windows/OverlayWindows.channels";
+import type { ShowAuraOverlayOptions } from "~/main/modules/overlay-windows/OverlayWindows.dto";
 import { ProfilesService } from "~/main/modules/profiles";
 import { logInfo } from "~/main/utils/app-log";
 import {
@@ -34,12 +35,17 @@ class AuraManagerOverlaysService {
   private auraOverlayProfileId: string | undefined;
   private auraOverlayLocked = true;
   private gameRunningActive = false;
+  private addAuraRequestId = 0;
+  private inputPassthroughActive = false;
 
   constructor(private readonly coordinator: GameOverlayCoordinator) {
     this.coordinator.register(this);
   }
 
-  async show(profileId?: string): Promise<void> {
+  async show(
+    profileId?: string,
+    options: ShowAuraOverlayOptions = {},
+  ): Promise<void> {
     this.auraOverlayRequested = true;
     this.auraOverlayProfileId = profileId;
 
@@ -54,7 +60,7 @@ class AuraManagerOverlaysService {
       return;
     }
 
-    await this.syncWindow(profile);
+    await this.syncWindow(profile, options);
   }
 
   setGameRunningActive(active: boolean): void {
@@ -92,6 +98,15 @@ class AuraManagerOverlaysService {
     return this.auraOverlayLocked;
   }
 
+  setInputPassthrough(active: boolean): void {
+    if (this.inputPassthroughActive === active) {
+      return;
+    }
+
+    this.inputPassthroughActive = active;
+    this.applyWindowInteractivity();
+  }
+
   suspendRequestedOverlay(): void {
     if (!this.auraOverlayRequested) {
       return;
@@ -123,15 +138,18 @@ class AuraManagerOverlaysService {
     this.closeWindow();
   }
 
-  private async syncWindow(profile: Profile): Promise<void> {
-    if (!this.hasRenderableAuraPlacements(profile)) {
+  private async syncWindow(
+    profile: Profile,
+    options: ShowAuraOverlayOptions = {},
+  ): Promise<void> {
+    if (this.auraOverlayLocked && !this.hasRenderableAuraPlacements(profile)) {
       this.closeWindow();
       return;
     }
 
     const window = this.auraWindow ?? this.createWindow();
     this.updateWindowBounds(window);
-    const loaded = await this.loadProfile(window, profile.id);
+    const loaded = await this.loadProfile(window, profile.id, options);
     if (!loaded) {
       return;
     }
@@ -170,7 +188,6 @@ class AuraManagerOverlaysService {
     const auraWebContents = window.webContents;
     registerIpcWindowRole(auraWebContents, WindowName.AuraOverlay);
     configureGameOverlayWindow(window);
-    window.setContentProtection(true);
     window.on("closed", () => {
       unregisterIpcWindowRole(auraWebContents);
       logInfo(AURA_OVERLAY_SCOPE, "Aura overlay closed");
@@ -210,15 +227,23 @@ class AuraManagerOverlaysService {
   private async loadProfile(
     window: BrowserWindow,
     profileId: string,
+    options: ShowAuraOverlayOptions = {},
   ): Promise<boolean> {
-    if (this.auraWindowProfileId === profileId) {
+    const startAddingAura = options.startAddingAura === true;
+    if (this.auraWindowProfileId === profileId && !startAddingAura) {
       return true;
     }
 
     try {
+      const routeParams = new URLSearchParams({ profileId });
+      if (startAddingAura) {
+        routeParams.set("startAddingAura", "1");
+        routeParams.set("addAuraRequestId", String(++this.addAuraRequestId));
+      }
+
       await loadOverlayRenderer(
         window,
-        `#/${WindowName.AuraOverlay}?profileId=${encodeURIComponent(profileId)}`,
+        `#/${WindowName.AuraOverlay}?${routeParams.toString()}`,
       );
     } catch (error) {
       if (window.isDestroyed() || this.auraWindow !== window) {
@@ -258,7 +283,7 @@ class AuraManagerOverlaysService {
       return;
     }
 
-    if (this.auraOverlayLocked) {
+    if (this.auraOverlayLocked || this.inputPassthroughActive) {
       window.setIgnoreMouseEvents(true);
       return;
     }

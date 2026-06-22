@@ -6,3 +6,7 @@ export interface CropRegionSelection {
   viewportWidth?: number;
   viewportHeight?: number;
 }
+
+export interface ShowAuraOverlayOptions {
+  startAddingAura?: boolean;
+}
