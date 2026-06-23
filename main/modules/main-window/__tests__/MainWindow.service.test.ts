@@ -108,6 +108,7 @@ class FakeWindow {
   shown = false;
   closeListener: ((event: { preventDefault(): void }) => void) | null = null;
   closedListener: (() => void) | null = null;
+  blurListener: (() => void) | null = null;
   focusListener: (() => void) | null = null;
   readyListener: (() => void) | null = null;
   windowOpenHandler: ((details: { url: string }) => { action: "deny" }) | null =
@@ -186,6 +187,9 @@ class FakeWindow {
     }
     if (event === "focus") {
       this.focusListener = listener as () => void;
+    }
+    if (event === "blur") {
+      this.blurListener = listener as () => void;
     }
   });
   show = vi.fn(() => {

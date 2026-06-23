@@ -3,10 +3,48 @@ import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { appendFile } from "node:fs/promises";
 import { EOL } from "node:os";
 import { basename, dirname } from "node:path";
+import { type InspectColor, styleText } from "node:util";
 
 type LogLevel = "info" | "warn" | "error";
 type LogFieldValue = boolean | number | string | null | undefined;
 type LogFields = Record<string, LogFieldValue>;
+
+const levelColorFormats = {
+  info: "greenBright",
+  warn: "yellowBright",
+  error: "redBright",
+} as const satisfies Record<LogLevel, InspectColor>;
+const scopeColorFormats = [
+  "cyanBright",
+  "magentaBright",
+  "blueBright",
+  "greenBright",
+  "yellowBright",
+  "redBright",
+  "whiteBright",
+  "cyan",
+  "magenta",
+  "blue",
+] as const satisfies readonly InspectColor[];
+const knownScopeColorFormats: Readonly<Record<string, InspectColor>> = {
+  app: "blueBright",
+  "app-log": "whiteBright",
+  "app-setup": "cyanBright",
+  "aura-manager-overlays": "magentaBright",
+  "capture-preview": "yellowBright",
+  "client-log": "greenBright",
+  "death-clips-overlay": "redBright",
+  "diag-log": "cyan",
+  editor: "magenta",
+  "grid-lines-overlay": "blue",
+  "managed-recorder": "green",
+  "overlay-windows": "yellow",
+  "poe-process": "red",
+  "recording-controls-overlay": "white",
+  sentry: "cyanBright",
+  startup: "greenBright",
+  updater: "magentaBright",
+};
 
 let logFilePath: string | null = null;
 let logWriteQueue: Promise<void> = Promise.resolve();
@@ -20,6 +58,7 @@ function writeLog(
 ): void {
   const timestamp = new Date().toISOString();
   const prefix = `${timestamp} ${level.toUpperCase()} [${scope}] ${message}`;
+  const consolePrefix = formatConsolePrefix(timestamp, level, scope, message);
   const fieldsToLog = Object.keys(fields).length > 0 ? fields : undefined;
   const logger =
     level === "error"
@@ -29,13 +68,79 @@ function writeLog(
         : console.info;
 
   if (fieldsToLog) {
-    logger(prefix, fieldsToLog);
+    logger(consolePrefix, fieldsToLog);
     writeFileLog(level, prefix, fieldsToLog, options.sync);
     return;
   }
 
-  logger(prefix);
+  logger(consolePrefix);
   writeFileLog(level, prefix, undefined, options.sync);
+}
+
+function formatConsolePrefix(
+  timestamp: string,
+  level: LogLevel,
+  scope: string,
+  message: string,
+): string {
+  if (!shouldColorizeConsole()) {
+    return `${timestamp} ${level.toUpperCase()} [${scope}] ${message}`;
+  }
+
+  const stream = level === "error" ? process.stderr : process.stdout;
+  const coloredTimestamp = styleText("dim", timestamp, { stream });
+  const coloredLevel = styleText(
+    levelColorFormats[level],
+    level.toUpperCase(),
+    {
+      stream,
+    },
+  );
+  const coloredScope = styleText(
+    ["bold", getScopeColorFormat(scope)],
+    `[${scope}]`,
+    {
+      stream,
+    },
+  );
+
+  return `${coloredTimestamp} ${coloredLevel} ${coloredScope} ${message}`;
+}
+
+function shouldColorizeConsole(): boolean {
+  if (isTestProcess()) {
+    return process.env.HINEKORA_TEST_FORCE_COLOR === "1";
+  }
+
+  const forceColor = process.env.FORCE_COLOR;
+  return (
+    forceColor === undefined ||
+    (forceColor !== "0" && forceColor.toLowerCase() !== "false")
+  );
+}
+
+function isTestProcess(): boolean {
+  return (
+    process.env.NODE_ENV === "test" ||
+    process.env.VITEST === "true" ||
+    (process.env.VITEST_WORKER_ID !== undefined &&
+      process.env.VITEST_WORKER_ID !== "")
+  );
+}
+
+function getScopeColorFormat(scope: string): InspectColor {
+  const knownScopeColor = knownScopeColorFormats[scope];
+  if (knownScopeColor) {
+    return knownScopeColor;
+  }
+
+  let hash = 0;
+
+  for (let index = 0; index < scope.length; index += 1) {
+    hash = (hash * 31 + scope.charCodeAt(index)) >>> 0;
+  }
+
+  return scopeColorFormats[hash % scopeColorFormats.length] as InspectColor;
 }
 
 function writeFileLog(

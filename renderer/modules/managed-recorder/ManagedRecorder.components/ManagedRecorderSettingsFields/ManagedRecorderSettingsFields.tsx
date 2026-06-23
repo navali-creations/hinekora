@@ -14,6 +14,7 @@ import {
   RecordingEncoderOptions,
   type RecordingQuality,
 } from "~/types";
+import { ManagedRecorderOverlayCaptureToggle } from "../ManagedRecorderOverlayCaptureToggle/ManagedRecorderOverlayCaptureToggle";
 
 const recordingResolutionOptions = [
   { value: "native", label: "Native source" },
@@ -30,14 +31,12 @@ const recordingQualityOptions = [
   { value: "ultra", label: "Ultra" },
 ] as const;
 const recordingFieldHelp = {
-  resolution:
-    "Sets the video size for clips and full recordings. Native source keeps the captured display resolution.",
+  resolution: "Sets video size. Native keeps the captured source resolution.",
   fps: "Sets capture frame rate. 60 FPS is smoother and uses more disk space and GPU/CPU than 30 FPS.",
   encoder:
     "Selects the encoder used to write video files. Hardware encoders lower CPU usage when supported.",
   clipQuality: "Controls the quality and file size of short clips.",
-  recordingQuality:
-    "Controls the quality and file size of full session recordings.",
+  recordingQuality: "Controls quality and file size of full recordings.",
 } as const;
 
 function ManagedRecorderSettingsFields() {
@@ -242,6 +241,8 @@ function ManagedRecorderSettingsFields() {
           </select>
         </label>
       </div>
+
+      <ManagedRecorderOverlayCaptureToggle />
     </>
   );
 }

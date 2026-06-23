@@ -51,6 +51,13 @@ function CaptureModeBeacon(props: PopoverComponentProps) {
                 you want the full run.
               </span>
             </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
+                The recorder overlay has matching tabs, so you can switch modes
+                from the dashboard or from inside the game.
+              </span>
+            </li>
           </ul>
         </div>
 

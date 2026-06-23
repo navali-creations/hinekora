@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { GameOverlayCoordinator } from "~/main/modules/overlay-windows/GameOverlayCoordinator";
 import { OverlayWindowsChannel } from "~/main/modules/overlay-windows/OverlayWindows.channels";
+import {
+  createFakeBrowserWindow,
+  type FakeBrowserWindowOptions,
+} from "~/main/test/fake-browser-window";
 
 import { RecordingControlsOverlayService } from "../RecordingControlsOverlay.service";
 
@@ -37,40 +41,12 @@ vi.mock("electron", () => ({
   },
 }));
 
-function createFakeWindow(
-  options: { visible?: boolean; destroyed?: boolean; url?: string } = {},
-) {
-  return {
-    close: vi.fn(),
-    getBounds: vi.fn(() => ({ x: 100, y: 100, width: 420, height: 56 })),
-    getNativeWindowHandle: vi.fn(() => {
-      const buffer = Buffer.alloc(8);
-      buffer.writeBigUInt64LE(1234n);
-      return buffer;
-    }),
-    hide: vi.fn(),
-    isDestroyed: vi.fn(() => options.destroyed ?? false),
-    isVisible: vi.fn(() => options.visible ?? false),
-    loadFile: vi.fn().mockResolvedValue(undefined),
-    loadURL: vi.fn().mockResolvedValue(undefined),
-    moveTop: vi.fn(),
-    on: vi.fn(),
-    setAlwaysOnTop: vi.fn(),
-    setContentProtection: vi.fn(),
-    setFullScreenable: vi.fn(),
-    setIgnoreMouseEvents: vi.fn(),
-    setOpacity: vi.fn(),
-    setVisibleOnAllWorkspaces: vi.fn(),
-    showInactive: vi.fn(),
-    webContents: {
-      getURL: vi.fn(
-        () => options.url ?? `app://-/${WindowName.RecorderOverlay}`,
-      ),
-      isDevToolsOpened: vi.fn(() => false),
-      openDevTools: vi.fn(),
-      send: vi.fn(),
-    },
-  };
+function createFakeWindow(options: FakeBrowserWindowOptions = {}) {
+  return createFakeBrowserWindow({
+    bounds: { x: 100, y: 100, width: 360, height: 86 },
+    url: `app://-/${WindowName.RecorderOverlay}`,
+    ...options,
+  });
 }
 
 function mockPrimaryDisplay(): void {
@@ -117,10 +93,10 @@ describe("RecordingControlsOverlayService", () => {
 
     expect(electronMocks.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
-        width: 420,
-        height: 56,
-        focusable: true,
-        x: 1480,
+        width: 360,
+        height: 86,
+        focusable: false,
+        x: 1540,
         y: 24,
         webPreferences: expect.objectContaining({ sandbox: true }),
       }),
@@ -133,8 +109,8 @@ describe("RecordingControlsOverlayService", () => {
     expect(service.createAnchorBounds()).toEqual({
       x: 100,
       y: 100,
-      width: 420,
-      height: 56,
+      width: 360,
+      height: 86,
     });
     expect(service.isVisible()).toBe(true);
     expect(mainWindow.webContents.send).toHaveBeenCalledWith(
@@ -184,6 +160,60 @@ describe("RecordingControlsOverlayService", () => {
     );
   });
 
+  it("resizes between expanded and minimized modes without moving the right edge", async () => {
+    const recorderWindow = createFakeWindow();
+    recorderWindow.getBounds.mockReturnValue({
+      x: 1540,
+      y: 24,
+      width: 360,
+      height: 86,
+    });
+    electronMocks.browserWindowFactory.mockReturnValue(recorderWindow);
+    const coordinator = new GameOverlayCoordinator();
+    const service = new RecordingControlsOverlayService(coordinator);
+
+    await service.show();
+
+    expect(service.getMode()).toBe("expanded");
+    expect(service.setMode("expanded")).toBe("expanded");
+    expect(recorderWindow.setBounds).not.toHaveBeenCalled();
+    expect(service.setMode("minimized")).toBe("minimized");
+    expect(recorderWindow.setBounds).toHaveBeenCalledWith({
+      x: 1664,
+      y: 24,
+      width: 236,
+      height: 42,
+    });
+    expect(recorderWindow.webContents.send).toHaveBeenCalledWith(
+      OverlayWindowsChannel.RecorderModeChanged,
+      "minimized",
+    );
+
+    recorderWindow.getBounds.mockReturnValue({
+      x: 1664,
+      y: 24,
+      width: 236,
+      height: 42,
+    });
+
+    expect(service.setMode("expanded")).toBe("expanded");
+    expect(recorderWindow.setBounds).toHaveBeenLastCalledWith({
+      x: 1540,
+      y: 24,
+      width: 360,
+      height: 86,
+    });
+  });
+
+  it("stores mode changes while no recorder window is available", () => {
+    const coordinator = new GameOverlayCoordinator();
+    const service = new RecordingControlsOverlayService(coordinator);
+
+    expect(service.setMode("minimized")).toBe("minimized");
+    expect(service.getMode()).toBe("minimized");
+    expect(electronMocks.BrowserWindow).not.toHaveBeenCalled();
+  });
+
   it("suspends requested recorder overlay while PoE focus is inactive", async () => {
     const recorderWindow = createFakeWindow({ visible: true });
     electronMocks.browserWindowFactory.mockReturnValue(recorderWindow);
@@ -203,8 +233,8 @@ describe("RecordingControlsOverlayService", () => {
     expect(recorderWindow.setOpacity).toHaveBeenCalledWith(1);
   });
 
-  it("keeps the recorder overlay visible while its window is focused", async () => {
-    const recorderWindow = createFakeWindow({ visible: true });
+  it("does not participate in app focus when clicked", async () => {
+    const recorderWindow = createFakeWindow();
     electronMocks.browserWindowFactory.mockReturnValue(recorderWindow);
     const coordinator = new GameOverlayCoordinator();
     const service = new RecordingControlsOverlayService(coordinator);
@@ -212,24 +242,15 @@ describe("RecordingControlsOverlayService", () => {
     coordinator.setPoeFocusActive(true);
 
     await service.show();
-    const focusListener = recorderWindow.on.mock.calls.find(
-      ([eventName]) => eventName === "focus",
-    )?.[1];
-    const blurListener = recorderWindow.on.mock.calls.find(
-      ([eventName]) => eventName === "blur",
-    )?.[1];
 
-    focusListener?.();
-    recorderWindow.setOpacity.mockClear();
-    recorderWindow.setIgnoreMouseEvents.mockClear();
-
-    coordinator.setPoeFocusActive(false);
-    expect(recorderWindow.setOpacity).not.toHaveBeenCalledWith(0);
-    expect(recorderWindow.setIgnoreMouseEvents).not.toHaveBeenCalledWith(true);
-
-    blurListener?.();
-    expect(recorderWindow.setOpacity).toHaveBeenCalledWith(0);
-    expect(recorderWindow.setIgnoreMouseEvents).toHaveBeenCalledWith(true);
+    expect(recorderWindow.on).not.toHaveBeenCalledWith(
+      "focus",
+      expect.any(Function),
+    );
+    expect(recorderWindow.on).not.toHaveBeenCalledWith(
+      "blur",
+      expect.any(Function),
+    );
   });
 
   it("recreates a requested recorder overlay after system suspend closes the native window", async () => {

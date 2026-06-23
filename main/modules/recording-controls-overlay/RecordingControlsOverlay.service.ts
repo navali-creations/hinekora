@@ -3,6 +3,7 @@ import { BrowserWindow, screen } from "electron";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import type { GameOverlayCoordinator } from "~/main/modules/overlay-windows/GameOverlayCoordinator";
 import {
+  applyGameOverlayContentProtection,
   closeOverlayWindow,
   configureGameOverlayWindow,
   createOverlayWebPreferences,
@@ -15,19 +16,28 @@ import {
 } from "~/main/utils/ipc-window-roles";
 
 import { OverlayWindowsChannel } from "../overlay-windows/OverlayWindows.channels";
+import type { RecorderOverlayMode } from "../overlay-windows/OverlayWindows.dto";
 
-const RECORDER_OVERLAY_WIDTH = 420;
-const RECORDER_OVERLAY_HEIGHT = 56;
+const RECORDER_OVERLAY_BOUNDS: Record<
+  RecorderOverlayMode,
+  Pick<Electron.Rectangle, "width" | "height">
+> = {
+  expanded: { width: 360, height: 86 },
+  minimized: { width: 236, height: 42 },
+};
 const RECORDER_OVERLAY_RIGHT_MARGIN = 20;
 const RECORDER_OVERLAY_TOP_MARGIN = 24;
-const RECORDER_OVERLAY_FOCUS_ID = "recorder-controls";
 
 class RecordingControlsOverlayService {
   private recorderWindow: BrowserWindow | null = null;
   private recorderOverlayRequested = false;
   private preserveRequestOnClose = false;
+  private recorderOverlayMode: RecorderOverlayMode = "expanded";
 
-  constructor(private readonly coordinator: GameOverlayCoordinator) {
+  constructor(
+    private readonly coordinator: GameOverlayCoordinator,
+    private readonly getContentProtectionEnabled = () => false,
+  ) {
     this.coordinator.register(this);
   }
 
@@ -70,18 +80,42 @@ class RecordingControlsOverlayService {
     return this.recorderWindow;
   }
 
+  getMode(): RecorderOverlayMode {
+    return this.recorderOverlayMode;
+  }
+
+  setMode(mode: RecorderOverlayMode): RecorderOverlayMode {
+    if (this.recorderOverlayMode === mode) {
+      return this.recorderOverlayMode;
+    }
+
+    this.recorderOverlayMode = mode;
+    this.applyModeBounds();
+    this.publishModeChanged(mode);
+
+    return this.recorderOverlayMode;
+  }
+
   createAnchorBounds(): Electron.Rectangle {
     if (this.recorderWindow && !this.recorderWindow.isDestroyed()) {
       return this.recorderWindow.getBounds();
     }
 
+    return this.createDefaultBounds(this.recorderOverlayMode);
+  }
+
+  setContentProtectionEnabled(enabled: boolean): void {
+    applyGameOverlayContentProtection(this.recorderWindow, enabled);
+  }
+
+  private createDefaultBounds(mode: RecorderOverlayMode): Electron.Rectangle {
     const primaryDisplay = screen.getPrimaryDisplay();
     const { x, y, width } = primaryDisplay.workArea;
+    const bounds = RECORDER_OVERLAY_BOUNDS[mode];
 
     return {
-      width: RECORDER_OVERLAY_WIDTH,
-      height: RECORDER_OVERLAY_HEIGHT,
-      x: x + width - RECORDER_OVERLAY_WIDTH - RECORDER_OVERLAY_RIGHT_MARGIN,
+      ...bounds,
+      x: x + width - bounds.width - RECORDER_OVERLAY_RIGHT_MARGIN,
       y: y + RECORDER_OVERLAY_TOP_MARGIN,
     };
   }
@@ -117,14 +151,14 @@ class RecordingControlsOverlayService {
 
     this.recorderWindow = new BrowserWindow({
       ...anchorBounds,
-      minWidth: 400,
-      minHeight: 52,
+      minWidth: RECORDER_OVERLAY_BOUNDS.minimized.width,
+      minHeight: RECORDER_OVERLAY_BOUNDS.minimized.height,
       frame: false,
       transparent: true,
       resizable: false,
       alwaysOnTop: true,
       skipTaskbar: true,
-      focusable: true,
+      focusable: false,
       show: false,
       webPreferences: createOverlayWebPreferences(),
     });
@@ -132,15 +166,10 @@ class RecordingControlsOverlayService {
     const recorderWindow = this.recorderWindow;
     const recorderWebContents = recorderWindow.webContents;
     registerIpcWindowRole(recorderWebContents, WindowName.RecorderOverlay);
-    configureGameOverlayWindow(recorderWindow);
-    recorderWindow.on("focus", () => {
-      this.coordinator.setOverlayFocusActive(RECORDER_OVERLAY_FOCUS_ID, true);
-    });
-    recorderWindow.on("blur", () => {
-      this.coordinator.setOverlayFocusActive(RECORDER_OVERLAY_FOCUS_ID, false);
+    configureGameOverlayWindow(recorderWindow, {
+      contentProtection: this.getContentProtectionEnabled(),
     });
     recorderWindow.on("closed", () => {
-      this.coordinator.setOverlayFocusActive(RECORDER_OVERLAY_FOCUS_ID, false);
       unregisterIpcWindowRole(recorderWebContents);
       const preserveRequest = this.preserveRequestOnClose;
       this.preserveRequestOnClose = false;
@@ -173,6 +202,32 @@ class RecordingControlsOverlayService {
         isVisible,
       );
     }
+  }
+
+  private applyModeBounds(): void {
+    const window = this.recorderWindow;
+    if (!window || window.isDestroyed()) {
+      return;
+    }
+
+    const currentBounds = window.getBounds();
+    const nextBounds = RECORDER_OVERLAY_BOUNDS[this.recorderOverlayMode];
+    window.setBounds({
+      ...currentBounds,
+      ...nextBounds,
+      x: currentBounds.x + currentBounds.width - nextBounds.width,
+    });
+  }
+
+  private publishModeChanged(mode: RecorderOverlayMode): void {
+    if (!this.recorderWindow || this.recorderWindow.isDestroyed()) {
+      return;
+    }
+
+    this.recorderWindow.webContents.send(
+      OverlayWindowsChannel.RecorderModeChanged,
+      mode,
+    );
   }
 
   private closeWindow(input: { preserveRequest: boolean }): void {

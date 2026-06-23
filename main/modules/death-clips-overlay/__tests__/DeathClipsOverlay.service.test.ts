@@ -2,6 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { GameOverlayCoordinator } from "~/main/modules/overlay-windows/GameOverlayCoordinator";
+import {
+  createFakeBrowserWindow,
+  type FakeBrowserWindowOptions,
+} from "~/main/test/fake-browser-window";
 
 import type { ReplayClip } from "~/types";
 import { DeathClipsOverlayService } from "../DeathClipsOverlay.service";
@@ -34,41 +38,12 @@ vi.mock("electron", () => ({
   },
 }));
 
-function createFakeWindow(
-  options: { visible?: boolean; destroyed?: boolean; url?: string } = {},
-) {
-  return {
-    close: vi.fn(),
-    getBounds: vi.fn(() => ({ x: 100, y: 100, width: 360, height: 96 })),
-    getNativeWindowHandle: vi.fn(() => {
-      const buffer = Buffer.alloc(8);
-      buffer.writeBigUInt64LE(1234n);
-      return buffer;
-    }),
-    hide: vi.fn(),
-    isDestroyed: vi.fn(() => options.destroyed ?? false),
-    isVisible: vi.fn(() => options.visible ?? false),
-    loadFile: vi.fn().mockResolvedValue(undefined),
-    loadURL: vi.fn().mockResolvedValue(undefined),
-    moveTop: vi.fn(),
-    on: vi.fn(),
-    setAlwaysOnTop: vi.fn(),
-    setBounds: vi.fn(),
-    setContentProtection: vi.fn(),
-    setFullScreenable: vi.fn(),
-    setIgnoreMouseEvents: vi.fn(),
-    setOpacity: vi.fn(),
-    setVisibleOnAllWorkspaces: vi.fn(),
-    showInactive: vi.fn(),
-    webContents: {
-      getURL: vi.fn(
-        () => options.url ?? `app://-/${WindowName.ClipPreviewOverlay}`,
-      ),
-      isDevToolsOpened: vi.fn(() => false),
-      openDevTools: vi.fn(),
-      send: vi.fn(),
-    },
-  };
+function createFakeWindow(options: FakeBrowserWindowOptions = {}) {
+  return createFakeBrowserWindow({
+    bounds: { x: 100, y: 100, width: 360, height: 96 },
+    url: `app://-/${WindowName.ClipPreviewOverlay}`,
+    ...options,
+  });
 }
 
 function createDisplay(width = 1920, height = 1080): Electron.Display {
@@ -170,10 +145,31 @@ describe("DeathClipsOverlayService", () => {
     ).toBeNull();
   });
 
+  it("logs clip preview overlay open and close events", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const clipWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(clipWindow);
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+
+    await service.showClip(createClip({ id: "clip-log", kind: "manual" }));
+    expect(service.hide()).toBe(true);
+
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("Replay clip overlay opened"),
+      { clipId: "clip-log", kind: "manual" },
+    );
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("Replay clip overlay closed"),
+      { reason: "hide-requested" },
+    );
+  });
+
   it("handles clip preview guard paths and existing preview windows", async () => {
     const { coordinator, service } = createService();
     coordinator.setPoeFocusActive(true);
 
+    expect(service.hide()).toBe(false);
     await service.showClip(
       createClip({ originalObsPath: null, processedClipPath: null }),
     );
@@ -209,6 +205,65 @@ describe("DeathClipsOverlayService", () => {
       }),
     );
     expect(destroyedPreviewWindow.loadFile).not.toHaveBeenCalled();
+  });
+
+  it("cleans up newly requested clip preview windows when renderer load fails", async () => {
+    const clipWindow = createFakeWindow();
+    clipWindow.loadFile.mockRejectedValue(new Error("load failed"));
+    electronMocks.browserWindowFactory.mockReturnValue(clipWindow);
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+
+    await expect(service.showClip(createClip())).rejects.toThrow("load failed");
+
+    expect(clipWindow.close).toHaveBeenCalled();
+    expect(
+      (service as unknown as { clipPreviewOverlayRequested: boolean })
+        .clipPreviewOverlayRequested,
+    ).toBe(false);
+    expect(
+      (service as unknown as { clipPreviewWindow: unknown }).clipPreviewWindow,
+    ).toBeNull();
+  });
+
+  it("keeps already requested clip preview windows when renderer reload fails", async () => {
+    const clipWindow = createFakeWindow();
+    clipWindow.loadFile.mockRejectedValue(new Error("load failed"));
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+    Object.assign(service, {
+      clipPreviewOverlayRequested: true,
+      clipPreviewWindow: clipWindow,
+    });
+
+    await expect(service.showClip(createClip())).rejects.toThrow("load failed");
+
+    expect(clipWindow.close).not.toHaveBeenCalled();
+    expect(
+      (service as unknown as { clipPreviewOverlayRequested: boolean })
+        .clipPreviewOverlayRequested,
+    ).toBe(true);
+    expect(
+      (service as unknown as { clipPreviewWindow: unknown }).clipPreviewWindow,
+    ).toBe(clipWindow);
+  });
+
+  it("does not request a clip preview after its window is destroyed during load", async () => {
+    const clipWindow = createFakeWindow();
+    clipWindow.loadFile.mockImplementation(async () => {
+      clipWindow.isDestroyed.mockReturnValue(true);
+    });
+    electronMocks.browserWindowFactory.mockReturnValue(clipWindow);
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+
+    await service.showClip(createClip());
+
+    expect(clipWindow.showInactive).not.toHaveBeenCalled();
+    expect(
+      (service as unknown as { clipPreviewOverlayRequested: boolean })
+        .clipPreviewOverlayRequested,
+    ).toBe(false);
   });
 
   it("keeps the clip preview overlay visible while its window is focused", async () => {

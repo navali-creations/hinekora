@@ -1,6 +1,7 @@
 import { desktopCapturer, screen } from "electron";
 
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
+import { SettingsStoreService } from "~/main/modules/settings-store";
 import {
   detectPoeProcessState,
   isPoeProcessStateForGame,
@@ -69,25 +70,24 @@ class CapturePreviewService {
       return this.sourceListCache;
     }
 
-    if (!options.forceRefresh && this.sourceListRequest) {
+    if (this.sourceListRequest) {
       return this.sourceListRequest;
     }
 
-    if (!options.forceRefresh) {
-      this.sourceListRequest = this.collectSources(false).finally(() => {
-        this.sourceListRequest = null;
-      });
+    this.sourceListRequest = this.collectSources(
+      options.forceRefresh === true,
+    ).finally(() => {
+      this.sourceListRequest = null;
+    });
 
-      return this.sourceListRequest;
-    }
-
-    return this.collectSources(true);
+    return this.sourceListRequest;
   }
 
   private async collectSources(
     forceRefresh: boolean,
   ): Promise<CapturePreviewSource[]> {
     const startedAtMs = Date.now();
+    const { activeGame } = SettingsStoreService.getInstance().get();
     const displayDimensions = this.createDisplayDimensionsLookup();
     const primaryDisplayDimensions = getNativeDisplayDimensions(
       screen.getPrimaryDisplay(),
@@ -97,7 +97,7 @@ class CapturePreviewService {
         types: ["screen", "window"],
         thumbnailSize: { width: 360, height: 204 },
       }),
-      detectPoeProcessState(),
+      detectPoeProcessState(activeGame),
     ]);
 
     const sourceInputs = sources.slice(0, 64).map((source) => {
@@ -179,7 +179,8 @@ class CapturePreviewService {
       return this.gameRunningRequest;
     }
 
-    this.gameRunningRequest = detectPoeProcessState()
+    const { activeGame } = SettingsStoreService.getInstance().get();
+    this.gameRunningRequest = detectPoeProcessState(activeGame)
       .then(async (poeProcessState) => {
         const runningGames = new Set<GameId>();
         if (!poeProcessState.isRunning) {

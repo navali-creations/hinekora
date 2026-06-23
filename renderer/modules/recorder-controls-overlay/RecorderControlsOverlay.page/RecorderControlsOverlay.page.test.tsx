@@ -2,6 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { RecorderOverlayMode } from "~/main/modules/overlay-windows/OverlayWindows.dto";
 import type {
   ManagedRecorderSlice,
   ProfilesSlice,
@@ -22,7 +23,10 @@ const storeMocks = vi.hoisted(() => ({
 }));
 
 const electronMocks = vi.hoisted(() => ({
+  getRecorderMode: vi.fn(),
   hideRecorder: vi.fn(),
+  onRecorderModeChanged: vi.fn(),
+  setRecorderMode: vi.fn(),
   setAuraLocked: vi.fn(),
   showAura: vi.fn(),
 }));
@@ -93,6 +97,28 @@ function getButton(container: HTMLElement, label: string): HTMLButtonElement {
   return button;
 }
 
+function queryButton(
+  container: HTMLElement,
+  label: string,
+): HTMLButtonElement | null {
+  const button = [...container.querySelectorAll("button")].find(
+    (buttonElement) => buttonElement.getAttribute("aria-label") === label,
+  );
+
+  return button instanceof HTMLButtonElement ? button : null;
+}
+
+function getTab(container: HTMLElement, label: string): HTMLButtonElement {
+  const tab = [...container.querySelectorAll('button[role="tab"]')].find(
+    (buttonElement) => buttonElement.textContent?.trim() === label,
+  );
+  if (!(tab instanceof HTMLButtonElement)) {
+    throw new Error(`Expected ${label} tab to render`);
+  }
+
+  return tab;
+}
+
 function getProfileSelect(container: HTMLElement): HTMLSelectElement {
   const select = container.querySelector('[aria-label="Aura profile"]');
   if (!(select instanceof HTMLSelectElement)) {
@@ -108,6 +134,7 @@ describe("RecorderControlsOverlayPage", () => {
   let replayClipsState: ReplayClipsSlice["replayClips"];
   let root: Root | null = null;
   let container: HTMLDivElement;
+  let modeChangedListener: ((mode: RecorderOverlayMode) => void) | null = null;
 
   const renderOverlay = async () => {
     await act(async () => {
@@ -121,6 +148,17 @@ describe("RecorderControlsOverlayPage", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
+    modeChangedListener = null;
+    electronMocks.getRecorderMode.mockResolvedValue("expanded");
+    electronMocks.setRecorderMode.mockImplementation(
+      async (mode: RecorderOverlayMode) => mode,
+    );
+    electronMocks.onRecorderModeChanged.mockImplementation(
+      (callback: (mode: RecorderOverlayMode) => void) => {
+        modeChangedListener = callback;
+        return vi.fn();
+      },
+    );
     electronMocks.setAuraLocked.mockResolvedValue(undefined);
     electronMocks.showAura.mockResolvedValue(undefined);
 
@@ -188,7 +226,10 @@ describe("RecorderControlsOverlayPage", () => {
       configurable: true,
       value: {
         overlayWindows: {
+          getRecorderMode: electronMocks.getRecorderMode,
           hideRecorder: electronMocks.hideRecorder,
+          onRecorderModeChanged: electronMocks.onRecorderModeChanged,
+          setRecorderMode: electronMocks.setRecorderMode,
           setAuraLocked: electronMocks.setAuraLocked,
           showAura: electronMocks.showAura,
         },
@@ -201,6 +242,7 @@ describe("RecorderControlsOverlayPage", () => {
       root?.unmount();
     });
     root = null;
+    vi.useRealTimers();
     document.body.replaceChildren();
   });
 
@@ -224,15 +266,37 @@ describe("RecorderControlsOverlayPage", () => {
     expect(managedRecorderState.stopBuffer).toHaveBeenCalledTimes(1);
   });
 
-  it("routes session actions to full recording APIs and disables manual clips", async () => {
+  it("switches capture modes from overlay tabs and locks conflicting active modes", async () => {
+    await renderOverlay();
+
+    expect(getTab(container, "Recording").getAttribute("aria-selected")).toBe(
+      "false",
+    );
+    expect(getTab(container, "Rewind").getAttribute("aria-selected")).toBe(
+      "true",
+    );
+
+    getTab(container, "Recording").click();
+
+    expect(managedRecorderState.setCaptureMode).toHaveBeenCalledWith("session");
+
+    managedRecorderState.status = createStatus({ bufferActive: true });
+    await renderOverlay();
+
+    expect(getTab(container, "Recording").disabled).toBe(true);
+    getTab(container, "Recording").click();
+
+    expect(managedRecorderState.setCaptureMode).toHaveBeenCalledTimes(1);
+  });
+
+  it("routes session actions to full recording APIs and hides manual clips", async () => {
     managedRecorderState.captureMode = "session";
     await renderOverlay();
 
-    const manualClipButton = getButton(
-      container,
-      "Manual clips are only available in Rewind",
+    expect(queryButton(container, "Save last 60 seconds")).toBeNull();
+    expect(getTab(container, "Recording").getAttribute("aria-selected")).toBe(
+      "true",
     );
-    expect(manualClipButton.disabled).toBe(true);
 
     getButton(container, "Start recording").click();
     expect(managedRecorderState.startRunRecording).toHaveBeenCalledTimes(1);
@@ -249,7 +313,7 @@ describe("RecorderControlsOverlayPage", () => {
     expect(replayClipsState.saveManual).not.toHaveBeenCalled();
   });
 
-  it("switches aura profiles and starts add-aura mode from the crop button", async () => {
+  it("switches aura profiles and opens aura edit mode from the grid button", async () => {
     await renderOverlay();
 
     const select = getProfileSelect(container);
@@ -258,6 +322,22 @@ describe("RecorderControlsOverlayPage", () => {
 
     expect(profilesState.select).toHaveBeenCalledWith("profile-2");
     expect(electronMocks.showAura).toHaveBeenCalledWith("profile-2");
+
+    getButton(container, "Edit auras").click();
+    await flushPromises();
+
+    expect(electronMocks.setAuraLocked).toHaveBeenCalledWith(false);
+    expect(electronMocks.showAura).toHaveBeenCalledWith("profile-1");
+    expect(analyticsMocks.trackEvent).toHaveBeenCalledWith(
+      "aura-edit-started",
+      {
+        source: "recorder-overlay",
+      },
+    );
+  });
+
+  it("starts add-aura mode from the grid-add button", async () => {
+    await renderOverlay();
 
     getButton(container, "Add aura").click();
     await flushPromises();
@@ -271,12 +351,78 @@ describe("RecorderControlsOverlayPage", () => {
     });
   });
 
+  it("minimizes to compact controls with recording, manual clip, and expand actions", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-22T12:00:00.000Z"));
+    managedRecorderState.status = createStatus({
+      bufferActive: true,
+      recording: true,
+      recordingStartedAt: "2026-06-22T11:58:55.000Z",
+    });
+    await renderOverlay();
+
+    await act(async () => {
+      getButton(container, "Minimize overlay").click();
+      await flushPromises();
+    });
+
+    expect(electronMocks.setRecorderMode).toHaveBeenCalledWith("minimized");
+    expect(container.textContent).toContain("01:05");
+    expect(container.querySelector('[aria-label="Aura profile"]')).toBeNull();
+    expect(
+      [...container.querySelectorAll("button")]
+        .map((button) => button.getAttribute("aria-label"))
+        .slice(0, 2),
+    ).toEqual(["Disable Rewind", "Save last 60 seconds"]);
+
+    getButton(container, "Save last 60 seconds").click();
+    expect(replayClipsState.saveManual).toHaveBeenCalledTimes(1);
+    getButton(container, "Disable Rewind").click();
+    expect(managedRecorderState.stopBuffer).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      getButton(container, "Expand overlay").click();
+      await flushPromises();
+    });
+
+    expect(electronMocks.setRecorderMode).toHaveBeenCalledWith("expanded");
+    expect(getButton(container, "Edit auras")).toBeInstanceOf(
+      HTMLButtonElement,
+    );
+  });
+
+  it("keeps minimized recording controls available without the manual clip action in recording mode", async () => {
+    electronMocks.getRecorderMode.mockResolvedValue("minimized");
+    managedRecorderState.captureMode = "session";
+    await renderOverlay();
+
+    expect(queryButton(container, "Save last 60 seconds")).toBeNull();
+
+    getButton(container, "Start recording").click();
+    expect(managedRecorderState.startRunRecording).toHaveBeenCalledTimes(1);
+    expect(managedRecorderState.startBuffer).not.toHaveBeenCalled();
+  });
+
+  it("reacts to recorder overlay mode changes from main", async () => {
+    await renderOverlay();
+
+    await act(async () => {
+      modeChangedListener?.("minimized");
+      await flushPromises();
+    });
+
+    expect(getButton(container, "Expand overlay")).toBeInstanceOf(
+      HTMLButtonElement,
+    );
+  });
+
   it("disables recording, manual clip, and add-aura actions when the game is not running", async () => {
     managedRecorderState.status = createStatus({ gameRunning: false });
     await renderOverlay();
 
     expect(getButton(container, "Enable Rewind").disabled).toBe(true);
     expect(getButton(container, "Save last 60 seconds").disabled).toBe(true);
+    expect(getButton(container, "Edit auras").disabled).toBe(true);
     expect(getButton(container, "Add aura").disabled).toBe(true);
 
     const select = getProfileSelect(container);

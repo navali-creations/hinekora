@@ -3,6 +3,7 @@ import { BrowserWindow, screen } from "electron";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import type { GameOverlayCoordinator } from "~/main/modules/overlay-windows/GameOverlayCoordinator";
 import {
+  applyGameOverlayContentProtection,
   closeOverlayWindow,
   configureGameOverlayWindow,
   createOverlayWebPreferences,
@@ -17,9 +18,19 @@ import {
   unregisterIpcWindowRole,
 } from "~/main/utils/ipc-window-roles";
 
-import type { OverlayPlacement, Profile } from "~/types";
+import type { Profile } from "~/types";
 
 const AURA_OVERLAY_SCOPE = "aura-manager-overlays";
+const AURA_OVERLAY_FOCUS_ID = "aura-overlay";
+
+type AuraOverlayCloseReason =
+  | "destroy"
+  | "game-not-running"
+  | "game-stopped"
+  | "hide-requested"
+  | "no-renderable-placements"
+  | "system-suspend"
+  | "window-closed";
 
 function isNavigationAbortedError(error: unknown): boolean {
   return (
@@ -38,7 +49,10 @@ class AuraManagerOverlaysService {
   private addAuraRequestId = 0;
   private inputPassthroughActive = false;
 
-  constructor(private readonly coordinator: GameOverlayCoordinator) {
+  constructor(
+    private readonly coordinator: GameOverlayCoordinator,
+    private readonly getContentProtectionEnabled = () => false,
+  ) {
     this.coordinator.register(this);
   }
 
@@ -50,7 +64,7 @@ class AuraManagerOverlaysService {
     this.auraOverlayProfileId = profileId;
 
     if (!this.gameRunningActive) {
-      this.closeWindow();
+      this.closeWindow("game-not-running");
       return;
     }
 
@@ -70,26 +84,29 @@ class AuraManagerOverlaysService {
 
     this.gameRunningActive = active;
     if (!active) {
-      this.closeWindow();
+      this.closeWindow("game-stopped");
       return;
     }
 
     void this.restoreRequestedOverlay();
   }
 
-  previewPlacement(_profileId: string, _placement: OverlayPlacement): void {
-    // Aura previews are rendered in a single full-display overlay now, so
-    // placement-window bound previews are no longer needed.
-  }
-
   hide(): void {
     this.auraOverlayRequested = false;
     this.auraOverlayProfileId = undefined;
-    this.closeWindow();
+    this.closeWindow("hide-requested");
   }
 
   setLocked(locked: boolean): void {
+    const previousLocked = this.auraOverlayLocked;
     this.auraOverlayLocked = locked;
+    if (previousLocked !== locked) {
+      logInfo(
+        AURA_OVERLAY_SCOPE,
+        locked ? "Aura overlay locked" : "Aura overlay unlocked",
+        { locked },
+      );
+    }
     this.applyWindowInteractivity();
     this.publishLockState();
   }
@@ -128,14 +145,18 @@ class AuraManagerOverlaysService {
 
   suspendForSystem(): void {
     if (this.auraOverlayRequested) {
-      this.closeWindow();
+      this.closeWindow("system-suspend");
     }
   }
 
   destroy(): void {
     this.auraOverlayRequested = false;
     this.auraOverlayProfileId = undefined;
-    this.closeWindow();
+    this.closeWindow("destroy");
+  }
+
+  setContentProtectionEnabled(enabled: boolean): void {
+    applyGameOverlayContentProtection(this.auraWindow, enabled);
   }
 
   private async syncWindow(
@@ -143,18 +164,30 @@ class AuraManagerOverlaysService {
     options: ShowAuraOverlayOptions = {},
   ): Promise<void> {
     if (this.auraOverlayLocked && !this.hasRenderableAuraPlacements(profile)) {
-      this.closeWindow();
+      this.closeWindow("no-renderable-placements");
       return;
     }
 
     const window = this.auraWindow ?? this.createWindow();
+    const startAddingAura = options.startAddingAura === true;
+    const canDispatchAddAuraRequest =
+      startAddingAura &&
+      this.auraWindowProfileId === profile.id &&
+      !window.isDestroyed();
     this.updateWindowBounds(window);
-    const loaded = await this.loadProfile(window, profile.id, options);
+    const loaded = await this.loadProfile(
+      window,
+      profile.id,
+      canDispatchAddAuraRequest ? {} : options,
+    );
     if (!loaded) {
       return;
     }
 
     this.showOrSuspendWindow(window);
+    if (canDispatchAddAuraRequest) {
+      this.sendAddAuraRequest(window);
+    }
   }
 
   private hasRenderableAuraPlacements(profile: Profile): boolean {
@@ -187,11 +220,22 @@ class AuraManagerOverlaysService {
 
     const auraWebContents = window.webContents;
     registerIpcWindowRole(auraWebContents, WindowName.AuraOverlay);
-    configureGameOverlayWindow(window);
+    configureGameOverlayWindow(window, {
+      contentProtection: this.getContentProtectionEnabled(),
+    });
+    window.on("focus", () => {
+      this.coordinator.setOverlayFocusActive(AURA_OVERLAY_FOCUS_ID, true);
+    });
+    window.on("blur", () => {
+      this.coordinator.setOverlayFocusActive(AURA_OVERLAY_FOCUS_ID, false);
+    });
     window.on("closed", () => {
+      this.coordinator.setOverlayFocusActive(AURA_OVERLAY_FOCUS_ID, false);
       unregisterIpcWindowRole(auraWebContents);
-      logInfo(AURA_OVERLAY_SCOPE, "Aura overlay closed");
       if (this.auraWindow === window) {
+        logInfo(AURA_OVERLAY_SCOPE, "Aura overlay closed", {
+          reason: "window-closed",
+        });
         this.auraWindow = null;
         this.auraWindowProfileId = undefined;
       }
@@ -230,7 +274,7 @@ class AuraManagerOverlaysService {
     options: ShowAuraOverlayOptions = {},
   ): Promise<boolean> {
     const startAddingAura = options.startAddingAura === true;
-    if (this.auraWindowProfileId === profileId && !startAddingAura) {
+    if (this.auraWindowProfileId === profileId) {
       return true;
     }
 
@@ -266,14 +310,24 @@ class AuraManagerOverlaysService {
     return true;
   }
 
+  private sendAddAuraRequest(window: BrowserWindow): void {
+    window.webContents.send(
+      OverlayWindowsChannel.AuraAddRequested,
+      String(++this.addAuraRequestId),
+    );
+  }
+
   private showOrSuspendWindow(window: BrowserWindow): void {
     if (!this.coordinator.canShowGameOverlays()) {
       this.coordinator.suspendGameOverlayWindow(window);
       return;
     }
 
+    const wasVisible = window.isVisible();
     this.coordinator.showGameOverlayWindow(window);
-    logInfo(AURA_OVERLAY_SCOPE, "Aura overlay opened");
+    if (!wasVisible) {
+      logInfo(AURA_OVERLAY_SCOPE, "Aura overlay opened");
+    }
     this.applyWindowInteractivity();
   }
 
@@ -285,9 +339,12 @@ class AuraManagerOverlaysService {
 
     if (this.auraOverlayLocked || this.inputPassthroughActive) {
       window.setIgnoreMouseEvents(true);
+      window.setFocusable(false);
+      this.coordinator.setOverlayFocusActive(AURA_OVERLAY_FOCUS_ID, false);
       return;
     }
 
+    window.setFocusable(true);
     window.setIgnoreMouseEvents(false);
   }
 
@@ -309,10 +366,14 @@ class AuraManagerOverlaysService {
     }
   }
 
-  private closeWindow(): void {
+  private closeWindow(reason: AuraOverlayCloseReason): void {
     const window = this.auraWindow;
     this.auraWindow = null;
     this.auraWindowProfileId = undefined;
+    this.coordinator.setOverlayFocusActive(AURA_OVERLAY_FOCUS_ID, false);
+    if (window && !window.isDestroyed()) {
+      logInfo(AURA_OVERLAY_SCOPE, "Aura overlay closed", { reason });
+    }
     closeOverlayWindow(window);
   }
 

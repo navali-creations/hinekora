@@ -25,7 +25,22 @@ function OverlayIconBeacon(props: PopoverComponentProps) {
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
-                Start, stop, and save replay clips from a compact overlay.
+                Switch between Rewind and Recording tabs, then start or stop the
+                active mode without opening the dashboard.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
+                Minimize the overlay when you only need the timer, start or stop
+                control, and the manual clip button in Rewind mode.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
+                Use the aura buttons to open the Aura Manager or jump straight
+                into adding a new aura source.
               </span>
             </li>
           </ul>

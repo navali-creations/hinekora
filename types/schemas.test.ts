@@ -24,6 +24,7 @@ describe("shared schemas", () => {
       recordingEncoder: "hardware_h264",
       recordingClipQuality: "high",
       recordingRunQuality: "moderate",
+      recordingHideOverlaysFromCapture: false,
       recordingMaxStorageGb: 50,
       poe1ClientTxtPath: null,
       poe2ClientTxtPath: null,

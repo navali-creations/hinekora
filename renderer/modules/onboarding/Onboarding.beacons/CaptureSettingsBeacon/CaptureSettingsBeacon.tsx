@@ -7,7 +7,7 @@ function CaptureSettingsBeacon(props: PopoverComponentProps) {
   return (
     <Popover
       title="Capture settings"
-      subtitle="Tune recording resolution, FPS, encoder, and quality."
+      subtitle="Tune recording quality and capture visibility."
       {...props}
     >
       <div className="space-y-3">
@@ -29,6 +29,13 @@ function CaptureSettingsBeacon(props: PopoverComponentProps) {
                 resources.
               </span>
             </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
+                Hide overlays from recordings and rewind uses Electron capture
+                protection so Hinekora overlay windows stay out of saved video.
+              </span>
+            </li>
           </ul>
         </div>
 
@@ -48,7 +55,8 @@ function CaptureSettingsBeacon(props: PopoverComponentProps) {
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
-                Stop recording before changing encoder, FPS, or quality.
+                Stop recording before changing encoder, FPS, quality, or output
+                size.
               </span>
             </li>
           </ul>
@@ -57,8 +65,8 @@ function CaptureSettingsBeacon(props: PopoverComponentProps) {
         <div className="alert border border-info bg-secondary text-info">
           <FiInfo size={20} />
           <span>
-            Start with moderate settings, then increase quality if the game and
-            recorder remain smooth.
+            Capture protection also hides Hinekora overlays from screenshots and
+            external capture tools while it is enabled.
           </span>
         </div>
       </div>

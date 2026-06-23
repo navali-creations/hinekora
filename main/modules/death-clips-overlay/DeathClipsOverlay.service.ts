@@ -3,11 +3,13 @@ import { BrowserWindow, screen } from "electron";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import type { GameOverlayCoordinator } from "~/main/modules/overlay-windows/GameOverlayCoordinator";
 import {
+  applyGameOverlayContentProtection,
   closeOverlayWindow,
   configureGameOverlayWindow,
   createOverlayWebPreferences,
   loadOverlayRenderer,
 } from "~/main/modules/overlay-windows/OverlayWindow.shared";
+import { logInfo } from "~/main/utils/app-log";
 import {
   registerIpcWindowRole,
   unregisterIpcWindowRole,
@@ -19,6 +21,12 @@ const CLIP_PREVIEW_WIDTH = 560;
 const CLIP_PREVIEW_HEIGHT = 396;
 const CLIP_PREVIEW_GAP = 8;
 const CLIP_PREVIEW_OVERLAY_FOCUS_ID = "clip-preview";
+const CLIP_PREVIEW_OVERLAY_SCOPE = "death-clips-overlay";
+
+type ClipPreviewOverlayCloseReason =
+  | "destroy"
+  | "hide-requested"
+  | "window-closed";
 
 class DeathClipsOverlayService {
   private clipPreviewWindow: BrowserWindow | null = null;
@@ -27,6 +35,7 @@ class DeathClipsOverlayService {
   constructor(
     private readonly coordinator: GameOverlayCoordinator,
     private readonly createAnchorBounds: () => Electron.Rectangle,
+    private readonly getContentProtectionEnabled = () => false,
   ) {
     this.coordinator.register(this);
   }
@@ -37,7 +46,7 @@ class DeathClipsOverlayService {
       return;
     }
 
-    this.clipPreviewOverlayRequested = true;
+    const wasRequested = this.clipPreviewOverlayRequested;
     const bounds = this.createWindowBounds();
     if (!this.clipPreviewWindow || this.clipPreviewWindow.isDestroyed()) {
       await this.createWindow(bounds);
@@ -49,18 +58,34 @@ class DeathClipsOverlayService {
       return;
     }
 
-    await loadOverlayRenderer(
-      this.clipPreviewWindow,
-      `#/${WindowName.ClipPreviewOverlay}?clipId=${encodeURIComponent(clip.id)}`,
-    );
+    try {
+      await loadOverlayRenderer(
+        this.clipPreviewWindow,
+        `#/${WindowName.ClipPreviewOverlay}?clipId=${encodeURIComponent(clip.id)}`,
+      );
+    } catch (error) {
+      if (!wasRequested) {
+        this.closeWindow("hide-requested");
+      }
+      throw error;
+    }
+
+    if (!this.clipPreviewWindow || this.clipPreviewWindow.isDestroyed()) {
+      return;
+    }
+
+    this.clipPreviewOverlayRequested = true;
     this.coordinator.showOrHideGameOverlayWindow(this.clipPreviewWindow);
+    if (!wasRequested && this.coordinator.canShowGameOverlays()) {
+      logInfo(CLIP_PREVIEW_OVERLAY_SCOPE, "Replay clip overlay opened", {
+        clipId: clip.id,
+        kind: clip.kind,
+      });
+    }
   }
 
-  hide(): void {
-    const window = this.clipPreviewWindow;
-    this.clipPreviewOverlayRequested = false;
-    this.clipPreviewWindow = null;
-    closeOverlayWindow(window);
+  hide(): boolean {
+    return this.closeWindow("hide-requested");
   }
 
   suspendRequestedOverlay(): void {
@@ -75,8 +100,12 @@ class DeathClipsOverlayService {
     }
   }
 
+  setContentProtectionEnabled(enabled: boolean): void {
+    applyGameOverlayContentProtection(this.clipPreviewWindow, enabled);
+  }
+
   destroy(): void {
-    this.hide();
+    this.closeWindow("destroy");
   }
 
   private async createWindow(bounds: Electron.Rectangle): Promise<void> {
@@ -102,7 +131,9 @@ class DeathClipsOverlayService {
       clipPreviewWebContents,
       WindowName.ClipPreviewOverlay,
     );
-    configureGameOverlayWindow(clipPreviewWindow);
+    configureGameOverlayWindow(clipPreviewWindow, {
+      contentProtection: this.getContentProtectionEnabled(),
+    });
     clipPreviewWindow.on("focus", () => {
       this.coordinator.setOverlayFocusActive(
         CLIP_PREVIEW_OVERLAY_FOCUS_ID,
@@ -122,9 +153,34 @@ class DeathClipsOverlayService {
       );
       unregisterIpcWindowRole(clipPreviewWebContents);
       if (this.clipPreviewWindow === clipPreviewWindow) {
+        logInfo(CLIP_PREVIEW_OVERLAY_SCOPE, "Replay clip overlay closed", {
+          reason: "window-closed",
+        });
+        this.clipPreviewOverlayRequested = false;
         this.clipPreviewWindow = null;
       }
     });
+  }
+
+  private closeWindow(reason: ClipPreviewOverlayCloseReason): boolean {
+    const window = this.clipPreviewWindow;
+    const wasRequested = this.clipPreviewOverlayRequested;
+    const didCloseRequestedWindow =
+      Boolean(window && !window.isDestroyed()) && wasRequested;
+    this.clipPreviewOverlayRequested = false;
+    this.clipPreviewWindow = null;
+    this.coordinator.setOverlayFocusActive(
+      CLIP_PREVIEW_OVERLAY_FOCUS_ID,
+      false,
+    );
+    if (didCloseRequestedWindow) {
+      logInfo(CLIP_PREVIEW_OVERLAY_SCOPE, "Replay clip overlay closed", {
+        reason,
+      });
+    }
+    closeOverlayWindow(window);
+
+    return didCloseRequestedWindow;
   }
 
   private createWindowBounds(): Electron.Rectangle {

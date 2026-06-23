@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { mockIpcMainHandlers } from "~/main/test/ipc";
 
@@ -23,6 +23,8 @@ const serviceMocks = vi.hoisted(() => ({
   recorderSetGameRunningState: vi.fn(),
   overlaySetGameRunningActive: vi.fn(),
 }));
+
+const originalPlatform = process.platform;
 
 vi.mock("electron", () => ({
   BrowserWindow: {
@@ -137,6 +139,10 @@ function getPowerListener(event: string): () => void {
 
 describe("PoeProcessService", () => {
   beforeEach(() => {
+    Object.defineProperty(process, "platform", {
+      configurable: true,
+      value: "linux",
+    });
     resetSingleton();
     pollerMocks.getActiveGame = null;
     pollerMocks.listeners.clear();
@@ -152,6 +158,13 @@ describe("PoeProcessService", () => {
     serviceMocks.recorderSetGameRunningState.mockResolvedValue(false);
     serviceMocks.overlaySetGameRunningActive.mockReset();
     vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    Object.defineProperty(process, "platform", {
+      configurable: true,
+      value: originalPlatform,
+    });
   });
 
   it("creates and reuses the singleton instance", () => {
@@ -346,7 +359,7 @@ describe("PoeProcessService", () => {
       processName: "",
     });
     expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining("WARN [poe-process] PoE process refresh failed"),
+      expect.stringContaining("PoE process refresh failed"),
       { error: "poll failed" },
     );
   });
@@ -372,9 +385,7 @@ describe("PoeProcessService", () => {
     );
     expect(destroyedWindow.webContents.send).not.toHaveBeenCalled();
     expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "WARN [poe-process] Failed to send process state",
-      ),
+      expect.stringContaining("Failed to send process state"),
       {
         channel: PoeProcessChannel.GetError,
         error: "send failed",
@@ -398,9 +409,7 @@ describe("PoeProcessService", () => {
 
     expect(service.isActiveGameRunning()).toBe(true);
     expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        "WARN [poe-process] Failed to sync recorder game state",
-      ),
+      expect.stringContaining("Failed to sync recorder game state"),
       { error: "recorder failed" },
     );
   });
@@ -444,11 +453,9 @@ describe("PoeProcessService", () => {
     getPowerListener("lock-screen")();
     getPowerListener("unlock-screen")();
 
+    expect(info).toHaveBeenCalledWith(expect.stringContaining("Screen locked"));
     expect(info).toHaveBeenCalledWith(
-      expect.stringContaining("INFO [poe-process] Screen locked"),
-    );
-    expect(info).toHaveBeenCalledWith(
-      expect.stringContaining("INFO [poe-process] Screen unlocked"),
+      expect.stringContaining("Screen unlocked"),
     );
   });
 });

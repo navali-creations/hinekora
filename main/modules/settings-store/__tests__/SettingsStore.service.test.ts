@@ -112,6 +112,61 @@ describe("SettingsStoreService", () => {
     }
   });
 
+  it("notifies subscribers when settings change", () => {
+    const database = DatabaseService.getInstance(":memory:");
+    const service = new SettingsStoreService();
+    const listener = vi.fn();
+    const unsubscribe = service.onDidChange(listener);
+
+    try {
+      const updatedSettings = service.update({ activeGame: "poe2" });
+
+      expect(listener).toHaveBeenCalledWith(updatedSettings);
+
+      listener.mockClear();
+      const replacedSettings = service.replace({
+        ...createDefaultSettings(),
+        activeLeague: "Hardcore",
+      });
+
+      expect(listener).toHaveBeenCalledWith(replacedSettings);
+
+      listener.mockClear();
+      unsubscribe();
+      service.update({ activeGame: "poe1" });
+
+      expect(listener).not.toHaveBeenCalled();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps settings updates successful when a subscriber throws", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const database = DatabaseService.getInstance(":memory:");
+    const service = new SettingsStoreService();
+    const throwingListener = vi.fn(() => {
+      throw new Error("listener failed");
+    });
+    const survivingListener = vi.fn();
+    service.onDidChange(throwingListener);
+    service.onDidChange(survivingListener);
+
+    try {
+      const updatedSettings = service.update({ activeGame: "poe2" });
+
+      expect(updatedSettings.activeGame).toBe("poe2");
+      expect(service.get().activeGame).toBe("poe2");
+      expect(survivingListener).toHaveBeenCalledWith(updatedSettings);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("Settings change listener failed"),
+        { error: "listener failed" },
+      );
+    } finally {
+      database.close();
+    }
+  });
+
   it("applies login item settings when startup preferences change", () => {
     const database = DatabaseService.getInstance(":memory:");
     const service = new SettingsStoreService();

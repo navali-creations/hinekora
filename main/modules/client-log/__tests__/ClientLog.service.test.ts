@@ -26,6 +26,7 @@ const electronMocks = vi.hoisted(() => ({
 }));
 
 const poeProcessMocks = vi.hoisted(() => ({
+  isActiveGameRunning: vi.fn(),
   refreshState: vi.fn(),
 }));
 
@@ -38,6 +39,7 @@ vi.mock("electron", () => ({
 vi.mock("~/main/modules/poe-process", () => ({
   PoeProcessService: {
     getInstance: () => ({
+      isActiveGameRunning: poeProcessMocks.isActiveGameRunning,
       refreshState: poeProcessMocks.refreshState,
     }),
   },
@@ -59,6 +61,8 @@ beforeEach(() => {
     isRunning: true,
     processName: "PathOfExile2Steam.exe",
   });
+  poeProcessMocks.isActiveGameRunning.mockReset();
+  poeProcessMocks.isActiveGameRunning.mockReturnValue(true);
   vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
     setPoeFocusActive,
   } as unknown as OverlayWindowsService);
@@ -69,6 +73,11 @@ afterEach(() => {
   vi.restoreAllMocks();
   rmSync(directory, { force: true, recursive: true });
 });
+
+async function flushPromises(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 describe("ClientLogService", () => {
   it("creates and reuses the singleton instance", () => {
@@ -214,20 +223,140 @@ describe("ClientLogService", () => {
     service.stopWatchFile();
   });
 
-  it("starts with PoE focus inactive when recent log history has no focus event", () => {
+  it("assumes PoE focus active when recent log history is unknown but the active game is running", async () => {
     const path = join(directory, "Client.txt");
     writeFileSync(path, "existing\n");
     electronMocks.getAllWindows.mockReturnValue([]);
     const service = new ClientLogService();
 
     service.watchFile(path, "poe1");
+    await flushPromises();
 
-    expect(setPoeFocusActive).toHaveBeenCalledWith(false);
+    expect(poeProcessMocks.refreshState).toHaveBeenCalledTimes(1);
+    expect(poeProcessMocks.isActiveGameRunning).toHaveBeenCalledWith({
+      isRunning: true,
+      processName: "PathOfExile2Steam.exe",
+    });
+    expect(setPoeFocusActive).toHaveBeenCalledWith(true);
     expect(setPoeFocusActive).toHaveBeenCalledTimes(1);
     service.stopWatchFile();
   });
 
-  it("syncs PoE focus from only the recent startup log tail", () => {
+  it("keeps PoE focus inactive when the startup focus tail is unknown and the active game is not running", async () => {
+    const path = join(directory, "Client.txt");
+    writeFileSync(path, "existing\n");
+    poeProcessMocks.isActiveGameRunning.mockReturnValue(false);
+    electronMocks.getAllWindows.mockReturnValue([]);
+    const service = new ClientLogService();
+
+    service.watchFile(path, "poe1");
+    await flushPromises();
+
+    expect(poeProcessMocks.refreshState).toHaveBeenCalledTimes(1);
+    expect(setPoeFocusActive).not.toHaveBeenCalled();
+    service.stopWatchFile();
+  });
+
+  it("assumes PoE focus active when the startup focus tail is lost but the active game is running", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const path = join(directory, "Client.txt");
+    writeFileSync(
+      path,
+      "2026/05/26 02:21:56 124375843 54ee9e2f [INFO Client 49752] [WINDOW] Lost focus\n",
+    );
+    electronMocks.getAllWindows.mockReturnValue([]);
+    const service = new ClientLogService();
+
+    service.watchFile(path, "poe1");
+    await flushPromises();
+
+    expect(poeProcessMocks.refreshState).toHaveBeenCalledTimes(1);
+    expect(setPoeFocusActive).toHaveBeenCalledWith(true);
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "INFO [client-log] Active game focus assumed from process",
+      ),
+      expect.objectContaining({
+        fallbackFocusState: false,
+        game: "poe1",
+        processName: "PathOfExile2Steam.exe",
+      }),
+    );
+    service.stopWatchFile();
+  });
+
+  it("uses a startup focus tail loss when the active game is not running", async () => {
+    const path = join(directory, "Client.txt");
+    writeFileSync(
+      path,
+      "2026/05/26 02:21:56 124375843 54ee9e2f [INFO Client 49752] [WINDOW] Lost focus\n",
+    );
+    poeProcessMocks.isActiveGameRunning.mockReturnValue(false);
+    electronMocks.getAllWindows.mockReturnValue([]);
+    const service = new ClientLogService();
+
+    service.watchFile(path, "poe1");
+    await flushPromises();
+
+    expect(poeProcessMocks.refreshState).toHaveBeenCalledTimes(1);
+    expect(setPoeFocusActive).toHaveBeenCalledWith(false);
+    service.stopWatchFile();
+  });
+
+  it("falls back to the recent focus tail when startup process focus seed fails", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const path = join(directory, "Client.txt");
+    writeFileSync(
+      path,
+      "2026/05/26 02:21:56 124375843 54ee9e2f [INFO Client 49752] [WINDOW] Lost focus\n",
+    );
+    poeProcessMocks.refreshState.mockRejectedValue(new Error("seed failed"));
+    electronMocks.getAllWindows.mockReturnValue([]);
+    const service = new ClientLogService();
+
+    service.watchFile(path, "poe1");
+    await flushPromises();
+
+    expect(setPoeFocusActive).toHaveBeenCalledWith(false);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "WARN [client-log] Active game focus seed failed",
+      ),
+      expect.objectContaining({
+        clientLogFile: "Client.txt",
+        error: "seed failed",
+        game: "poe1",
+      }),
+    );
+    service.stopWatchFile();
+  });
+
+  it("only logs startup process focus seed failures when no recent focus tail exists", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const path = join(directory, "Client.txt");
+    writeFileSync(path, "existing\n");
+    poeProcessMocks.refreshState.mockRejectedValue(new Error("seed failed"));
+    electronMocks.getAllWindows.mockReturnValue([]);
+    const service = new ClientLogService();
+
+    service.watchFile(path, "poe1");
+    await flushPromises();
+
+    expect(setPoeFocusActive).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "WARN [client-log] Active game focus seed failed",
+      ),
+      expect.objectContaining({
+        clientLogFile: "Client.txt",
+        error: "seed failed",
+        game: "poe1",
+      }),
+    );
+    service.stopWatchFile();
+  });
+
+  it("syncs PoE focus from only the recent startup log tail", async () => {
     const path = join(directory, "Client.txt");
     writeFileSync(
       path,
@@ -240,8 +369,9 @@ describe("ClientLogService", () => {
     const service = new ClientLogService();
 
     service.watchFile(path, "poe1");
+    await flushPromises();
 
-    expect(setPoeFocusActive).toHaveBeenCalledWith(false);
+    expect(setPoeFocusActive).toHaveBeenCalledWith(true);
     setPoeFocusActive.mockClear();
     service.stopWatchFile();
 
@@ -278,11 +408,12 @@ describe("ClientLogService", () => {
       watching: true,
     });
     expect(update).toHaveBeenCalledWith({ activeGame: "poe1" });
-    expect(poeProcessMocks.refreshState).toHaveBeenCalledTimes(1);
+    expect(poeProcessMocks.refreshState).toHaveBeenCalledTimes(2);
     service.stopWatchFile();
   });
 
   it("processes new focus lines and updates overlay focus gating", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const path = join(directory, "Client.txt");
     writeFileSync(path, "");
     electronMocks.getAllWindows.mockReturnValue([]);
@@ -307,6 +438,22 @@ describe("ClientLogService", () => {
 
     expect(setPoeFocusActive).toHaveBeenNthCalledWith(1, true);
     expect(setPoeFocusActive).toHaveBeenNthCalledWith(2, false);
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("INFO [client-log] Active game focus gained"),
+      expect.objectContaining({
+        game: "poe1",
+        focused: true,
+        lineHash: expect.any(String),
+      }),
+    );
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("INFO [client-log] Active game focus lost"),
+      expect.objectContaining({
+        game: "poe1",
+        focused: false,
+        lineHash: expect.any(String),
+      }),
+    );
     service.stopWatchFile();
   });
 

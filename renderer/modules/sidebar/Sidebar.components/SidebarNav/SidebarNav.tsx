@@ -1,6 +1,6 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import clsx from "clsx";
-import { FiCrop } from "react-icons/fi";
+import { HiViewGrid } from "react-icons/hi";
 import { IoIosRecording } from "react-icons/io";
 import { MdMovieEdit } from "react-icons/md";
 import { PiFilmSlate, PiVideo } from "react-icons/pi";
@@ -9,7 +9,7 @@ const navItems = [
   { to: "/", label: "Dashboard", icon: PiVideo },
   { to: "/clips", label: "Clips", icon: PiFilmSlate },
   { to: "/recordings", label: "Recordings", icon: IoIosRecording },
-  { to: "/crop-overlay", label: "Aura Manager", icon: FiCrop },
+  { to: "/crop-overlay", label: "Aura Manager", icon: HiViewGrid },
   { to: "/editor", label: "Editor", icon: MdMovieEdit },
 ] as const;
 

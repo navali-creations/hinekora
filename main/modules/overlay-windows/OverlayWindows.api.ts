@@ -1,9 +1,9 @@
 import { ipcRenderer } from "electron";
 
-import type { OverlayPlacement } from "~/types";
 import { OverlayWindowsChannel } from "./OverlayWindows.channels";
 import type {
   CropRegionSelection,
+  RecorderOverlayMode,
   ShowAuraOverlayOptions,
 } from "./OverlayWindows.dto";
 
@@ -28,6 +28,25 @@ const OverlayWindowsAPI = {
     return () =>
       ipcRenderer.removeListener(
         OverlayWindowsChannel.RecorderVisibilityChanged,
+        listener,
+      );
+  },
+  getRecorderMode: (): Promise<RecorderOverlayMode> =>
+    ipcRenderer.invoke(OverlayWindowsChannel.GetRecorderMode),
+  setRecorderMode: (mode: RecorderOverlayMode): Promise<RecorderOverlayMode> =>
+    ipcRenderer.invoke(OverlayWindowsChannel.SetRecorderMode, mode),
+  onRecorderModeChanged: (callback: (mode: RecorderOverlayMode) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      mode: RecorderOverlayMode,
+    ) => {
+      callback(mode);
+    };
+    ipcRenderer.on(OverlayWindowsChannel.RecorderModeChanged, listener);
+
+    return () =>
+      ipcRenderer.removeListener(
+        OverlayWindowsChannel.RecorderModeChanged,
         listener,
       );
   },
@@ -56,15 +75,18 @@ const OverlayWindowsAPI = {
         listener,
       );
   },
-  previewAuraPlacement: (
-    profileId: string,
-    placement: OverlayPlacement,
-  ): Promise<void> =>
-    ipcRenderer.invoke(
-      OverlayWindowsChannel.PreviewAuraPlacement,
-      profileId,
-      placement,
-    ),
+  onAuraAddRequested: (callback: (requestId: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, requestId: string) => {
+      callback(requestId);
+    };
+    ipcRenderer.on(OverlayWindowsChannel.AuraAddRequested, listener);
+
+    return () =>
+      ipcRenderer.removeListener(
+        OverlayWindowsChannel.AuraAddRequested,
+        listener,
+      );
+  },
   selectCropRegion: (): Promise<CropRegionSelection | null> =>
     ipcRenderer.invoke(OverlayWindowsChannel.SelectCropRegion),
   completeCropRegionSelection: (

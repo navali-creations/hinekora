@@ -1,12 +1,22 @@
 import type { CSSProperties } from "react";
 
-import type { CropRegion, OverlayPlacement } from "~/types";
+import type {
+  CropRegion,
+  OverlayPlacement,
+  Profile,
+  ProfileUpdateInput,
+} from "~/types";
 
 type AuraResizeCorner = "nw" | "ne" | "sw" | "se";
 
 interface AuraVideoSize {
   width: number;
   height: number;
+}
+
+interface AuraHistorySnapshot {
+  cropRegions: CropRegion[];
+  overlayPlacements: OverlayPlacement[];
 }
 
 export const auraResizeCorners: AuraResizeCorner[] = ["nw", "ne", "sw", "se"];
@@ -103,8 +113,54 @@ export function resizeAuraPlacementFromCorner(
   };
 }
 
+export function createAuraHistorySnapshot(
+  profile: Pick<Profile, "cropRegions" | "overlayPlacements">,
+): AuraHistorySnapshot {
+  return {
+    cropRegions: profile.cropRegions.map((region) => ({ ...region })),
+    overlayPlacements: profile.overlayPlacements.map((placement) => ({
+      ...placement,
+    })),
+  };
+}
+
+export function createAuraProfileUpdateFromSnapshot(
+  profileId: string,
+  snapshot: AuraHistorySnapshot,
+): ProfileUpdateInput {
+  return {
+    id: profileId,
+    cropRegions: snapshot.cropRegions.map((region) => ({ ...region })),
+    overlayPlacements: snapshot.overlayPlacements.map((placement) => ({
+      ...placement,
+    })),
+  };
+}
+
+export function createAuraProfileUpdateDeletingPlacement(
+  profile: Pick<Profile, "id" | "cropRegions" | "overlayPlacements">,
+  placementId: string,
+): ProfileUpdateInput | null {
+  const placement = profile.overlayPlacements.find(
+    (item) => item.id === placementId,
+  );
+  if (!placement) {
+    return null;
+  }
+
+  return {
+    id: profile.id,
+    cropRegions: profile.cropRegions.filter(
+      (region) => region.id !== placement.cropRegionId,
+    ),
+    overlayPlacements: profile.overlayPlacements.filter(
+      (item) => item.cropRegionId !== placement.cropRegionId,
+    ),
+  };
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-export type { AuraResizeCorner, AuraVideoSize };
+export type { AuraHistorySnapshot, AuraResizeCorner, AuraVideoSize };

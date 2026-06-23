@@ -27,7 +27,24 @@ function AuraLockBeacon(props: PopoverComponentProps) {
               <span className="mt-0.5 text-accent">•</span>
               <span>
                 <strong className="text-base-content">Unlock</strong> lets you
-                drag and resize aura positions on the overlay.
+                drag, resize, select, and remove aura positions on the overlay.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
+                Press <kbd className="kbd kbd-xs">Esc</kbd> while editing to
+                lock auras again and return to gameplay.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
+                Select an aura, then use <kbd className="kbd kbd-xs">Del</kbd>{" "}
+                to remove it, <kbd className="kbd kbd-xs">Ctrl</kbd> +{" "}
+                <kbd className="kbd kbd-xs">Z</kbd> to undo, or{" "}
+                <kbd className="kbd kbd-xs">Ctrl</kbd> +{" "}
+                <kbd className="kbd kbd-xs">Y</kbd> to redo.
               </span>
             </li>
           </ul>

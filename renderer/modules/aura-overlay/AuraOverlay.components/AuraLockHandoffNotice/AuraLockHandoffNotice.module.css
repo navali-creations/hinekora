@@ -1,0 +1,39 @@
+.lockHandoffNotice {
+  position: fixed;
+  bottom: 18px;
+  left: 50%;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  max-width: calc(100vw - 32px);
+  min-height: 1.75rem;
+  border: var(--border) solid
+    color-mix(in oklch, var(--color-success) 40%, transparent);
+  border-radius: 0.5rem;
+  padding: 0.375rem 0.625rem;
+  color: var(--color-success);
+  background: color-mix(in oklch, var(--color-base-300) 84%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-base-300) 52%, transparent),
+    0 0 24px color-mix(in oklch, var(--color-success) 24%, transparent);
+  transform: translateX(-50%);
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  -webkit-app-region: no-drag;
+}
+
+.lockHandoffTitle {
+  font-size: 0.75rem;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.lockHandoffNote {
+  color: color-mix(in oklch, var(--color-success) 72%, var(--color-base-100));
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.1;
+  white-space: nowrap;
+}

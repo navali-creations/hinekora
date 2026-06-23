@@ -5,6 +5,8 @@ import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManualClipsOverlayService } from "~/main/modules/manual-clips-overlay";
 import { ProfilesService } from "~/main/modules/profiles";
 import { RecordingControlsOverlayService } from "~/main/modules/recording-controls-overlay";
+import { SettingsStoreService } from "~/main/modules/settings-store";
+import { logInfo } from "~/main/utils/app-log";
 import {
   assertObject,
   assertOptionalBoolean,
@@ -13,40 +15,60 @@ import {
 } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 
-import type { ReplayClip } from "~/types";
-import {
-  type OverlayPlacement,
-  OverlayPlacementSchema,
-  type Profile,
-} from "~/types";
+import type { Profile, ReplayClip } from "~/types";
 import { GameOverlayCoordinator } from "./GameOverlayCoordinator";
 import { OverlayWindowsChannel } from "./OverlayWindows.channels";
 import type {
   CropRegionSelection,
+  RecorderOverlayMode,
   ShowAuraOverlayOptions,
 } from "./OverlayWindows.dto";
+
+const OVERLAY_WINDOWS_SCOPE = "overlay-windows";
+const ACTIVE_GAME_FOCUS_HANDOFF_ID = "active-game-focus-handoff";
+const ACTIVE_GAME_FOCUS_HANDOFF_GRACE_MS = 2_500;
+
+type ActiveGameFocusRestoreReason = "aura-locked" | "clip-preview-hidden";
+type ActiveGameFocusHandoffEndReason =
+  | "destroy"
+  | "game-focused"
+  | "game-stopped"
+  | "grace-expired"
+  | "restart"
+  | "system-suspend";
 
 class OverlayWindowsService {
   private static instance: OverlayWindowsService | null = null;
 
+  private overlayCaptureProtectionEnabled = false;
+  private readonly getOverlayCaptureProtectionEnabled = () =>
+    this.overlayCaptureProtectionEnabled;
+  private settingsChangeUnsubscribe: (() => void) | null = null;
   private readonly coordinator = new GameOverlayCoordinator();
   private readonly recordingControlsOverlay =
-    new RecordingControlsOverlayService(this.coordinator);
+    new RecordingControlsOverlayService(
+      this.coordinator,
+      this.getOverlayCaptureProtectionEnabled,
+    );
   private readonly deathClipsOverlay = new DeathClipsOverlayService(
     this.coordinator,
     () => this.recordingControlsOverlay.createAnchorBounds(),
+    this.getOverlayCaptureProtectionEnabled,
   );
   private readonly manualClipsOverlay = new ManualClipsOverlayService(
     this.deathClipsOverlay,
   );
   private readonly gridLinesOverlay = new GridLinesOverlayService(
     this.coordinator,
+    this.getOverlayCaptureProtectionEnabled,
   );
   private readonly auraManagerOverlays = new AuraManagerOverlaysService(
     this.coordinator,
+    this.getOverlayCaptureProtectionEnabled,
   );
   private gameRunningActive = false;
   private persistentAuraOverlayRequested = false;
+  private activeGameFocusHandoffTimer: NodeJS.Timeout | null = null;
 
   static getInstance(): OverlayWindowsService {
     if (!OverlayWindowsService.instance) {
@@ -57,6 +79,15 @@ class OverlayWindowsService {
   }
 
   constructor() {
+    const settingsStore = SettingsStoreService.getInstance();
+    this.setOverlayCaptureProtectionEnabled(
+      settingsStore.get().recordingHideOverlaysFromCapture === true,
+    );
+    this.settingsChangeUnsubscribe = settingsStore.onDidChange((settings) => {
+      this.setOverlayCaptureProtectionEnabled(
+        settings.recordingHideOverlaysFromCapture === true,
+      );
+    });
     this.setupHandlers();
   }
 
@@ -76,7 +107,18 @@ class OverlayWindowsService {
     return this.recordingControlsOverlay.isVisible();
   }
 
+  getRecorderOverlayMode(): RecorderOverlayMode {
+    return this.recordingControlsOverlay.getMode();
+  }
+
+  setRecorderOverlayMode(mode: RecorderOverlayMode): RecorderOverlayMode {
+    return this.recordingControlsOverlay.setMode(mode);
+  }
+
   setPoeFocusActive(active: boolean): void {
+    if (active) {
+      this.endActiveGameFocusHandoff("game-focused");
+    }
     this.coordinator.setPoeFocusActive(active);
   }
 
@@ -85,6 +127,16 @@ class OverlayWindowsService {
     this.gameRunningActive = active;
     this.coordinator.setGameRunningActive(active);
     this.auraManagerOverlays.setGameRunningActive(active);
+    if (!active) {
+      this.endActiveGameFocusHandoff("game-stopped");
+    }
+
+    if (active && !wasActive) {
+      logInfo(OVERLAY_WINDOWS_SCOPE, "Active game focus assumed from running", {
+        active,
+      });
+      this.setPoeFocusActive(true);
+    }
 
     if (active && !wasActive && !this.persistentAuraOverlayRequested) {
       this.requestPersistentAuraOverlay();
@@ -104,7 +156,9 @@ class OverlayWindowsService {
   }
 
   hideClipPreviewOverlay(): void {
-    this.deathClipsOverlay.hide();
+    if (this.deathClipsOverlay.hide()) {
+      this.startActiveGameFocusHandoff("clip-preview-hidden");
+    }
   }
 
   showAuraOverlay(
@@ -127,16 +181,15 @@ class OverlayWindowsService {
     return true;
   }
 
-  previewAuraPlacement(profileId: string, placement: OverlayPlacement): void {
-    this.auraManagerOverlays.previewPlacement(profileId, placement);
-  }
-
   isAuraOverlayLocked(): boolean {
     return this.auraManagerOverlays.isLocked();
   }
 
   setAuraOverlayLocked(locked: boolean): void {
     this.auraManagerOverlays.setLocked(locked);
+    if (locked) {
+      this.startActiveGameFocusHandoff("aura-locked");
+    }
   }
 
   getRecorderWindow(): Electron.BrowserWindow | null {
@@ -144,6 +197,9 @@ class OverlayWindowsService {
   }
 
   destroyAll(): void {
+    this.settingsChangeUnsubscribe?.();
+    this.settingsChangeUnsubscribe = null;
+    this.endActiveGameFocusHandoff("destroy");
     this.recordingControlsOverlay.destroy();
     this.deathClipsOverlay.destroy();
     this.gridLinesOverlay.destroy();
@@ -151,6 +207,7 @@ class OverlayWindowsService {
   }
 
   suspendForSystem(): void {
+    this.endActiveGameFocusHandoff("system-suspend");
     this.recordingControlsOverlay.suspendForSystem();
     this.deathClipsOverlay.destroy();
     this.gridLinesOverlay.destroy();
@@ -199,6 +256,22 @@ class OverlayWindowsService {
       () => this.isRecorderOverlayVisible(),
     );
     registerGuardedIpcHandler(
+      OverlayWindowsChannel.GetRecorderMode,
+      [WindowName.Main, WindowName.RecorderOverlay],
+      () => this.getRecorderOverlayMode(),
+    );
+    registerGuardedIpcHandler(
+      OverlayWindowsChannel.SetRecorderMode,
+      [WindowName.Main, WindowName.RecorderOverlay],
+      (_event, mode) => {
+        try {
+          return this.setRecorderOverlayMode(parseRecorderOverlayMode(mode));
+        } catch (error) {
+          return handleValidationError(error);
+        }
+      },
+    );
+    registerGuardedIpcHandler(
       OverlayWindowsChannel.HideClipPreview,
       [WindowName.Main, WindowName.ClipPreviewOverlay],
       () => this.hideClipPreviewOverlay(),
@@ -240,27 +313,6 @@ class OverlayWindowsService {
       },
     );
     registerGuardedIpcHandler(
-      OverlayWindowsChannel.PreviewAuraPlacement,
-      [WindowName.Main, WindowName.AuraOverlay],
-      (_event, profileId, placement) => {
-        try {
-          assertString(
-            profileId,
-            "profileId",
-            OverlayWindowsChannel.PreviewAuraPlacement,
-            { min: 1, max: 128 },
-          );
-
-          this.previewAuraPlacement(
-            profileId,
-            OverlayPlacementSchema.parse(placement),
-          );
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
       OverlayWindowsChannel.SelectCropRegion,
       [WindowName.Main, WindowName.AuraOverlay],
       () => this.selectCropRegion(),
@@ -287,6 +339,50 @@ class OverlayWindowsService {
         .list()
         .find((profile) => hasRenderableAuraPlacements(profile)) ?? null
     );
+  }
+
+  private startActiveGameFocusHandoff(
+    reason: ActiveGameFocusRestoreReason,
+  ): void {
+    if (!this.gameRunningActive) {
+      return;
+    }
+
+    this.endActiveGameFocusHandoff("restart");
+    const { activeGame } = SettingsStoreService.getInstance().get();
+    this.coordinator.setOverlayFocusActive(ACTIVE_GAME_FOCUS_HANDOFF_ID, true);
+    logInfo(OVERLAY_WINDOWS_SCOPE, "Active game focus handoff started", {
+      activeGame,
+      graceMs: ACTIVE_GAME_FOCUS_HANDOFF_GRACE_MS,
+      reason,
+    });
+    this.activeGameFocusHandoffTimer = setTimeout(() => {
+      this.endActiveGameFocusHandoff("grace-expired");
+    }, ACTIVE_GAME_FOCUS_HANDOFF_GRACE_MS);
+    this.activeGameFocusHandoffTimer.unref?.();
+  }
+
+  private endActiveGameFocusHandoff(
+    reason: ActiveGameFocusHandoffEndReason,
+  ): void {
+    if (!this.activeGameFocusHandoffTimer) {
+      return;
+    }
+
+    clearTimeout(this.activeGameFocusHandoffTimer);
+    this.activeGameFocusHandoffTimer = null;
+    this.coordinator.setOverlayFocusActive(ACTIVE_GAME_FOCUS_HANDOFF_ID, false);
+    logInfo(OVERLAY_WINDOWS_SCOPE, "Active game focus handoff ended", {
+      reason,
+    });
+  }
+
+  private setOverlayCaptureProtectionEnabled(enabled: boolean): void {
+    this.overlayCaptureProtectionEnabled = enabled;
+    this.recordingControlsOverlay.setContentProtectionEnabled(enabled);
+    this.deathClipsOverlay.setContentProtectionEnabled(enabled);
+    this.gridLinesOverlay.setContentProtectionEnabled(enabled);
+    this.auraManagerOverlays.setContentProtectionEnabled(enabled);
   }
 }
 
@@ -328,6 +424,19 @@ function parseShowAuraOverlayOptions(
   );
 
   return options.startAddingAura === true ? { startAddingAura: true } : {};
+}
+
+function parseRecorderOverlayMode(mode: unknown): RecorderOverlayMode {
+  assertString(mode, "mode", OverlayWindowsChannel.SetRecorderMode, {
+    min: 1,
+    max: 16,
+  });
+
+  if (mode !== "expanded" && mode !== "minimized") {
+    throw new Error("mode must be expanded or minimized");
+  }
+
+  return mode;
 }
 
 export { OverlayWindowsService };

@@ -3,6 +3,7 @@ import { BrowserWindow, globalShortcut, screen } from "electron";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import type { GameOverlayCoordinator } from "~/main/modules/overlay-windows/GameOverlayCoordinator";
 import {
+  applyGameOverlayContentProtection,
   closeOverlayWindow,
   configureGameOverlayWindow,
   createOverlayWebPreferences,
@@ -19,6 +20,7 @@ import type { CropRegionSelection } from "../overlay-windows/OverlayWindows.dto"
 const MIN_CROP_SIZE = 8;
 const CROP_SELECTION_FOCUS_RESTORE_DELAY_MS = 1_500;
 const GRID_LINES_OVERLAY_SCOPE = "grid-lines-overlay";
+const CROP_SELECTOR_OVERLAY_FOCUS_ID = "crop-selector-overlay";
 
 class GridLinesOverlayService {
   private cropSelectorWindow: BrowserWindow | null = null;
@@ -28,7 +30,10 @@ class GridLinesOverlayService {
     resolve: (selection: CropRegionSelection | null) => void;
   } | null = null;
 
-  constructor(private readonly coordinator: GameOverlayCoordinator) {}
+  constructor(
+    private readonly coordinator: GameOverlayCoordinator,
+    private readonly getContentProtectionEnabled = () => false,
+  ) {}
 
   async selectCropRegion(): Promise<CropRegionSelection | null> {
     this.cancelCropRegionSelection();
@@ -38,6 +43,10 @@ class GridLinesOverlayService {
     return new Promise((resolveSelection) => {
       this.pendingCropSelection = { resolve: resolveSelection };
       this.registerCropSelectionShortcuts();
+      this.coordinator.setOverlayFocusActive(
+        CROP_SELECTOR_OVERLAY_FOCUS_ID,
+        true,
+      );
       this.coordinator.showGameOverlayWindow(this.cropSelectorWindow);
     });
   }
@@ -67,9 +76,17 @@ class GridLinesOverlayService {
     this.pendingCropSelection = null;
     this.unregisterCropSelectionShortcuts();
     this.clearCropSelectionFocusRestoreTimer();
+    this.coordinator.setOverlayFocusActive(
+      CROP_SELECTOR_OVERLAY_FOCUS_ID,
+      false,
+    );
     const window = this.cropSelectorWindow;
     this.cropSelectorWindow = null;
     closeOverlayWindow(window);
+  }
+
+  setContentProtectionEnabled(enabled: boolean): void {
+    applyGameOverlayContentProtection(this.cropSelectorWindow, enabled);
   }
 
   private restorePoeFocusAfterSelection(): void {
@@ -127,11 +144,17 @@ class GridLinesOverlayService {
       cropSelectorWebContents,
       WindowName.CropSelectorOverlay,
     );
-    configureGameOverlayWindow(cropSelectorWindow);
+    configureGameOverlayWindow(cropSelectorWindow, {
+      contentProtection: this.getContentProtectionEnabled(),
+    });
     cropSelectorWindow.setFullScreenable(false);
     cropSelectorWindow.on("closed", () => {
       unregisterIpcWindowRole(cropSelectorWebContents);
       logInfo(GRID_LINES_OVERLAY_SCOPE, "Crop selector overlay closed");
+      this.coordinator.setOverlayFocusActive(
+        CROP_SELECTOR_OVERLAY_FOCUS_ID,
+        false,
+      );
       if (this.cropSelectorWindow === cropSelectorWindow) {
         this.cropSelectorWindow = null;
       }
@@ -149,6 +172,10 @@ class GridLinesOverlayService {
 
   private closeWindow(): void {
     this.unregisterCropSelectionShortcuts();
+    this.coordinator.setOverlayFocusActive(
+      CROP_SELECTOR_OVERLAY_FOCUS_ID,
+      false,
+    );
     const window = this.cropSelectorWindow;
     this.cropSelectorWindow = null;
     closeOverlayWindow(window);

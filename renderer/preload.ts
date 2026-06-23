@@ -58,9 +58,12 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
         onStatusChanged: ManagedRecorderAPI.onStatusChanged,
       },
       overlayWindows: {
+        getRecorderMode: OverlayWindowsAPI.getRecorderMode,
         hideRecorder: OverlayWindowsAPI.hideRecorder,
         isAuraLocked: OverlayWindowsAPI.isAuraLocked,
+        onRecorderModeChanged: OverlayWindowsAPI.onRecorderModeChanged,
         onAuraLockChanged: OverlayWindowsAPI.onAuraLockChanged,
+        setRecorderMode: OverlayWindowsAPI.setRecorderMode,
         setAuraLocked: OverlayWindowsAPI.setAuraLocked,
         showAura: OverlayWindowsAPI.showAura,
       },
@@ -98,8 +101,8 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
       },
       overlayWindows: {
         isAuraLocked: OverlayWindowsAPI.isAuraLocked,
+        onAuraAddRequested: OverlayWindowsAPI.onAuraAddRequested,
         onAuraLockChanged: OverlayWindowsAPI.onAuraLockChanged,
-        previewAuraPlacement: OverlayWindowsAPI.previewAuraPlacement,
         selectCropRegion: OverlayWindowsAPI.selectCropRegion,
         setAuraLocked: OverlayWindowsAPI.setAuraLocked,
         showAura: OverlayWindowsAPI.showAura,

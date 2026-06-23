@@ -26,6 +26,13 @@ function StartRecordingBeacon(props: PopoverComponentProps) {
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
+                Start and Stop share the same control, so only the action you
+                can take is shown.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
                 Hinekora waits for the selected game and recorder runtime to be
                 ready.
               </span>

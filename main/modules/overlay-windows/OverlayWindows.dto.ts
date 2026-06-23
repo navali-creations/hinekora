@@ -10,3 +10,5 @@ export interface CropRegionSelection {
 export interface ShowAuraOverlayOptions {
   startAddingAura?: boolean;
 }
+
+export type RecorderOverlayMode = "expanded" | "minimized";

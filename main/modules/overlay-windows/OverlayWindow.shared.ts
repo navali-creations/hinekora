@@ -13,6 +13,10 @@ const OVERLAY_ROUTE_NAMES = [
   WindowName.AuraOverlay,
 ];
 
+interface GameOverlayWindowOptions {
+  contentProtection?: boolean;
+}
+
 function createOverlayWebPreferences(): Electron.WebPreferences {
   return {
     preload: join(currentDir, "preload.js"),
@@ -23,13 +27,30 @@ function createOverlayWebPreferences(): Electron.WebPreferences {
   };
 }
 
-function configureGameOverlayWindow(window: BrowserWindow): void {
+function applyGameOverlayContentProtection(
+  window: BrowserWindow | null,
+  enabled: boolean,
+): void {
+  if (!window || window.isDestroyed()) {
+    return;
+  }
+
+  window.setContentProtection(enabled);
+}
+
+function configureGameOverlayWindow(
+  window: BrowserWindow,
+  options: GameOverlayWindowOptions = {},
+): void {
   window.setAlwaysOnTop(true, "screen-saver", OVERLAY_TOPMOST_LEVEL);
   window.setVisibleOnAllWorkspaces(true, {
     visibleOnFullScreen: true,
     skipTransformProcessType: true,
   });
   window.setFullScreenable(false);
+  if (options.contentProtection !== undefined) {
+    applyGameOverlayContentProtection(window, options.contentProtection);
+  }
 }
 
 function showGameOverlayWindow(window: BrowserWindow | null): void {
@@ -103,6 +124,7 @@ function isOverlayRendererWindow(window: BrowserWindow): boolean {
 }
 
 export {
+  applyGameOverlayContentProtection,
   closeOverlayWindow,
   configureGameOverlayWindow,
   createOverlayWebPreferences,

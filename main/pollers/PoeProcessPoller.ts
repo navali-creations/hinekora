@@ -1,12 +1,5 @@
-import { desktopCapturer } from "electron";
-
-import { detectPathOfExileWindowTitle } from "~/main/utils/path-of-exile-window-title";
-
 import type { GameId } from "~/types";
-import {
-  findRunningProcesses,
-  listWindowsProcessWindowTitles,
-} from "./isProcessRunning";
+import { findRunningProcesses } from "./isProcessRunning";
 import { ProcessPoller, type ProcessState } from "./ProcessPoller";
 
 const POE_PROCESS_NAMES = [
@@ -56,36 +49,17 @@ function createPoeProcessStateForGame(game: GameId): ProcessState {
   };
 }
 
-function getFirstGame(candidates: Iterable<GameId>): GameId | null {
-  return new Set(candidates).values().next().value ?? null;
-}
+function isProcessNameCompatibleWithGame(
+  processName: string,
+  game: GameId,
+): boolean {
+  const processGame = resolvePoeProcessGame(processName);
 
-function findPreferredGame(
-  candidates: Iterable<GameId>,
-  preferredGames: readonly GameId[],
-): GameId | null {
-  const candidateSet = new Set(candidates);
-  for (const preferredGame of preferredGames) {
-    if (candidateSet.has(preferredGame)) {
-      return preferredGame;
-    }
-  }
-
-  return null;
-}
-
-function createPreferredGames(
-  lastKnownGame: GameId | null,
-  fallbackGame: GameId | null,
-): GameId[] {
-  return [fallbackGame, lastKnownGame].filter(
-    (game, index, games): game is GameId =>
-      game !== null && games.indexOf(game) === index,
-  );
+  return processGame === game || isAmbiguousPoeProcessName(processName);
 }
 
 async function detectPoeProcessState(
-  lastKnownGame: GameId | null = null,
+  activeGame: GameId | null = null,
   fallbackGame: GameId | null = null,
 ): Promise<ProcessState> {
   const processNames = await findRunningProcesses(POE_PROCESS_NAMES);
@@ -96,49 +70,21 @@ async function detectPoeProcessState(
     };
   }
 
-  const preferredGames = createPreferredGames(lastKnownGame, fallbackGame);
-  const processGames = processNames.flatMap((processName): GameId[] => {
+  const preferredGame = activeGame ?? fallbackGame;
+  if (
+    preferredGame &&
+    processNames.some((processName) =>
+      isProcessNameCompatibleWithGame(processName, preferredGame),
+    )
+  ) {
+    return createPoeProcessStateForGame(preferredGame);
+  }
+
+  for (const processName of processNames) {
     const game = resolvePoeProcessGame(processName);
-
-    return game ? [game] : [];
-  });
-  const ambiguousProcessNames = processNames.filter(isAmbiguousPoeProcessName);
-  const preferredProcessGame = findPreferredGame(processGames, preferredGames);
-  if (preferredProcessGame) {
-    return createPoeProcessStateForGame(preferredProcessGame);
-  }
-  if (preferredGames.length === 0 || ambiguousProcessNames.length === 0) {
-    const firstProcessGame = getFirstGame(processGames);
-    if (firstProcessGame) {
-      return createPoeProcessStateForGame(firstProcessGame);
+    if (game) {
+      return createPoeProcessStateForGame(game);
     }
-  }
-
-  const windowGames = await detectRunningPoeWindowGames();
-  const preferredWindowGame = findPreferredGame(windowGames, preferredGames);
-  if (preferredWindowGame) {
-    return createPoeProcessStateForGame(preferredWindowGame);
-  }
-
-  const processWindowGames = await detectPoeProcessWindowGames(
-    ambiguousProcessNames,
-  );
-  const preferredProcessWindowGame = findPreferredGame(
-    processWindowGames,
-    preferredGames,
-  );
-  if (preferredProcessWindowGame) {
-    return createPoeProcessStateForGame(preferredProcessWindowGame);
-  }
-
-  const firstWindowGame =
-    getFirstGame(windowGames) ?? getFirstGame(processWindowGames);
-  if (firstWindowGame) {
-    return createPoeProcessStateForGame(firstWindowGame);
-  }
-
-  if (ambiguousProcessNames.length > 0 && preferredGames[0]) {
-    return createPoeProcessStateForGame(preferredGames[0]);
   }
 
   return {
@@ -147,66 +93,7 @@ async function detectPoeProcessState(
   };
 }
 
-async function detectRunningPoeWindowGames(): Promise<GameId[]> {
-  const games: GameId[] = [];
-  try {
-    const sources = await desktopCapturer.getSources({
-      types: ["window"],
-      thumbnailSize: { width: 0, height: 0 },
-    });
-
-    for (const source of sources) {
-      const game = detectPathOfExileWindowTitle(source.name);
-      if (game && !games.includes(game)) {
-        games.push(game);
-      }
-    }
-  } catch {
-    return [];
-  }
-
-  return games;
-}
-
-async function detectRunningPoeWindowGame(): Promise<GameId | null> {
-  return (await detectRunningPoeWindowGames())[0] ?? null;
-}
-
-async function detectPoeProcessWindowGames(
-  processNames: readonly string[],
-): Promise<GameId[]> {
-  const games: GameId[] = [];
-  for (const processName of processNames) {
-    const game = await detectPoeProcessWindowGame(processName);
-    if (game && !games.includes(game)) {
-      games.push(game);
-    }
-  }
-
-  return games;
-}
-
-async function detectPoeProcessWindowGame(
-  processName: string,
-): Promise<GameId | null> {
-  if (!isAmbiguousPoeProcessName(processName)) {
-    return null;
-  }
-
-  const processWindows = await listWindowsProcessWindowTitles(processName);
-  for (const processWindow of processWindows) {
-    const game = detectPathOfExileWindowTitle(processWindow.windowTitle);
-    if (game) {
-      return game;
-    }
-  }
-
-  return null;
-}
-
 class PoeProcessPoller extends ProcessPoller {
-  private lastKnownGame: GameId | null = null;
-
   constructor(private readonly resolveFallbackGame?: () => GameId | null) {
     super(POE_PROCESS_NAMES, POE_PROCESS_POLL_INTERVAL_MS, {
       inactivePollsBeforeStop: 3,
@@ -214,29 +101,14 @@ class PoeProcessPoller extends ProcessPoller {
   }
 
   protected override pollOnce(): Promise<ProcessState> {
-    return detectPoeProcessState(
-      this.lastKnownGame,
-      this.resolveFallbackGame?.() ?? null,
-    ).then((rawState) => {
-      const state = this.stabilizeProcessState(rawState);
-      const game = resolvePoeProcessGame(state.processName);
-      if (state.isRunning && game) {
-        this.lastKnownGame = game;
-      }
-
-      return state;
-    });
-  }
-
-  protected override onStop(): void {
-    this.lastKnownGame = null;
+    return detectPoeProcessState(this.resolveFallbackGame?.() ?? null).then(
+      (rawState) => this.stabilizeProcessState(rawState),
+    );
   }
 }
 
 export {
   detectPoeProcessState,
-  detectPoeProcessWindowGame,
-  detectRunningPoeWindowGame,
   isAmbiguousPoeProcessName,
   isPoeProcessStateForGame,
   POE_PROCESS_NAMES,

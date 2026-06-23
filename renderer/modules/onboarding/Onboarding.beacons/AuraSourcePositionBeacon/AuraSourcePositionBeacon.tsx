@@ -50,8 +50,8 @@ function AuraSourcePositionBeacon(props: PopoverComponentProps) {
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
-                The selected aura position glows to show which overlay copy you
-                are editing.
+                The selected aura position gets a teal border and glow to show
+                which overlay copy you are editing.
               </span>
             </li>
           </ul>

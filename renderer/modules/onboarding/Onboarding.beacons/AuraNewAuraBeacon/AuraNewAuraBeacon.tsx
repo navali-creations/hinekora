@@ -26,6 +26,13 @@ function AuraNewAuraBeacon(props: PopoverComponentProps) {
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
+                The recorder overlay plus-grid button opens aura editing and
+                starts source selection in one click.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
                 After the source is captured, a new aura tab appears so you can
                 select and adjust it.
               </span>
@@ -33,8 +40,8 @@ function AuraNewAuraBeacon(props: PopoverComponentProps) {
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
-                Use the side panel to fine-tune the source area and aura
-                position manually.
+                Press <kbd className="kbd kbd-xs">Esc</kbd> while selecting a
+                source area to cancel the crop selector.
               </span>
             </li>
           </ul>

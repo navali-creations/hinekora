@@ -23,6 +23,7 @@ import type {
 } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
 import type {
   CropRegionSelection,
+  RecorderOverlayMode,
   ShowAuraOverlayOptions,
 } from "~/main/modules/overlay-windows/OverlayWindows.dto";
 import type {
@@ -73,7 +74,6 @@ import type {
   CapturePreviewSource,
   ClientLogStatus,
   ManagedRecorderStatus,
-  OverlayPlacement,
   Profile,
   ProfileCreateInput,
   ProfileUpdateInput,
@@ -175,6 +175,13 @@ declare global {
         hideRecorder: () => Promise<void>;
         toggleRecorder: () => Promise<void>;
         isRecorderVisible: () => Promise<boolean>;
+        getRecorderMode: () => Promise<RecorderOverlayMode>;
+        setRecorderMode: (
+          mode: RecorderOverlayMode,
+        ) => Promise<RecorderOverlayMode>;
+        onRecorderModeChanged: (
+          callback: (mode: RecorderOverlayMode) => void,
+        ) => () => void;
         onRecorderVisibilityChanged: (
           callback: (isVisible: boolean) => void,
         ) => () => void;
@@ -186,10 +193,9 @@ declare global {
         isAuraLocked: () => Promise<boolean>;
         setAuraLocked: (locked: boolean) => Promise<void>;
         onAuraLockChanged: (callback: (locked: boolean) => void) => () => void;
-        previewAuraPlacement: (
-          profileId: string,
-          placement: OverlayPlacement,
-        ) => Promise<void>;
+        onAuraAddRequested: (
+          callback: (requestId: string) => void,
+        ) => () => void;
         selectCropRegion: () => Promise<CropRegionSelection | null>;
         completeCropRegionSelection: (
           selection: CropRegionSelection,
