@@ -37,16 +37,14 @@ describe("EditorDragDropProvider utils", () => {
       resolveDropTimelineSeconds({
         durationSeconds: 10,
         event: createDropEvent({ clientX: 50, left: 0, width: 100 }),
-        zoom: 1,
       }),
-    ).toBe(15);
+    ).toBe(6.25);
     expect(
       resolveDropTimelineSeconds({
         durationSeconds: 24,
         event: createDropEvent({ clientX: 100, left: 0, width: 200 }),
-        zoom: 2,
       }),
-    ).toBe(12);
+    ).toBe(15);
   });
 
   it("falls back to the timeline end when bounds are missing", () => {
@@ -54,7 +52,6 @@ describe("EditorDragDropProvider utils", () => {
       resolveDropTimelineSeconds({
         durationSeconds: 12,
         event: createDropEvent({}),
-        zoom: 1,
       }),
     ).toBe(12);
   });

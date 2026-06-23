@@ -6,12 +6,19 @@ import type {
 } from "~/main/modules/editor";
 
 import {
+  createEditorTestAsset,
+  createEditorTestProject,
+  createEditorTestTimelineClip,
+} from "../Editor.slice/Editor.slice.test-utils";
+import {
+  calculateEditorTimelineDuration,
   calculateExpandableTimelineDuration,
   calculateTimelineContentScale,
   calculateTimelineDuration,
   calculateTimelineMarkers,
   calculateTimelineMinorMarkers,
   calculateTimelinePercent,
+  clampEditorTimelineZoom,
   clampTrimRange,
   createTimelineClipFromAsset,
   formatEditorTime,
@@ -19,6 +26,7 @@ import {
   minimumTimelineClipDurationSeconds,
   moveTimelineClipWithinTrack,
   normalizeEditorDuration,
+  resolveNextEditorTimelineZoom,
   resolveTimelineClipSnap,
   resolveTimelineSecondsFromClientX,
   trimTimelineClipEdge,
@@ -367,31 +375,47 @@ describe("Editor utils", () => {
     });
   });
 
-  it("resolves timeline duration and content scale from zoom", () => {
+  it("resolves fitted timeline duration and content scale from zoom", () => {
+    const sourceAsset = createEditorTestAsset({ durationSeconds: 54.95 });
+    const trimmedProject = createEditorTestProject(sourceAsset, {
+      durationSeconds: 30,
+      tracks: [
+        {
+          clips: [
+            createEditorTestTimelineClip(sourceAsset, {
+              durationSeconds: 30,
+              outSeconds: 30,
+              sourceOutSeconds: 54.95,
+            }),
+          ],
+          id: "video-track",
+          kind: "video",
+          label: "Video",
+        },
+      ],
+    });
+
+    expect(calculateEditorTimelineDuration(trimmedProject)).toBe(54.95);
     expect(
       calculateExpandableTimelineDuration({
         projectDurationSeconds: 26,
-        zoom: 1,
       }),
-    ).toBe(30);
-    expect(
-      calculateExpandableTimelineDuration({
-        projectDurationSeconds: 26,
-        zoom: 0.5,
-      }),
-    ).toBe(60);
+    ).toBe(32.5);
     expect(
       calculateExpandableTimelineDuration({
         projectDurationSeconds: 10,
-        zoom: 4,
+      }),
+    ).toBe(12.5);
+    expect(
+      calculateExpandableTimelineDuration({
+        projectDurationSeconds: 5,
       }),
     ).toBe(10);
     expect(
       calculateExpandableTimelineDuration({
-        projectDurationSeconds: 26,
-        zoom: 4,
+        projectDurationSeconds: 0,
       }),
-    ).toBe(26);
+    ).toBe(30);
     expect(
       calculateTimelineContentScale({
         visibleDurationSeconds: 60,
@@ -400,16 +424,22 @@ describe("Editor utils", () => {
     ).toBe(1);
     expect(
       calculateTimelineContentScale({
-        visibleDurationSeconds: 78,
+        visibleDurationSeconds: 97.5,
         zoom: 1,
       }),
-    ).toBe(2.6);
+    ).toBe(1);
     expect(
       calculateTimelineContentScale({
         visibleDurationSeconds: 26,
         zoom: 4,
       }),
-    ).toBe(3.467);
+    ).toBe(4);
+    expect(
+      calculateTimelineContentScale({
+        visibleDurationSeconds: 97.5,
+        zoom: 1.25,
+      }),
+    ).toBe(1.813);
     expect(
       calculateTimelineContentScale({
         visibleDurationSeconds: Number.NaN,
@@ -418,13 +448,48 @@ describe("Editor utils", () => {
     ).toBe(1);
   });
 
+  it("clamps and steps timeline zoom consistently", () => {
+    expect(
+      clampEditorTimelineZoom({
+        maxZoom: 4,
+        minZoom: 1,
+        zoom: 0.5,
+      }),
+    ).toBe(1);
+    expect(
+      clampEditorTimelineZoom({
+        maxZoom: 4,
+        minZoom: 1,
+        zoom: 8,
+      }),
+    ).toBe(4);
+    expect(
+      resolveNextEditorTimelineZoom({
+        direction: -1,
+        maxZoom: 4,
+        minZoom: 1,
+        step: 0.25,
+        zoom: 1,
+      }),
+    ).toBe(1);
+    expect(
+      resolveNextEditorTimelineZoom({
+        direction: 1,
+        maxZoom: 4,
+        minZoom: 1,
+        step: 0.25,
+        zoom: 1,
+      }),
+    ).toBe(1.25);
+  });
+
   it("densifies timeline markers as the content stretches", () => {
     expect(
       calculateTimelineMarkers({
         contentScale: 1,
         visibleDurationSeconds: 30,
       }),
-    ).toEqual([0, 10, 20, 30]);
+    ).toEqual([0, 5, 10, 15, 20, 25, 30]);
     expect(
       calculateTimelineMarkers({
         contentScale: 4,
@@ -442,6 +507,9 @@ describe("Editor utils", () => {
         contentScale: 1,
         visibleDurationSeconds: 30,
       }),
-    ).toEqual([2, 4, 6, 8, 12, 14, 16, 18, 22, 24, 26, 28]);
+    ).toEqual([
+      1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14, 16, 17, 18, 19, 21, 22, 23, 24,
+      26, 27, 28, 29,
+    ]);
   });
 });

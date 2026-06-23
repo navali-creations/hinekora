@@ -447,7 +447,7 @@ describe("Editor workspace slice", () => {
     store.getState().editor.setPlaybackSeconds(50);
     store.getState().editor.setPreviewPlaying(true);
     store.getState().editor.setZoom(0.1);
-    expect(store.getState().editor.zoom).toBe(0.5);
+    expect(store.getState().editor.zoom).toBe(1);
     store.getState().editor.setZoom(10);
 
     expect(store.getState().editor).toMatchObject({

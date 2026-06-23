@@ -38,6 +38,7 @@ export {
   trimTimelineClipEdge,
 } from "./EditorTimelineClip.utils";
 export {
+  calculateEditorTimelineDuration,
   calculateExpandableTimelineDuration,
   calculateTimelineContentScale,
   calculateTimelineDuration,
@@ -45,7 +46,9 @@ export {
   calculateTimelineMarkers,
   calculateTimelineMinorMarkers,
   calculateTimelinePercent,
+  clampEditorTimelineZoom,
   type EditorTimelineGap,
+  resolveNextEditorTimelineZoom,
   resolveTimelineSecondsFromClientX,
 } from "./EditorTimelineGeometry.utils";
 export { createEditorDefaultFileName };

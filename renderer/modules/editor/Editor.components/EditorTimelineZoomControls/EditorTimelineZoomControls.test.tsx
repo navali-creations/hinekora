@@ -68,6 +68,7 @@ describe("EditorTimelineZoomControls", () => {
   });
 
   it("shows tooltips and changes zoom by one step", async () => {
+    configureEditorState({ zoom: 1.25 });
     await renderZoomControls();
 
     const zoomOut = container.querySelector<HTMLButtonElement>(
@@ -89,8 +90,8 @@ describe("EditorTimelineZoomControls", () => {
       zoomIn?.click();
     });
 
-    expect(storeMocks.setZoom).toHaveBeenNthCalledWith(1, 0.75);
-    expect(storeMocks.setZoom).toHaveBeenNthCalledWith(2, 1.25);
+    expect(storeMocks.setZoom).toHaveBeenNthCalledWith(1, 1);
+    expect(storeMocks.setZoom).toHaveBeenNthCalledWith(2, 1.5);
   });
 
   it("disables zoom controls without a selected clip", async () => {
@@ -106,7 +107,7 @@ describe("EditorTimelineZoomControls", () => {
   });
 
   it("disables zoom controls at the zoom bounds", async () => {
-    configureEditorState({ zoom: 0.5 });
+    configureEditorState({ zoom: 1 });
     await renderZoomControls();
 
     const zoomOut = container.querySelector<HTMLButtonElement>(
@@ -131,7 +132,7 @@ describe("EditorTimelineZoomControls", () => {
     );
   });
 
-  it("keeps zoom in available when the content scale can still change", async () => {
+  it("keeps zoom in available from the fit view", async () => {
     const asset = createEditorTestAsset({ durationSeconds: 10 });
     const project = createEditorTestProject(asset);
     configureEditorState({
@@ -149,7 +150,7 @@ describe("EditorTimelineZoomControls", () => {
       'button[aria-label="Zoom in timeline"]',
     );
 
-    expect(zoomOut?.disabled).toBe(false);
+    expect(zoomOut?.disabled).toBe(true);
     expect(zoomIn?.disabled).toBe(false);
     expect(zoomIn?.closest("[data-tip]")?.getAttribute("data-tip")).toBe(
       "Zoom in timeline",

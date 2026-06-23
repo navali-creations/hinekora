@@ -3,14 +3,15 @@ import { type PointerEvent, useState, type WheelEvent } from "react";
 import { useEditorShallow } from "~/renderer/store";
 
 import { useEditorTimelineDrag } from "../../Editor.hooks/useEditorTimelineDrag/useEditorTimelineDrag";
-import { editorZoomStep } from "../../Editor.slice/Editor.slice.constants";
 import {
+  calculateEditorTimelineDuration,
   calculateExpandableTimelineDuration,
   calculateTimelineContentScale,
   calculateTimelineGaps,
   calculateTimelineMarkers,
   calculateTimelineMinorMarkers,
   calculateTimelinePercent,
+  roundToMilliseconds,
 } from "../../Editor.utils/Editor.utils";
 import { EditorPlaybackControls } from "../EditorPlaybackControls/EditorPlaybackControls";
 import { EditorTimelineClipDragPreview } from "../EditorTimelineClipDragPreview/EditorTimelineClipDragPreview";
@@ -21,7 +22,10 @@ import { EditorTimelineRuler } from "../EditorTimelineRuler/EditorTimelineRuler"
 import { EditorTimelineTools } from "../EditorTimelineTools/EditorTimelineTools";
 import { EditorTimelineVideoTrack } from "../EditorTimelineVideoTrack/EditorTimelineVideoTrack";
 import { EditorTimelineZoomControls } from "../EditorTimelineZoomControls/EditorTimelineZoomControls";
-import { resolveEditorTimelineHoverSeconds } from "./EditorTimeline.utils";
+import {
+  resolveEditorTimelineHoverSeconds,
+  resolveEditorTimelineWheelZoom,
+} from "./EditorTimeline.utils";
 
 const timelineLabelColumnWidth = 132;
 
@@ -41,14 +45,15 @@ function EditorTimeline() {
     videoTracks
       .flatMap((track) => track.clips)
       .find((clip) => clip.id === selectedClipId) ?? null;
+  const timelineDurationSeconds = calculateEditorTimelineDuration(project);
   const visibleDurationSeconds = calculateExpandableTimelineDuration({
-    projectDurationSeconds: project?.durationSeconds ?? 0,
-    zoom,
+    projectDurationSeconds: timelineDurationSeconds,
   });
   const timelineContentScale = calculateTimelineContentScale({
     visibleDurationSeconds,
     zoom,
   });
+  const timelineWidthPercent = roundToMilliseconds(timelineContentScale * 100);
   const selectedClipStartSeconds = selectedClip
     ? Math.max(0, Math.min(selectedClip.startSeconds, visibleDurationSeconds))
     : 0;
@@ -123,12 +128,14 @@ function EditorTimeline() {
     }
 
     event.preventDefault();
-    if (event.deltaY === 0) {
-      return;
-    }
+    const nextZoom = resolveEditorTimelineWheelZoom({
+      deltaY: event.deltaY,
+      zoom,
+    });
 
-    const direction = event.deltaY < 0 ? 1 : -1;
-    setZoom(zoom + direction * editorZoomStep);
+    if (nextZoom !== null) {
+      setZoom(nextZoom);
+    }
   };
 
   const handleTimelineMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -162,7 +169,7 @@ function EditorTimeline() {
           className="relative grid h-full min-w-full touch-none select-none grid-cols-[132px_minmax(0,1fr)] grid-rows-[22px_42px_72px] overflow-hidden rounded-md border border-base-content/10 bg-base-300"
           data-timeline-grid="true"
           ref={timelineGridRef}
-          style={{ width: `${timelineContentScale * 100}%` }}
+          style={{ width: `${timelineWidthPercent}%` }}
           onPointerCancel={handleTimelinePointerEnd}
           onPointerLeave={handleTimelineLeave}
           onPointerDown={handleTimelinePointerDown}

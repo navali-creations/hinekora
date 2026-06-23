@@ -64,8 +64,8 @@ describe("EditorTimelineZoomControls utils", () => {
       hasSelectedClip: true,
       isZoomInAtBoundary: false,
       isZoomInDisabled: false,
-      isZoomOutAtBoundary: false,
-      isZoomOutDisabled: false,
+      isZoomOutAtBoundary: true,
+      isZoomOutDisabled: true,
     });
   });
 
@@ -86,20 +86,20 @@ describe("EditorTimelineZoomControls utils", () => {
     });
   });
 
-  it("keeps zoom controls enabled when the visible timeline range would change", () => {
+  it("keeps zoom controls enabled after zooming in from the fit view", () => {
     const asset = createEditorTestAsset({ durationSeconds: 10 });
     const project = createEditorTestProject(asset, { durationSeconds: 30 });
     const state = resolveEditorTimelineZoomControlState({
       project,
       selectedClipId: project.activeClipId,
-      zoom: 1,
+      zoom: 1.25,
     });
 
     expect(state).toMatchObject({
       isZoomInDisabled: false,
       isZoomOutDisabled: false,
-      nextZoomIn: 1.25,
-      nextZoomOut: 0.75,
+      nextZoomIn: 1.5,
+      nextZoomOut: 1,
     });
   });
 });

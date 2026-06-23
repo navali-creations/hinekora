@@ -1,4 +1,12 @@
-import { resolveTimelineSecondsFromClientX } from "../../Editor.utils/Editor.utils";
+import {
+  editorMaxZoom,
+  editorMinZoom,
+  editorZoomStep,
+} from "../../Editor.slice/Editor.slice.constants";
+import {
+  resolveNextEditorTimelineZoom,
+  resolveTimelineSecondsFromClientX,
+} from "../../Editor.utils/Editor.utils";
 
 interface ResolveEditorTimelineHoverSecondsInput {
   clientX: number;
@@ -68,4 +76,27 @@ function resolveTrimEdgeHoverSeconds(trimHandle: HTMLElement): number | null {
     : clipStartSeconds + clipDurationSeconds;
 }
 
-export { resolveEditorTimelineHoverSeconds, resolveTrimEdgeHoverSeconds };
+function resolveEditorTimelineWheelZoom(input: {
+  deltaY: number;
+  zoom: number;
+}): number | null {
+  if (input.deltaY === 0) {
+    return null;
+  }
+
+  const nextZoom = resolveNextEditorTimelineZoom({
+    direction: input.deltaY < 0 ? 1 : -1,
+    maxZoom: editorMaxZoom,
+    minZoom: editorMinZoom,
+    step: editorZoomStep,
+    zoom: input.zoom,
+  });
+
+  return nextZoom === input.zoom ? null : nextZoom;
+}
+
+export {
+  resolveEditorTimelineHoverSeconds,
+  resolveEditorTimelineWheelZoom,
+  resolveTrimEdgeHoverSeconds,
+};

@@ -4,7 +4,10 @@ import type {
 } from "~/main/modules/editor";
 import { trackEvent } from "~/renderer/modules/umami";
 
-import { roundToMilliseconds } from "../Editor.utils/Editor.utils";
+import {
+  clampEditorTimelineZoom,
+  roundToMilliseconds,
+} from "../Editor.utils/Editor.utils";
 import {
   editorMaxZoom,
   editorMinZoom,
@@ -316,10 +319,11 @@ function createEditorWorkspaceActions({
     },
     setZoom: (zoom) => {
       set((state) => {
-        state.editor.zoom = Math.min(
-          Math.max(zoom, editorMinZoom),
-          editorMaxZoom,
-        );
+        state.editor.zoom = clampEditorTimelineZoom({
+          maxZoom: editorMaxZoom,
+          minZoom: editorMinZoom,
+          zoom,
+        });
       });
       trackEvent("editor-timeline-zoom-changed");
     },

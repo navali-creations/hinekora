@@ -28,6 +28,7 @@ vi.mock("~/renderer/store", () => ({
   useEditorShallow: storeMocks.useEditorShallow,
 }));
 
+import { createEditorTestProject } from "../../Editor.slice/Editor.slice.test-utils";
 import {
   editorMediaAssetDragType,
   editorVideoTrackDropType,
@@ -41,8 +42,7 @@ function configureEditorState() {
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
       addAssetToTimelineAt: storeMocks.addAssetToTimelineAt,
-      project: { durationSeconds: 10 },
-      zoom: 1,
+      project: createEditorTestProject(),
     }),
   );
 }
@@ -95,7 +95,7 @@ describe("EditorDragDropProvider", () => {
 
     expect(storeMocks.addAssetToTimelineAt).toHaveBeenCalledWith(
       "clip:asset-1",
-      15,
+      6.25,
     );
   });
 

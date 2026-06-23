@@ -6,11 +6,14 @@ import {
   editorZoomStep,
 } from "../../Editor.slice/Editor.slice.constants";
 import {
+  calculateEditorTimelineDuration,
   calculateExpandableTimelineDuration,
   calculateTimelineContentScale,
+  clampEditorTimelineZoom,
+  resolveNextEditorTimelineZoom,
 } from "../../Editor.utils/Editor.utils";
 
-const zoomDurationEpsilonSeconds = 0.001;
+const zoomValueEpsilon = 0.001;
 
 interface EditorTimelineZoomControlState {
   hasSelectedClip: boolean;
@@ -43,9 +46,25 @@ function resolveEditorTimelineZoomControlState(input: {
   selectedClipId: string | null;
   zoom: number;
 }): EditorTimelineZoomControlState {
-  const zoom = clampEditorZoom(input.zoom);
-  const nextZoomOut = clampEditorZoom(zoom - editorZoomStep);
-  const nextZoomIn = clampEditorZoom(zoom + editorZoomStep);
+  const zoom = clampEditorTimelineZoom({
+    maxZoom: editorMaxZoom,
+    minZoom: editorMinZoom,
+    zoom: input.zoom,
+  });
+  const nextZoomOut = resolveNextEditorTimelineZoom({
+    direction: -1,
+    maxZoom: editorMaxZoom,
+    minZoom: editorMinZoom,
+    step: editorZoomStep,
+    zoom,
+  });
+  const nextZoomIn = resolveNextEditorTimelineZoom({
+    direction: 1,
+    maxZoom: editorMaxZoom,
+    minZoom: editorMinZoom,
+    step: editorZoomStep,
+    zoom,
+  });
   const selectedClip = resolveSelectedTimelineClip(
     input.project,
     input.selectedClipId,
@@ -63,38 +82,27 @@ function resolveEditorTimelineZoomControlState(input: {
     };
   }
 
-  const currentVisibleDuration = resolveVisibleTimelineDuration({
-    project: input.project,
-    zoom,
+  const visibleDuration = calculateExpandableTimelineDuration({
+    projectDurationSeconds: calculateEditorTimelineDuration(input.project),
   });
   const currentContentScale = calculateTimelineContentScale({
-    visibleDurationSeconds: currentVisibleDuration,
+    visibleDurationSeconds: visibleDuration,
     zoom,
   });
-  const zoomOutVisibleDuration = resolveVisibleTimelineDuration({
-    project: input.project,
-    zoom: nextZoomOut,
-  });
   const zoomOutContentScale = calculateTimelineContentScale({
-    visibleDurationSeconds: zoomOutVisibleDuration,
+    visibleDurationSeconds: visibleDuration,
     zoom: nextZoomOut,
-  });
-  const zoomInVisibleDuration = resolveVisibleTimelineDuration({
-    project: input.project,
-    zoom: nextZoomIn,
   });
   const zoomInContentScale = calculateTimelineContentScale({
-    visibleDurationSeconds: zoomInVisibleDuration,
+    visibleDurationSeconds: visibleDuration,
     zoom: nextZoomIn,
   });
   const isZoomOutAtBoundary =
     zoom === nextZoomOut ||
-    (areVisibleDurationsEqual(currentVisibleDuration, zoomOutVisibleDuration) &&
-      areVisibleDurationsEqual(currentContentScale, zoomOutContentScale));
+    areTimelineZoomValuesEqual(currentContentScale, zoomOutContentScale);
   const isZoomInAtBoundary =
     zoom === nextZoomIn ||
-    (areVisibleDurationsEqual(currentVisibleDuration, zoomInVisibleDuration) &&
-      areVisibleDurationsEqual(currentContentScale, zoomInContentScale));
+    areTimelineZoomValuesEqual(currentContentScale, zoomInContentScale);
 
   return {
     hasSelectedClip: true,
@@ -105,10 +113,6 @@ function resolveEditorTimelineZoomControlState(input: {
     nextZoomIn,
     nextZoomOut,
   };
-}
-
-function clampEditorZoom(zoom: number): number {
-  return Math.min(Math.max(zoom, editorMinZoom), editorMaxZoom);
 }
 
 function resolveSelectedTimelineClip(
@@ -126,18 +130,8 @@ function resolveSelectedTimelineClip(
   );
 }
 
-function resolveVisibleTimelineDuration(input: {
-  project: EditorProject;
-  zoom: number;
-}): number {
-  return calculateExpandableTimelineDuration({
-    projectDurationSeconds: input.project.durationSeconds,
-    zoom: input.zoom,
-  });
-}
-
-function areVisibleDurationsEqual(first: number, second: number): boolean {
-  return Math.abs(first - second) <= zoomDurationEpsilonSeconds;
+function areTimelineZoomValuesEqual(first: number, second: number): boolean {
+  return Math.abs(first - second) <= zoomValueEpsilon;
 }
 
 export { createZoomTooltip, resolveEditorTimelineZoomControlState };

@@ -133,6 +133,30 @@ describe("EditorTimelineClip", () => {
     expect(container.querySelectorAll("img")).toHaveLength(2);
   });
 
+  it("sizes a trimmed clip against the stable source rail duration", async () => {
+    const asset = createEditorTestAsset({ durationSeconds: 54.95 });
+    const clip = createEditorTestTimelineClip(asset, {
+      durationSeconds: 30,
+      outSeconds: 30,
+      sourceOutSeconds: 54.95,
+    });
+
+    await act(async () => {
+      root.render(
+        <EditorTimelineClip clip={clip} visibleDurationSeconds={68.688} />,
+      );
+    });
+
+    const clipElement = container.querySelector<HTMLElement>(
+      `[data-timeline-clip="${clip.id}"]`,
+    );
+
+    expect(Number.parseFloat(clipElement?.style.width ?? "")).toBeCloseTo(
+      43.68,
+      2,
+    );
+  });
+
   it("renders available thumbnails for the selected clip", async () => {
     const asset = createEditorTestAsset();
     const clip = createEditorTestTimelineClip(asset);

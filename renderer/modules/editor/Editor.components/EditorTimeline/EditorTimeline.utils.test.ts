@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   resolveEditorTimelineHoverSeconds,
+  resolveEditorTimelineWheelZoom,
   resolveTrimEdgeHoverSeconds,
 } from "./EditorTimeline.utils";
 
@@ -46,5 +47,14 @@ describe("EditorTimeline utils", () => {
         visibleDurationSeconds: 10,
       }),
     ).toBe(5);
+  });
+
+  it("resolves ctrl wheel zoom steps inside timeline bounds", () => {
+    expect(resolveEditorTimelineWheelZoom({ deltaY: -100, zoom: 1 })).toBe(
+      1.25,
+    );
+    expect(resolveEditorTimelineWheelZoom({ deltaY: 100, zoom: 1.25 })).toBe(1);
+    expect(resolveEditorTimelineWheelZoom({ deltaY: 100, zoom: 1 })).toBe(null);
+    expect(resolveEditorTimelineWheelZoom({ deltaY: 0, zoom: 2 })).toBe(null);
   });
 });

@@ -8,7 +8,6 @@ import {
 function resolveDropTimelineSeconds(input: {
   durationSeconds: number;
   event: DragEndEvent;
-  zoom: number;
 }): number {
   const bounds = input.event.operation.target?.shape?.boundingRectangle;
   const nativeEvent = input.event.nativeEvent;
@@ -22,7 +21,6 @@ function resolveDropTimelineSeconds(input: {
     timelineWidth: bounds.width,
     visibleDurationSeconds: calculateExpandableTimelineDuration({
       projectDurationSeconds: input.durationSeconds,
-      zoom: input.zoom,
     }),
   });
 }

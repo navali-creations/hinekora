@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createEditorTestAsset,
   createEditorTestProject,
+  createEditorTestTimelineClip,
 } from "../../Editor.slice/Editor.slice.test-utils";
 
 const dragMocks = vi.hoisted(() => ({
@@ -159,15 +160,81 @@ describe("EditorTimeline", () => {
       container
         .querySelector('[data-testid="track-video-track"]')
         ?.getAttribute("data-visible-duration"),
-    ).toBe("78");
+    ).toBe("97.5");
     expect(
       container
         .querySelector<HTMLElement>("[data-timeline-grid]")
         ?.style.getPropertyValue("width"),
-    ).toBe("260%");
+    ).toBe("100%");
     expect(
       container.querySelectorAll("[data-timeline-minor-marker]").length,
     ).toBeGreaterThan(0);
+  });
+
+  it("stretches fitted recordings when zoomed in", async () => {
+    const asset = createEditorTestAsset({ durationSeconds: 78 });
+    configureEditorState({
+      project: createEditorTestProject(asset),
+      zoom: 1.25,
+    });
+    await renderTimeline();
+
+    expect(
+      container
+        .querySelector<HTMLElement>("[data-timeline-grid]")
+        ?.style.getPropertyValue("width"),
+    ).toBe("181.3%");
+  });
+
+  it("fits short recordings against their padded duration instead of the empty timeline floor", async () => {
+    const asset = createEditorTestAsset({ durationSeconds: 11.92 });
+    configureEditorState({
+      project: createEditorTestProject(asset),
+      zoom: 1,
+    });
+    await renderTimeline();
+
+    expect(
+      container
+        .querySelector('[data-testid="track-video-track"]')
+        ?.getAttribute("data-visible-duration"),
+    ).toBe("14.9");
+    expect(
+      container
+        .querySelector<HTMLElement>("[data-timeline-grid]")
+        ?.style.getPropertyValue("width"),
+    ).toBe("100%");
+  });
+
+  it("keeps the rail duration anchored to source media after trimming", async () => {
+    const asset = createEditorTestAsset({ durationSeconds: 54.95 });
+    configureEditorState({
+      project: createEditorTestProject(asset, {
+        durationSeconds: 30,
+        tracks: [
+          {
+            clips: [
+              createEditorTestTimelineClip(asset, {
+                durationSeconds: 30,
+                outSeconds: 30,
+                sourceOutSeconds: 54.95,
+              }),
+            ],
+            id: "video-track",
+            kind: "video",
+            label: "Video",
+          },
+        ],
+      }),
+      zoom: 1,
+    });
+    await renderTimeline();
+
+    expect(
+      container
+        .querySelector('[data-testid="track-video-track"]')
+        ?.getAttribute("data-visible-duration"),
+    ).toBe("68.688");
   });
 
   it("resolves hover seconds from the marker zone", async () => {
@@ -185,7 +252,7 @@ describe("EditorTimeline", () => {
     expect(dragMocks.handleTimelinePointerMove).toHaveBeenCalledTimes(1);
     expect(
       container.querySelector('[data-testid="hover-marker"]')?.textContent,
-    ).toBe("15");
+    ).toBe("6.25");
   });
 
   it("zooms the timeline with ctrl wheel", async () => {
@@ -212,7 +279,7 @@ describe("EditorTimeline", () => {
     });
 
     expect(storeMocks.setZoom).toHaveBeenNthCalledWith(1, 1.25);
-    expect(storeMocks.setZoom).toHaveBeenNthCalledWith(2, 0.75);
+    expect(storeMocks.setZoom).toHaveBeenCalledTimes(1);
   });
 
   it("uses the active drag marker ahead of passive hover", async () => {

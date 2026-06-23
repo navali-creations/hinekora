@@ -1,6 +1,7 @@
-import type { EditorTimelineTrack } from "~/main/modules/editor";
+import type { EditorProject, EditorTimelineTrack } from "~/main/modules/editor";
 
 import { roundToMilliseconds } from "./EditorTime.utils";
+import { resolveTimelineClipSourceRange } from "./EditorTimelineTrim.utils";
 
 interface EditorTimelineGap {
   durationSeconds: number;
@@ -10,7 +11,9 @@ interface EditorTimelineGap {
 }
 
 const timelineViewportDurationSeconds = 30;
-const timelineMarkerTargetCountPerViewport = 5;
+const timelineMinimumDurationSeconds = 10;
+const timelineTailPaddingRatio = 0.25;
+const timelineMarkerTargetCountPerViewport = 7;
 const timelineMarkerMaxCount = 240;
 const timelineMarkerIntervalsSeconds = [
   0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600,
@@ -29,17 +32,53 @@ function calculateTimelineDuration(tracks: EditorTimelineTrack[]): number {
 
 function calculateExpandableTimelineDuration(input: {
   projectDurationSeconds: number;
-  zoom: number;
 }): number {
-  const zoom = Number.isFinite(input.zoom) && input.zoom > 0 ? input.zoom : 1;
   const durationSeconds = Math.max(input.projectDurationSeconds, 0);
-  const viewportDurationSeconds = timelineViewportDurationSeconds / zoom;
+  if (durationSeconds <= 0) {
+    return timelineViewportDurationSeconds;
+  }
+
+  const paddedDurationSeconds =
+    durationSeconds * (1 + timelineTailPaddingRatio);
 
   return Math.max(
-    roundToMilliseconds(durationSeconds),
-    roundToMilliseconds(viewportDurationSeconds),
-    10,
+    roundToMilliseconds(paddedDurationSeconds),
+    timelineMinimumDurationSeconds,
   );
+}
+
+function calculateEditorTimelineDuration(
+  project: EditorProject | null,
+): number {
+  if (!project) {
+    return 0;
+  }
+
+  const assetDurationByKey = new Map(
+    project.assets.map((asset) => [
+      asset.assetKey,
+      Number.isFinite(asset.durationSeconds ?? Number.NaN)
+        ? (asset.durationSeconds ?? 0)
+        : 0,
+    ]),
+  );
+  const expandableClipEndSeconds = project.tracks.flatMap((track) =>
+    track.clips.map((clip) => {
+      const assetDurationSeconds = assetDurationByKey.get(clip.assetKey) ?? 0;
+      const sourceRange = resolveTimelineClipSourceRange({
+        assetDurationSeconds,
+        clip,
+      });
+      const expandableDurationSeconds = Math.max(
+        clip.durationSeconds,
+        sourceRange.sourceOutSeconds - clip.inSeconds,
+      );
+
+      return roundToMilliseconds(clip.startSeconds + expandableDurationSeconds);
+    }),
+  );
+
+  return Math.max(project.durationSeconds, ...expandableClipEndSeconds, 0);
 }
 
 function calculateTimelineContentScale(input: {
@@ -55,13 +94,35 @@ function calculateTimelineContentScale(input: {
     return 1;
   }
 
-  return Math.max(
+  const fittedDurationScale = Math.max(
     1,
-    roundToMilliseconds(
-      (input.visibleDurationSeconds * input.zoom) /
-        timelineViewportDurationSeconds,
-    ),
+    input.visibleDurationSeconds / timelineViewportDurationSeconds,
   );
+  const zoomDelta = Math.max(0, input.zoom - 1);
+
+  return Math.max(1, roundToMilliseconds(1 + zoomDelta * fittedDurationScale));
+}
+
+function clampEditorTimelineZoom(input: {
+  maxZoom: number;
+  minZoom: number;
+  zoom: number;
+}): number {
+  return Math.min(Math.max(input.zoom, input.minZoom), input.maxZoom);
+}
+
+function resolveNextEditorTimelineZoom(input: {
+  direction: -1 | 1;
+  maxZoom: number;
+  minZoom: number;
+  step: number;
+  zoom: number;
+}): number {
+  return clampEditorTimelineZoom({
+    maxZoom: input.maxZoom,
+    minZoom: input.minZoom,
+    zoom: input.zoom + input.direction * input.step,
+  });
 }
 
 function calculateTimelineMarkers(input: {
@@ -242,6 +303,7 @@ function isTimelineMajorMarker(
 
 export type { EditorTimelineGap };
 export {
+  calculateEditorTimelineDuration,
   calculateExpandableTimelineDuration,
   calculateTimelineContentScale,
   calculateTimelineDuration,
@@ -249,5 +311,7 @@ export {
   calculateTimelineMarkers,
   calculateTimelineMinorMarkers,
   calculateTimelinePercent,
+  clampEditorTimelineZoom,
+  resolveNextEditorTimelineZoom,
   resolveTimelineSecondsFromClientX,
 };

@@ -6,7 +6,7 @@ import type {
 const clipboardStatusResetMs = 1_800;
 const editorHistoryLimit = 100;
 const editorMaxZoom = 4;
-const editorMinZoom = 0.5;
+const editorMinZoom = 1;
 const editorProjectPageSize = 5;
 const editorVisibleHistoryPageSize = 10;
 const editorZoomStep = 0.25;

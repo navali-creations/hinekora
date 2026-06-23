@@ -4,19 +4,17 @@ import type { PropsWithChildren } from "react";
 import { useEditorShallow } from "~/renderer/store";
 
 import {
+  calculateEditorTimelineDuration,
   isEditorMediaAssetDragData,
   isEditorVideoTrackDropData,
 } from "../../Editor.utils/Editor.utils";
 import { resolveDropTimelineSeconds } from "./EditorDragDropProvider.utils";
 
 function EditorDragDropProvider({ children }: PropsWithChildren) {
-  const { addAssetToTimelineAt, project, zoom } = useEditorShallow(
-    (editor) => ({
-      addAssetToTimelineAt: editor.addAssetToTimelineAt,
-      project: editor.project,
-      zoom: editor.zoom,
-    }),
-  );
+  const { addAssetToTimelineAt, project } = useEditorShallow((editor) => ({
+    addAssetToTimelineAt: editor.addAssetToTimelineAt,
+    project: editor.project,
+  }));
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (event.canceled) {
@@ -33,9 +31,8 @@ function EditorDragDropProvider({ children }: PropsWithChildren) {
     }
 
     const timelineSeconds = resolveDropTimelineSeconds({
-      durationSeconds: project?.durationSeconds ?? 0,
+      durationSeconds: calculateEditorTimelineDuration(project),
       event,
-      zoom,
     });
     addAssetToTimelineAt(sourceData.assetKey, timelineSeconds);
   };
