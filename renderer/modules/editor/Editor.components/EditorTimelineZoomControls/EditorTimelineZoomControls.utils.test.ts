@@ -51,7 +51,7 @@ describe("EditorTimelineZoomControls utils", () => {
     });
   });
 
-  it("disables zoom in when the next zoom level would not change the timeline", () => {
+  it("keeps zoom in available for short clips because the content can stretch", () => {
     const asset = createEditorTestAsset({ durationSeconds: 10 });
     const project = createEditorTestProject(asset);
     const state = resolveEditorTimelineZoomControlState({
@@ -62,9 +62,26 @@ describe("EditorTimelineZoomControls utils", () => {
 
     expect(state).toMatchObject({
       hasSelectedClip: true,
+      isZoomInAtBoundary: false,
+      isZoomInDisabled: false,
+      isZoomOutAtBoundary: false,
+      isZoomOutDisabled: false,
+    });
+  });
+
+  it("disables zoom in at the maximum zoom boundary", () => {
+    const asset = createEditorTestAsset({ durationSeconds: 10 });
+    const project = createEditorTestProject(asset);
+    const state = resolveEditorTimelineZoomControlState({
+      project,
+      selectedClipId: project.activeClipId,
+      zoom: 4,
+    });
+
+    expect(state).toMatchObject({
+      hasSelectedClip: true,
       isZoomInAtBoundary: true,
       isZoomInDisabled: true,
-      isZoomOutAtBoundary: false,
       isZoomOutDisabled: false,
     });
   });

@@ -131,7 +131,7 @@ describe("EditorTimelineZoomControls", () => {
     );
   });
 
-  it("disables zoom in when the timeline would keep the same visible duration", async () => {
+  it("keeps zoom in available when the content scale can still change", async () => {
     const asset = createEditorTestAsset({ durationSeconds: 10 });
     const project = createEditorTestProject(asset);
     configureEditorState({
@@ -150,9 +150,9 @@ describe("EditorTimelineZoomControls", () => {
     );
 
     expect(zoomOut?.disabled).toBe(false);
-    expect(zoomIn?.disabled).toBe(true);
+    expect(zoomIn?.disabled).toBe(false);
     expect(zoomIn?.closest("[data-tip]")?.getAttribute("data-tip")).toBe(
-      "Cannot zoom in further",
+      "Zoom in timeline",
     );
   });
 });

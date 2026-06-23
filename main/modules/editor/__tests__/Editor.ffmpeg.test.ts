@@ -85,6 +85,18 @@ describe("probeEditorAudioStream", () => {
     closeChild.stderr.emit("data", Buffer.from("no audio"));
     closeChild.emit("close", 1);
     await expect(closeResult).resolves.toBe(false);
+
+    const unknownCloseChild = createProbeChild();
+    const unknownCloseProbe = vi.fn(
+      () => unknownCloseChild,
+    ) as unknown as typeof spawnProcess;
+    const unknownCloseResult = probeEditorAudioStream({
+      ffprobePath: "ffprobe",
+      path: "source.mp4",
+      spawnProcess: unknownCloseProbe,
+    });
+    unknownCloseChild.emit("close", null);
+    await expect(unknownCloseResult).resolves.toBe(false);
   });
 
   it("resolves, rejects, and times out ffmpeg process runs", async () => {

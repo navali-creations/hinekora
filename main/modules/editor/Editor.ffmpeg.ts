@@ -4,7 +4,11 @@ import { existsSync } from "node:fs";
 import { rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { createSafePathLogFields, logWarn } from "~/main/utils/app-log";
+import {
+  createSafePathLogFields,
+  logInfo,
+  logWarn,
+} from "~/main/utils/app-log";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
 
 import type { EditorExportResolution } from "./Editor.dto";
@@ -28,14 +32,18 @@ async function renderEditorExportWithFfmpeg(input: {
   segments: EditorExportSegment[];
 }): Promise<void> {
   const ffmpegPath = resolveEditorFfmpegPath();
+  logEditorBinaryResolution("ffmpeg", ffmpegPath);
   /* v8 ignore next -- Depends on packaged binary availability, not business logic. */
   if (!ffmpegPath) {
     throw new Error("Bundled ffmpeg is not available");
   }
   const ffprobePath = resolveEditorFfprobePath();
+  logEditorBinaryResolution("ffprobe", ffprobePath);
   /* v8 ignore next -- Depends on packaged binary availability, not business logic. */
   if (!ffprobePath) {
-    logWarn(editorLogScope, "Bundled ffprobe is not available");
+    logWarn(editorLogScope, "Bundled ffprobe is not available", {
+      binary: "ffprobe",
+    });
   }
 
   const renderSegments = await createRenderSegments(
@@ -47,6 +55,20 @@ async function renderEditorExportWithFfmpeg(input: {
     renderSegments,
     input.outputPath,
   );
+  logInfo(editorLogScope, "Editor ffmpeg render prepared", {
+    audioClipSegmentCount: renderSegments.filter(
+      (segment) => segment.kind === "clip" && segment.hasAudio,
+    ).length,
+    clipSegmentCount: renderSegments.filter(
+      (segment) => segment.kind === "clip",
+    ).length,
+    gapSegmentCount: renderSegments.filter((segment) => segment.kind === "gap")
+      .length,
+    resolution: input.resolution,
+    segmentCount: renderSegments.length,
+    ...createSafePathLogFields(filterScriptPath, "filterScript"),
+    ...createSafePathLogFields(input.outputPath, "export"),
+  });
 
   const ffmpegDependencies: {
     onProgress?: (progress: number) => void;
@@ -59,6 +81,13 @@ async function renderEditorExportWithFfmpeg(input: {
   }
 
   try {
+    logInfo(editorLogScope, "Editor ffmpeg render started", {
+      inputCount: renderSegments.filter((segment) => segment.kind === "clip")
+        .length,
+      resolution: input.resolution,
+      ...createSafePathLogFields(ffmpegPath, "ffmpeg"),
+      ...createSafePathLogFields(input.outputPath, "export"),
+    });
     await runEditorFfmpeg(
       ffmpegPath,
       [
@@ -102,6 +131,10 @@ async function renderEditorExportWithFfmpeg(input: {
       ],
       ffmpegDependencies,
     );
+    logInfo(editorLogScope, "Editor ffmpeg render completed", {
+      resolution: input.resolution,
+      ...createSafePathLogFields(input.outputPath, "export"),
+    });
   } finally {
     await rm(filterScriptPath, { force: true });
   }
@@ -318,6 +351,11 @@ async function resolveAudioStreamsByPath(input: {
     Math.max(1, Math.floor(input.concurrency ?? editorAudioProbeConcurrency)),
     uniquePaths.length,
   );
+  logInfo(editorLogScope, "Audio stream probe batch started", {
+    sourceCount: uniquePaths.length,
+    workerCount,
+    ...createSafePathLogFields(input.ffprobePath, "ffprobe"),
+  });
   let nextIndex = 0;
 
   const probeNextPath = async () => {
@@ -335,6 +373,11 @@ async function resolveAudioStreamsByPath(input: {
   };
 
   await Promise.all(Array.from({ length: workerCount }, () => probeNextPath()));
+
+  logInfo(editorLogScope, "Audio stream probe batch completed", {
+    audioSourceCount: Array.from(results.values()).filter(Boolean).length,
+    sourceCount: uniquePaths.length,
+  });
 
   return new Map(uniquePaths.map((path) => [path, results.get(path)!]));
 }
@@ -368,6 +411,7 @@ function probeEditorAudioStream(input: {
     const timeoutId = setTimeout(() => {
       child.kill("SIGKILL");
       logWarn(editorLogScope, "Audio stream probe timed out", {
+        ...createSafePathLogFields(input.ffprobePath, "ffprobe"),
         ...createSafePathLogFields(input.path, "source"),
       });
       settle(false);
@@ -400,6 +444,7 @@ function probeEditorAudioStream(input: {
 
       logWarn(editorLogScope, "Audio stream probe failed", {
         error: safeErrorMessage(error),
+        ...createSafePathLogFields(input.ffprobePath, "ffprobe"),
         ...createSafePathLogFields(input.path, "source"),
       });
       settle(false);
@@ -411,12 +456,20 @@ function probeEditorAudioStream(input: {
       }
 
       if (code === 0) {
-        settle(Buffer.concat(stdoutChunks).toString("utf8").trim().length > 0);
+        const hasAudio =
+          Buffer.concat(stdoutChunks).toString("utf8").trim().length > 0;
+        logInfo(editorLogScope, "Audio stream probe completed", {
+          hasAudio,
+          ...createSafePathLogFields(input.path, "source"),
+        });
+        settle(hasAudio);
         return;
       }
 
       logWarn(editorLogScope, "Audio stream probe failed", {
+        exitCode: code ?? "unknown",
         error: Buffer.concat(stderrChunks).toString("utf8").slice(-500).trim(),
+        ...createSafePathLogFields(input.ffprobePath, "ffprobe"),
         ...createSafePathLogFields(input.path, "source"),
       });
       settle(false);
@@ -482,6 +535,17 @@ function formatFfmpegSeconds(seconds: number): string {
   }
 
   return Math.max(0, seconds).toFixed(3);
+}
+
+function logEditorBinaryResolution(
+  binary: "ffmpeg" | "ffprobe",
+  path: string | null,
+): void {
+  logInfo(editorLogScope, "Editor media binary lookup completed", {
+    binary,
+    found: path !== null,
+    ...createSafePathLogFields(path, binary),
+  });
 }
 
 export {

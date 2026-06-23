@@ -1,5 +1,8 @@
-import { type MouseEvent, useRef } from "react";
+import clsx from "clsx";
+import { type MouseEvent, useEffect, useRef } from "react";
 import { FiClock, FiMoreHorizontal } from "react-icons/fi";
+
+import { useEditorShallow } from "~/renderer/store";
 
 import { EditorCopyActions } from "../EditorCopyActions/EditorCopyActions";
 import { EditorDeleteEditAction } from "../EditorDeleteEditAction/EditorDeleteEditAction";
@@ -16,7 +19,16 @@ function EditorActionsMenu({
   onToggleHistory,
 }: EditorActionsMenuProps) {
   const detailsRef = useRef<HTMLDetailsElement>(null);
+  const isClipboardBusy = useEditorShallow(
+    (editor) => editor.clipboardState.status === "copying",
+  );
   const historyLabel = isHistoryVisible ? "Hide history" : "Show history";
+
+  useEffect(() => {
+    if (isClipboardBusy) {
+      detailsRef.current?.removeAttribute("open");
+    }
+  }, [isClipboardBusy]);
 
   const handleMenuClick = (event: MouseEvent<HTMLUListElement>) => {
     if (
@@ -27,16 +39,31 @@ function EditorActionsMenu({
     }
   };
 
+  const handleSummaryClick = (event: MouseEvent<HTMLElement>) => {
+    if (isClipboardBusy) {
+      event.preventDefault();
+    }
+  };
+
   const handleToggleHistory = () => {
+    if (isClipboardBusy) {
+      return;
+    }
+
     onToggleHistory();
   };
 
   return (
     <details className="dropdown dropdown-end no-drag" ref={detailsRef}>
       <summary
+        aria-disabled={isClipboardBusy}
         aria-label="More editor actions"
-        className="btn btn-primary btn-sm list-none [&::-webkit-details-marker]:hidden"
+        className={clsx(
+          "btn btn-primary btn-sm list-none [&::-webkit-details-marker]:hidden",
+          isClipboardBusy && "btn-disabled",
+        )}
         data-onboarding="editor-more-options"
+        onClick={handleSummaryClick}
       >
         <FiMoreHorizontal size={17} />
       </summary>
@@ -62,6 +89,7 @@ function EditorActionsMenu({
         <li className="list-none">
           <button
             className="flex h-8 w-full cursor-pointer items-center justify-between gap-3 rounded-md px-3 text-left text-sm transition-colors hover:bg-base-300"
+            disabled={isClipboardBusy}
             type="button"
             onClick={handleToggleHistory}
           >

@@ -5,7 +5,10 @@ import {
   editorMinZoom,
   editorZoomStep,
 } from "../../Editor.slice/Editor.slice.constants";
-import { calculateExpandableTimelineDuration } from "../../Editor.utils/Editor.utils";
+import {
+  calculateExpandableTimelineDuration,
+  calculateTimelineContentScale,
+} from "../../Editor.utils/Editor.utils";
 
 const zoomDurationEpsilonSeconds = 0.001;
 
@@ -64,20 +67,34 @@ function resolveEditorTimelineZoomControlState(input: {
     project: input.project,
     zoom,
   });
+  const currentContentScale = calculateTimelineContentScale({
+    visibleDurationSeconds: currentVisibleDuration,
+    zoom,
+  });
   const zoomOutVisibleDuration = resolveVisibleTimelineDuration({
     project: input.project,
+    zoom: nextZoomOut,
+  });
+  const zoomOutContentScale = calculateTimelineContentScale({
+    visibleDurationSeconds: zoomOutVisibleDuration,
     zoom: nextZoomOut,
   });
   const zoomInVisibleDuration = resolveVisibleTimelineDuration({
     project: input.project,
     zoom: nextZoomIn,
   });
+  const zoomInContentScale = calculateTimelineContentScale({
+    visibleDurationSeconds: zoomInVisibleDuration,
+    zoom: nextZoomIn,
+  });
   const isZoomOutAtBoundary =
     zoom === nextZoomOut ||
-    areVisibleDurationsEqual(currentVisibleDuration, zoomOutVisibleDuration);
+    (areVisibleDurationsEqual(currentVisibleDuration, zoomOutVisibleDuration) &&
+      areVisibleDurationsEqual(currentContentScale, zoomOutContentScale));
   const isZoomInAtBoundary =
     zoom === nextZoomIn ||
-    areVisibleDurationsEqual(currentVisibleDuration, zoomInVisibleDuration);
+    (areVisibleDurationsEqual(currentVisibleDuration, zoomInVisibleDuration) &&
+      areVisibleDurationsEqual(currentContentScale, zoomInContentScale));
 
   return {
     hasSelectedClip: true,

@@ -9,6 +9,7 @@ import { useEditorShallow } from "~/renderer/store";
 
 import { EditorActionsMenu } from "../../Editor.components/EditorActionsMenu/EditorActionsMenu";
 import { EditorAssetRail } from "../../Editor.components/EditorAssetRail/EditorAssetRail";
+import { EditorClipboardStatus } from "../../Editor.components/EditorClipboardStatus/EditorClipboardStatus";
 import { EditorDragDropProvider } from "../../Editor.components/EditorDragDropProvider/EditorDragDropProvider";
 import { EditorExportActions } from "../../Editor.components/EditorExportActions/EditorExportActions";
 import { EditorExportView } from "../../Editor.components/EditorExportView/EditorExportView";
@@ -19,6 +20,8 @@ import { EditorTimeline } from "../../Editor.components/EditorTimeline/EditorTim
 import {
   createExportSubtitle,
   createExportTitle,
+  isEditorDeleteShortcut,
+  isEditorShortcutEditableTarget,
   shouldHydrateEditorProject,
 } from "./EditorPage.utils";
 
@@ -32,6 +35,7 @@ function EditorPage({ source = null }: EditorPageProps) {
   const [isHistoryVisible, setHistoryVisible] = useState(false);
   const {
     error,
+    clipboardStatus,
     exportFileName,
     exportResult,
     exportStatus,
@@ -46,6 +50,7 @@ function EditorPage({ source = null }: EditorPageProps) {
     selectedClipId,
     undoProjectChange,
   } = useEditorShallow((editor) => ({
+    clipboardStatus: editor.clipboardState.status,
     error: editor.error,
     exportFileName: editor.exportState.fileName,
     exportResult: editor.exportState.result,
@@ -61,6 +66,8 @@ function EditorPage({ source = null }: EditorPageProps) {
     selectedClipId: editor.selectedClipId,
     undoProjectChange: editor.undoProjectChange,
   }));
+  const isClipboardBusy = clipboardStatus === "copying";
+  const activeClipId = selectedClipId ?? project?.activeClipId ?? null;
 
   const handleToggleHistory = () => {
     setHistoryVisible((isVisible) => !isVisible);
@@ -86,17 +93,15 @@ function EditorPage({ source = null }: EditorPageProps) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
-      if (
-        target instanceof HTMLElement &&
-        (target.isContentEditable ||
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.tagName === "SELECT")
-      ) {
+      if (isClipboardBusy) {
         return;
       }
 
-      if (event.key === "Delete") {
+      if (isEditorShortcutEditableTarget(target)) {
+        return;
+      }
+
+      if (isEditorDeleteShortcut(event)) {
         if (hoveredTimelineGap) {
           event.preventDefault();
           removeTimelineGap({
@@ -107,9 +112,9 @@ function EditorPage({ source = null }: EditorPageProps) {
           return;
         }
 
-        if (selectedClipId) {
+        if (activeClipId) {
           event.preventDefault();
-          removeTimelineClip(selectedClipId);
+          removeTimelineClip(activeClipId);
           return;
         }
       }
@@ -138,18 +143,19 @@ function EditorPage({ source = null }: EditorPageProps) {
       }
     };
 
-    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keydown", handleKeyDown, true);
 
     return () => {
-      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keydown", handleKeyDown, true);
     };
   }, [
+    activeClipId,
     redoProjectChange,
+    isClipboardBusy,
     hoveredTimelineGap,
     removeTimelineGap,
     removeTimelineClip,
     setHoveredTimelineGap,
-    selectedClipId,
     undoProjectChange,
   ]);
 
@@ -178,10 +184,11 @@ function EditorPage({ source = null }: EditorPageProps) {
   }
 
   return (
-    <PageContainer className="gap-4">
+    <PageContainer className="relative gap-4">
       <PageHeader
         actions={
           <>
+            <EditorClipboardStatus />
             <EditorProjectPicker />
             <EditorActionsMenu
               isHistoryVisible={isHistoryVisible}
@@ -198,7 +205,7 @@ function EditorPage({ source = null }: EditorPageProps) {
       )}
       <PageContent
         className={clsx(
-          "grid h-full min-h-0 grid-rows-[minmax(0,1fr)_220px] gap-3 !overflow-hidden",
+          "relative grid h-full min-h-0 grid-rows-[minmax(0,1fr)_220px] gap-3 !overflow-hidden",
           isHistoryVisible
             ? "grid-cols-[260px_minmax(0,1fr)_260px]"
             : "grid-cols-[260px_minmax(0,1fr)]",
@@ -212,6 +219,12 @@ function EditorPage({ source = null }: EditorPageProps) {
           )}
           <EditorTimeline />
         </EditorDragDropProvider>
+        {isClipboardBusy && (
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 z-40 bg-base-100/10"
+          />
+        )}
       </PageContent>
       {isLoading && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center bg-base-300/45">

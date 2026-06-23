@@ -179,6 +179,7 @@ describe("RecordingStorageRepository", () => {
       sourceLeague: "Standard",
       startedAt: "2026-06-12T10:00:00.000Z",
       stoppedAt: "2026-06-12T09:59:00.000Z",
+      durationSeconds: 12.3456,
       mtimeMs: 10,
       sizeBytes: 50,
     });
@@ -192,6 +193,16 @@ describe("RecordingStorageRepository", () => {
       sizeBytes: 10,
     });
 
+    expect(
+      repository
+        .listRunRecordingItems()
+        .find((item) => item.path.endsWith("invalid-duration.mkv")),
+    ).toEqual(expect.objectContaining({ durationSeconds: 12.346 }));
+    repository.updateFileState("recordings/invalid-duration.mkv", {
+      durationSeconds: null,
+      exists: true,
+      sizeBytes: 50,
+    });
     expect(
       repository
         .listRunRecordingItems()
@@ -210,6 +221,16 @@ describe("RecordingStorageRepository", () => {
       freedBytes: 50,
       usageBytes: 60,
     });
+    repository.updateFileState("recordings/invalid-duration.mkv", {
+      durationSeconds: 60,
+      exists: false,
+      sizeBytes: 0,
+    });
+    expect(
+      repository
+        .listRunRecordingItems()
+        .find((item) => item.path.endsWith("invalid-duration.mkv")),
+    ).toEqual(expect.objectContaining({ durationSeconds: null }));
 
     database.close();
   });

@@ -118,7 +118,9 @@ function EditorTimelineClip({
           "absolute inset-y-0 left-0 z-10 w-3 cursor-ew-resize border-base-content/35 border-r bg-base-content/20 transition-opacity hover:bg-base-content/35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
           isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         )}
+        data-clip-duration-seconds={clip.durationSeconds}
         data-clip-id={clip.id}
+        data-clip-start-seconds={clip.startSeconds}
         data-trim-edge="start"
         type="button"
       />
@@ -128,7 +130,9 @@ function EditorTimelineClip({
           "absolute inset-y-0 right-0 z-10 w-3 cursor-ew-resize border-base-content/35 border-l bg-base-content/20 transition-opacity hover:bg-base-content/35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
           isSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100",
         )}
+        data-clip-duration-seconds={clip.durationSeconds}
         data-clip-id={clip.id}
+        data-clip-start-seconds={clip.startSeconds}
         data-trim-edge="end"
         type="button"
       />

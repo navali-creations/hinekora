@@ -29,6 +29,7 @@ let root: Root;
 function configureEditorState(overrides: Record<string, unknown> = {}) {
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
+      clipboardState: { error: null, requestId: null, status: "idle" },
       loadMoreProjects: storeMocks.loadMoreProjects,
       openProject: storeMocks.openProject,
       project,
@@ -213,6 +214,33 @@ describe("EditorProjectPicker", () => {
     });
 
     expect(storeMocks.loadMoreProjects).toHaveBeenCalledOnce();
+    expect(storeMocks.openProject).not.toHaveBeenCalled();
+  });
+
+  it("disables project changes while copying to clipboard", async () => {
+    configureEditorState({
+      clipboardState: { error: null, requestId: "copy-1", status: "copying" },
+    });
+
+    await renderProjectPicker();
+    const select = container.querySelector<HTMLSelectElement>(
+      'select[aria-label="Editor project"]',
+    );
+    const renameButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Rename project"]',
+    );
+
+    expect(select?.disabled).toBe(true);
+    expect(renameButton?.disabled).toBe(true);
+
+    await act(async () => {
+      if (!select) {
+        throw new Error("Expected project selector to render");
+      }
+      select.value = "project-2";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
     expect(storeMocks.openProject).not.toHaveBeenCalled();
   });
 });

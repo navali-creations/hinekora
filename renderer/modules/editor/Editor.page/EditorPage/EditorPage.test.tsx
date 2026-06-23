@@ -115,6 +115,7 @@ let editorState: Record<string, unknown>;
 
 function configureEditorState(overrides: Record<string, unknown> = {}) {
   editorState = {
+    clipboardState: { error: null, requestId: null, status: "idle" },
     error: null,
     exportState: {
       fileName: null,
@@ -182,6 +183,24 @@ describe("EditorPage shortcuts", () => {
     expect(storeMocks.removeTimelineGap).not.toHaveBeenCalled();
   });
 
+  it("deletes the active clip when focus is inside timeline controls", async () => {
+    configureEditorState({ selectedClipId: null });
+    await renderEditorPage();
+    const focusedButton = document.createElement("button");
+    document.body.append(focusedButton);
+    focusedButton.focus();
+
+    focusedButton.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        bubbles: true,
+        code: "Delete",
+        key: "Del",
+      }),
+    );
+
+    expect(storeMocks.removeTimelineClip).toHaveBeenCalledWith("timeline-1");
+  });
+
   it("prioritizes deleting a hovered gap over the selected clip", async () => {
     const gap = {
       durationSeconds: 2,
@@ -221,6 +240,18 @@ describe("EditorPage shortcuts", () => {
 
     expect(storeMocks.undoProjectChange).toHaveBeenCalledTimes(1);
     expect(storeMocks.redoProjectChange).toHaveBeenCalledTimes(2);
+  });
+
+  it("blocks editor shortcuts while copying to clipboard", async () => {
+    configureEditorState({
+      clipboardState: { error: null, requestId: "copy-1", status: "copying" },
+    });
+    await renderEditorPage();
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" }));
+
+    expect(container.textContent).toContain("Processing");
+    expect(storeMocks.removeTimelineClip).not.toHaveBeenCalled();
   });
 
   it("hydrates when no editor project exists", async () => {

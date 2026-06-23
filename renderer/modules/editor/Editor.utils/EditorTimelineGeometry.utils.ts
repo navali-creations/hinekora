@@ -9,6 +9,13 @@ interface EditorTimelineGap {
   startSeconds: number;
 }
 
+const timelineViewportDurationSeconds = 30;
+const timelineMarkerTargetCountPerViewport = 5;
+const timelineMarkerMaxCount = 240;
+const timelineMarkerIntervalsSeconds = [
+  0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600,
+];
+
 function calculateTimelineDuration(tracks: EditorTimelineTrack[]): number {
   return tracks.reduce(
     (duration, track) =>
@@ -24,10 +31,93 @@ function calculateExpandableTimelineDuration(input: {
   projectDurationSeconds: number;
   zoom: number;
 }): number {
-  const durationSeconds = Math.max(input.projectDurationSeconds, 10);
   const zoom = Number.isFinite(input.zoom) && input.zoom > 0 ? input.zoom : 1;
+  const durationSeconds = Math.max(input.projectDurationSeconds, 0);
+  const viewportDurationSeconds = timelineViewportDurationSeconds / zoom;
 
-  return Math.max(roundToMilliseconds(durationSeconds / zoom), 10);
+  return Math.max(
+    roundToMilliseconds(durationSeconds),
+    roundToMilliseconds(viewportDurationSeconds),
+    10,
+  );
+}
+
+function calculateTimelineContentScale(input: {
+  visibleDurationSeconds: number;
+  zoom: number;
+}): number {
+  if (
+    !Number.isFinite(input.zoom) ||
+    input.zoom <= 0 ||
+    !Number.isFinite(input.visibleDurationSeconds) ||
+    input.visibleDurationSeconds <= 0
+  ) {
+    return 1;
+  }
+
+  return Math.max(
+    1,
+    roundToMilliseconds(
+      (input.visibleDurationSeconds * input.zoom) /
+        timelineViewportDurationSeconds,
+    ),
+  );
+}
+
+function calculateTimelineMarkers(input: {
+  contentScale: number;
+  visibleDurationSeconds: number;
+}): number[] {
+  if (
+    !Number.isFinite(input.visibleDurationSeconds) ||
+    input.visibleDurationSeconds <= 0
+  ) {
+    return [0];
+  }
+
+  const markerIntervalSeconds = resolveTimelineMarkerInterval(
+    resolveTimelineTargetMarkerInterval(input),
+  );
+  const markerCount =
+    Math.floor(input.visibleDurationSeconds / markerIntervalSeconds) + 1;
+  const markers = Array.from({ length: markerCount }, (_, index) =>
+    roundToMilliseconds(index * markerIntervalSeconds),
+  );
+  const durationSeconds = roundToMilliseconds(input.visibleDurationSeconds);
+
+  if (markers.at(-1) !== durationSeconds) {
+    markers.push(durationSeconds);
+  }
+
+  return markers;
+}
+
+function calculateTimelineMinorMarkers(input: {
+  contentScale: number;
+  visibleDurationSeconds: number;
+}): number[] {
+  if (
+    !Number.isFinite(input.visibleDurationSeconds) ||
+    input.visibleDurationSeconds <= 0
+  ) {
+    return [];
+  }
+
+  const markerIntervalSeconds = resolveTimelineMarkerInterval(
+    resolveTimelineTargetMarkerInterval(input),
+  );
+  const minorIntervalSeconds = markerIntervalSeconds / 5;
+  const minorMarkerCount = Math.floor(
+    input.visibleDurationSeconds / minorIntervalSeconds,
+  );
+
+  return Array.from({ length: minorMarkerCount }, (_, index) =>
+    roundToMilliseconds((index + 1) * minorIntervalSeconds),
+  ).filter(
+    (marker) =>
+      marker < input.visibleDurationSeconds &&
+      !isTimelineMajorMarker(marker, markerIntervalSeconds),
+  );
 }
 
 function calculateTimelineGaps(
@@ -109,11 +199,55 @@ function resolveTimelineSecondsFromClientX(input: {
   return roundToMilliseconds(ratio * input.visibleDurationSeconds);
 }
 
+function resolveTimelineMarkerInterval(targetIntervalSeconds: number): number {
+  const interval = timelineMarkerIntervalsSeconds.find(
+    (item) => item >= targetIntervalSeconds,
+  );
+
+  if (interval !== undefined) {
+    return interval;
+  }
+
+  return Math.ceil(targetIntervalSeconds / 600) * 600;
+}
+
+function resolveTimelineTargetMarkerInterval(input: {
+  contentScale: number;
+  visibleDurationSeconds: number;
+}): number {
+  const contentScale =
+    Number.isFinite(input.contentScale) && input.contentScale > 0
+      ? input.contentScale
+      : 1;
+  const secondsPerViewport = input.visibleDurationSeconds / contentScale;
+  const targetIntervalSeconds =
+    secondsPerViewport / timelineMarkerTargetCountPerViewport;
+  const cappedIntervalSeconds =
+    input.visibleDurationSeconds / timelineMarkerMaxCount;
+
+  return Math.max(targetIntervalSeconds, cappedIntervalSeconds);
+}
+
+function isTimelineMajorMarker(
+  markerSeconds: number,
+  markerIntervalSeconds: number,
+): boolean {
+  const remainder = markerSeconds % markerIntervalSeconds;
+
+  return (
+    Math.abs(remainder) <= 0.001 ||
+    Math.abs(remainder - markerIntervalSeconds) <= 0.001
+  );
+}
+
 export type { EditorTimelineGap };
 export {
   calculateExpandableTimelineDuration,
+  calculateTimelineContentScale,
   calculateTimelineDuration,
   calculateTimelineGaps,
+  calculateTimelineMarkers,
+  calculateTimelineMinorMarkers,
   calculateTimelinePercent,
   resolveTimelineSecondsFromClientX,
 };

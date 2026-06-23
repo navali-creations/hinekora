@@ -2,7 +2,10 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createEditorTestProject } from "../../Editor.slice/Editor.slice.test-utils";
+import {
+  createEditorTestAsset,
+  createEditorTestProject,
+} from "../../Editor.slice/Editor.slice.test-utils";
 
 const dragMocks = vi.hoisted(() => ({
   handleTimelinePointerDown: vi.fn(),
@@ -11,6 +14,7 @@ const dragMocks = vi.hoisted(() => ({
   useEditorTimelineDrag: vi.fn(),
 }));
 const storeMocks = vi.hoisted(() => ({
+  setZoom: vi.fn(),
   useEditorShallow: vi.fn(),
 }));
 
@@ -81,6 +85,7 @@ function configureEditorState(overrides: Record<string, unknown> = {}) {
     selector({
       project: createEditorTestProject(),
       selectedClipId: "timeline-1",
+      setZoom: storeMocks.setZoom,
       zoom: 1,
       ...overrides,
     }),
@@ -100,6 +105,7 @@ describe("EditorTimeline", () => {
     document.body.append(container);
     root = createRoot(container);
     dragMocks.useEditorTimelineDrag.mockReturnValue({
+      activeTimelineMarkerSeconds: null,
       clipDragPreview: null,
       handleTimelinePointerDown: dragMocks.handleTimelinePointerDown,
       handleTimelinePointerEnd: dragMocks.handleTimelinePointerEnd,
@@ -127,6 +133,11 @@ describe("EditorTimeline", () => {
   });
 
   it("renders timeline controls and video tracks", async () => {
+    const asset = createEditorTestAsset({ durationSeconds: 78 });
+    configureEditorState({
+      project: createEditorTestProject(asset),
+      zoom: 1,
+    });
     await renderTimeline();
 
     expect(
@@ -148,7 +159,15 @@ describe("EditorTimeline", () => {
       container
         .querySelector('[data-testid="track-video-track"]')
         ?.getAttribute("data-visible-duration"),
-    ).toBe("10");
+    ).toBe("78");
+    expect(
+      container
+        .querySelector<HTMLElement>("[data-timeline-grid]")
+        ?.style.getPropertyValue("width"),
+    ).toBe("260%");
+    expect(
+      container.querySelectorAll("[data-timeline-minor-marker]").length,
+    ).toBeGreaterThan(0);
   });
 
   it("resolves hover seconds from the marker zone", async () => {
@@ -166,6 +185,50 @@ describe("EditorTimeline", () => {
     expect(dragMocks.handleTimelinePointerMove).toHaveBeenCalledTimes(1);
     expect(
       container.querySelector('[data-testid="hover-marker"]')?.textContent,
-    ).toBe("5");
+    ).toBe("15");
+  });
+
+  it("zooms the timeline with ctrl wheel", async () => {
+    await renderTimeline();
+    const scrollContainer = container.querySelector<HTMLElement>(
+      "[data-timeline-scroll]",
+    );
+
+    await act(async () => {
+      scrollContainer?.dispatchEvent(
+        new WheelEvent("wheel", {
+          bubbles: true,
+          ctrlKey: true,
+          deltaY: -100,
+        }),
+      );
+      scrollContainer?.dispatchEvent(
+        new WheelEvent("wheel", {
+          bubbles: true,
+          ctrlKey: true,
+          deltaY: 100,
+        }),
+      );
+    });
+
+    expect(storeMocks.setZoom).toHaveBeenNthCalledWith(1, 1.25);
+    expect(storeMocks.setZoom).toHaveBeenNthCalledWith(2, 0.75);
+  });
+
+  it("uses the active drag marker ahead of passive hover", async () => {
+    dragMocks.useEditorTimelineDrag.mockReturnValue({
+      activeTimelineMarkerSeconds: 7.54,
+      clipDragPreview: null,
+      handleTimelinePointerDown: dragMocks.handleTimelinePointerDown,
+      handleTimelinePointerEnd: dragMocks.handleTimelinePointerEnd,
+      handleTimelinePointerMove: dragMocks.handleTimelinePointerMove,
+      timelineGridRef: { current: null },
+    });
+
+    await renderTimeline();
+
+    expect(
+      container.querySelector('[data-testid="hover-marker"]')?.textContent,
+    ).toBe("7.54");
   });
 });

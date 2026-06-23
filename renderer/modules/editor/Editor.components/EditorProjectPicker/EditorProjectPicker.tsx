@@ -8,21 +8,32 @@ const loadMoreProjectValue = "__load-more-projects__";
 function EditorProjectPicker() {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const [draftTitle, setDraftTitle] = useState("");
-  const { loadMoreProjects, openProject, project, saveProject, workspace } =
-    useEditorShallow((editor) => ({
-      loadMoreProjects: editor.loadMoreProjects,
-      openProject: editor.openProject,
-      project: editor.project,
-      saveProject: editor.saveProject,
-      workspace: editor.workspace,
-    }));
+  const {
+    isClipboardBusy,
+    loadMoreProjects,
+    openProject,
+    project,
+    saveProject,
+    workspace,
+  } = useEditorShallow((editor) => ({
+    isClipboardBusy: editor.clipboardState.status === "copying",
+    loadMoreProjects: editor.loadMoreProjects,
+    openProject: editor.openProject,
+    project: editor.project,
+    saveProject: editor.saveProject,
+    workspace: editor.workspace,
+  }));
   const projects = workspace?.projects ?? [];
   const selectedProjectId = projects.some((item) => item.id === project?.id)
     ? (project?.id ?? "")
     : "";
-  const isRenameDisabled = !project || !selectedProjectId;
+  const isRenameDisabled = isClipboardBusy || !project || !selectedProjectId;
 
   const handleProjectChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    if (isClipboardBusy) {
+      return;
+    }
+
     const projectId = event.currentTarget.value;
     if (projectId === loadMoreProjectValue) {
       void loadMoreProjects();
@@ -56,7 +67,7 @@ function EditorProjectPicker() {
   const handleRenameSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const title = draftTitle.trim();
-    if (!project || !title) {
+    if (!project || !title || isClipboardBusy) {
       return;
     }
 
@@ -73,6 +84,7 @@ function EditorProjectPicker() {
         <select
           aria-label="Editor project"
           className="select select-bordered select-sm join-item w-48"
+          disabled={isClipboardBusy}
           value={selectedProjectId}
           onChange={handleProjectChange}
         >
@@ -118,6 +130,7 @@ function EditorProjectPicker() {
                 <input
                   autoFocus
                   className="input input-bordered input-sm"
+                  disabled={isClipboardBusy}
                   maxLength={120}
                   required
                   type="text"
@@ -130,6 +143,7 @@ function EditorProjectPicker() {
             <div className="modal-action border-base-content/10 border-t p-4">
               <button
                 className="btn btn-ghost btn-sm"
+                disabled={isClipboardBusy}
                 type="button"
                 onClick={handleCloseDialog}
               >
@@ -137,7 +151,7 @@ function EditorProjectPicker() {
               </button>
               <button
                 className="btn btn-primary btn-sm"
-                disabled={!draftTitle.trim()}
+                disabled={isClipboardBusy || !draftTitle.trim()}
                 type="submit"
               >
                 Rename

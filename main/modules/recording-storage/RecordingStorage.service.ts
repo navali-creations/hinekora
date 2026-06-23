@@ -25,6 +25,7 @@ import {
   safeErrorMessage,
 } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
+import { readMp4DurationSeconds } from "~/main/utils/media-metadata";
 import { isPathInsideOrEqual } from "~/main/utils/storage-files";
 
 import { GameIdSchema } from "~/types";
@@ -99,6 +100,7 @@ interface ExistingFileStats {
 class RecordingStorageService {
   private static instance: RecordingStorageService | null = null;
 
+  private readonly durationProbeFailureLoggedPaths = new Set<string>();
   private recordingLibrarySyncCache: RecordingLibrarySyncCache | null = null;
   private readonly replayClipsRepository: ReplayClipsRepository;
   private readonly repository: RecordingStorageRepository;
@@ -831,12 +833,23 @@ class RecordingStorageService {
       seenRecordingPaths.add(file.path);
       const existing = metadataByPath.get(file.path);
       if (existing) {
-        if (
+        const fileChanged =
           !existing.exists ||
           existing.sizeBytes !== file.size ||
-          existing.mtimeMs !== file.mtimeMs
+          existing.mtimeMs !== file.mtimeMs;
+        const recoveredDurationSeconds =
+          existing.durationSeconds === null || fileChanged
+            ? this.readRecordingFileDuration(file.path)
+            : null;
+        if (
+          fileChanged ||
+          (existing.durationSeconds === null &&
+            recoveredDurationSeconds !== null)
         ) {
           this.repository.updateFileState(file.path, {
+            ...(fileChanged || recoveredDurationSeconds !== null
+              ? { durationSeconds: recoveredDurationSeconds }
+              : {}),
             exists: true,
             mtimeMs: file.mtimeMs,
             sizeBytes: file.size,
@@ -846,6 +859,7 @@ class RecordingStorageService {
       }
 
       const fallbackDate = new Date(file.mtimeMs).toISOString();
+      const durationSeconds = this.readRecordingFileDuration(file.path);
       this.repository.upsertRunRecording({
         id: this.createFallbackRecordingId(file.path),
         path: file.path,
@@ -854,6 +868,7 @@ class RecordingStorageService {
         createdAt: fallbackDate,
         startedAt: fallbackDate,
         stoppedAt: fallbackDate,
+        durationSeconds,
         exists: true,
         mtimeMs: file.mtimeMs,
         sizeBytes: file.size,
@@ -900,6 +915,32 @@ class RecordingStorageService {
         resolvedPath,
       )
     );
+  }
+
+  private readRecordingFileDuration(path: string): number | null {
+    const durationSeconds = readMp4DurationSeconds(path);
+    if (durationSeconds !== null) {
+      logInfo(
+        RECORDING_STORAGE_LOG_SCOPE,
+        "Run recording duration recovered from media metadata",
+        {
+          durationSeconds,
+          ...createSafePathLogFields(path, "recording"),
+        },
+      );
+    } else {
+      const resolvedPath = resolve(path);
+      if (!this.durationProbeFailureLoggedPaths.has(resolvedPath)) {
+        this.durationProbeFailureLoggedPaths.add(resolvedPath);
+        logWarn(
+          RECORDING_STORAGE_LOG_SCOPE,
+          "Run recording duration metadata unavailable",
+          createSafePathLogFields(path, "recording"),
+        );
+      }
+    }
+
+    return durationSeconds;
   }
 
   private getExistingFileStats(path: string): ExistingFileStats {

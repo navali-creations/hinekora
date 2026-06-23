@@ -36,7 +36,7 @@ function EditorTimelineVideoTrack({
 
   return (
     <Fragment>
-      <div className="flex items-center border-base-content/10 border-r border-b px-3 text-base-content/65 text-xs">
+      <div className="sticky left-0 z-30 flex items-center border-base-content/10 border-r border-b bg-base-300 px-3 text-base-content/65 text-xs">
         {track.label}
       </div>
       <div

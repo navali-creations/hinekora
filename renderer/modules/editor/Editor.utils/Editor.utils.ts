@@ -39,8 +39,11 @@ export {
 } from "./EditorTimelineClip.utils";
 export {
   calculateExpandableTimelineDuration,
+  calculateTimelineContentScale,
   calculateTimelineDuration,
   calculateTimelineGaps,
+  calculateTimelineMarkers,
+  calculateTimelineMinorMarkers,
   calculateTimelinePercent,
   type EditorTimelineGap,
   resolveTimelineSecondsFromClientX,

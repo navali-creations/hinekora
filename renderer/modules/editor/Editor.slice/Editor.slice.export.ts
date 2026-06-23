@@ -1,10 +1,13 @@
 import type {
+  EditorExportFileActionResult,
   EditorExportInput,
   EditorExportResolution,
 } from "~/main/modules/editor";
 import { trackEvent } from "~/renderer/modules/umami";
 
 import {
+  clipboardStatusResetMs,
+  initialClipboardState,
   initialExportState,
   minimumExportDurationMs,
 } from "./Editor.slice.constants";
@@ -45,16 +48,59 @@ function createEditorExportActions({
       return result;
     },
     copyProjectToClipboard: async () => {
-      const input = createEditorCopyToClipboardInput(get().editor.project);
-      if (!input) {
-        return { ok: false, error: "No editable clip is selected" };
+      if (get().editor.clipboardState.status === "copying") {
+        return { error: "Clipboard copy is already running", ok: false };
       }
 
-      const result = await window.electron.editor.copyProjectToClipboard(input);
-      trackEvent("editor-project-copied", {
-        ok: result.ok,
+      const input = createEditorCopyToClipboardInput(get().editor.project);
+      const requestId = globalThis.crypto.randomUUID();
+      if (!input) {
+        const result = {
+          error: "No editable clip is selected",
+          ok: false,
+        };
+        set((state) => {
+          state.editor.clipboardState = {
+            error: result.error,
+            requestId,
+            status: "failed",
+          };
+        });
+        resetClipboardStateLater(set, requestId);
+
+        return result;
+      }
+
+      set((state) => {
+        state.editor.clipboardState = {
+          error: null,
+          requestId,
+          status: "copying",
+        };
+        state.editor.isPreviewPlaying = false;
       });
-      return result;
+
+      try {
+        const result =
+          await window.electron.editor.copyProjectToClipboard(input);
+        setClipboardResult(set, requestId, result);
+        resetClipboardStateLater(set, requestId);
+        trackEvent("editor-project-copied", {
+          ok: result.ok,
+        });
+
+        return result;
+      } catch (error) {
+        const result = {
+          error:
+            error instanceof Error ? error.message : "Clipboard copy failed",
+          ok: false,
+        };
+        setClipboardResult(set, requestId, result);
+        resetClipboardStateLater(set, requestId);
+
+        return result;
+      }
     },
     exportProject: async (input: {
       fileName: string;
@@ -182,6 +228,39 @@ function createEditorExportActions({
       });
     },
   };
+}
+
+function resetClipboardStateLater(
+  set: EditorSliceActionContext["set"],
+  requestId: string,
+): void {
+  globalThis.setTimeout(() => {
+    set((state) => {
+      if (state.editor.clipboardState.requestId !== requestId) {
+        return;
+      }
+
+      state.editor.clipboardState = initialClipboardState;
+    });
+  }, clipboardStatusResetMs);
+}
+
+function setClipboardResult(
+  set: EditorSliceActionContext["set"],
+  requestId: string,
+  result: EditorExportFileActionResult,
+): void {
+  set((state) => {
+    if (state.editor.clipboardState.requestId !== requestId) {
+      return;
+    }
+
+    state.editor.clipboardState = {
+      error: result.error,
+      requestId,
+      status: result.ok ? "copied" : "failed",
+    };
+  });
 }
 
 export { createEditorExportActions };

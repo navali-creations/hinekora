@@ -64,6 +64,7 @@ let root: Root;
 function configureEditorState() {
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
+      clipboardState: { error: null, requestId: null, status: "idle" },
       exportProject: storeMocks.exportProject,
       exportState: { status: "idle" },
       project,

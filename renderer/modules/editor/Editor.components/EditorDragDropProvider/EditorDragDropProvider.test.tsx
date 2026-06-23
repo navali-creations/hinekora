@@ -95,7 +95,7 @@ describe("EditorDragDropProvider", () => {
 
     expect(storeMocks.addAssetToTimelineAt).toHaveBeenCalledWith(
       "clip:asset-1",
-      5,
+      15,
     );
   });
 

@@ -16,6 +16,7 @@ import { createReplayClipMediaFileResponse } from "~/main/modules/replay-clips/R
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import {
   createSafePathLogFields,
+  createTextHash,
   logError,
   logInfo,
   logWarn,
@@ -41,12 +42,14 @@ import type {
   EditorMediaReference,
   EditorProject,
   EditorSaveProjectInput,
+  EditorTimelineClip,
   EditorWorkspace,
   EditorWorkspaceQuery,
 } from "./Editor.dto";
 import {
   calculateEditorExportDuration,
   createEditorExportSegments,
+  type EditorExportSegment,
   type EditorResolvedExportClip,
 } from "./Editor.export";
 import { renderEditorExportWithFfmpeg } from "./Editor.ffmpeg";
@@ -60,6 +63,7 @@ import {
   createEditorAssetFromRecording,
   createEditorAssetFromReplayClip,
   createEditorProjectFromAssets,
+  normalizeAssetDuration,
   sortEditorAssets,
 } from "./Editor.mapper";
 import {
@@ -123,6 +127,20 @@ class EditorService {
       limit: query.projectLimit ?? defaultEditorProjectListLimit,
     });
 
+    logInfo(editorLogScope, "Editor workspace loaded", {
+      assetCount: assets.length,
+      hasMoreProjects: projectList.hasMore,
+      projectCount: projectList.projects.length,
+      projectDurationSeconds: project.durationSeconds,
+      queryProjectIdHash: query.projectId
+        ? createTextHash(query.projectId)
+        : null,
+      querySourceIdHash: query.source ? createTextHash(query.source.id) : null,
+      querySourceKind: query.source?.kind ?? null,
+      ...createEditorAssetDiagnostics(assets),
+      ...createEditorProjectDiagnostics(project),
+    });
+
     return {
       assets,
       hasMoreProjects: projectList.hasMore,
@@ -137,22 +155,41 @@ class EditorService {
       input,
     );
     this.projectRepository.upsert(project);
+    logInfo(editorLogScope, "Editor project created", {
+      projectIdHash: createTextHash(project.id),
+      titleHash: createTextHash(project.title),
+      ...createEditorAssetDiagnostics(project.assets),
+      ...createEditorProjectDiagnostics(project),
+    });
 
     return project;
   }
 
   saveProject(input: EditorSaveProjectInput): EditorProject {
+    const refreshedProject = this.refreshEditorProjectMedia(
+      input.project,
+      this.listEditorAssets(),
+    );
     const project = {
-      ...input.project,
+      ...refreshedProject,
       updatedAt: new Date().toISOString(),
     };
     this.projectRepository.upsert(project);
+    logInfo(editorLogScope, "Editor project saved", {
+      projectIdHash: createTextHash(project.id),
+      titleHash: createTextHash(project.title),
+      ...createEditorAssetDiagnostics(project.assets),
+      ...createEditorProjectDiagnostics(project),
+    });
 
     return project;
   }
 
   deleteProject(projectId: string): EditorWorkspace {
     this.projectRepository.delete(projectId);
+    logInfo(editorLogScope, "Editor project deleted", {
+      projectIdHash: createTextHash(projectId),
+    });
 
     return this.getWorkspace();
   }
@@ -163,6 +200,11 @@ class EditorService {
   ): Promise<EditorExportResult> {
     const clips = this.createExportClips(input.clips);
     if (clips.length === 0) {
+      logWarn(editorLogScope, "Editor export has no timeline clips", {
+        exportRequestId: input.exportRequestId,
+        inputClipCount: input.clips.length,
+        mode: input.mode,
+      });
       throw new Error("No timeline clips are available to export");
     }
     const segments = createEditorExportSegments(clips, input.durationSeconds);
@@ -184,6 +226,17 @@ class EditorService {
     const tempOutputPath = createEditorExportTempOutputPath(outputPath);
 
     try {
+      logInfo(editorLogScope, "Editor export started", {
+        exportRequestId: input.exportRequestId,
+        inputClipCount: input.clips.length,
+        mode: input.mode,
+        overwrite: overwriteSource !== null,
+        resolution: input.resolution,
+        timelineDurationSeconds: input.durationSeconds,
+        ...createEditorSegmentDiagnostics(segments),
+        ...createSafePathLogFields(outputPath, "export"),
+        ...createSafePathLogFields(tempOutputPath, "temporaryExport"),
+      });
       await this.renderExportWithFfmpeg({
         onProgress: (progress) => {
           options.onProgress?.({
@@ -203,6 +256,13 @@ class EditorService {
         await rename(tempOutputPath, outputPath);
       }
     } catch (error) {
+      logError(editorLogScope, "Editor export failed", {
+        error: safeErrorMessage(error),
+        exportRequestId: input.exportRequestId,
+        mode: input.mode,
+        ...createSafePathLogFields(outputPath, "export"),
+        ...createSafePathLogFields(tempOutputPath, "temporaryExport"),
+      });
       await rm(tempOutputPath, { force: true });
       throw error;
     }
@@ -211,7 +271,7 @@ class EditorService {
     const exportId = randomUUID();
     this.rememberExportPath(exportId, outputPath);
 
-    return {
+    const result: EditorExportResult = {
       createdAt: new Date().toISOString(),
       durationSeconds: calculateEditorExportDuration(segments),
       exportId,
@@ -221,6 +281,17 @@ class EditorService {
       resolution: input.resolution,
       sizeBytes: stats.size,
     };
+    logInfo(editorLogScope, "Editor export completed", {
+      durationSeconds: calculateEditorExportDuration(segments),
+      exportId,
+      exportRequestId: input.exportRequestId,
+      mode: input.mode,
+      resolution: input.resolution,
+      sizeBytes: stats.size,
+      ...createSafePathLogFields(outputPath, "export"),
+    });
+
+    return result;
   }
 
   revealExport(exportId: string): EditorExportFileActionResult {
@@ -300,6 +371,7 @@ class EditorService {
         clipCount: clips.length,
         durationSeconds: calculateEditorExportDuration(segments),
         resolution: input.resolution,
+        ...createEditorSegmentDiagnostics(segments),
         ...createSafePathLogFields(outputPath, "clipboard"),
       });
 
@@ -393,6 +465,18 @@ class EditorService {
       const assetByKey = new Map(
         assets.map((asset) => [asset.assetKey, asset] as const),
       );
+      const missingAssetKeys = input.assetKeys.filter(
+        (assetKey) => !assetByKey.has(assetKey),
+      );
+      if (missingAssetKeys.length > 0) {
+        logWarn(editorLogScope, "Editor project requested missing assets", {
+          firstMissingAssetKeyHash: createTextHash(
+            missingAssetKeys[0] as string,
+          ),
+          missingAssetCount: missingAssetKeys.length,
+          requestedAssetCount: input.assetKeys.length,
+        });
+      }
 
       return input.assetKeys
         .map((assetKey) => assetByKey.get(assetKey))
@@ -404,6 +488,12 @@ class EditorService {
         (asset) =>
           asset.kind === input.source?.kind && asset.id === input.source.id,
       );
+      if (!selectedAsset) {
+        logWarn(editorLogScope, "Editor project source was not found", {
+          sourceIdHash: createTextHash(input.source.id),
+          sourceKind: input.source.kind,
+        });
+      }
 
       return selectedAsset ? [selectedAsset] : [];
     }
@@ -447,6 +537,18 @@ class EditorService {
           refreshedAssetByKey.get(assetKey) ?? currentAssetByKey.get(assetKey),
       )
       .filter((asset): asset is EditorMediaAsset => asset !== undefined);
+    const staleAssetKeys = Array.from(assetKeys).filter(
+      (assetKey) =>
+        currentAssetByKey.has(assetKey) && !refreshedAssetByKey.has(assetKey),
+    );
+    if (staleAssetKeys.length > 0) {
+      logWarn(editorLogScope, "Editor project kept stale media metadata", {
+        firstStaleAssetKeyHash: createTextHash(staleAssetKeys[0] as string),
+        projectIdHash: createTextHash(project.id),
+        staleAssetCount: staleAssetKeys.length,
+      });
+    }
+    let recoveredClipDurationCount = 0;
     const tracks = project.tracks.map((track) => ({
       ...track,
       clips: track.clips.map((clip) => {
@@ -455,17 +557,42 @@ class EditorService {
           return clip;
         }
 
+        const currentAsset = currentAssetByKey.get(clip.assetKey);
+        const recoveredDurationSeconds =
+          resolveRecoveredPlaceholderClipDuration({
+            clip,
+            currentAsset,
+            refreshedAsset,
+          });
+        if (recoveredDurationSeconds !== null) {
+          recoveredClipDurationCount += 1;
+        }
+
         return {
           ...clip,
+          ...(recoveredDurationSeconds !== null
+            ? {
+                durationSeconds: recoveredDurationSeconds,
+                outSeconds: recoveredDurationSeconds,
+                sourceOutSeconds: recoveredDurationSeconds,
+              }
+            : {}),
           mediaUrl: refreshedAsset.mediaUrl,
           name: refreshedAsset.name,
         };
       }),
     }));
+    if (recoveredClipDurationCount > 0) {
+      logInfo(editorLogScope, "Editor project recovered media durations", {
+        projectIdHash: createTextHash(project.id),
+        recoveredClipDurationCount,
+      });
+    }
 
     return {
       ...project,
       assets,
+      durationSeconds: calculateEditorProjectTimelineDuration(tracks),
       tracks,
     };
   }
@@ -704,6 +831,11 @@ class EditorService {
       const detail = recordingStorage.getRecording(source.id);
       const path = recordingStorage.getRecordingMediaPath(source.id);
       if (!detail || !path) {
+        logWarn(editorLogScope, "Editor export recording source unavailable", {
+          hasDetail: detail !== null,
+          hasPath: path !== null,
+          sourceIdHash: createTextHash(source.id),
+        });
         throw new Error("Recording file is not available");
       }
 
@@ -712,6 +844,10 @@ class EditorService {
 
     const detail = ReplayClipsService.getInstance().getClip(source.id);
     if (!detail) {
+      logWarn(editorLogScope, "Editor export clip source unavailable", {
+        hasDetail: false,
+        sourceIdHash: createTextHash(source.id),
+      });
       throw new Error("Clip file is not available");
     }
 
@@ -729,11 +865,117 @@ class EditorService {
       },
     );
     if (!path) {
+      logWarn(editorLogScope, "Editor export clip file unavailable", {
+        hasDetail: true,
+        sourceIdHash: createTextHash(source.id),
+      });
       throw new Error("Clip file is not available");
     }
 
     return { mediaUrl: detail.mediaUrl, path };
   }
+}
+
+function calculateEditorProjectTimelineDuration(
+  tracks: EditorProject["tracks"],
+): number {
+  return tracks
+    .flatMap((track) => track.clips)
+    .reduce(
+      (duration, clip) =>
+        Math.max(duration, clip.startSeconds + clip.durationSeconds),
+      0,
+    );
+}
+
+function hasPositiveMediaDuration(
+  durationSeconds: number | null | undefined,
+): durationSeconds is number {
+  return (
+    typeof durationSeconds === "number" &&
+    Number.isFinite(durationSeconds) &&
+    durationSeconds > 0
+  );
+}
+
+function resolveRecoveredPlaceholderClipDuration({
+  clip,
+  currentAsset,
+  refreshedAsset,
+}: {
+  clip: EditorTimelineClip;
+  currentAsset: EditorMediaAsset | undefined;
+  refreshedAsset: EditorMediaAsset;
+}): number | null {
+  if (
+    hasPositiveMediaDuration(currentAsset?.durationSeconds) ||
+    !hasPositiveMediaDuration(refreshedAsset.durationSeconds)
+  ) {
+    return null;
+  }
+
+  const placeholderDurationSeconds = normalizeAssetDuration(
+    currentAsset?.durationSeconds ?? null,
+  );
+  if (
+    clip.inSeconds !== 0 ||
+    clip.durationSeconds !== placeholderDurationSeconds ||
+    clip.outSeconds !== placeholderDurationSeconds ||
+    clip.sourceOutSeconds !== placeholderDurationSeconds
+  ) {
+    return null;
+  }
+
+  return normalizeAssetDuration(refreshedAsset.durationSeconds);
+}
+
+function createEditorAssetDiagnostics(assets: EditorMediaAsset[]) {
+  const invalidDurationAssets = assets.filter(
+    (asset) =>
+      typeof asset.durationSeconds !== "number" ||
+      !Number.isFinite(asset.durationSeconds) ||
+      asset.durationSeconds <= 0,
+  );
+  const firstInvalidDurationAsset = invalidDurationAssets[0] ?? null;
+
+  return {
+    assetClipCount: assets.filter((asset) => asset.kind === "clip").length,
+    assetInvalidDurationCount: invalidDurationAssets.length,
+    assetMissingCount: assets.filter((asset) => !asset.exists).length,
+    assetRecordingCount: assets.filter((asset) => asset.kind === "recording")
+      .length,
+    firstInvalidDurationAssetFile: firstInvalidDurationAsset?.name ?? null,
+    firstInvalidDurationAssetKeyHash: firstInvalidDurationAsset
+      ? createTextHash(firstInvalidDurationAsset.assetKey)
+      : null,
+    firstInvalidDurationAssetKind: firstInvalidDurationAsset?.kind ?? null,
+    firstInvalidDurationSeconds:
+      firstInvalidDurationAsset?.durationSeconds ?? null,
+  };
+}
+
+function createEditorProjectDiagnostics(project: EditorProject) {
+  const clips = project.tracks.flatMap((track) => track.clips);
+
+  return {
+    projectAssetCount: project.assets.length,
+    projectClipCount: clips.length,
+    projectSelectedAssetKeyHash: project.selectedAssetKey
+      ? createTextHash(project.selectedAssetKey)
+      : null,
+  };
+}
+
+function createEditorSegmentDiagnostics(segments: EditorExportSegment[]) {
+  return {
+    exportClipSegmentCount: segments.filter(
+      (segment) => segment.kind === "clip",
+    ).length,
+    exportDurationSeconds: calculateEditorExportDuration(segments),
+    exportGapSegmentCount: segments.filter((segment) => segment.kind === "gap")
+      .length,
+    exportSegmentCount: segments.length,
+  };
 }
 
 export { EditorService };

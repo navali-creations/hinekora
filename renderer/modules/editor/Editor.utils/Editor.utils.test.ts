@@ -7,7 +7,10 @@ import type {
 
 import {
   calculateExpandableTimelineDuration,
+  calculateTimelineContentScale,
   calculateTimelineDuration,
+  calculateTimelineMarkers,
+  calculateTimelineMinorMarkers,
   calculateTimelinePercent,
   clampTrimRange,
   createTimelineClipFromAsset,
@@ -364,24 +367,81 @@ describe("Editor utils", () => {
     });
   });
 
-  it("keeps visible timeline duration independent from selected clip source expansion", () => {
+  it("resolves timeline duration and content scale from zoom", () => {
     expect(
       calculateExpandableTimelineDuration({
         projectDurationSeconds: 26,
         zoom: 1,
       }),
-    ).toBe(26);
+    ).toBe(30);
     expect(
       calculateExpandableTimelineDuration({
         projectDurationSeconds: 26,
         zoom: 0.5,
       }),
-    ).toBe(52);
+    ).toBe(60);
     expect(
       calculateExpandableTimelineDuration({
         projectDurationSeconds: 10,
         zoom: 4,
       }),
     ).toBe(10);
+    expect(
+      calculateExpandableTimelineDuration({
+        projectDurationSeconds: 26,
+        zoom: 4,
+      }),
+    ).toBe(26);
+    expect(
+      calculateTimelineContentScale({
+        visibleDurationSeconds: 60,
+        zoom: 0.5,
+      }),
+    ).toBe(1);
+    expect(
+      calculateTimelineContentScale({
+        visibleDurationSeconds: 78,
+        zoom: 1,
+      }),
+    ).toBe(2.6);
+    expect(
+      calculateTimelineContentScale({
+        visibleDurationSeconds: 26,
+        zoom: 4,
+      }),
+    ).toBe(3.467);
+    expect(
+      calculateTimelineContentScale({
+        visibleDurationSeconds: Number.NaN,
+        zoom: Number.NaN,
+      }),
+    ).toBe(1);
+  });
+
+  it("densifies timeline markers as the content stretches", () => {
+    expect(
+      calculateTimelineMarkers({
+        contentScale: 1,
+        visibleDurationSeconds: 30,
+      }),
+    ).toEqual([0, 10, 20, 30]);
+    expect(
+      calculateTimelineMarkers({
+        contentScale: 4,
+        visibleDurationSeconds: 30,
+      }),
+    ).toEqual([0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]);
+    expect(
+      calculateTimelineMarkers({
+        contentScale: 1,
+        visibleDurationSeconds: 3_600,
+      }).length,
+    ).toBeLessThanOrEqual(241);
+    expect(
+      calculateTimelineMinorMarkers({
+        contentScale: 1,
+        visibleDurationSeconds: 30,
+      }),
+    ).toEqual([2, 4, 6, 8, 12, 14, 16, 18, 22, 24, 26, 28]);
   });
 });

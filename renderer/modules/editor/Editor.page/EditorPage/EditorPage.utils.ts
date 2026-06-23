@@ -50,4 +50,26 @@ function shouldHydrateEditorProject(input: {
   );
 }
 
-export { createExportSubtitle, createExportTitle, shouldHydrateEditorProject };
+function isEditorDeleteShortcut(event: KeyboardEvent): boolean {
+  return event.key === "Delete" || event.code === "Delete";
+}
+
+function isEditorShortcutEditableTarget(target: EventTarget | null): boolean {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      target.contentEditable === "true" ||
+      target.getAttribute("contenteditable") === "true" ||
+      target.tagName === "INPUT" ||
+      target.tagName === "TEXTAREA" ||
+      target.tagName === "SELECT")
+  );
+}
+
+export {
+  createExportSubtitle,
+  createExportTitle,
+  isEditorDeleteShortcut,
+  isEditorShortcutEditableTarget,
+  shouldHydrateEditorProject,
+};

@@ -74,6 +74,7 @@ export interface RunRecordingCreateInput {
   sourceGame: GameId;
   sourceLeague: string;
   createdAt?: string;
+  durationSeconds?: number | null;
   exists?: boolean;
   mtimeMs?: number;
   sizeBytes?: number;

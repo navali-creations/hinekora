@@ -1,33 +1,40 @@
-import { type PointerEvent, useState } from "react";
+import { type PointerEvent, useState, type WheelEvent } from "react";
 
 import { useEditorShallow } from "~/renderer/store";
 
 import { useEditorTimelineDrag } from "../../Editor.hooks/useEditorTimelineDrag/useEditorTimelineDrag";
+import { editorZoomStep } from "../../Editor.slice/Editor.slice.constants";
 import {
   calculateExpandableTimelineDuration,
+  calculateTimelineContentScale,
   calculateTimelineGaps,
+  calculateTimelineMarkers,
+  calculateTimelineMinorMarkers,
   calculateTimelinePercent,
-  formatEditorTime,
-  resolveTimelineSecondsFromClientX,
 } from "../../Editor.utils/Editor.utils";
 import { EditorPlaybackControls } from "../EditorPlaybackControls/EditorPlaybackControls";
 import { EditorTimelineClipDragPreview } from "../EditorTimelineClipDragPreview/EditorTimelineClipDragPreview";
 import { EditorTimelineGap } from "../EditorTimelineGap/EditorTimelineGap";
 import { EditorTimelineHoverMarker } from "../EditorTimelineHoverMarker/EditorTimelineHoverMarker";
 import { EditorTimelinePlayhead } from "../EditorTimelinePlayhead/EditorTimelinePlayhead";
+import { EditorTimelineRuler } from "../EditorTimelineRuler/EditorTimelineRuler";
 import { EditorTimelineTools } from "../EditorTimelineTools/EditorTimelineTools";
 import { EditorTimelineVideoTrack } from "../EditorTimelineVideoTrack/EditorTimelineVideoTrack";
 import { EditorTimelineZoomControls } from "../EditorTimelineZoomControls/EditorTimelineZoomControls";
+import { resolveEditorTimelineHoverSeconds } from "./EditorTimeline.utils";
 
 const timelineLabelColumnWidth = 132;
 
 function EditorTimeline() {
   const [hoverSeconds, setHoverSeconds] = useState<number | null>(null);
-  const { project, selectedClipId, zoom } = useEditorShallow((editor) => ({
-    project: editor.project,
-    selectedClipId: editor.selectedClipId,
-    zoom: editor.zoom,
-  }));
+  const { project, selectedClipId, setZoom, zoom } = useEditorShallow(
+    (editor) => ({
+      project: editor.project,
+      selectedClipId: editor.selectedClipId,
+      setZoom: editor.setZoom,
+      zoom: editor.zoom,
+    }),
+  );
   const videoTracks =
     project?.tracks.filter((track) => track.kind === "video") ?? [];
   const selectedClip =
@@ -36,6 +43,10 @@ function EditorTimeline() {
       .find((clip) => clip.id === selectedClipId) ?? null;
   const visibleDurationSeconds = calculateExpandableTimelineDuration({
     projectDurationSeconds: project?.durationSeconds ?? 0,
+    zoom,
+  });
+  const timelineContentScale = calculateTimelineContentScale({
+    visibleDurationSeconds,
     zoom,
   });
   const selectedClipStartSeconds = selectedClip
@@ -64,6 +75,7 @@ function EditorTimeline() {
       )
     : [];
   const {
+    activeTimelineMarkerSeconds,
     clipDragPreview,
     handleTimelinePointerDown,
     handleTimelinePointerEnd,
@@ -73,9 +85,14 @@ function EditorTimeline() {
     labelColumnWidth: timelineLabelColumnWidth,
     visibleDurationSeconds,
   });
-  const markers = Array.from({ length: 7 }, (_, index) =>
-    Math.round((visibleDurationSeconds / 6) * index),
-  );
+  const markers = calculateTimelineMarkers({
+    contentScale: timelineContentScale,
+    visibleDurationSeconds,
+  });
+  const minorMarkers = calculateTimelineMinorMarkers({
+    contentScale: timelineContentScale,
+    visibleDurationSeconds,
+  });
   const dragPreviewClip = clipDragPreview
     ? (videoTracks
         .flatMap((track) => track.clips)
@@ -91,34 +108,27 @@ function EditorTimeline() {
         );
 
   const resolveHoverSeconds = (event: PointerEvent<HTMLDivElement>) => {
-    const target = event.target;
-    if (
-      !(target instanceof Element) ||
-      target.closest(
-        "[data-clip-body], [data-trim-edge], [data-playhead-handle], [data-gap-delete-button]",
-      ) ||
-      !target.closest("[data-timeline-marker-zone], [data-timeline-gap-zone]")
-    ) {
-      return null;
-    }
-
-    const timelineGrid = timelineGridRef.current;
-    if (!timelineGrid) {
-      return null;
-    }
-
-    const bounds = timelineGrid.getBoundingClientRect();
-    const timelineLeft = bounds.left + timelineLabelColumnWidth;
-    if (event.clientX < timelineLeft || event.clientX > bounds.right) {
-      return null;
-    }
-
-    return resolveTimelineSecondsFromClientX({
+    return resolveEditorTimelineHoverSeconds({
       clientX: event.clientX,
-      timelineLeft,
-      timelineWidth: bounds.width - timelineLabelColumnWidth,
+      labelColumnWidth: timelineLabelColumnWidth,
+      target: event.target,
+      timelineGrid: timelineGridRef.current,
       visibleDurationSeconds,
     });
+  };
+
+  const handleTimelineWheel = (event: WheelEvent<HTMLDivElement>) => {
+    if (!event.ctrlKey && !event.metaKey) {
+      return;
+    }
+
+    event.preventDefault();
+    if (event.deltaY === 0) {
+      return;
+    }
+
+    const direction = event.deltaY < 0 ? 1 : -1;
+    setZoom(zoom + direction * editorZoomStep);
   };
 
   const handleTimelineMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -129,6 +139,8 @@ function EditorTimeline() {
   const handleTimelineLeave = () => {
     setHoverSeconds(null);
   };
+
+  const markerSeconds = activeTimelineMarkerSeconds ?? hoverSeconds;
 
   return (
     <section
@@ -141,43 +153,31 @@ function EditorTimeline() {
         <EditorTimelineZoomControls />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-hidden p-3">
+      <div
+        className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-3"
+        data-timeline-scroll="true"
+        onWheel={handleTimelineWheel}
+      >
         <div
-          className="relative grid h-full touch-none select-none grid-cols-[132px_minmax(0,1fr)] grid-rows-[22px_42px_72px] overflow-hidden rounded-md border border-base-content/10 bg-base-300"
+          className="relative grid h-full min-w-full touch-none select-none grid-cols-[132px_minmax(0,1fr)] grid-rows-[22px_42px_72px] overflow-hidden rounded-md border border-base-content/10 bg-base-300"
+          data-timeline-grid="true"
           ref={timelineGridRef}
+          style={{ width: `${timelineContentScale * 100}%` }}
           onPointerCancel={handleTimelinePointerEnd}
           onPointerLeave={handleTimelineLeave}
           onPointerDown={handleTimelinePointerDown}
           onPointerMove={handleTimelineMove}
           onPointerUp={handleTimelinePointerEnd}
         >
-          <div className="border-base-content/10 border-r border-b bg-base-200" />
-          <div
-            className="relative border-base-content/10 border-b bg-base-200"
-            data-timeline-marker-zone="true"
-          >
-            {selectedClipRulerWidth > 0 && (
-              <span
-                className="pointer-events-none absolute inset-y-0 z-10 border-primary/30 border-x bg-primary/20"
-                style={{
-                  left: `${selectedClipRulerLeft}%`,
-                  width: `${selectedClipRulerWidth}%`,
-                }}
-              />
-            )}
-            {markers.map((marker) => (
-              <span
-                className="absolute top-0 z-20 flex h-full items-center text-[10px] text-base-content/45"
-                key={marker}
-                style={{
-                  left: `${(marker / visibleDurationSeconds) * 100}%`,
-                }}
-              >
-                {formatEditorTime(marker)}
-              </span>
-            ))}
-          </div>
-          <div className="border-base-content/10 border-r border-b bg-base-300" />
+          <div className="sticky left-0 z-30 border-base-content/10 border-r border-b bg-base-200" />
+          <EditorTimelineRuler
+            markers={markers}
+            minorMarkers={minorMarkers}
+            selectedClipRulerLeft={selectedClipRulerLeft}
+            selectedClipRulerWidth={selectedClipRulerWidth}
+            visibleDurationSeconds={visibleDurationSeconds}
+          />
+          <div className="sticky left-0 z-30 border-base-content/10 border-r border-b bg-base-300" />
           <div
             className="relative border-base-content/10 border-b bg-base-300"
             data-timeline-marker-zone="true"
@@ -225,7 +225,7 @@ function EditorTimeline() {
             visibleDurationSeconds={visibleDurationSeconds}
           />
           <EditorTimelineHoverMarker
-            hoverSeconds={hoverSeconds}
+            hoverSeconds={markerSeconds}
             labelColumnWidth={timelineLabelColumnWidth}
             visibleDurationSeconds={visibleDurationSeconds}
           />

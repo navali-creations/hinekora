@@ -91,6 +91,7 @@ function configureEditorState(projectOverride = project) {
 
 function TimelineDragHarness() {
   const {
+    activeTimelineMarkerSeconds,
     clipDragPreview,
     handleTimelinePointerDown,
     handleTimelinePointerEnd,
@@ -149,6 +150,11 @@ function TimelineDragHarness() {
       {clipDragPreview && (
         <output data-testid="drag-preview">
           {clipDragPreview.startSeconds.toFixed(2)}
+        </output>
+      )}
+      {activeTimelineMarkerSeconds !== null && (
+        <output data-testid="active-marker">
+          {activeTimelineMarkerSeconds.toFixed(2)}
         </output>
       )}
     </div>
@@ -279,7 +285,9 @@ describe("useEditorTimelineDrag", () => {
     await renderHarness();
 
     dispatchPointer(getElement("trim-start"), "pointerdown", { clientX: 300 });
+    expect(getElement("active-marker").textContent).toBe("2.00");
     dispatchPointer(getElement("timeline"), "pointermove", { clientX: 400 });
+    expect(getElement("active-marker").textContent).toBe("3.00");
     dispatchPointer(getElement("timeline"), "pointerup", { clientX: 400 });
 
     expect(storeMocks.beginHistoryTransaction).toHaveBeenCalledTimes(1);
@@ -297,6 +305,7 @@ describe("useEditorTimelineDrag", () => {
       3,
     );
     expect(storeMocks.commitHistoryTransaction).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("[data-testid='active-marker']")).toBe(null);
   });
 
   it("uses the visible timeline range when starting a trim drag", async () => {

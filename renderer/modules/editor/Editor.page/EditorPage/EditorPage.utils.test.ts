@@ -4,6 +4,8 @@ import { createEditorTestProject } from "../../Editor.slice/Editor.slice.test-ut
 import {
   createExportSubtitle,
   createExportTitle,
+  isEditorDeleteShortcut,
+  isEditorShortcutEditableTarget,
   shouldHydrateEditorProject,
 } from "./EditorPage.utils";
 
@@ -69,5 +71,30 @@ describe("EditorPage utils", () => {
         sourceKind: undefined,
       }),
     ).toBe(false);
+  });
+
+  it("detects delete shortcuts and editable shortcut targets", () => {
+    expect(
+      isEditorDeleteShortcut(
+        new KeyboardEvent("keydown", { code: "Delete", key: "Del" }),
+      ),
+    ).toBe(true);
+    expect(
+      isEditorDeleteShortcut(new KeyboardEvent("keydown", { key: "Delete" })),
+    ).toBe(true);
+    expect(
+      isEditorDeleteShortcut(
+        new KeyboardEvent("keydown", { key: "Backspace" }),
+      ),
+    ).toBe(false);
+
+    const button = document.createElement("button");
+    const input = document.createElement("input");
+    const editable = document.createElement("div");
+    editable.contentEditable = "true";
+
+    expect(isEditorShortcutEditableTarget(button)).toBe(false);
+    expect(isEditorShortcutEditableTarget(input)).toBe(true);
+    expect(isEditorShortcutEditableTarget(editable)).toBe(true);
   });
 });

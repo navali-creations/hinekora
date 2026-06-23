@@ -3,7 +3,6 @@ import { FiCheck, FiClipboard } from "react-icons/fi";
 
 import { useEditorShallow } from "~/renderer/store";
 
-import { useEditorCopyActionState } from "../../Editor.hooks/useEditorCopyActionState/useEditorCopyActionState";
 import { createCopyDisabledReason } from "./EditorCopyActions.utils";
 
 interface EditorCopyActionsProps {
@@ -11,15 +10,22 @@ interface EditorCopyActionsProps {
 }
 
 function EditorCopyActions({ variant = "button" }: EditorCopyActionsProps) {
-  const { copyProjectToClipboard, exportStatus, project, selectedClipId } =
-    useEditorShallow((editor) => ({
-      copyProjectToClipboard: editor.copyProjectToClipboard,
-      exportStatus: editor.exportState.status,
-      project: editor.project,
-      selectedClipId: editor.selectedClipId,
-    }));
-  const { copyState, isCopied, isCopying, runCopyAction } =
-    useEditorCopyActionState();
+  const {
+    clipboardStatus,
+    copyProjectToClipboard,
+    exportStatus,
+    project,
+    selectedClipId,
+  } = useEditorShallow((editor) => ({
+    clipboardStatus: editor.clipboardState.status,
+    copyProjectToClipboard: editor.copyProjectToClipboard,
+    exportStatus: editor.exportState.status,
+    project: editor.project,
+    selectedClipId: editor.selectedClipId,
+  }));
+  const isCopied = clipboardStatus === "copied";
+  const isCopying = clipboardStatus === "copying";
+  const isFailed = clipboardStatus === "failed";
   const isDisabled =
     !project || !selectedClipId || isCopying || exportStatus === "exporting";
   const disabledReason = createCopyDisabledReason({
@@ -33,7 +39,7 @@ function EditorCopyActions({ variant = "button" }: EditorCopyActionsProps) {
     copyLabel = "Processing";
   } else if (isCopied) {
     copyLabel = "Copied to clipboard";
-  } else if (copyState === "failed") {
+  } else if (isFailed) {
     copyLabel = "Copy failed";
   }
 
@@ -42,15 +48,12 @@ function EditorCopyActions({ variant = "button" }: EditorCopyActionsProps) {
       return;
     }
 
-    runCopyAction(copyProjectToClipboard, {
-      onCrash: (error) => {
-        console.warn("[editor] Copy current edit crashed", { error });
-      },
-      onFailure: (error) => {
+    void copyProjectToClipboard().then((result) => {
+      if (!result.ok) {
         console.warn("[editor] Copy current edit failed", {
-          error,
+          error: result.error,
         });
-      },
+      }
     });
   };
 

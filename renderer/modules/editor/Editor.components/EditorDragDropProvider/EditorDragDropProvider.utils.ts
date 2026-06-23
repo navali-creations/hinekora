@@ -1,6 +1,9 @@
 import type { DragEndEvent } from "@dnd-kit/react";
 
-import { resolveTimelineSecondsFromClientX } from "../../Editor.utils/Editor.utils";
+import {
+  calculateExpandableTimelineDuration,
+  resolveTimelineSecondsFromClientX,
+} from "../../Editor.utils/Editor.utils";
 
 function resolveDropTimelineSeconds(input: {
   durationSeconds: number;
@@ -17,10 +20,10 @@ function resolveDropTimelineSeconds(input: {
     clientX: nativeEvent.clientX,
     timelineLeft: bounds.left,
     timelineWidth: bounds.width,
-    visibleDurationSeconds: Math.max(
-      Math.max(input.durationSeconds, 10) / input.zoom,
-      1,
-    ),
+    visibleDurationSeconds: calculateExpandableTimelineDuration({
+      projectDurationSeconds: input.durationSeconds,
+      zoom: input.zoom,
+    }),
   });
 }
 

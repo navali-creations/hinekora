@@ -30,6 +30,8 @@ function useEditorTimelineDrag({
   const scheduledClipDragPreviewFrameRef = useRef<number | null>(null);
   const [clipDragPreview, setClipDragPreview] =
     useState<TimelineClipDragPreview | null>(null);
+  const [activeTimelineMarkerSeconds, setActiveTimelineMarkerSeconds] =
+    useState<number | null>(null);
   const {
     beginHistoryTransaction,
     commitHistoryTransaction,
@@ -187,6 +189,7 @@ function useEditorTimelineDrag({
       event.preventDefault();
       beginHistoryTransaction("Trim");
       selectTimelineClip(clipId);
+      setActiveTimelineMarkerSeconds(timelineSeconds);
       event.currentTarget.setPointerCapture(event.pointerId);
       dragStateRef.current = {
         clipId,
@@ -204,6 +207,7 @@ function useEditorTimelineDrag({
     if (target.closest("[data-playhead-handle]")) {
       event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
+      setActiveTimelineMarkerSeconds(timelineSeconds);
       dragStateRef.current = {
         kind: "playhead",
         pointerId: event.pointerId,
@@ -274,6 +278,7 @@ function useEditorTimelineDrag({
       dragState.visibleDurationSeconds,
     );
     if (dragState.kind === "playhead") {
+      setActiveTimelineMarkerSeconds(timelineSeconds);
       setPlaybackSeconds(timelineSeconds);
       return;
     }
@@ -307,6 +312,7 @@ function useEditorTimelineDrag({
       return;
     }
 
+    setActiveTimelineMarkerSeconds(timelineSeconds);
     scheduleTimelineAction(() => {
       trimTimelineClipEdge(dragState.clipId, dragState.edge, timelineSeconds);
     });
@@ -335,10 +341,12 @@ function useEditorTimelineDrag({
     }
     commitHistoryTransaction();
     dragStateRef.current = null;
+    setActiveTimelineMarkerSeconds(null);
     clearClipDragPreview();
   };
 
   return {
+    activeTimelineMarkerSeconds,
     clipDragPreview,
     handleTimelinePointerDown,
     handleTimelinePointerEnd,

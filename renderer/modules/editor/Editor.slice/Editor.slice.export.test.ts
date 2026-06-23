@@ -119,16 +119,12 @@ describe("Editor export slice", () => {
     }
   });
 
-  it("copies projects and exports and stores copy failures", async () => {
+  it("copies exports and stores copy failures", async () => {
     const store = createTestStore();
     const editorApi = getEditorApi();
-    const asset = createEditorTestAsset();
-    const project = createEditorTestProject(asset);
     editorApi.copyExport
       .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({ ok: false });
-    editorApi.copyProjectToClipboard.mockResolvedValue({ ok: true });
-    loadEditorProject(store, project, [asset]);
 
     await expect(
       store.getState().editor.copyExport("export-1"),
@@ -140,19 +136,65 @@ describe("Editor export slice", () => {
     ).resolves.toEqual({
       ok: false,
     });
-    await expect(
-      store.getState().editor.copyProjectToClipboard(),
-    ).resolves.toEqual({ ok: true });
-
-    expect(editorApi.copyProjectToClipboard).toHaveBeenCalledWith(
-      expect.objectContaining({
-        durationSeconds: project.durationSeconds,
-        resolution: "1080p",
-      }),
-    );
     expect(store.getState().editor.exportState.error).toBe(
       "Could not copy export to clipboard",
     );
+  });
+
+  it("tracks current project clipboard copy status", async () => {
+    vi.useFakeTimers();
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const asset = createEditorTestAsset();
+    const project = createEditorTestProject(asset);
+    let resolveCopy: (value: { error: null; ok: true }) => void = () =>
+      undefined;
+    editorApi.copyProjectToClipboard.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCopy = resolve;
+        }),
+    );
+    loadEditorProject(store, project, [asset]);
+
+    try {
+      const copyRequest = store.getState().editor.copyProjectToClipboard();
+
+      expect(store.getState().editor.clipboardState).toMatchObject({
+        error: null,
+        status: "copying",
+      });
+      await expect(
+        store.getState().editor.copyProjectToClipboard(),
+      ).resolves.toEqual({
+        error: "Clipboard copy is already running",
+        ok: false,
+      });
+
+      resolveCopy({ error: null, ok: true });
+      await expect(copyRequest).resolves.toEqual({ error: null, ok: true });
+
+      expect(editorApi.copyProjectToClipboard).toHaveBeenCalledWith(
+        expect.objectContaining({
+          durationSeconds: project.durationSeconds,
+          resolution: "1080p",
+        }),
+      );
+      expect(store.getState().editor.clipboardState).toMatchObject({
+        error: null,
+        status: "copied",
+      });
+
+      await vi.runOnlyPendingTimersAsync();
+
+      expect(store.getState().editor.clipboardState).toMatchObject({
+        error: null,
+        requestId: null,
+        status: "idle",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("rejects clipboard copies and exports when no editable clip exists", async () => {
@@ -163,6 +205,10 @@ describe("Editor export slice", () => {
     ).resolves.toEqual({
       error: "No editable clip is selected",
       ok: false,
+    });
+    expect(store.getState().editor.clipboardState).toMatchObject({
+      error: "No editable clip is selected",
+      status: "failed",
     });
     await store.getState().editor.exportProject({
       fileName: "empty.mp4",

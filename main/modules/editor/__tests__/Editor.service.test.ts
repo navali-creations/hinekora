@@ -343,6 +343,7 @@ describe("EditorService IPC", () => {
       recordings: {
         "recording-1": createRecordingDetail({
           createdAt: "2026-06-12T09:00:00.000Z",
+          durationSeconds: null,
           id: "recording-1",
         }),
       },
@@ -350,6 +351,9 @@ describe("EditorService IPC", () => {
     const service = new EditorService();
 
     const workspace = service.getWorkspace();
+    const sourceWorkspace = service.getWorkspace({
+      source: { id: "clip-death", kind: "clip" },
+    });
     const selectedProject = service.createProject({
       assetKeys: ["clip:clip-manual", "recording:recording-1"],
       title: "Custom edit",
@@ -360,6 +364,9 @@ describe("EditorService IPC", () => {
     const missingSourceProject = service.createProject({
       source: { id: "missing", kind: "clip" },
     });
+    const missingAssetKeysProject = service.createProject({
+      assetKeys: ["clip:missing"],
+    });
 
     expect(workspace.assets.map((asset) => asset.assetKey)).toEqual([
       "clip:clip-manual",
@@ -368,6 +375,9 @@ describe("EditorService IPC", () => {
     ]);
     expect(workspace.project.assets).toEqual([]);
     expect(workspace.projects).toEqual([]);
+    expect(
+      sourceWorkspace.project.assets.map((asset) => asset.assetKey),
+    ).toEqual(["clip:clip-death"]);
     expect(selectedProject.title).toBe("Custom edit");
     expect(selectedProject.assets.map((asset) => asset.assetKey)).toEqual([
       "clip:clip-manual",
@@ -377,6 +387,7 @@ describe("EditorService IPC", () => {
       "clip:clip-death",
     ]);
     expect(missingSourceProject.assets).toEqual([]);
+    expect(missingAssetKeysProject.assets).toEqual([]);
   });
 
   it("saves, lists, and reopens editor projects", () => {
@@ -477,6 +488,84 @@ describe("EditorService IPC", () => {
       durationSeconds: 0,
       title: "Untitled edit",
     });
+  });
+
+  it("recovers placeholder recording durations when saving editor projects", () => {
+    mockEditorLibraries({
+      recordings: {
+        "recording-1": createRecordingDetail({
+          durationSeconds: 78.117,
+          id: "recording-1",
+        }),
+      },
+    });
+    const service = new EditorService();
+    const staleAsset = createEditorMediaAsset({
+      assetKey: "recording:recording-1",
+      category: "recording",
+      durationSeconds: null,
+      id: "recording-1",
+      kind: "recording",
+      mediaUrl: "hinekora-media://run-recording/recording-1",
+      name: "recording-1.mp4",
+    });
+    const staleClip = createEditorTimelineClip(staleAsset);
+    const staleProject = createEditorProject({
+      assets: [staleAsset],
+      durationSeconds: 10,
+      id: "stale-duration-project",
+      tracks: [
+        {
+          clips: [staleClip],
+          id: "video-track",
+          kind: "video",
+          label: "Video",
+        },
+      ],
+    });
+
+    const savedProject = service.saveProject({ project: staleProject });
+
+    expect(savedProject.assets[0]).toEqual(
+      expect.objectContaining({ durationSeconds: 78.117 }),
+    );
+    expect(savedProject.durationSeconds).toBe(78.117);
+    expect(savedProject.tracks[0]?.clips[0]).toEqual(
+      expect.objectContaining({
+        durationSeconds: 78.117,
+        outSeconds: 78.117,
+        sourceOutSeconds: 78.117,
+      }),
+    );
+
+    const trimmedClip = createEditorTimelineClip(staleAsset, {
+      durationSeconds: 5,
+      outSeconds: 5,
+      sourceOutSeconds: 10,
+    });
+    const savedTrimmedProject = service.saveProject({
+      project: createEditorProject({
+        assets: [staleAsset],
+        durationSeconds: 5,
+        id: "trimmed-stale-duration-project",
+        tracks: [
+          {
+            clips: [trimmedClip],
+            id: "video-track",
+            kind: "video",
+            label: "Video",
+          },
+        ],
+      }),
+    });
+
+    expect(savedTrimmedProject.tracks[0]?.clips[0]).toEqual(
+      expect.objectContaining({
+        durationSeconds: 5,
+        outSeconds: 5,
+        sourceOutSeconds: 10,
+      }),
+    );
   });
 
   it("limits editor project summaries and signals when more are available", () => {

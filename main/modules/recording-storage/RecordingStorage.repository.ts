@@ -77,6 +77,7 @@ interface RunRecordingUsageSummary {
 }
 
 interface RunRecordingSyncItem {
+  durationSeconds: number | null;
   exists: boolean;
   mtimeMs: number;
   path: string;
@@ -117,6 +118,13 @@ function mapRunRecordingItemRow(row: RunRecordingRow): RunRecordingItem {
 function calculateDurationSeconds(
   input: RunRecordingCreateInput,
 ): number | null {
+  const explicitDurationSeconds = normalizeDurationSeconds(
+    input.durationSeconds,
+  );
+  if (explicitDurationSeconds !== null) {
+    return explicitDurationSeconds;
+  }
+
   const startedAt = Date.parse(input.startedAt);
   const stoppedAt = Date.parse(input.stoppedAt);
   if (
@@ -128,6 +136,18 @@ function calculateDurationSeconds(
   }
 
   return Math.round((stoppedAt - startedAt) / 1000);
+}
+
+function normalizeDurationSeconds(durationSeconds: number | null | undefined) {
+  if (
+    typeof durationSeconds !== "number" ||
+    !Number.isFinite(durationSeconds) ||
+    durationSeconds <= 0
+  ) {
+    return null;
+  }
+
+  return Math.round(durationSeconds * 1_000) / 1_000;
 }
 
 function normalizePathList(paths: string[] | undefined): string[] {
@@ -165,10 +185,17 @@ class RecordingStorageRepository {
     const rows = this.database.queryAll(
       this.database.kysely
         .selectFrom("run_recordings")
-        .select(["path", "exists_on_disk", "size_bytes", "mtime_ms"]),
+        .select([
+          "path",
+          "duration_seconds",
+          "exists_on_disk",
+          "size_bytes",
+          "mtime_ms",
+        ]),
     );
 
     return rows.map((row) => ({
+      durationSeconds: row.duration_seconds,
       exists: row.exists_on_disk === 1,
       mtimeMs: row.mtime_ms,
       path: row.path,
@@ -371,14 +398,23 @@ class RecordingStorageRepository {
 
   updateFileState(
     path: string,
-    input: { exists: boolean; mtimeMs?: number; sizeBytes: number },
+    input: {
+      durationSeconds?: number | null;
+      exists: boolean;
+      mtimeMs?: number;
+      sizeBytes: number;
+    },
   ): void {
     const normalizedPath = resolve(path);
+    const durationSeconds = normalizeDurationSeconds(input.durationSeconds);
 
     this.database.runQuery(
       this.database.kysely
         .updateTable("run_recordings")
         .set({
+          ...(input.durationSeconds !== undefined
+            ? { duration_seconds: input.exists ? durationSeconds : null }
+            : {}),
           exists_on_disk: input.exists ? 1 : 0,
           file_name: basename(normalizedPath),
           mtime_ms: input.exists ? (input.mtimeMs ?? 0) : 0,

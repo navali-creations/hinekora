@@ -2,6 +2,14 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const storeMocks = vi.hoisted(() => ({
+  useEditorShallow: vi.fn(),
+}));
+
+vi.mock("~/renderer/store", () => ({
+  useEditorShallow: storeMocks.useEditorShallow,
+}));
+
 vi.mock("../EditorCopyActions/EditorCopyActions", () => ({
   EditorCopyActions: ({ variant }: { variant: string }) => (
     <button type="button">Copy {variant}</button>
@@ -27,6 +35,15 @@ let container: HTMLDivElement;
 let root: Root;
 const onToggleHistory = vi.fn();
 
+function configureEditorState(overrides: Record<string, unknown> = {}) {
+  storeMocks.useEditorShallow.mockImplementation((selector) =>
+    selector({
+      clipboardState: { error: null, requestId: null, status: "idle" },
+      ...overrides,
+    }),
+  );
+}
+
 async function renderActionsMenu(isHistoryVisible: boolean) {
   await act(async () => {
     root.render(
@@ -43,6 +60,7 @@ describe("EditorActionsMenu", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
+    configureEditorState();
   });
 
   afterEach(() => {
@@ -85,5 +103,27 @@ describe("EditorActionsMenu", () => {
     });
 
     expect(onToggleHistory).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables the menu while copying to clipboard", async () => {
+    configureEditorState({
+      clipboardState: { error: null, requestId: "copy-1", status: "copying" },
+    });
+    await renderActionsMenu(false);
+    const summary = container.querySelector<HTMLElement>(
+      '[aria-label="More editor actions"]',
+    );
+    const historyButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Show history"),
+    );
+
+    await act(async () => {
+      summary?.click();
+      historyButton?.click();
+    });
+
+    expect(summary?.getAttribute("aria-disabled")).toBe("true");
+    expect(summary?.className).toContain("btn-disabled");
+    expect(onToggleHistory).not.toHaveBeenCalled();
   });
 });

@@ -1,5 +1,6 @@
 import {
   editorProjectPageSize,
+  initialClipboardState,
   initialExportState,
 } from "./Editor.slice.constants";
 import type { EditorSlice } from "./Editor.slice.types";
@@ -38,6 +39,7 @@ type EditorStateFields = Omit<
 
 function createEditorInitialState(): EditorStateFields {
   return {
+    clipboardState: initialClipboardState,
     error: null,
     exportState: initialExportState,
     historyFuture: [],

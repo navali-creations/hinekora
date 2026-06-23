@@ -19,6 +19,7 @@ let root: Root;
 function configureEditorState(overrides: Record<string, unknown> = {}) {
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
+      clipboardState: { error: null, requestId: null, status: "idle" },
       copyProjectToClipboard: storeMocks.copyProjectToClipboard,
       exportState: { status: "idle" },
       project: { id: "project-1" },
@@ -80,7 +81,7 @@ describe("EditorCopyActions", () => {
     expect(container.querySelector("button")).toBeNull();
   });
 
-  it("shows copied state after copying the current edit", async () => {
+  it("copies the current edit", async () => {
     await renderCopyActions();
     const button = container.querySelector("button");
 
@@ -90,6 +91,15 @@ describe("EditorCopyActions", () => {
     });
 
     expect(storeMocks.copyProjectToClipboard).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows copied state from the editor clipboard status", async () => {
+    configureEditorState({
+      clipboardState: { error: null, requestId: "copy-1", status: "copied" },
+    });
+    await renderCopyActions();
+    const button = container.querySelector("button");
+
     expect(button?.textContent).toContain("Copied to clipboard");
   });
 });

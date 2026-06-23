@@ -22,6 +22,7 @@ import {
 
 import { createReplayClip } from "~/main/test/factories/replayClip";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
+import * as AppLog from "~/main/utils/app-log";
 import * as FileClipboard from "~/main/utils/file-clipboard";
 
 import { createDefaultSettings } from "~/types";
@@ -77,6 +78,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   electronMocks.getPath.mockReset();
   electronMocks.openPath.mockReset();
   electronMocks.showItemInFolder.mockReset();
@@ -143,6 +145,28 @@ describe("RecordingStorageService", () => {
           sizeBytes: 0,
         }),
       ]),
+    );
+  });
+
+  it("recovers imported recording durations from MP4 metadata", () => {
+    const filePath = join(root, "2026-06-23 15-08-58.mp4");
+    writeFileSync(filePath, createMp4WithDuration(78_250));
+
+    const recording = service
+      .listRecordings()
+      .find((item) => item.path === resolve(filePath));
+
+    expect(recording).toEqual(
+      expect.objectContaining({
+        durationSeconds: 78.25,
+        exists: true,
+        fileName: basename(filePath),
+      }),
+    );
+    expect(repository.getItemById(recording?.id ?? "")).toEqual(
+      expect.objectContaining({
+        durationSeconds: 78.25,
+      }),
     );
   });
 
@@ -246,6 +270,110 @@ describe("RecordingStorageService", () => {
     ]);
   });
 
+  it("fills missing durations for existing recording metadata", () => {
+    const recordingsDirectory = join(root, "Full Recordings");
+    mkdirSync(recordingsDirectory);
+    const filePath = join(recordingsDirectory, "existing-import.mp4");
+    writeFileSync(filePath, createMp4WithDuration(42_500));
+    repository.upsertRunRecording({
+      path: filePath,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:30:00.000Z",
+      stoppedAt: "2026-06-12T10:30:00.000Z",
+    });
+
+    expect(service.listRecordings()).toEqual([
+      expect.objectContaining({
+        durationSeconds: 42.5,
+        path: resolve(filePath),
+      }),
+    ]);
+  });
+
+  it("keeps missing durations when media metadata is unavailable", () => {
+    vi.useFakeTimers({ now: new Date("2026-06-23T10:00:00.000Z") });
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+    try {
+      const recordingsDirectory = join(root, "Full Recordings");
+      mkdirSync(recordingsDirectory);
+      const filePath = join(recordingsDirectory, "invalid-import.mp4");
+      writeFileSync(filePath, "not an mp4");
+      const stats = statSync(filePath);
+      repository.upsertRunRecording({
+        path: filePath,
+        sourceGame: "poe2",
+        sourceLeague: "Standard",
+        startedAt: "2026-06-12T10:30:00.000Z",
+        stoppedAt: "2026-06-12T10:30:00.000Z",
+        exists: true,
+        mtimeMs: stats.mtimeMs,
+        sizeBytes: stats.size,
+      });
+
+      expect(service.listRecordings()).toEqual([
+        expect.objectContaining({
+          durationSeconds: null,
+          path: resolve(filePath),
+        }),
+      ]);
+      vi.setSystemTime(new Date("2026-06-23T10:00:03.000Z"));
+      service.listRecordings();
+
+      expect(logWarn).toHaveBeenCalledTimes(1);
+      expect(logWarn).toHaveBeenCalledWith(
+        "recording-storage",
+        "Run recording duration metadata unavailable",
+        expect.objectContaining({
+          recordingFile: basename(filePath),
+        }),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("clears stale durations for changed recordings when media metadata is unavailable", () => {
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+    const recordingsDirectory = join(root, "Full Recordings");
+    mkdirSync(recordingsDirectory);
+    const filePath = join(recordingsDirectory, "changed-import.mp4");
+    writeFileSync(filePath, createMp4WithDuration(78_000));
+    const originalStats = statSync(filePath);
+    repository.upsertRunRecording({
+      path: filePath,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:30:00.000Z",
+      stoppedAt: "2026-06-12T10:31:18.000Z",
+      durationSeconds: 78,
+      exists: true,
+      mtimeMs: originalStats.mtimeMs,
+      sizeBytes: originalStats.size,
+    });
+    writeFileSync(filePath, "not an mp4 anymore");
+
+    expect(service.listRecordings()).toEqual([
+      expect.objectContaining({
+        durationSeconds: null,
+        path: resolve(filePath),
+      }),
+    ]);
+    expect(repository.listRunRecordingItems()).toEqual([
+      expect.objectContaining({
+        durationSeconds: null,
+        path: resolve(filePath),
+      }),
+    ]);
+    expect(logWarn).toHaveBeenCalledWith(
+      "recording-storage",
+      "Run recording duration metadata unavailable",
+      expect.objectContaining({
+        recordingFile: basename(filePath),
+      }),
+    );
+  });
+
   it("registers directory and missing recording paths as unavailable files", () => {
     const filePath = join(root, "recording.mp4");
     const directoryPath = join(root, "folder.mp4");
@@ -337,10 +465,10 @@ describe("RecordingStorageService", () => {
     const betaPath = join(root, "2026-06-12_11-00-00.mp4");
     const gammaPath = join(root, "2026-06-12_12-00-00.mp4");
     const orphanPath = join(root, "2026-06-12_13-00-00.mp4");
-    writeFileSync(alphaPath, "alpha");
-    writeFileSync(betaPath, "beta-recording");
-    writeFileSync(gammaPath, "gamma");
-    writeFileSync(orphanPath, "orphan");
+    writeFileSync(alphaPath, createMp4WithDuration(300_000));
+    writeFileSync(betaPath, createMp4WithDuration(60_000));
+    writeFileSync(gammaPath, createMp4WithDuration(30_000));
+    writeFileSync(orphanPath, createMp4WithDuration(15_000));
     const orphanTime = new Date("2026-06-12T10:45:00.000Z");
     utimesSync(orphanPath, orphanTime, orphanTime);
     repository.upsertRunRecording({
@@ -1141,3 +1269,20 @@ describe("RecordingStorageService", () => {
     });
   });
 });
+
+function createMp4WithDuration(duration: number): Buffer {
+  const movieHeader = Buffer.alloc(20);
+  movieHeader.writeUInt32BE(1_000, 12);
+  movieHeader.writeUInt32BE(duration, 16);
+
+  return createMp4Box("moov", createMp4Box("mvhd", movieHeader));
+}
+
+function createMp4Box(type: string, payload: Buffer): Buffer {
+  const box = Buffer.alloc(8 + payload.length);
+  box.writeUInt32BE(box.length, 0);
+  box.write(type, 4, 4, "ascii");
+  payload.copy(box, 8);
+
+  return box;
+}

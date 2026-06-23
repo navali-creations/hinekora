@@ -15,6 +15,13 @@ import type {
 } from "../Editor.utils/Editor.utils";
 
 type EditorExportStatus = "idle" | "exporting" | "ready" | "failed";
+type EditorClipboardStatus = "copied" | "copying" | "failed" | "idle";
+
+interface EditorClipboardState {
+  error: string | null;
+  requestId: string | null;
+  status: EditorClipboardStatus;
+}
 
 interface EditorExportState {
   error: string | null;
@@ -35,6 +42,7 @@ interface SetProjectOptions {
 
 interface EditorSlice {
   editor: {
+    clipboardState: EditorClipboardState;
     error: string | null;
     exportState: EditorExportState;
     historyFuture: EditorProject[];
@@ -100,6 +108,8 @@ interface EditorSlice {
 }
 
 export type {
+  EditorClipboardState,
+  EditorClipboardStatus,
   EditorExportState,
   EditorExportStatus,
   EditorSlice,
