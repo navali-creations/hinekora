@@ -1,3 +1,19 @@
+## 0.0.10
+
+### Patch Changes
+
+- [`0d6d8d7`](https://github.com/navali-creations/hinekora/commit/0d6d8d78564a91b0aba387f812b81ab64dcb6f4c) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Recorder overlay controls and aura setup.
+
+  The in-game overlay workflow is smoother for recording, rewind clips, aura editing, and capture visibility.
+
+  - **Recorder overlay:** Adds Recording and Rewind tabs, a minimized view, one shared start/stop control, a profile picker, and quick aura actions from inside the game.
+  - **Aura editing:** Adds one-click aura source selection from the recorder overlay, clearer locked/unlocked states, selected-aura highlighting, Esc to lock or cancel, Del to remove, and Ctrl+Z/Ctrl+Y undo and redo.
+  - **Capture settings:** Adds a Hide overlays from recordings and rewind toggle so Hinekora overlays can stay out of recordings, clips, screenshots, and external capture tools.
+  - **Overlay behavior:** Keeps aura editing visible while selecting crop regions, avoids hiding aura overlays when closing replay clips, and starts overlays more reliably when the game is already running.
+  - **Guidance and diagnostics:** Updates onboarding beacons for the new controls and makes overlay, focus, and diagnostic logs easier to follow.
+
 ## 0.0.9
 
 ### Patch Changes
