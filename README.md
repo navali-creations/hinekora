@@ -24,6 +24,12 @@ Hinekora is a gameplay recorder tailored for Path of Exile players who want game
 - Manages aura overlays for tracking important on-screen buffs or effects.
 - Organizes recordings, death clips, and manual replay saves in one place.
 
+
+https://github.com/user-attachments/assets/a4b70f85-0d7f-4602-ad0a-2e07cd6988f0
+
+
+https://github.com/user-attachments/assets/029f0a36-8e8b-446b-860e-4b6dc48a6dcd
+
 ## For Developers
 
 ### Requirements
@@ -38,6 +44,10 @@ Hinekora is a gameplay recorder tailored for Path of Exile players who want game
 - `pnpm check` runs formatting and lint checks
 - `pnpm test` runs the main and renderer test suites
 - `pnpm build` packages the Electron app
+
+
+
+
 
 End users should not need `pnpm`, environment variables, or development helpers.
 Those are development-only pieces until the app has a packaged installer.
