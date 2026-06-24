@@ -303,4 +303,38 @@ describe("EditorPage shortcuts", () => {
       kind: "clip",
     });
   });
+
+  it("does not rehydrate the same redirected source after local timeline changes", async () => {
+    const source = { id: "asset-1", kind: "clip" } as const;
+
+    await renderEditorPageWithSource(source);
+
+    expect(storeMocks.hydrate).toHaveBeenCalledWith(source);
+    storeMocks.hydrate.mockClear();
+    configureEditorState({
+      project: {
+        ...project,
+        activeClipId: null,
+        selectedAssetKey: null,
+        tracks: [],
+      },
+      selectedClipId: null,
+    });
+
+    await renderEditorPageWithSource(source);
+
+    expect(storeMocks.hydrate).not.toHaveBeenCalled();
+  });
+
+  it("hydrates a new source after consuming a previous source", async () => {
+    await renderEditorPageWithSource({ id: "asset-2", kind: "clip" });
+    storeMocks.hydrate.mockClear();
+
+    await renderEditorPageWithSource({ id: "asset-3", kind: "clip" });
+
+    expect(storeMocks.hydrate).toHaveBeenCalledWith({
+      id: "asset-3",
+      kind: "clip",
+    });
+  });
 });

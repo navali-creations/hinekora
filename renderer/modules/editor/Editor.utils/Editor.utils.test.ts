@@ -512,4 +512,19 @@ describe("Editor utils", () => {
       26, 27, 28, 29,
     ]);
   });
+
+  it("skips cramped terminal timeline labels while keeping useful end labels", () => {
+    expect(
+      calculateTimelineMarkers({
+        contentScale: 1,
+        visibleDurationSeconds: 122.03,
+      }),
+    ).toEqual([0, 30, 60, 90, 120]);
+    expect(
+      calculateTimelineMarkers({
+        contentScale: 1,
+        visibleDurationSeconds: 97.5,
+      }),
+    ).toEqual([0, 15, 30, 45, 60, 75, 90, 97.5]);
+  });
 });

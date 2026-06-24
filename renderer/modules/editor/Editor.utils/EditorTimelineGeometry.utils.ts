@@ -15,6 +15,7 @@ const timelineMinimumDurationSeconds = 10;
 const timelineTailPaddingRatio = 0.25;
 const timelineMarkerTargetCountPerViewport = 7;
 const timelineMarkerMaxCount = 240;
+const timelineTerminalMarkerMinimumGapRatio = 0.25;
 const timelineMarkerIntervalsSeconds = [
   0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300, 600,
 ];
@@ -145,8 +146,15 @@ function calculateTimelineMarkers(input: {
     roundToMilliseconds(index * markerIntervalSeconds),
   );
   const durationSeconds = roundToMilliseconds(input.visibleDurationSeconds);
+  const lastMarker = markers.at(-1) ?? 0;
+  const terminalMarkerGapSeconds = durationSeconds - lastMarker;
+  const minimumTerminalMarkerGapSeconds =
+    markerIntervalSeconds * timelineTerminalMarkerMinimumGapRatio;
 
-  if (markers.at(-1) !== durationSeconds) {
+  if (
+    terminalMarkerGapSeconds > 0 &&
+    terminalMarkerGapSeconds >= minimumTerminalMarkerGapSeconds
+  ) {
     markers.push(durationSeconds);
   }
 

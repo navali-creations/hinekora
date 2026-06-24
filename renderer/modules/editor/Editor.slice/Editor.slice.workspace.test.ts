@@ -294,7 +294,7 @@ describe("Editor workspace slice", () => {
     }
   });
 
-  it("hydrates a source editor without selecting but keeps the source timeline", async () => {
+  it("hydrates a source editor with the source timeline selected", async () => {
     const store = createTestStore();
     const editorApi = getEditorApi();
     const asset = createEditorTestAsset();
@@ -313,14 +313,39 @@ describe("Editor workspace slice", () => {
       source: { id: asset.id, kind: asset.kind },
     });
     expect(store.getState().editor.project).toMatchObject({
-      activeClipId: null,
+      activeClipId: "timeline-1",
       durationSeconds: project.durationSeconds,
       id: project.id,
-      selectedAssetKey: null,
+      selectedAssetKey: asset.assetKey,
     });
     expect(store.getState().editor.project?.tracks[0]?.clips).toHaveLength(1);
-    expect(store.getState().editor.selectedAssetKey).toBeNull();
-    expect(store.getState().editor.selectedClipId).toBeNull();
+    expect(store.getState().editor.selectedAssetKey).toBe(asset.assetKey);
+    expect(store.getState().editor.selectedClipId).toBe("timeline-1");
+  });
+
+  it("recovers source editor selection when the hydrated project has clips but no active clip", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const asset = createEditorTestAsset();
+    const project = createEditorTestProject(asset, {
+      activeClipId: null,
+      selectedAssetKey: null,
+    });
+    editorApi.getWorkspace.mockResolvedValue({
+      assets: [asset],
+      hasMoreProjects: false,
+      project,
+      projects: [],
+    });
+
+    await store.getState().editor.hydrate({ id: asset.id, kind: asset.kind });
+
+    expect(store.getState().editor.project).toMatchObject({
+      activeClipId: "timeline-1",
+      selectedAssetKey: asset.assetKey,
+    });
+    expect(store.getState().editor.selectedAssetKey).toBe(asset.assetKey);
+    expect(store.getState().editor.selectedClipId).toBe("timeline-1");
   });
 
   it("stores hydrate and refresh errors", async () => {

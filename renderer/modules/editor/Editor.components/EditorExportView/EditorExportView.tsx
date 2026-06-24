@@ -60,10 +60,13 @@ function EditorExportView() {
   }
 
   return (
-    <div className="grid h-full min-h-0 place-items-center rounded-lg border border-base-content/10 bg-black p-4">
+    <div
+      className="flex h-full min-h-0 min-w-0 items-center justify-center overflow-hidden rounded-lg border border-base-content/10 bg-black p-4"
+      data-testid="editor-export-preview-frame"
+    >
       {previewUrl ? (
         <video
-          className="block h-full w-full rounded object-contain"
+          className="block h-full max-h-full min-h-0 w-auto max-w-full rounded object-contain"
           controls
           preload="metadata"
           src={previewUrl}

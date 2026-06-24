@@ -45,8 +45,15 @@ function shouldHydrateEditorProject(input: {
     return false;
   }
 
-  return !input.project.assets.some(
+  const sourceAsset = input.project.assets.find(
     (asset) => asset.kind === input.sourceKind && asset.id === input.sourceId,
+  );
+  if (!sourceAsset) {
+    return true;
+  }
+
+  return !input.project.tracks.some((track) =>
+    track.clips.some((clip) => clip.assetKey === sourceAsset.assetKey),
   );
 }
 

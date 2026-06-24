@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { EditorMediaReference } from "~/main/modules/editor";
 import { PageContainer } from "~/renderer/components/PageContainer/PageContainer";
@@ -32,6 +32,8 @@ interface EditorPageProps {
 function EditorPage({ source = null }: EditorPageProps) {
   const sourceId = source?.id;
   const sourceKind = source?.kind;
+  const sourceKey = sourceId && sourceKind ? `${sourceKind}:${sourceId}` : null;
+  const hydratedSourceKeyRef = useRef<string | null>(null);
   const [isHistoryVisible, setHistoryVisible] = useState(false);
   const {
     error,
@@ -78,17 +80,31 @@ function EditorPage({ source = null }: EditorPageProps) {
   };
 
   useEffect(() => {
+    if (!sourceKey) {
+      hydratedSourceKeyRef.current = null;
+      if (!project) {
+        void hydrate(null);
+      }
+      return;
+    }
+
+    if (hydratedSourceKeyRef.current === sourceKey) {
+      return;
+    }
+
     if (
       project &&
       !shouldHydrateEditorProject({ project, sourceId, sourceKind })
     ) {
+      hydratedSourceKeyRef.current = sourceKey;
       return;
     }
 
+    hydratedSourceKeyRef.current = sourceKey;
     void hydrate(
       sourceId && sourceKind ? { id: sourceId, kind: sourceKind } : null,
     );
-  }, [hydrate, project, sourceId, sourceKind]);
+  }, [hydrate, project, sourceId, sourceKey, sourceKind]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {

@@ -139,8 +139,8 @@ function createEditorWorkspaceActions({
           state.editor.isPreviewPlaying = false;
           state.editor.playbackSeconds = 0;
           state.editor.project = project;
-          state.editor.selectedAssetKey = null;
-          state.editor.selectedClipId = null;
+          state.editor.selectedAssetKey = project.selectedAssetKey;
+          state.editor.selectedClipId = project.activeClipId;
           state.editor.workspace = {
             ...workspace,
             project,
@@ -334,11 +334,11 @@ function createHydratedEditorProject(input: {
   project: EditorProject;
   shouldStartWithEmptyTimeline: boolean;
 }): EditorProject {
-  const project = clearEditorProjectSelection(input.project);
   if (!input.shouldStartWithEmptyTimeline) {
-    return project;
+    return resolveEditorProjectSelection(input.project);
   }
 
+  const project = clearEditorProjectSelection(input.project);
   return {
     ...project,
     durationSeconds: 0,
@@ -346,6 +346,19 @@ function createHydratedEditorProject(input: {
       ...track,
       clips: [],
     })),
+  };
+}
+
+function resolveEditorProjectSelection(project: EditorProject): EditorProject {
+  const currentClip = findTimelineClip(project, project.activeClipId);
+  const fallbackClip =
+    currentClip ?? project.tracks.flatMap((track) => track.clips)[0] ?? null;
+
+  return {
+    ...project,
+    activeClipId: fallbackClip?.id ?? null,
+    selectedAssetKey:
+      fallbackClip?.assetKey ?? project.selectedAssetKey ?? null,
   };
 }
 

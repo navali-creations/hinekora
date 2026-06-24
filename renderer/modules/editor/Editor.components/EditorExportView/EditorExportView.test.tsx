@@ -110,6 +110,14 @@ describe("EditorExportView", () => {
     const video = container.querySelector("video");
     expect(video?.getAttribute("src")).toBe(result.mediaUrl);
     expect(video?.getAttribute("title")).toBe("ready.mp4");
+    expect(
+      container
+        .querySelector('[data-testid="editor-export-preview-frame"]')
+        ?.className.includes("overflow-hidden"),
+    ).toBe(true);
+    expect(video?.className).toContain("h-full");
+    expect(video?.className).toContain("w-auto");
+    expect(video?.className).toContain("max-w-full");
   });
 
   it("shows preview unavailable without an export or selected media URL", async () => {

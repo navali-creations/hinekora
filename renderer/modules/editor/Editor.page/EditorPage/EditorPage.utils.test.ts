@@ -47,8 +47,15 @@ describe("EditorPage utils", () => {
     ).toBe("Export failed");
   });
 
-  it("hydrates when the requested source is not already in the project", () => {
+  it("hydrates when the requested source is not already on the timeline", () => {
     const project = createEditorTestProject();
+    const emptyTimelineProject = {
+      ...project,
+      tracks: project.tracks.map((track) => ({
+        ...track,
+        clips: [],
+      })),
+    };
 
     expect(
       shouldHydrateEditorProject({
@@ -61,6 +68,13 @@ describe("EditorPage utils", () => {
       shouldHydrateEditorProject({
         project,
         sourceId: "missing",
+        sourceKind: "clip",
+      }),
+    ).toBe(true);
+    expect(
+      shouldHydrateEditorProject({
+        project: emptyTimelineProject,
+        sourceId: "asset-1",
         sourceKind: "clip",
       }),
     ).toBe(true);
