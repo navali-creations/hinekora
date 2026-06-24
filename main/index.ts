@@ -1,3 +1,5 @@
+import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { app, protocol } from "electron";
@@ -31,29 +33,32 @@ import {
   logInfo,
   logWarn,
 } from "./utils/app-log";
+import { handleSquirrelStartupEvent } from "./utils/squirrel-startup";
 
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: "hinekora-media",
-    privileges: {
-      standard: true,
-      secure: true,
-      stream: true,
-      supportFetchAPI: true,
-      corsEnabled: true,
+function registerPrivilegedProtocols(): void {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: "hinekora-media",
+      privileges: {
+        standard: true,
+        secure: true,
+        stream: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+      },
     },
-  },
-  {
-    scheme: "hinekora-editor-export",
-    privileges: {
-      standard: true,
-      secure: true,
-      stream: true,
-      supportFetchAPI: true,
-      corsEnabled: true,
+    {
+      scheme: "hinekora-editor-export",
+      privileges: {
+        standard: true,
+        secure: true,
+        stream: true,
+        supportFetchAPI: true,
+        corsEnabled: true,
+      },
     },
-  },
-]);
+  ]);
+}
 
 function initializeLocalDiagnostics(): void {
   try {
@@ -178,15 +183,28 @@ app.on("window-all-closed", () => {
   }
 });
 
-void bootstrap().catch((error) => {
-  captureSentryException(
-    error instanceof Error ? error : new Error(String(error)),
-    {
-      tags: { module: "main", operation: "bootstrap" },
-    },
-  );
-  logError("startup", "Fatal startup error", {
-    error: error instanceof Error ? error.message : String(error),
+if (
+  !handleSquirrelStartupEvent({
+    argv: process.argv,
+    execPath: process.execPath,
+    exists: existsSync,
+    platform: process.platform,
+    quit: () => app.quit(),
+    spawnProcess: spawn,
+  })
+) {
+  registerPrivilegedProtocols();
+
+  void bootstrap().catch((error) => {
+    captureSentryException(
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        tags: { module: "main", operation: "bootstrap" },
+      },
+    );
+    logError("startup", "Fatal startup error", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    app.quit();
   });
-  app.quit();
-});
+}
