@@ -1,3 +1,39 @@
+## 0.1.0
+
+### Minor Changes
+
+- [`05261f2`](https://github.com/navali-creations/hinekora/commit/05261f2bf9e3da0cca4daf94c9f7d8bd6c627f38) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Choose audio input and output devices for recordings.
+
+  Recording settings now include a separate Audio Settings card for selecting microphone input and desktop output audio.
+
+### Patch Changes
+
+- [`ad620ec`](https://github.com/navali-creations/hinekora/commit/ad620ec6639a95e4f42ea52c85a16610789ae497) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Keep exported editor videos inside the preview area when the window is maximized.
+
+  Saved video previews now stay bounded by the available viewer space so the video controls remain reachable in larger window layouts.
+
+- [`ad620ec`](https://github.com/navali-creations/hinekora/commit/ad620ec6639a95e4f42ea52c85a16610789ae497) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Avoid overlapping end labels on the editor timeline ruler.
+
+  Longer recordings now skip cramped final ruler labels when they would collide with the previous time marker.
+
+- [`ad620ec`](https://github.com/navali-creations/hinekora/commit/ad620ec6639a95e4f42ea52c85a16610789ae497) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Open recording edits with the redirected clip already selected.
+
+  Using Edit from a recording detail page now loads the recording onto the editor timeline and shows it in the preview immediately.
+
+- [`ad620ec`](https://github.com/navali-creations/hinekora/commit/ad620ec6639a95e4f42ea52c85a16610789ae497) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Stop recording links from reloading clips after local editor changes.
+
+  After opening a recording in the editor, New edit and deleting the only timeline clip now stay under your control instead of pulling the original recording back onto the timeline.
+
 ## 0.0.11
 
 ### Patch Changes
