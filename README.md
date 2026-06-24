@@ -27,6 +27,7 @@ Hinekora is a gameplay recorder tailored for Path of Exile players who want game
 
 https://github.com/user-attachments/assets/a4b70f85-0d7f-4602-ad0a-2e07cd6988f0
 
+https://github.com/user-attachments/assets/ceb8da34-6f51-48c7-b823-d528299de07c
 
 https://github.com/user-attachments/assets/029f0a36-8e8b-446b-860e-4b6dc48a6dcd
 
