@@ -6,10 +6,13 @@ import {
   createAuraProfileUpdateDeletingPlacement,
   createAuraProfileUpdateFromSnapshot,
   createAuraVideoStyle,
+  createAuraViewportProjection,
   isAuraResizeCorner,
+  projectAuraBox,
   readAuraRouteParams,
   readAuraVideoSize,
   resizeAuraPlacementFromCorner,
+  unprojectAuraPoint,
 } from "./AuraOverlay.page.utils";
 
 const profile: Profile = {
@@ -88,6 +91,36 @@ describe("AuraOverlay utils", () => {
     });
   });
 
+  it("projects legacy 16:9 coordinates into a centered ultrawide safe area", () => {
+    const referenceViewport = { width: 1920, height: 1080 };
+    const targetViewport = { width: 3440, height: 1440 };
+
+    expect(
+      createAuraViewportProjection(referenceViewport, targetViewport),
+    ).toEqual({
+      offsetX: 440,
+      offsetY: 0,
+      scale: 4 / 3,
+    });
+
+    const projectedBox = projectAuraBox(
+      { x: 30, y: 40, width: 100, height: 40 },
+      referenceViewport,
+      targetViewport,
+    );
+
+    expect(projectedBox.x).toBeCloseTo(480);
+    expect(projectedBox.y).toBeCloseTo(160 / 3);
+    expect(projectedBox.width).toBeCloseTo(400 / 3);
+    expect(projectedBox.height).toBeCloseTo(160 / 3);
+    expect(
+      unprojectAuraPoint(projectedBox, referenceViewport, targetViewport),
+    ).toEqual({
+      x: 30,
+      y: 40,
+    });
+  });
+
   it("reads available video dimensions from a aura video element", () => {
     expect(readAuraVideoSize({ videoWidth: 2560, videoHeight: 1440 })).toEqual({
       width: 2560,
@@ -141,6 +174,40 @@ describe("AuraOverlay utils", () => {
       x: 24,
       y: 24,
       scale: 1.5,
+    });
+  });
+
+  it("resizes projected aura placements without baking in ultrawide offsets", () => {
+    expect(
+      resizeAuraPlacementFromCorner(
+        {
+          id: "crop-1",
+          label: "Life",
+          x: 100,
+          y: 50,
+          width: 200,
+          height: 80,
+        },
+        {
+          id: "placement-1",
+          cropRegionId: "crop-1",
+          x: 24,
+          y: 24,
+          scale: 1,
+          opacity: 1,
+        },
+        "nw",
+        -40,
+        -1,
+        { width: 3440, height: 1440 },
+        { width: 1920, height: 1080 },
+      ),
+    ).toMatchObject({
+      x: 0,
+      y: 12,
+      scale: 1.15,
+      referenceWidth: 1920,
+      referenceHeight: 1080,
     });
   });
 

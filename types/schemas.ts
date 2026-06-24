@@ -31,6 +31,11 @@ export const CapturePreviewSourceSchema = z.object({
 });
 export type CapturePreviewSource = z.infer<typeof CapturePreviewSourceSchema>;
 
+const CoordinateReferenceSchema = {
+  referenceWidth: z.number().int().min(1).max(100_000).optional(),
+  referenceHeight: z.number().int().min(1).max(100_000).optional(),
+};
+
 export const CropRegionSchema = z.object({
   id: z.string().min(1).max(128),
   label: z.string().min(1).max(80),
@@ -38,6 +43,7 @@ export const CropRegionSchema = z.object({
   y: z.number().int().min(0).max(100_000),
   width: z.number().int().min(1).max(100_000),
   height: z.number().int().min(1).max(100_000),
+  ...CoordinateReferenceSchema,
 });
 export type CropRegion = z.infer<typeof CropRegionSchema>;
 
@@ -48,8 +54,23 @@ export const OverlayPlacementSchema = z.object({
   y: z.number().int().min(-100_000).max(100_000),
   scale: z.number().min(0.1).max(8),
   opacity: z.number().min(0).max(1),
+  ...CoordinateReferenceSchema,
 });
 export type OverlayPlacement = z.infer<typeof OverlayPlacementSchema>;
+
+interface CoordinateReferenceInput {
+  width: number;
+  height: number;
+}
+
+export function createCoordinateReferenceDimensions(
+  viewport: CoordinateReferenceInput,
+): Pick<CropRegion, "referenceWidth" | "referenceHeight"> {
+  return {
+    referenceWidth: Math.round(viewport.width),
+    referenceHeight: Math.round(viewport.height),
+  };
+}
 
 export const ProfileSchema = z.object({
   id: z.string().min(1).max(128),

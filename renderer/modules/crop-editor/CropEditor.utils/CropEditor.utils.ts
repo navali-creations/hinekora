@@ -1,4 +1,9 @@
-import type { CropRegion, OverlayPlacement, Profile } from "~/types";
+import {
+  type CropRegion,
+  createCoordinateReferenceDimensions,
+  type OverlayPlacement,
+  type Profile,
+} from "~/types";
 
 export const cropNumberFields = ["x", "y", "width", "height"] as const;
 export type CropNumberField = (typeof cropNumberFields)[number];
@@ -82,6 +87,7 @@ export function createPlacementForCrop(
     y,
     scale: 1,
     opacity: 1,
+    ...(viewport ? createCoordinateReferenceDimensions(viewport) : {}),
   };
 }
 
@@ -89,6 +95,7 @@ export function createAuraProfileUpdateFromSelection(
   profile: AuraProfile,
   selection: AuraSourceSelection,
 ): AuraProfileUpdateFromSelection {
+  const placementViewport = resolveSelectionPlacementViewport(selection);
   const crop: CropRegion = {
     id: crypto.randomUUID(),
     label: `Aura ${profile.cropRegions.length + 1}`,
@@ -96,11 +103,14 @@ export function createAuraProfileUpdateFromSelection(
     y: selection.y,
     width: selection.width,
     height: selection.height,
+    ...(placementViewport
+      ? createCoordinateReferenceDimensions(placementViewport)
+      : {}),
   };
   const placement = createPlacementForCrop(
     crop,
     profile.overlayPlacements.length,
-    resolveSelectionPlacementViewport(selection),
+    placementViewport,
   );
 
   return {

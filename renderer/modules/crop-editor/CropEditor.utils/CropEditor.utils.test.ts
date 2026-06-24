@@ -65,6 +65,8 @@ describe("CropEditor utils", () => {
       y: 516,
       scale: 1,
       opacity: 1,
+      referenceWidth: 1920,
+      referenceHeight: 1080,
     });
   });
 
@@ -104,6 +106,8 @@ describe("CropEditor utils", () => {
       y: 120,
       width: 50,
       height: 60,
+      referenceWidth: 1920,
+      referenceHeight: 1080,
     });
     expect(result.placement).toEqual({
       id: "00000000-0000-4000-8000-000000000002",
@@ -112,6 +116,8 @@ describe("CropEditor utils", () => {
       y: 528,
       scale: 1,
       opacity: 1,
+      referenceWidth: 1920,
+      referenceHeight: 1080,
     });
     expect(result.profileUpdate).toEqual({
       id: "profile-1",

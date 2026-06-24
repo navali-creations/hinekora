@@ -171,6 +171,8 @@ describe("CropEditorActions", () => {
           y: 120,
           width: 50,
           height: 60,
+          referenceWidth: 1920,
+          referenceHeight: 1080,
         },
       ],
       overlayPlacements: [
@@ -181,6 +183,8 @@ describe("CropEditorActions", () => {
           y: 510,
           scale: 1,
           opacity: 1,
+          referenceWidth: 1920,
+          referenceHeight: 1080,
         }),
       ],
     });

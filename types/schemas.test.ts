@@ -5,6 +5,7 @@ import {
   CapturePreviewSourceSchema,
   createDefaultSettings,
   normalizeRecordingEncoderChoice,
+  ProfileSchema,
   StateBundleSchema,
 } from "./schemas";
 
@@ -82,6 +83,72 @@ describe("shared schemas", () => {
       width: 2560,
       height: 1440,
       thumbnailDataUrl: "data:image/png;base64,abc",
+    });
+  });
+
+  it("accepts aura coordinate references while keeping legacy profiles valid", () => {
+    const profile = {
+      id: "profile-1",
+      name: "Default",
+      game: "poe1",
+      targetFps: 30,
+      captureTarget: null,
+      cropRegions: [
+        {
+          id: "crop-1",
+          label: "Aura 1",
+          x: 10,
+          y: 20,
+          width: 100,
+          height: 40,
+        },
+      ],
+      overlayPlacements: [
+        {
+          id: "placement-1",
+          cropRegionId: "crop-1",
+          x: 30,
+          y: 40,
+          scale: 1,
+          opacity: 1,
+        },
+      ],
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    };
+
+    expect(ProfileSchema.parse(profile)).toEqual(profile);
+    expect(
+      ProfileSchema.parse({
+        ...profile,
+        cropRegions: [
+          {
+            ...profile.cropRegions[0],
+            referenceWidth: 1920,
+            referenceHeight: 1080,
+          },
+        ],
+        overlayPlacements: [
+          {
+            ...profile.overlayPlacements[0],
+            referenceWidth: 1920,
+            referenceHeight: 1080,
+          },
+        ],
+      }),
+    ).toMatchObject({
+      cropRegions: [
+        {
+          referenceWidth: 1920,
+          referenceHeight: 1080,
+        },
+      ],
+      overlayPlacements: [
+        {
+          referenceWidth: 1920,
+          referenceHeight: 1080,
+        },
+      ],
     });
   });
 

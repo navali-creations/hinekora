@@ -15,6 +15,7 @@ import { getSelectedCropLayoutProfile } from "~/renderer/modules/crop-editor/Cro
 import { useCapturePreviewShallow, useProfilesShallow } from "~/renderer/store";
 
 import {
+  type AuraVideoSize,
   createAuraPreviewConstraints,
   readAuraRouteParams,
 } from "./AuraOverlay.page.utils";
@@ -62,6 +63,13 @@ function AuraOverlayPage() {
     captureSource?.width && captureSource.height
       ? { width: captureSource.width, height: captureSource.height }
       : null;
+  const profileReferenceViewport: AuraVideoSize | null =
+    profile?.captureTarget?.width && profile.captureTarget.height
+      ? {
+          width: profile.captureTarget.width,
+          height: profile.captureTarget.height,
+        }
+      : null;
 
   const emptyMessage = !profile
     ? "No profile loaded"
@@ -74,6 +82,17 @@ function AuraOverlayPage() {
       canEditAuras,
       profile,
       updateProfile,
+    });
+  const { stream } = useDesktopCaptureStream({
+    sourceId: captureSourceId,
+    enabled: Boolean(captureSourceId && !emptyMessage),
+    createConstraints: createAuraPreviewConstraints,
+  });
+  const { bindAuraVideo, effectiveVideoSize, handleVideoSizeChange } =
+    useAuraOverlayVideoSizing({
+      captureSourceId,
+      fallbackVideoSize: captureSourceVideoSize,
+      stream,
     });
   const {
     dragState,
@@ -89,21 +108,12 @@ function AuraOverlayPage() {
     resizeState,
   } = useAuraOverlayPlacementEditor({
     profile,
+    referenceViewport: profileReferenceViewport,
     recordAuraHistory,
     selectPlacement,
+    targetViewport: effectiveVideoSize,
     updateProfile,
   });
-  const { stream } = useDesktopCaptureStream({
-    sourceId: captureSourceId,
-    enabled: Boolean(captureSourceId && !emptyMessage),
-    createConstraints: createAuraPreviewConstraints,
-  });
-  const { bindAuraVideo, effectiveVideoSize, handleVideoSizeChange } =
-    useAuraOverlayVideoSizing({
-      captureSourceId,
-      fallbackVideoSize: captureSourceVideoSize,
-      stream,
-    });
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -168,6 +178,7 @@ function AuraOverlayPage() {
             effectiveVideoSize={effectiveVideoSize}
             key={placement.id}
             placement={placement}
+            referenceViewport={profileReferenceViewport}
             resizeState={resizeState}
             selectedPlacementId={selectedPlacementId}
             stream={stream}

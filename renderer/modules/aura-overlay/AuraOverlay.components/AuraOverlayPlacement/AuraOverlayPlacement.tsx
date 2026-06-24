@@ -11,6 +11,9 @@ import {
   type AuraVideoSize,
   auraResizeCorners,
   createAuraVideoStyle,
+  projectAuraCropRegion,
+  projectAuraOverlayPlacement,
+  resolveAuraReferenceViewport,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import styles from "./AuraOverlayPlacement.module.css";
 
@@ -18,8 +21,8 @@ interface AuraOverlayDragState {
   placementId: string;
   startX: number;
   startY: number;
-  initialX: number;
-  initialY: number;
+  initialDisplayX: number;
+  initialDisplayY: number;
   deltaX: number;
   deltaY: number;
 }
@@ -41,6 +44,7 @@ interface AuraOverlayPlacementProps {
   dragState: AuraOverlayDragState | null;
   effectiveVideoSize: AuraVideoSize;
   placement: OverlayPlacement;
+  referenceViewport: AuraVideoSize | null;
   resizeState: AuraOverlayResizeState | null;
   selectedPlacementId: string | null;
   stream: MediaStream | null;
@@ -71,6 +75,7 @@ function AuraOverlayPlacement({
   dragState,
   effectiveVideoSize,
   placement,
+  referenceViewport,
   resizeState,
   selectedPlacementId,
   stream,
@@ -89,17 +94,31 @@ function AuraOverlayPlacement({
     resizeState?.placementId === placement.id
       ? resizeState.draftPlacement
       : placement;
+  const cropReferenceViewport = resolveAuraReferenceViewport(
+    crop,
+    referenceViewport,
+  );
+  const projectedCrop = projectAuraCropRegion(
+    crop,
+    effectiveVideoSize,
+    referenceViewport,
+  );
+  const projectedPlacement = projectAuraOverlayPlacement(
+    effectivePlacement,
+    effectiveVideoSize,
+    cropReferenceViewport,
+  );
   const isDragging = dragState?.placementId === placement.id;
   const x = isDragging
-    ? dragState.initialX + dragState.deltaX
-    : effectivePlacement.x;
+    ? dragState.initialDisplayX + dragState.deltaX
+    : projectedPlacement.x;
   const y = isDragging
-    ? dragState.initialY + dragState.deltaY
-    : effectivePlacement.y;
+    ? dragState.initialDisplayY + dragState.deltaY
+    : projectedPlacement.y;
   const isResizing = resizeState?.placementId === placement.id;
   const isSelected = selectedPlacementId === placement.id;
-  const width = Math.round(crop.width * effectivePlacement.scale);
-  const height = Math.round(crop.height * effectivePlacement.scale);
+  const width = Math.round(projectedCrop.width * effectivePlacement.scale);
+  const height = Math.round(projectedCrop.height * effectivePlacement.scale);
   const left = Math.round(x);
   const top = Math.round(y);
 
@@ -110,8 +129,8 @@ function AuraOverlayPlacement({
       style={{
         left: `${x}px`,
         top: `${y}px`,
-        width: `${crop.width * effectivePlacement.scale}px`,
-        height: `${crop.height * effectivePlacement.scale}px`,
+        width: `${projectedCrop.width * effectivePlacement.scale}px`,
+        height: `${projectedCrop.height * effectivePlacement.scale}px`,
       }}
     >
       <button
@@ -142,6 +161,7 @@ function AuraOverlayPlacement({
               crop,
               effectivePlacement,
               effectiveVideoSize,
+              referenceViewport,
             )}
             onLoadedMetadata={onVideoSizeChange}
             onResize={onVideoSizeChange}

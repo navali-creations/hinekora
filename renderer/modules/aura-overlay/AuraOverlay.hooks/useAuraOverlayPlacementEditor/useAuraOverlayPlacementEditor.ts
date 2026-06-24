@@ -3,29 +3,37 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ProfilesSlice } from "~/renderer/store/store.types";
 
-import type { Profile } from "~/types";
+import { createCoordinateReferenceDimensions, type Profile } from "~/types";
 import type {
   AuraOverlayDragState,
   AuraOverlayResizeState,
 } from "../../AuraOverlay.components/AuraOverlayPlacement/AuraOverlayPlacement";
 import {
+  type AuraVideoSize,
   isAuraResizeCorner,
+  projectAuraOverlayPlacement,
   resizeAuraPlacementFromCorner,
+  resolveAuraReferenceViewport,
+  unprojectAuraPoint,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 
 type UpdateProfile = ProfilesSlice["profiles"]["update"];
 
 interface UseAuraOverlayPlacementEditorInput {
   profile: Profile | null;
+  referenceViewport: AuraVideoSize | null;
   recordAuraHistory: () => boolean;
   selectPlacement: (placementId: string) => void;
+  targetViewport: AuraVideoSize;
   updateProfile: UpdateProfile;
 }
 
 function useAuraOverlayPlacementEditor({
   profile,
+  referenceViewport,
   recordAuraHistory,
   selectPlacement,
+  targetViewport,
   updateProfile,
 }: UseAuraOverlayPlacementEditorInput) {
   const [dragState, setDragState] = useState<AuraOverlayDragState | null>(null);
@@ -86,10 +94,22 @@ function useAuraOverlayPlacementEditor({
     const placement = profile.overlayPlacements.find(
       (item) => item.id === placementId,
     );
+    const crop = profile.cropRegions.find(
+      (item) => item.id === placement?.cropRegionId,
+    );
 
     if (!placement) {
       return;
     }
+    const cropReferenceViewport = resolveAuraReferenceViewport(
+      crop,
+      referenceViewport,
+    );
+    const projectedPlacement = projectAuraOverlayPlacement(
+      placement,
+      targetViewport,
+      cropReferenceViewport,
+    );
 
     event.preventDefault();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -98,8 +118,8 @@ function useAuraOverlayPlacementEditor({
       placementId: placement.id,
       startX: event.clientX,
       startY: event.clientY,
-      initialX: placement.x,
-      initialY: placement.y,
+      initialDisplayX: projectedPlacement.x,
+      initialDisplayY: projectedPlacement.y,
       deltaX: 0,
       deltaY: 0,
     });
@@ -130,23 +150,61 @@ function useAuraOverlayPlacementEditor({
     }
     const x = Math.max(
       0,
-      Math.round(currentDragState.initialX + currentDragState.deltaX),
+      Math.round(currentDragState.initialDisplayX + currentDragState.deltaX),
     );
     const y = Math.max(
       0,
-      Math.round(currentDragState.initialY + currentDragState.deltaY),
+      Math.round(currentDragState.initialDisplayY + currentDragState.deltaY),
     );
     const placementId = currentDragState.placementId;
+    const placement = profile.overlayPlacements.find(
+      (item) => item.id === placementId,
+    );
+    const crop = profile.cropRegions.find(
+      (item) => item.id === placement?.cropRegionId,
+    );
     commitDragState(null);
-    if (x === currentDragState.initialX && y === currentDragState.initialY) {
+    if (
+      x === Math.round(currentDragState.initialDisplayX) &&
+      y === Math.round(currentDragState.initialDisplayY)
+    ) {
       return;
     }
+    if (!placement) {
+      return;
+    }
+    const placementReferenceViewport = resolveAuraReferenceViewport(
+      placement,
+      resolveAuraReferenceViewport(crop, referenceViewport),
+    );
+    const referencePoint = unprojectAuraPoint(
+      { x, y },
+      placementReferenceViewport,
+      targetViewport,
+    );
+    const referenceDimensions = createCoordinateReferenceDimensions(
+      placementReferenceViewport,
+    );
+    const nextX = Math.max(0, Math.round(referencePoint.x));
+    const nextY = Math.max(0, Math.round(referencePoint.y));
 
     recordAuraHistory();
     void updateProfile({
       id: profile.id,
+      cropRegions: profile.cropRegions.map((region) =>
+        region.id === placement.cropRegionId
+          ? { ...region, ...referenceDimensions }
+          : region,
+      ),
       overlayPlacements: profile.overlayPlacements.map((placement) =>
-        placement.id === placementId ? { ...placement, x, y } : placement,
+        placement.id === placementId
+          ? {
+              ...placement,
+              ...referenceDimensions,
+              x: nextX,
+              y: nextY,
+            }
+          : placement,
       ),
     });
   };
@@ -205,6 +263,8 @@ function useAuraOverlayPlacementEditor({
       currentResizeState.corner,
       event.clientX - currentResizeState.startX,
       event.clientY - currentResizeState.startY,
+      targetViewport,
+      referenceViewport,
     );
 
     resizeStateRef.current = { ...currentResizeState, draftPlacement };
@@ -224,13 +284,30 @@ function useAuraOverlayPlacementEditor({
 
     const placementId = currentResizeState.placementId;
     const draftPlacement = currentResizeState.draftPlacement;
+    const crop = profile.cropRegions.find(
+      (region) =>
+        region.id === currentResizeState.initialPlacement.cropRegionId,
+    );
+    const referenceDimensions = createCoordinateReferenceDimensions(
+      resolveAuraReferenceViewport(
+        draftPlacement,
+        resolveAuraReferenceViewport(crop, referenceViewport),
+      ),
+    );
     commitResizeState(null);
 
     recordAuraHistory();
     void updateProfile({
       id: profile.id,
+      cropRegions: profile.cropRegions.map((region) =>
+        region.id === currentResizeState.initialPlacement.cropRegionId
+          ? { ...region, ...referenceDimensions }
+          : region,
+      ),
       overlayPlacements: profile.overlayPlacements.map((placement) =>
-        placement.id === placementId ? draftPlacement : placement,
+        placement.id === placementId
+          ? { ...draftPlacement, ...referenceDimensions }
+          : placement,
       ),
     });
   };

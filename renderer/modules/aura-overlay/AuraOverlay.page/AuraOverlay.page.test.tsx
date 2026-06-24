@@ -69,6 +69,31 @@ const profile: Profile = {
   updatedAt: new Date(0).toISOString(),
 };
 
+function createPointerLikeEvent(
+  type: string,
+  options: MouseEventInit & { pointerId?: number } = {},
+): PointerEvent {
+  const eventInit: MouseEventInit = {
+    bubbles: true,
+    button: options.button ?? 0,
+  };
+
+  if (options.clientX !== undefined) {
+    eventInit.clientX = options.clientX;
+  }
+  if (options.clientY !== undefined) {
+    eventInit.clientY = options.clientY;
+  }
+
+  const event = new MouseEvent(type, eventInit) as PointerEvent;
+  Object.defineProperty(event, "pointerId", {
+    configurable: true,
+    value: options.pointerId ?? 1,
+  });
+
+  return event;
+}
+
 async function flushPromises(count = 5): Promise<void> {
   for (let index = 0; index < count; index += 1) {
     await Promise.resolve();
@@ -121,6 +146,18 @@ describe("AuraOverlayPage", () => {
         },
       },
     });
+    Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLElement.prototype, "releasePointerCapture", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLElement.prototype, "hasPointerCapture", {
+      configurable: true,
+      value: vi.fn(() => true),
+    });
   });
 
   afterEach(async () => {
@@ -131,6 +168,21 @@ describe("AuraOverlayPage", () => {
     });
     roots = [];
     document.body.replaceChildren();
+    delete (
+      HTMLElement.prototype as Partial<{
+        setPointerCapture: unknown;
+      }>
+    ).setPointerCapture;
+    delete (
+      HTMLElement.prototype as Partial<{
+        releasePointerCapture: unknown;
+      }>
+    ).releasePointerCapture;
+    delete (
+      HTMLElement.prototype as Partial<{
+        hasPointerCapture: unknown;
+      }>
+    ).hasPointerCapture;
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -141,6 +193,169 @@ describe("AuraOverlayPage", () => {
     expect(html).toContain('data-placement-id="placement-1"');
     expect(html).not.toContain("Life");
     expect(html).not.toContain("data-corner");
+  });
+
+  it("projects legacy aura placements into the centered ultrawide safe area", async () => {
+    storeMocks.useCapturePreviewShallow.mockImplementation((selector) =>
+      selector({
+        selectedSourceId: "screen:1",
+        sources: [{ id: "screen:1", width: 3440, height: 1440 }],
+      }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const auraFrame = container.querySelector(
+      'div[data-placement-id="placement-1"]',
+    );
+
+    expect(auraFrame).toBeInstanceOf(HTMLDivElement);
+    const style = (auraFrame as HTMLDivElement).style;
+    expect(style.left).toBe("480px");
+    expect(Number.parseFloat(style.top)).toBeCloseTo(160 / 3);
+    expect(Number.parseFloat(style.width)).toBeCloseTo(400 / 3);
+    expect(Number.parseFloat(style.height)).toBeCloseTo(160 / 3);
+  });
+
+  it("drags legacy ultrawide auras back into reference coordinates", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    storeMocks.useCapturePreviewShallow.mockImplementation((selector) =>
+      selector({
+        selectedSourceId: "screen:1",
+        sources: [{ id: "screen:1", width: 3440, height: 1440 }],
+      }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const auraButton = container.querySelector(
+      'button[data-placement-id="placement-1"]',
+    );
+    expect(auraButton).toBeInstanceOf(HTMLButtonElement);
+
+    await act(async () => {
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          button: 0,
+          clientX: 480,
+          clientY: 54,
+        }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointermove", {
+          button: 0,
+          clientX: 520,
+          clientY: 54,
+        }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerup", {
+          button: 0,
+          clientX: 520,
+          clientY: 54,
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect(storeMocks.updateProfile).toHaveBeenLastCalledWith({
+      id: "profile-1",
+      cropRegions: [
+        {
+          ...profile.cropRegions[0],
+          referenceWidth: 1920,
+          referenceHeight: 1080,
+        },
+      ],
+      overlayPlacements: [
+        {
+          ...profile.overlayPlacements[0],
+          x: 60,
+          y: 40,
+          referenceWidth: 1920,
+          referenceHeight: 1080,
+        },
+      ],
+    });
+  });
+
+  it("resizes legacy ultrawide auras without splitting crop and placement references", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    storeMocks.useCapturePreviewShallow.mockImplementation((selector) =>
+      selector({
+        selectedSourceId: "screen:1",
+        sources: [{ id: "screen:1", width: 3440, height: 1440 }],
+      }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const resizeHandle = container.querySelector(
+      'span[data-placement-id="placement-1"][data-corner="se"]',
+    );
+    expect(resizeHandle).toBeInstanceOf(HTMLSpanElement);
+
+    await act(async () => {
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          button: 0,
+          clientX: 614,
+          clientY: 107,
+        }),
+      );
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointermove", {
+          button: 0,
+          clientX: 654,
+          clientY: 108,
+        }),
+      );
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointerup", {
+          button: 0,
+          clientX: 654,
+          clientY: 108,
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect(storeMocks.updateProfile).toHaveBeenLastCalledWith({
+      id: "profile-1",
+      cropRegions: [
+        {
+          ...profile.cropRegions[0],
+          referenceWidth: 1920,
+          referenceHeight: 1080,
+        },
+      ],
+      overlayPlacements: [
+        {
+          ...profile.overlayPlacements[0],
+          scale: 1.3,
+          referenceWidth: 1920,
+          referenceHeight: 1080,
+        },
+      ],
+    });
   });
 
   it("adds a new aura from the unlocked overlay banner", async () => {
@@ -187,6 +402,8 @@ describe("AuraOverlayPage", () => {
           y: 120,
           width: 50,
           height: 60,
+          referenceWidth: 1920,
+          referenceHeight: 1080,
         },
       ],
       overlayPlacements: [
@@ -198,6 +415,8 @@ describe("AuraOverlayPage", () => {
           y: 528,
           scale: 1,
           opacity: 1,
+          referenceWidth: 1920,
+          referenceHeight: 1080,
         }),
       ],
     });
@@ -240,6 +459,8 @@ describe("AuraOverlayPage", () => {
           y: 120,
           width: 50,
           height: 60,
+          referenceWidth: 1920,
+          referenceHeight: 1080,
         },
       ],
       overlayPlacements: [
@@ -251,6 +472,8 @@ describe("AuraOverlayPage", () => {
           y: 528,
           scale: 1,
           opacity: 1,
+          referenceWidth: 1920,
+          referenceHeight: 1080,
         }),
       ],
     });
@@ -302,6 +525,8 @@ describe("AuraOverlayPage", () => {
           y: 120,
           width: 50,
           height: 60,
+          referenceWidth: 1920,
+          referenceHeight: 1080,
         },
       ],
       overlayPlacements: [
@@ -313,6 +538,8 @@ describe("AuraOverlayPage", () => {
           y: 528,
           scale: 1,
           opacity: 1,
+          referenceWidth: 1920,
+          referenceHeight: 1080,
         }),
       ],
     });
