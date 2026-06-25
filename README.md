@@ -56,9 +56,10 @@ https://github.com/user-attachments/assets/437220a9-609f-4bf8-ac0b-7ea4c4334e94
 - `pnpm test` runs the main and renderer test suites
 - `pnpm build` packages the Electron app
 
+## Attributions
 
+Special thanks to the following projects and people whose work made this project possible or served as inspiration:
 
-
-
-End users should not need `pnpm`, environment variables, or development helpers.
-Those are development-only pieces until the app has a packaged installer.
+- [OBS Project](https://github.com/obsproject) - for the recording infrastructure
+- [Alex, the creator of Warcraft Recorder, and the maintainers of the noobs package](https://github.com/aza547/noobs) - for their work
+- [Warcraft Recorder](https://warcraftrecorder.com/) — Hinekora is inspired by this project
