@@ -23,7 +23,7 @@ import {
 } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 
-import type { ClientLogStatus, GameId } from "~/types";
+import type { AppSettings, ClientLogStatus, GameId } from "~/types";
 import { ClientLogChannel } from "./ClientLog.channels";
 import type {
   ClientLogActiveGameInput,
@@ -73,10 +73,7 @@ class ClientLogService extends EventEmitter {
 
   initializeFromSettings(): void {
     const settings = SettingsStoreService.getInstance().get();
-    const path =
-      settings.activeGame === "poe1"
-        ? settings.poe1ClientTxtPath
-        : settings.poe2ClientTxtPath;
+    const path = this.resolveClientLogPath(settings, settings.activeGame);
 
     this.status = {
       ...this.status,
@@ -138,11 +135,30 @@ class ClientLogService extends EventEmitter {
 
   setActiveGame(input: ClientLogActiveGameInput): ClientLogStatus {
     const settingsStore = SettingsStoreService.getInstance();
+    if (
+      this.status.activeGame === input.game &&
+      this.status.lastError === null
+    ) {
+      const currentSettings = settingsStore.get();
+      const currentPath = this.resolveClientLogPath(
+        currentSettings,
+        input.game,
+      );
+
+      if (
+        currentSettings.activeGame === input.game &&
+        this.isCurrentActiveGameStatus(input.game, currentPath)
+      ) {
+        return this.status;
+      }
+    }
+
     const settings = settingsStore.update({ activeGame: input.game });
-    const path =
-      input.game === "poe1"
-        ? settings.poe1ClientTxtPath
-        : settings.poe2ClientTxtPath;
+    const path = this.resolveClientLogPath(settings, input.game);
+
+    if (this.isCurrentActiveGameStatus(input.game, path)) {
+      return this.status;
+    }
 
     if (!path) {
       this.stopWatchFile();
@@ -169,6 +185,27 @@ class ClientLogService extends EventEmitter {
     this.refreshPoeProcessStateAfterActiveGameChange(input.game);
 
     return this.status;
+  }
+
+  private isCurrentActiveGameStatus(
+    game: GameId,
+    path: string | null,
+  ): boolean {
+    return (
+      this.status.activeGame === game &&
+      this.status.path === path &&
+      this.status.watching === Boolean(path) &&
+      this.status.lastError === null
+    );
+  }
+
+  private resolveClientLogPath(
+    settings: AppSettings,
+    game: GameId,
+  ): string | null {
+    return game === "poe1"
+      ? settings.poe1ClientTxtPath
+      : settings.poe2ClientTxtPath;
   }
 
   watchFile(filePath: string, game: GameId): void {

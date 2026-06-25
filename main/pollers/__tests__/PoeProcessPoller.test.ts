@@ -2,45 +2,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const processMocks = vi.hoisted(() => ({
   findRunningProcesses: vi.fn(),
+  listWindowsProcessWindowTitles: vi.fn(),
 }));
 
 vi.mock("../isProcessRunning", () => ({
   findRunningProcesses: processMocks.findRunningProcesses,
+  listWindowsProcessWindowTitles: processMocks.listWindowsProcessWindowTitles,
 }));
 
 import {
   detectPoeProcessState,
-  isAmbiguousPoeProcessName,
   isPoeProcessStateForGame,
-  POE_PROCESS_NAMES,
-  POE_PROCESS_POLL_INTERVAL_MS,
   PoeProcessPoller,
-  resolvePoeProcessGame,
 } from "../PoeProcessPoller";
 
 describe("PoeProcessPoller", () => {
   beforeEach(() => {
     processMocks.findRunningProcesses.mockReset();
-  });
-
-  it("defines known PoE process names and poll interval", () => {
-    expect(POE_PROCESS_NAMES).toContain("PathOfExileSteam.exe");
-    expect(POE_PROCESS_NAMES).toContain("PathOfExile.exe");
-    expect(POE_PROCESS_NAMES).toContain("PathOfExile2Steam.exe");
-    expect(POE_PROCESS_NAMES).toContain("PathOfExile2.exe");
-    expect(POE_PROCESS_POLL_INTERVAL_MS).toBe(5_000);
-  });
-
-  it("resolves process names to game ids", () => {
-    expect(resolvePoeProcessGame("PathOfExileSteam.exe")).toBeNull();
-    expect(resolvePoeProcessGame("PathOfExile.exe")).toBe("poe1");
-    expect(resolvePoeProcessGame("PathOfExile_x64Steam.exe")).toBe("poe1");
-    expect(resolvePoeProcessGame("PathOfExile2Steam.exe")).toBe("poe2");
-    expect(resolvePoeProcessGame("PathOfExile2.exe")).toBe("poe2");
-    expect(resolvePoeProcessGame("")).toBeNull();
-    expect(isAmbiguousPoeProcessName("PathOfExileSteam.exe")).toBe(true);
-    expect(isAmbiguousPoeProcessName("PathOfExile.exe")).toBe(false);
-    expect(isAmbiguousPoeProcessName("PathOfExile2Steam.exe")).toBe(false);
+    processMocks.listWindowsProcessWindowTitles.mockReset();
+    processMocks.listWindowsProcessWindowTitles.mockResolvedValue([]);
   });
 
   it("checks whether a process state belongs to a game", () => {
@@ -71,7 +51,12 @@ describe("PoeProcessPoller", () => {
       processName: "PathOfExile2Steam.exe",
     });
     expect(processMocks.findRunningProcesses).toHaveBeenCalledWith(
-      POE_PROCESS_NAMES,
+      expect.arrayContaining([
+        "PathOfExileSteam.exe",
+        "PathOfExile.exe",
+        "PathOfExile2Steam.exe",
+        "PathOfExile2.exe",
+      ]),
     );
 
     processMocks.findRunningProcesses.mockResolvedValueOnce([
@@ -99,9 +84,19 @@ describe("PoeProcessPoller", () => {
     });
   });
 
-  it("treats the generic Steam process as the active game when configured", async () => {
+  it("resolves the generic Steam process from the window title", async () => {
     processMocks.findRunningProcesses.mockResolvedValue([
       "PathOfExileSteam.exe",
+    ]);
+    processMocks.listWindowsProcessWindowTitles.mockResolvedValue([
+      {
+        processName: "PathOfExileSteam.exe",
+        windowTitle: "N/A",
+      },
+      {
+        processName: "PathOfExileSteam.exe",
+        windowTitle: "Path of Exile 2",
+      },
     ]);
 
     await expect(detectPoeProcessState("poe2")).resolves.toEqual({
@@ -110,11 +105,11 @@ describe("PoeProcessPoller", () => {
     });
     await expect(detectPoeProcessState("poe1")).resolves.toEqual({
       isRunning: true,
-      processName: "PathOfExile_x64Steam.exe",
+      processName: "PathOfExile2Steam.exe",
     });
   });
 
-  it("falls back to the raw generic Steam process without an active game", async () => {
+  it("does not guess a game from the generic Steam process without a title", async () => {
     processMocks.findRunningProcesses.mockResolvedValue([
       "PathOfExileSteam.exe",
     ]);
@@ -122,6 +117,22 @@ describe("PoeProcessPoller", () => {
     await expect(detectPoeProcessState()).resolves.toEqual({
       isRunning: true,
       processName: "PathOfExileSteam.exe",
+    });
+    await expect(detectPoeProcessState("poe1")).resolves.toEqual({
+      isRunning: true,
+      processName: "PathOfExileSteam.exe",
+    });
+  });
+
+  it("prefers unambiguous running games over generic Steam process fallback", async () => {
+    processMocks.findRunningProcesses.mockResolvedValue([
+      "PathOfExileSteam.exe",
+      "PathOfExile2Steam.exe",
+    ]);
+
+    await expect(detectPoeProcessState("poe1")).resolves.toEqual({
+      isRunning: true,
+      processName: "PathOfExile2Steam.exe",
     });
   });
 
@@ -136,6 +147,12 @@ describe("PoeProcessPoller", () => {
 
   it("polls using the active game fallback and keeps transient misses debounced", async () => {
     const poller = new PoeProcessPoller(() => "poe2");
+    processMocks.listWindowsProcessWindowTitles.mockResolvedValue([
+      {
+        processName: "PathOfExileSteam.exe",
+        windowTitle: "Path of Exile 2",
+      },
+    ]);
     processMocks.findRunningProcesses
       .mockResolvedValueOnce(["PathOfExileSteam.exe"])
       .mockResolvedValueOnce([])

@@ -1,19 +1,7 @@
 import type { PoeProcessState } from "~/main/modules/poe-process/PoeProcess.dto";
+import { resolvePathOfExileProcessGame } from "~/types/path-of-exile-process";
 
 import type { GameId } from "~/types";
-
-function resolvePoeProcessGame(processName: string): GameId | null {
-  const normalized = processName.toLowerCase();
-  if (!normalized.includes("pathofexile")) {
-    return null;
-  }
-
-  if (normalized === "pathofexilesteam.exe") {
-    return null;
-  }
-
-  return normalized.includes("pathofexile2") ? "poe2" : "poe1";
-}
 
 function isPoeProcessStateForGame(
   state: PoeProcessState | null,
@@ -21,8 +9,8 @@ function isPoeProcessStateForGame(
 ): boolean {
   return (
     state?.isRunning === true &&
-    resolvePoeProcessGame(state.processName) === game
+    resolvePathOfExileProcessGame(state.processName) === game
   );
 }
 
-export { isPoeProcessStateForGame, resolvePoeProcessGame };
+export { isPoeProcessStateForGame };

@@ -128,6 +128,20 @@ jobs:
         env:
           SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
 
+      - name: Upload native debug files to Sentry
+        shell: bash
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+          SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+          SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
+        run: |
+          pnpm dlx @sentry/cli debug-files upload \
+            --org "$SENTRY_ORG" \
+            --project "$SENTRY_PROJECT" \
+            --auth-token "$SENTRY_AUTH_TOKEN" \
+            --wait-for 60 \
+            node_modules/noobs/dist
+
       - name: Assert telemetry env embedded in bundles
         shell: powershell
         env:
@@ -186,6 +200,23 @@ jobs:
             exit 1
           }
 
+      # - name: Scan Windows distributables with VirusTotal
+      #   shell: bash
+      #   env:
+      #     VIRUSTOTAL_API_KEY: ${{ secrets.VIRUSTOTAL_API_KEY }}
+      #     VIRUSTOTAL_MAX_MALICIOUS: "0"
+      #     VIRUSTOTAL_MAX_SUSPICIOUS: "0"
+      #     VIRUSTOTAL_POLL_TIMEOUT_SECONDS: "600"
+      #   run: node .github/scripts/virustotal-scan.mjs out/make
+
+      # - name: Upload VirusTotal report
+      #   if: always()
+      #   uses: actions/upload-artifact@v7
+      #   with:
+      #     name: virustotal-report
+      #     path: virustotal-report.json
+      #     if-no-files-found: warn
+
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -220,8 +251,8 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v8
         with:
+          name: distributables-windows
           path: artifacts
-          merge-multiple: true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v3

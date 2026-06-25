@@ -165,6 +165,94 @@ describe("ClientLogService", () => {
     expect(poeProcessMocks.refreshState).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps duplicate active game selections idempotent", async () => {
+    const path = join(directory, "Client.txt");
+    writeFileSync(path, "existing\n");
+    const settings = {
+      ...createDefaultSettings(),
+      activeGame: "poe2",
+      poe2ClientTxtPath: path,
+    };
+    const get = vi.fn().mockReturnValue(settings);
+    const update = vi.fn().mockReturnValue(settings);
+    const watchFile = vi.spyOn(fs, "watchFile");
+    const unwatchFile = vi.spyOn(fs, "unwatchFile");
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get,
+      update,
+    } as unknown as SettingsStoreService);
+    const service = new ClientLogService();
+
+    service.watchFile(path, "poe2");
+    await flushPromises();
+    watchFile.mockClear();
+    unwatchFile.mockClear();
+    send.mockClear();
+    poeProcessMocks.refreshState.mockClear();
+
+    expect(service.setActiveGame({ game: "poe2" })).toMatchObject({
+      activeGame: "poe2",
+      path,
+      watching: true,
+      lastError: null,
+    });
+
+    expect(watchFile).not.toHaveBeenCalled();
+    expect(unwatchFile).not.toHaveBeenCalled();
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(update).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(poeProcessMocks.refreshState).not.toHaveBeenCalled();
+
+    service.stopWatchFile();
+  });
+
+  it("keeps matching watcher state after settings update idempotent", async () => {
+    const path = join(directory, "Client.txt");
+    writeFileSync(path, "existing\n");
+    const currentSettings = {
+      ...createDefaultSettings(),
+      activeGame: "poe1",
+      poe2ClientTxtPath: path,
+    };
+    const updatedSettings = {
+      ...currentSettings,
+      activeGame: "poe2",
+    };
+    const get = vi.fn().mockReturnValue(currentSettings);
+    const update = vi.fn().mockReturnValue(updatedSettings);
+    const watchFile = vi.spyOn(fs, "watchFile");
+    const unwatchFile = vi.spyOn(fs, "unwatchFile");
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get,
+      update,
+    } as unknown as SettingsStoreService);
+    const service = new ClientLogService();
+
+    service.watchFile(path, "poe2");
+    await flushPromises();
+    watchFile.mockClear();
+    unwatchFile.mockClear();
+    send.mockClear();
+    poeProcessMocks.refreshState.mockClear();
+
+    expect(service.setActiveGame({ game: "poe2" })).toMatchObject({
+      activeGame: "poe2",
+      path,
+      watching: true,
+      lastError: null,
+    });
+
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith({ activeGame: "poe2" });
+    expect(watchFile).not.toHaveBeenCalled();
+    expect(unwatchFile).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(poeProcessMocks.refreshState).not.toHaveBeenCalled();
+
+    service.stopWatchFile();
+  });
+
   it("logs safe warnings when process refresh after game switch fails", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     poeProcessMocks.refreshState.mockRejectedValueOnce(
@@ -431,12 +519,18 @@ describe("ClientLogService", () => {
   it("switches active games to configured paths", () => {
     const path = join(directory, "Client-poe1.txt");
     writeFileSync(path, "existing\n");
+    const get = vi.fn().mockReturnValue({
+      ...createDefaultSettings(),
+      activeGame: "poe2",
+      poe1ClientTxtPath: path,
+    });
     const update = vi.fn().mockReturnValue({
       ...createDefaultSettings(),
       activeGame: "poe1",
       poe1ClientTxtPath: path,
     });
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get,
       update,
     } as unknown as SettingsStoreService);
     const service = new ClientLogService();
@@ -588,7 +682,13 @@ describe("ClientLogService", () => {
       ...(typeof input === "object" && input !== null ? input : {}),
       poe1ClientTxtPath: path,
     }));
+    const get = vi.fn().mockReturnValue({
+      ...createDefaultSettings(),
+      activeGame: "poe1",
+      poe1ClientTxtPath: path,
+    });
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get,
       update,
     } as unknown as SettingsStoreService);
     const { handlers } = mockIpcMainHandlers();
