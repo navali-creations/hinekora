@@ -1,6 +1,11 @@
+import { useCallback, useEffect, useRef } from "react";
+
 import { useEditorSelector } from "~/renderer/store";
 
-import { calculateTimelinePercent } from "../../Editor.utils/Editor.utils";
+import {
+  calculateTimelinePercent,
+  subscribeEditorPlaybackVisualTime,
+} from "../../Editor.utils/Editor.utils";
 import { formatEditorTimelineRailLeft } from "../EditorTimeline/EditorTimeline.utils";
 
 interface EditorTimelinePlayheadProps {
@@ -12,17 +17,39 @@ function EditorTimelinePlayhead({
   railPaddingPixels,
   visibleDurationSeconds,
 }: EditorTimelinePlayheadProps) {
+  const playheadRef = useRef<HTMLDivElement>(null);
   const playbackSeconds = useEditorSelector((editor) => editor.playbackSeconds);
-  const playheadPercent = calculateTimelinePercent(
-    playbackSeconds,
-    visibleDurationSeconds,
+  const formatPlayheadLeft = useCallback(
+    (seconds: number) => {
+      const playheadPercent = calculateTimelinePercent(
+        seconds,
+        visibleDurationSeconds,
+      );
+
+      return formatEditorTimelineRailLeft(playheadPercent, railPaddingPixels);
+    },
+    [railPaddingPixels, visibleDurationSeconds],
+  );
+  const applyVisualPlaybackSeconds = useCallback(
+    (seconds: number) => {
+      if (playheadRef.current) {
+        playheadRef.current.style.left = formatPlayheadLeft(seconds);
+      }
+    },
+    [formatPlayheadLeft],
+  );
+
+  useEffect(
+    () => subscribeEditorPlaybackVisualTime(applyVisualPlaybackSeconds),
+    [applyVisualPlaybackSeconds],
   );
 
   return (
     <div
       className="pointer-events-none absolute top-0 bottom-0 z-40 w-8 -translate-x-1/2"
+      ref={playheadRef}
       style={{
-        left: formatEditorTimelineRailLeft(playheadPercent, railPaddingPixels),
+        left: formatPlayheadLeft(playbackSeconds),
       }}
     >
       <button

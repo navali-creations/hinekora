@@ -21,6 +21,10 @@ export {
   isEditorVideoTrackDropData,
 } from "./EditorDragDrop.utils";
 export {
+  publishEditorPlaybackVisualTime,
+  subscribeEditorPlaybackVisualTime,
+} from "./EditorPlaybackVisualTime.utils";
+export {
   formatEditorTime,
   formatEditorTimestamp,
   normalizeEditorDuration,

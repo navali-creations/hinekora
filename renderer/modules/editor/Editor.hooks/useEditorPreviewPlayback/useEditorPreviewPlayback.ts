@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { useEditorShallow } from "~/renderer/store";
 
+import { publishEditorPlaybackVisualTime } from "../../Editor.utils/Editor.utils";
 import { useEditorPreviewFrame } from "../useEditorPreviewFrame/useEditorPreviewFrame";
 import { isPlaybackInsideClip } from "./useEditorPreviewPlayback.utils";
 
@@ -61,11 +62,13 @@ function useEditorPreviewPlayback() {
 
   useEffect(() => {
     playbackSecondsRef.current = playbackSeconds;
+    publishEditorPlaybackVisualTime(playbackSeconds);
   }, [playbackSeconds]);
 
   const publishPlaybackSeconds = useCallback(
     (nextPlaybackSeconds: number, options: { force?: boolean } = {}) => {
       playbackSecondsRef.current = nextPlaybackSeconds;
+      publishEditorPlaybackVisualTime(nextPlaybackSeconds);
 
       const now = performance.now();
       if (
