@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 
 const DEFAULT_DEATH_PATTERNS = [
-  /\byou have died\b/i,
   /\bhas been slain\b/i,
   /\bwas slain\b/i,
 ];

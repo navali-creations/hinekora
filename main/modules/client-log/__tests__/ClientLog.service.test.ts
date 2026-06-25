@@ -651,7 +651,7 @@ describe("ClientLogService", () => {
 
     internals.openFileDescriptor(path);
     const text =
-      "2026/06/12 12:00:00 123 [INFO Client] : You have died.\npartial";
+      "2026/06/12 12:00:00 123 [INFO Client] : SomeCharacter has been slain.\npartial";
     writeFileSync(path, text);
     await internals.processNewBytes(path, Buffer.byteLength(text), "poe1");
     service.stopWatchFile();
@@ -659,7 +659,7 @@ describe("ClientLogService", () => {
     expect(deaths).toEqual([
       expect.objectContaining({
         game: "poe1",
-        line: "2026/06/12 12:00:00 123 [INFO Client] : You have died.",
+        line: "2026/06/12 12:00:00 123 [INFO Client] : SomeCharacter has been slain.",
         lineHash: expect.any(String),
         detectedAt: expect.any(String),
       }),

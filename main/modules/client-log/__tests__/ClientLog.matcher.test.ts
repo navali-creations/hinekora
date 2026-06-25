@@ -20,7 +20,24 @@ describe("ClientLog matcher", () => {
           "2026/06/08 01:00:12 123 [INFO Client] <username> has been slain.",
         ].join("\n"),
       ),
-    ).toHaveLength(4);
+    ).toEqual([
+      "2026/06/08 01:00:10 123 [INFO Client] SomeCharacter has been slain.",
+      "2026/06/08 01:00:11 123 [INFO Client] AccountName has been slain.",
+      "2026/06/08 01:00:12 123 [INFO Client] <username> has been slain.",
+    ]);
+  });
+
+  it("ignores death counter summaries from the /deaths command", () => {
+    expect(
+      findDeathLines(
+        [
+          "2026/06/25 19:43:45 116581671 3ef231e0 [INFO Client 49480] : You have died 50 times.",
+          "2026/06/25 19:44:00 116597265 3ef231e0 [INFO Client 49480] : ailubleed has been slain.",
+        ].join("\n"),
+      ),
+    ).toEqual([
+      "2026/06/25 19:44:00 116597265 3ef231e0 [INFO Client 49480] : ailubleed has been slain.",
+    ]);
   });
 
   it("ignores death text in global, party, and trade chat", () => {
