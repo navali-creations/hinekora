@@ -22,10 +22,13 @@ Hinekora is a gameplay recorder tailored for Path of Exile 1 and Path of Exile 2
 - Automatically saves death clips when the game log detects a death.
 - Lets you trim, split, reorder, save, and copy clips from the built-in editor.
 - Organizes recordings, death clips, and manual replay saves in one place.
+
+> [!WARNING]
+> Just like any software, use it at your own risk. The Aura Manager feature fall into a grey area of what is and is not allowed by GGG's Terms of Service. There is no mention of mirroring ui in ToS as of 6th Jun 2025. If you feel this information may be outdated, please create an issue. [Link to GGG Terms of Service](https://www.pathofexile.com/legal/terms-of-use-and-privacy-policy)
+
 - Manages aura overlays for tracking important on-screen buffs or effects.
 > [!NOTE]
-> Aura overlays do NOT read in game memory. It's an OBS mirrored scene, using OBS bindings. See https://github.com/aza547/noobs 
-
+> Aura overlays do NOT read in game memory. It's an OBS mirrored scene, using OBS bindings. See https://github.com/aza547/noobs
 
 https://github.com/user-attachments/assets/a4b70f85-0d7f-4602-ad0a-2e07cd6988f0
 
@@ -53,9 +56,18 @@ https://github.com/user-attachments/assets/437220a9-609f-4bf8-ac0b-7ea4c4334e94
 - `pnpm test` runs the main and renderer test suites
 - `pnpm build` packages the Electron app
 
+## Attributions
 
+Special thanks to the following projects and people whose work made this project possible or served as inspiration:
 
+- [OBS Project](https://github.com/obsproject) - for the recording infrastructure
+- [Warcraft Recorder](https://warcraftrecorder.com/) - Hinekora is inspired by this project
+- [Alex, the creator of Warcraft Recorder, and the maintainers of the noobs package](https://github.com/aza547/noobs) - for their work
 
+## Legal Notice
 
-End users should not need `pnpm`, environment variables, or development helpers.
-Those are development-only pieces until the app has a packaged installer.
+Hinekora is an independent, community-developed open-source project.
+
+This project is not affiliated with, endorsed by, or sponsored by Grinding Gear Games. Path of Exile and all related names, assets, and trademarks are the property of Grinding Gear Games.
+
+This project does not include or distribute any proprietary game assets.
