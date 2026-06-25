@@ -1,3 +1,16 @@
+## 0.1.2
+
+### Patch Changes
+
+- [`b56e04b`](https://github.com/navali-creations/hinekora/commit/b56e04bb0fd5ac1b5ebfb582db2b9ac245633401) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Align aura overlays correctly on ultrawide displays.
+
+  Aura overlays now keep their expected position when the game is shown on wider screens, instead of being placed too far to the left.
+
+  - **Aura overlay:** Existing 16:9 aura positions are centered correctly on ultrawide captures.
+  - **Aura editing:** Moving, resizing, or adding auras keeps the overlay position consistent with the capture size used for setup.
+
 ## 0.1.1
 
 ### Patch Changes
