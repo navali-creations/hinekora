@@ -24,7 +24,7 @@ Hinekora is a gameplay recorder tailored for Path of Exile 1 and Path of Exile 2
 - Organizes recordings, death clips, and manual replay saves in one place.
 
 > [!WARNING]
-> Just like any software, use it at your own risk. The Aura Manager feature fall into a grey area of what is and is not allowed by GGG's Terms of Service. There is no mention of mirroring ui in ToS as of 6th Jun 2025. If you feel this information may be outdated, please create an issue. [Link to GGG Terms of Service](https://www.pathofexile.com/legal/terms-of-use-and-privacy-policy)
+> Just like any software, use it at your own risk. The Aura Manager feature fall into a grey area of what is and is not allowed by GGG's Terms of Service. There is no mention of mirroring ui in ToS as of 6th Jun 2026. If you feel this information may be outdated, please create an issue. [Link to GGG Terms of Service](https://www.pathofexile.com/legal/terms-of-use-and-privacy-policy)
 
 - Manages aura overlays for tracking important on-screen buffs or effects.
 > [!NOTE]
