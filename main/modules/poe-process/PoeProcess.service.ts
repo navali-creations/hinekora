@@ -70,7 +70,11 @@ class PoeProcessService {
 
     try {
       const state = await this.poller.pollNow();
-      this.handleStateChanged(PoeProcessChannel.GetState, state);
+      if (this.hasProcessStateChanged(this.currentState, state)) {
+        this.handleStateChanged(PoeProcessChannel.GetState, state);
+      } else {
+        this.syncGameRunningConsumers();
+      }
 
       return state;
     } catch (error) {

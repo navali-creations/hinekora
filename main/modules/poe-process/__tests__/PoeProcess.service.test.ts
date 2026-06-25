@@ -321,6 +321,8 @@ describe("PoeProcessService", () => {
   });
 
   it("resyncs consumers when the active game changes but process state does not", async () => {
+    const window = createWindow({});
+    electronMocks.getAllWindows.mockReturnValue([window]);
     serviceMocks.getSettings.mockReturnValue({ activeGame: "poe1" });
     const service = new PoeProcessService();
     service.initialize();
@@ -332,6 +334,7 @@ describe("PoeProcessService", () => {
     expect(serviceMocks.overlaySetGameRunningActive).toHaveBeenLastCalledWith(
       false,
     );
+    window.webContents.send.mockClear();
 
     serviceMocks.getSettings.mockReturnValue({ activeGame: "poe2" });
     pollerMocks.pollNow.mockResolvedValue({
@@ -347,6 +350,7 @@ describe("PoeProcessService", () => {
     expect(serviceMocks.recorderSetGameRunningState).toHaveBeenLastCalledWith(
       true,
     );
+    expect(window.webContents.send).not.toHaveBeenCalled();
   });
 
   it("keeps current state when refresh fails", async () => {
