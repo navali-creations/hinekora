@@ -22,10 +22,13 @@ Hinekora is a gameplay recorder tailored for Path of Exile 1 and Path of Exile 2
 - Automatically saves death clips when the game log detects a death.
 - Lets you trim, split, reorder, save, and copy clips from the built-in editor.
 - Organizes recordings, death clips, and manual replay saves in one place.
+
+> [!WARNING]
+> Just like any software, use it at your own risk. The Aura Manager feature fall into a grey area of what is and is not allowed by GGG's Terms of Service. There is no mention of mirroring ui in ToS as of 6th Jun 2025. If you feel this information may be outdated, please create an issue. [Link to GGG Terms of Service](https://www.pathofexile.com/legal/terms-of-use-and-privacy-policy)
+
 - Manages aura overlays for tracking important on-screen buffs or effects.
 > [!NOTE]
-> Aura overlays do NOT read in game memory. It's an OBS mirrored scene, using OBS bindings. See https://github.com/aza547/noobs 
-
+> Aura overlays do NOT read in game memory. It's an OBS mirrored scene, using OBS bindings. See https://github.com/aza547/noobs
 
 https://github.com/user-attachments/assets/a4b70f85-0d7f-4602-ad0a-2e07cd6988f0
 
