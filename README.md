@@ -63,3 +63,11 @@ Special thanks to the following projects and people whose work made this project
 - [OBS Project](https://github.com/obsproject) - for the recording infrastructure
 - [Warcraft Recorder](https://warcraftrecorder.com/) - Hinekora is inspired by this project
 - [Alex, the creator of Warcraft Recorder, and the maintainers of the noobs package](https://github.com/aza547/noobs) - for their work
+
+## Legal Notice
+
+Hinekora is an independent, community-developed open-source project.
+
+This project is not affiliated with, endorsed by, or sponsored by Grinding Gear Games. Path of Exile and all related names, assets, and trademarks are the property of Grinding Gear Games.
+
+This project does not include or distribute any proprietary game assets.
