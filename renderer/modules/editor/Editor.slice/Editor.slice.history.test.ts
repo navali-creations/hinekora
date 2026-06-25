@@ -14,11 +14,28 @@ describe("Editor history slice", () => {
     const store = createTestStore();
     const asset = createEditorTestAsset();
     const project = createEditorTestProject(asset);
+    const projectTrack = project.tracks[0];
+    const projectClip = projectTrack?.clips[0];
+    if (!projectTrack || !projectClip) {
+      throw new Error("Expected test project to include a timeline clip");
+    }
     const changedProject = {
       ...project,
       activeClipId: null,
       durationSeconds: 3,
       selectedAssetKey: null,
+      tracks: [
+        {
+          ...projectTrack,
+          clips: [
+            {
+              ...projectClip,
+              durationSeconds: 3,
+              outSeconds: 3,
+            },
+          ],
+        },
+      ],
     };
     loadEditorProject(store, project, [asset], {
       historyFuture: [changedProject],

@@ -103,7 +103,10 @@ function EditorPlaybackControls() {
         {isPreviewPlaying ? <FiPause size={16} /> : <FiPlay size={16} />}
       </button>
       <div className="min-w-28 text-sm tabular-nums">
-        <span className="font-bold text-base-content">
+        <span
+          className="font-bold text-base-content"
+          data-editor-playback-time="true"
+        >
           {formatEditorTimestamp(playbackSeconds)}
         </span>
         <span className="text-base-content/45">

@@ -23,6 +23,8 @@
     "test:main:coverage": "node scripts/vitest-electron.mjs run --config vitest.main.config.mts --coverage",
     "test:renderer": "vitest run --config vitest.renderer.config.mts",
     "test:renderer:coverage": "vitest run --config vitest.renderer.config.mts --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
@@ -53,6 +55,7 @@
     "@electron-forge/plugin-vite": "8.0.0-alpha.9",
     "@electron-forge/shared-types": "8.0.0-alpha.9",
     "@electron/fuses": "^2.1.2",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.3.0",
     "@tanstack/react-router": "^1.170.15",
     "@tanstack/router-plugin": "^1.168.18",

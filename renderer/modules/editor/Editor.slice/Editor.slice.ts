@@ -10,6 +10,7 @@ import { createEditorHistoryActions } from "./Editor.slice.history";
 import { createEditorInitialState } from "./Editor.slice.state";
 import { createEditorTimelineActions } from "./Editor.slice.timeline";
 import type { EditorSlice, SetProjectOptions } from "./Editor.slice.types";
+import { normalizeEditorProjectTimeline } from "./Editor.slice.utils";
 import { createEditorWorkspaceActions } from "./Editor.slice.workspace";
 
 const createEditorSlice: BoundStoreStateCreator<EditorSlice> = (set, get) => {
@@ -79,11 +80,12 @@ const createEditorSlice: BoundStoreStateCreator<EditorSlice> = (set, get) => {
       return;
     }
 
-    const nextProject = updater(project);
-    if (nextProject === project) {
+    const updatedProject = updater(project);
+    if (updatedProject === project) {
       return;
     }
 
+    const nextProject = normalizeEditorProjectTimeline(updatedProject);
     setProject(nextProject, {
       ...(options.historyLabel ? { historyLabel: options.historyLabel } : {}),
       recordHistory: options.recordHistory ?? true,

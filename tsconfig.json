@@ -16,6 +16,7 @@
   },
   "include": [
     "main/**/*.ts",
+    "e2e/**/*.ts",
     "renderer/**/*.ts",
     "renderer/**/*.tsx",
     "types/**/*.ts",

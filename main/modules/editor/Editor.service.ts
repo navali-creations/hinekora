@@ -29,6 +29,10 @@ import {
 } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 
+import {
+  calculateTimelineProjectDuration,
+  normalizeTimelineProject,
+} from "~/types";
 import { EditorChannel } from "./Editor.channels";
 import type {
   EditorCopyToClipboardInput,
@@ -173,8 +177,9 @@ class EditorService {
       input.project,
       this.listEditorAssets(),
     );
+    const normalizedProject = normalizeTimelineProject(refreshedProject);
     const project = {
-      ...refreshedProject,
+      ...normalizedProject,
       updatedAt: new Date().toISOString(),
     };
     this.projectRepository.upsert(project);
@@ -634,7 +639,7 @@ class EditorService {
     return {
       ...project,
       assets,
-      durationSeconds: calculateEditorProjectTimelineDuration(tracks),
+      durationSeconds: calculateTimelineProjectDuration(tracks),
       tracks,
     };
   }
@@ -921,18 +926,6 @@ class EditorService {
 
     return { mediaUrl: detail.mediaUrl, path };
   }
-}
-
-function calculateEditorProjectTimelineDuration(
-  tracks: EditorProject["tracks"],
-): number {
-  return tracks
-    .flatMap((track) => track.clips)
-    .reduce(
-      (duration, clip) =>
-        Math.max(duration, clip.startSeconds + clip.durationSeconds),
-      0,
-    );
 }
 
 function hasPositiveMediaDuration(

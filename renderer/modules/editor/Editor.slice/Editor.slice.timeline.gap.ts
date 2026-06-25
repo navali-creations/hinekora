@@ -2,6 +2,7 @@ import { trackEvent } from "~/renderer/modules/umami";
 
 import {
   calculateTimelineDuration,
+  calculateTimelineGaps,
   roundToMilliseconds,
 } from "../Editor.utils/Editor.utils";
 import type { EditorSliceActionContext } from "./Editor.slice.context";
@@ -32,6 +33,18 @@ function createEditorTimelineGapActions({
 
       updateProject(
         (project) => {
+          const currentGap = calculateTimelineGaps(
+            project.tracks.filter((track) => track.kind === "video"),
+            project.durationSeconds,
+          ).find(
+            (item) =>
+              item.startSeconds <= gapStartSeconds &&
+              item.endSeconds >= gapEndSeconds,
+          );
+          if (!currentGap) {
+            return project;
+          }
+
           const tracks = project.tracks.map((track) => ({
             ...track,
             clips: track.clips.map((clip) =>

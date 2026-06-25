@@ -19,6 +19,7 @@ import type { EditorSlice } from "./Editor.slice.types";
 import {
   findTimelineClip,
   findTimelineClipAt,
+  normalizeEditorProjectTimeline,
   refreshProjectAssets,
   refreshWorkspaceAssets,
 } from "./Editor.slice.utils";
@@ -248,6 +249,10 @@ function createEditorWorkspaceActions({
           projectLimit: get().editor.projectLimit,
           projectId,
         });
+        const project = createHydratedEditorProject({
+          project: workspace.project,
+          shouldStartWithEmptyTimeline: false,
+        });
         set((state) => {
           state.editor.error = null;
           state.editor.exportState = initialExportState;
@@ -261,10 +266,13 @@ function createEditorWorkspaceActions({
           state.editor.isLoading = false;
           state.editor.isPreviewPlaying = false;
           state.editor.playbackSeconds = 0;
-          state.editor.project = workspace.project;
-          state.editor.selectedAssetKey = workspace.project.selectedAssetKey;
-          state.editor.selectedClipId = workspace.project.activeClipId;
-          state.editor.workspace = workspace;
+          state.editor.project = project;
+          state.editor.selectedAssetKey = project.selectedAssetKey;
+          state.editor.selectedClipId = project.activeClipId;
+          state.editor.workspace = {
+            ...workspace,
+            project,
+          };
         });
         trackEvent("editor-project-opened");
       } catch (error) {
@@ -289,12 +297,15 @@ function createEditorWorkspaceActions({
           projectLimit: currentEditor.projectLimit,
         });
         set((state) => {
-          const project = state.editor.project
-            ? refreshProjectAssets(
-                state.editor.project,
-                refreshedWorkspace.assets,
-              )
-            : refreshedWorkspace.project;
+          const project = normalizeEditorProjectTimeline(
+            state.editor.project
+              ? refreshProjectAssets(
+                  state.editor.project,
+                  refreshedWorkspace.assets,
+                )
+              : refreshedWorkspace.project,
+            { preserveDuration: true },
+          );
           const workspace = refreshWorkspaceAssets({
             currentWorkspace: state.editor.workspace,
             project,
@@ -336,8 +347,9 @@ function createEditorWorkspaceActions({
       );
     },
     saveProject: async (project) => {
+      const normalizedProject = normalizeEditorProjectTimeline(project);
       const savedProject = await window.electron.editor.saveProject({
-        project,
+        project: normalizedProject,
       });
       setProject(savedProject, { recordHistory: false });
 
@@ -384,7 +396,9 @@ function createHydratedEditorProject(input: {
   shouldStartWithEmptyTimeline: boolean;
 }): EditorProject {
   if (!input.shouldStartWithEmptyTimeline) {
-    return resolveEditorProjectSelection(input.project);
+    return resolveEditorProjectSelection(
+      normalizeEditorProjectTimeline(input.project, { preserveDuration: true }),
+    );
   }
 
   const project = clearEditorProjectSelection(input.project);
@@ -402,12 +416,20 @@ function resolveEditorProjectSelection(project: EditorProject): EditorProject {
   const currentClip = findTimelineClip(project, project.activeClipId);
   const fallbackClip =
     currentClip ?? project.tracks.flatMap((track) => track.clips)[0] ?? null;
+  const activeClipId = fallbackClip?.id ?? null;
+  const selectedAssetKey =
+    fallbackClip?.assetKey ?? project.selectedAssetKey ?? null;
+  if (
+    project.activeClipId === activeClipId &&
+    project.selectedAssetKey === selectedAssetKey
+  ) {
+    return project;
+  }
 
   return {
     ...project,
-    activeClipId: fallbackClip?.id ?? null,
-    selectedAssetKey:
-      fallbackClip?.assetKey ?? project.selectedAssetKey ?? null,
+    activeClipId,
+    selectedAssetKey,
   };
 }
 

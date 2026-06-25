@@ -204,6 +204,36 @@ describe("EditorProjectRepository", () => {
     expect(repository.get("project-24")).toBeNull();
   });
 
+  it("deletes every saved project when pruning to an empty retained set", () => {
+    const repository = createRepository();
+
+    repository.upsert(createEditorProject({ id: "project-1" }));
+    repository.upsert(createEditorProject({ id: "project-2" }));
+
+    expect(repository.deleteOlderThanLimit({ limit: 0 })).toBe(2);
+    expect(repository.list({ limit: 10 })).toEqual({
+      hasMore: false,
+      projects: [],
+    });
+  });
+
+  it("keeps an existing protected project when the retained limit is empty", () => {
+    const repository = createRepository();
+
+    repository.upsert(createEditorProject({ id: "project-1" }));
+    repository.upsert(createEditorProject({ id: "project-2" }));
+
+    expect(
+      repository.deleteOlderThanLimit({
+        limit: 0,
+        protectedProjectId: "project-1",
+      }),
+    ).toBe(1);
+    expect(
+      repository.list({ limit: 10 }).projects.map((project) => project.id),
+    ).toEqual(["project-1"]);
+  });
+
   it("rejects corrupted stored project JSON", () => {
     const repository = createRepository();
     database?.db

@@ -104,6 +104,46 @@ describe("Editor timeline clip slice", () => {
     ).toBe(0);
   });
 
+  it("keeps dropped clips sorted when adding into an earlier gap", () => {
+    const store = createTestStore();
+    const originalAsset = createEditorTestAsset({
+      assetKey: "clip:original",
+      id: "original",
+      name: "original.mp4",
+    });
+    const droppedAsset = createEditorTestAsset({
+      assetKey: "clip:dropped",
+      id: "dropped",
+      name: "dropped.mp4",
+    });
+    const project = createEditorTestProject(originalAsset);
+    const existingClip = createEditorTestTimelineClip(originalAsset, {
+      id: "timeline-original",
+      startSeconds: 10,
+    });
+    loadEditorProject(
+      store,
+      {
+        ...project,
+        durationSeconds: 15,
+        tracks: [{ ...project.tracks[0]!, clips: [existingClip] }],
+      },
+      [originalAsset, droppedAsset],
+    );
+
+    store.getState().editor.addAssetToTimelineAt(droppedAsset.assetKey, 0);
+
+    expect(
+      store.getState().editor.project?.tracks[0]?.clips.map((clip) => ({
+        assetKey: clip.assetKey,
+        startSeconds: clip.startSeconds,
+      })),
+    ).toEqual([
+      { assetKey: droppedAsset.assetKey, startSeconds: 0 },
+      { assetKey: originalAsset.assetKey, startSeconds: 10 },
+    ]);
+  });
+
   it("reorders a clip across an adjacent clip without requiring a gap", () => {
     const store = createTestStore();
     const firstAsset = createEditorTestAsset({

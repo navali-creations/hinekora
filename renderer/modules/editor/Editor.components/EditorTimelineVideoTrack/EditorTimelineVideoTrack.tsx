@@ -42,6 +42,7 @@ function EditorTimelineVideoTrack({
         shouldHighlightDropTarget &&
           "editor-drop-target-flash bg-primary/10 ring-1 ring-primary/40",
       )}
+      data-timeline-video-track="true"
       ref={ref}
     >
       {track.clips.length === 0 && (

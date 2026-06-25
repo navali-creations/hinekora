@@ -286,6 +286,44 @@ describe("Editor validation", () => {
           tracks: [
             {
               ...track,
+              clips: [
+                clip,
+                {
+                  ...clip,
+                  durationSeconds: 5,
+                  id: "timeline-overlap",
+                  outSeconds: 5,
+                  startSeconds: 4,
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toThrow("timeline clips must not overlap");
+    expect(() =>
+      validateEditorSaveProjectInput({
+        project: {
+          ...project,
+          tracks: [
+            {
+              ...track,
+              clips: [
+                { ...clip, id: "timeline-b" },
+                { ...clip, id: "timeline-a" },
+              ],
+            },
+          ],
+        },
+      }),
+    ).toThrow("timeline clips must not overlap");
+    expect(() =>
+      validateEditorSaveProjectInput({
+        project: {
+          ...project,
+          tracks: [
+            {
+              ...track,
               clips: Array.from({ length: 201 }, () => clip),
             },
           ],

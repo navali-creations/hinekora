@@ -1,5 +1,6 @@
 import type { EditorProject, EditorTimelineTrack } from "~/main/modules/editor";
 
+import { calculateTimelineProjectDuration } from "~/types";
 import { roundToMilliseconds } from "./EditorTime.utils";
 import { resolveTimelineClipSourceRange } from "./EditorTimelineTrim.utils";
 
@@ -21,14 +22,7 @@ const timelineMarkerIntervalsSeconds = [
 ];
 
 function calculateTimelineDuration(tracks: EditorTimelineTrack[]): number {
-  return tracks.reduce(
-    (duration, track) =>
-      Math.max(
-        duration,
-        ...track.clips.map((clip) => clip.startSeconds + clip.durationSeconds),
-      ),
-    0,
-  );
+  return calculateTimelineProjectDuration(tracks);
 }
 
 function calculateExpandableTimelineDuration(input: {

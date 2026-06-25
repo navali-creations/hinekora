@@ -59,4 +59,43 @@ describe("Editor timeline gap slice", () => {
     expect(store.getState().editor.historyPastLabels.at(-1)).toBe("Delete gap");
     expect(store.getState().editor.hoveredTimelineGap).toBeNull();
   });
+
+  it("ignores stale gap deletion requests that intersect clips", () => {
+    const store = createTestStore();
+    const asset = createEditorTestAsset();
+    const project = createEditorTestProject(asset);
+    const firstClip = createEditorTestTimelineClip(asset, {
+      id: "timeline-first",
+      startSeconds: 0,
+    });
+    const middleClip = createEditorTestTimelineClip(asset, {
+      durationSeconds: 2,
+      id: "timeline-middle",
+      outSeconds: 2,
+      startSeconds: 6,
+    });
+    const lastClip = createEditorTestTimelineClip(asset, {
+      id: "timeline-last",
+      startSeconds: 10,
+    });
+    const timelineProject = {
+      ...project,
+      durationSeconds: 15,
+      tracks: [
+        {
+          ...project.tracks[0]!,
+          clips: [firstClip, middleClip, lastClip],
+        },
+      ],
+    };
+    loadEditorProject(store, timelineProject, [asset]);
+
+    store.getState().editor.removeTimelineGap({
+      endSeconds: 10,
+      startSeconds: 5,
+    });
+
+    expect(store.getState().editor.project).toBe(timelineProject);
+    expect(store.getState().editor.historyPastLabels).toEqual([]);
+  });
 });

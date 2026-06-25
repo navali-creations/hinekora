@@ -498,6 +498,78 @@ describe("EditorService IPC", () => {
     });
   });
 
+  it("normalizes timeline clip order and overlaps before persisting projects", () => {
+    const source = createReplayClipDetail({
+      id: "clip-1",
+      processedClipPath: "C:\\Videos\\clip-1.mp4",
+    });
+    mockEditorLibraries({
+      clips: {
+        "clip-1": source,
+      },
+    });
+    const asset = createEditorMediaAsset();
+    const earlyClip = createEditorTimelineClip(asset, {
+      durationSeconds: 2,
+      id: "timeline-a",
+      outSeconds: 2,
+      startSeconds: 0,
+    });
+    const overlappingClip = createEditorTimelineClip(asset, {
+      durationSeconds: 2,
+      id: "timeline-b",
+      outSeconds: 2,
+      startSeconds: 1,
+    });
+    const lateClip = createEditorTimelineClip(asset, {
+      durationSeconds: 1,
+      id: "timeline-c",
+      outSeconds: 1,
+      startSeconds: 4,
+    });
+    const project = createEditorProject({
+      durationSeconds: 4,
+      id: "normalized-project",
+      tracks: [
+        {
+          clips: [lateClip, overlappingClip, earlyClip],
+          id: "video-track",
+          kind: "video",
+          label: "Video",
+        },
+      ],
+    });
+    const service = new EditorService();
+
+    const savedProject = service.saveProject({ project });
+    const savedClips = savedProject.tracks[0]?.clips ?? [];
+    const reopenedClips =
+      service.getWorkspace({ projectId: savedProject.id }).project.tracks[0]
+        ?.clips ?? [];
+
+    expect(
+      savedClips.map((clip) => ({
+        id: clip.id,
+        startSeconds: clip.startSeconds,
+      })),
+    ).toEqual([
+      { id: "timeline-a", startSeconds: 0 },
+      { id: "timeline-b", startSeconds: 2 },
+      { id: "timeline-c", startSeconds: 4 },
+    ]);
+    expect(savedProject.durationSeconds).toBe(5);
+    expect(
+      reopenedClips.map((clip) => ({
+        id: clip.id,
+        startSeconds: clip.startSeconds,
+      })),
+    ).toEqual([
+      { id: "timeline-a", startSeconds: 0 },
+      { id: "timeline-b", startSeconds: 2 },
+      { id: "timeline-c", startSeconds: 4 },
+    ]);
+  });
+
   it("deletes all saved editor projects", () => {
     mockEditorLibraries();
     const service = new EditorService();
@@ -879,6 +951,30 @@ describe("EditorService IPC", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("logs pruning without a protected project id", () => {
+    mockEditorLibraries({ editorAutoPruneProjects: true });
+    const service = new EditorService();
+    const internals = service as unknown as {
+      projectRepository: {
+        deleteOlderThanLimit: (input: {
+          limit: number;
+          protectedProjectId: string | null;
+        }) => number;
+      };
+      pruneStoredProjects: (protectedProjectId: string | null) => void;
+    };
+    const deleteOlderThanLimit = vi
+      .spyOn(internals.projectRepository, "deleteOlderThanLimit")
+      .mockReturnValue(1);
+
+    internals.pruneStoredProjects(null);
+
+    expect(deleteOlderThanLimit).toHaveBeenCalledWith({
+      limit: 5,
+      protectedProjectId: null,
+    });
   });
 
   it("exports new files and exposes export actions", async () => {

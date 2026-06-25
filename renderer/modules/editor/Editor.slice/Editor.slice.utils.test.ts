@@ -9,6 +9,7 @@ import {
   createEditorCopyToClipboardInput,
   createEditorExportInput,
   findTimelineClipAt,
+  normalizeEditorProjectTimeline,
   refreshProjectAssets,
   resolveAvailableTimelineStart,
 } from "./Editor.slice.utils";
@@ -101,6 +102,46 @@ describe("Editor slice utilities", () => {
         resolution: "1080p",
       }),
     ).toBeNull();
+  });
+
+  it("normalizes timeline tracks into sorted non-overlapping ranges", () => {
+    const asset = createEditorTestAsset();
+    const project = createEditorTestProject(asset);
+    const lateClip = createEditorTestTimelineClip(asset, {
+      id: "timeline-late",
+      startSeconds: 4,
+    });
+    const earlyClip = createEditorTestTimelineClip(asset, {
+      id: "timeline-early",
+      startSeconds: 0,
+    });
+    const overlappingClip = createEditorTestTimelineClip(asset, {
+      id: "timeline-overlap",
+      startSeconds: 3,
+    });
+
+    const normalizedProject = normalizeEditorProjectTimeline({
+      ...project,
+      durationSeconds: 9,
+      tracks: [
+        {
+          ...project.tracks[0]!,
+          clips: [lateClip, overlappingClip, earlyClip],
+        },
+      ],
+    });
+
+    expect(
+      normalizedProject.tracks[0]?.clips.map((clip) => ({
+        id: clip.id,
+        startSeconds: clip.startSeconds,
+      })),
+    ).toEqual([
+      { id: "timeline-early", startSeconds: 0 },
+      { id: "timeline-overlap", startSeconds: 5 },
+      { id: "timeline-late", startSeconds: 10 },
+    ]);
+    expect(normalizedProject.durationSeconds).toBe(15);
   });
 
   it("covers editor slice utility edge cases", () => {

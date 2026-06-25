@@ -9,6 +9,7 @@ import type {
   EditorWorkspace,
 } from "~/main/modules/editor";
 
+import { normalizeTimelineProject } from "~/types";
 import {
   createEditorDefaultFileName,
   roundToMilliseconds,
@@ -241,6 +242,13 @@ function resolveAvailableTimelineStart(input: {
   return roundToMilliseconds(startSeconds);
 }
 
+function normalizeEditorProjectTimeline(
+  project: EditorProject,
+  options: { preserveDuration?: boolean } = {},
+): EditorProject {
+  return normalizeTimelineProject(project, options);
+}
+
 function waitMs(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, milliseconds);
@@ -278,6 +286,7 @@ export {
   findTimelineClip,
   findTimelineClipAt,
   mergeProjectAssets,
+  normalizeEditorProjectTimeline,
   refreshProjectAssets,
   refreshWorkspaceAssets,
   resolveAvailableTimelineStart,

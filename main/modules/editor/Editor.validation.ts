@@ -383,6 +383,28 @@ function validateEditorProjectSemantics(
         );
       }
     }
+
+    let trackCursorSeconds = 0;
+    for (const clip of [...track.clips].sort(
+      (first, second) =>
+        first.startSeconds - second.startSeconds ||
+        first.id.localeCompare(second.id),
+    )) {
+      if (
+        clip.startSeconds <
+        trackCursorSeconds - editorTimelineEpsilonSeconds
+      ) {
+        throw new IpcValidationError(
+          channel,
+          "timeline clips must not overlap",
+        );
+      }
+
+      trackCursorSeconds = Math.max(
+        trackCursorSeconds,
+        clip.startSeconds + clip.durationSeconds,
+      );
+    }
   }
 
   if (project.activeClipId !== null && !clipIds.has(project.activeClipId)) {

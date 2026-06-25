@@ -5,6 +5,7 @@ import type { EditorWorkspace } from "~/main/modules/editor";
 import {
   createEditorTestAsset,
   createEditorTestProject,
+  createEditorTestTimelineClip,
   loadEditorProject,
   setupEditorSliceTest,
 } from "./Editor.slice.test-utils";
@@ -165,6 +166,56 @@ describe("Editor workspace slice", () => {
       title: savedProject.title,
       updatedAt: savedProject.updatedAt,
     });
+  });
+
+  it("repairs malformed timeline clip order when opening saved projects", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const asset = createEditorTestAsset();
+    const project = createEditorTestProject(asset);
+    const earlyClip = createEditorTestTimelineClip(asset, {
+      id: "timeline-early",
+      startSeconds: 0,
+    });
+    const overlappingClip = createEditorTestTimelineClip(asset, {
+      id: "timeline-overlap",
+      startSeconds: 3,
+    });
+    const lateClip = createEditorTestTimelineClip(asset, {
+      id: "timeline-late",
+      startSeconds: 4,
+    });
+    editorApi.getWorkspace.mockResolvedValue({
+      assets: [asset],
+      hasMoreProjects: false,
+      project: {
+        ...project,
+        activeClipId: "timeline-overlap",
+        durationSeconds: 20,
+        tracks: [
+          {
+            ...project.tracks[0]!,
+            clips: [lateClip, overlappingClip, earlyClip],
+          },
+        ],
+      },
+      projects: [],
+    });
+
+    await store.getState().editor.openProject(project.id);
+
+    expect(
+      store.getState().editor.project?.tracks[0]?.clips.map((clip) => ({
+        id: clip.id,
+        startSeconds: clip.startSeconds,
+      })),
+    ).toEqual([
+      { id: "timeline-early", startSeconds: 0 },
+      { id: "timeline-overlap", startSeconds: 5 },
+      { id: "timeline-late", startSeconds: 10 },
+    ]);
+    expect(store.getState().editor.project?.durationSeconds).toBe(20);
+    expect(store.getState().editor.selectedClipId).toBe("timeline-overlap");
   });
 
   it("loads more project summaries without replacing the active edit", async () => {
