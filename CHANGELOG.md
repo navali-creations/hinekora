@@ -1,3 +1,71 @@
+## 0.2.0
+
+### Minor Changes
+
+- [`9917219`](https://github.com/navali-creations/hinekora/commit/991721998632ab80f43d8463e9df0c0378a26087) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Make clip preview actions clearer and faster to use.
+
+  The preview overlay for death clips and manual replays now uses clearer action labels and can send the current clip straight to the editor.
+
+  - **Clip preview:** Open is now Fullscreen, and Folder is now Show in Explorer.
+  - **Editor shortcut:** Use Edit from the preview overlay to open the generated death clip or manual replay in the editor.
+
+  There is a planned feature to make trimming in the overlay itself, but for now this feature will suffice.
+
+### Patch Changes
+
+- [`00c652c`](https://github.com/navali-creations/hinekora/commit/00c652cf1fd017b52c1e2590d094f2fd13edc59f) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Keep overlays from appearing over the desktop after waking Windows.
+
+  Hinekora now rechecks the latest game focus state when the system resumes or unlocks, so requested overlays only return when Path of Exile is actually focused.
+
+  - **Aura overlay:** Persistent aura overlays no longer pop back over other apps just because the game process is still running.
+  - **System resume:** Overlay restore stays lightweight and uses the existing game focus history instead of launching extra system probes.
+
+- [`d3a7596`](https://github.com/navali-creations/hinekora/commit/d3a759640f8f863020815c8b5035e6e8cad3c558) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Clean up saved editor edits from More Options.
+
+  The editor More Options menu now includes clearer controls for removing saved edits and keeping the saved edit list short.
+
+  - **Editor cleanup:** Delete all saved edits from the editor menu when you want to reset the saved edit list.
+  - **Confirmation:** Delete edit and Delete all edits ask for confirmation before removing saved edits.
+  - **Auto-prune:** Enable Auto-prune all but last 5 to automatically remove older saved edits while keeping the latest ones available.
+
+- [`c23583b`](https://github.com/navali-creations/hinekora/commit/c23583bf4589897c1fb56c3521ffe49f39763f40) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Prevent `/deaths` from creating death clips.
+
+  Hinekora now ignores the in-game death counter summary and only triggers death clips from actual slain log lines.
+
+- [`0b5e7c5`](https://github.com/navali-creations/hinekora/commit/0b5e7c52b0ebf1a1d325a09a06c90b0ac3c23caa) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Make the editor timeline playhead feel smoother during playback.
+
+  The editor timeline now updates the playhead more fluidly while keeping the timeline view steady as playback follows zoomed-in clips.
+
+- [`7df17d5`](https://github.com/navali-creations/hinekora/commit/7df17d547b05877565fe6afa20679e13633059a0) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Make capture preview, editor playback, and clip libraries more reliable.
+
+  Hinekora now does less work during startup and keeps preview data lighter, while fixing a few cases where overlays or edited clips could behave unexpectedly.
+
+  - **Live Preview:** Capture sources load faster, thumbnails are loaded only when needed, and cached preview images are kept bounded.
+  - **Editor:** Clips with corrected media durations no longer stop playback early or jump back to the start before the real clip end.
+  - **Clip libraries:** Replay updates are applied incrementally, and media library sorting has been tuned for smoother browsing.
+  - **Aura editing:** The crop selector closes when it loses focus, so grid lines do not linger after leaving the game flow.
+
+- [`b2f9cb7`](https://github.com/navali-creations/hinekora/commit/b2f9cb7153dfad45369cb7dc5cab82a40e90d685) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Keep editor timelines from saving broken clip layouts.
+
+  The editor now normalizes timeline clips before opening, refreshing, and saving projects, and rejects overlapping clip state before it can corrupt playback or exports.
+
+  - **Timeline editing:** Clips stay ordered without partial overlaps when gaps are removed, media is refreshed, or older project state is reopened.
+  - **Editor tests:** Added Playwright coverage for timeline interactions, playback controls, keyboard shortcuts, export actions, and saved edit cleanup flows.
+
 ## 0.1.2
 
 ### Patch Changes
