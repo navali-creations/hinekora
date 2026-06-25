@@ -61,5 +61,5 @@ https://github.com/user-attachments/assets/437220a9-609f-4bf8-ac0b-7ea4c4334e94
 Special thanks to the following projects and people whose work made this project possible or served as inspiration:
 
 - [OBS Project](https://github.com/obsproject) - for the recording infrastructure
+- [Warcraft Recorder](https://warcraftrecorder.com/) - Hinekora is inspired by this project
 - [Alex, the creator of Warcraft Recorder, and the maintainers of the noobs package](https://github.com/aza547/noobs) - for their work
-- [Warcraft Recorder](https://warcraftrecorder.com/) — Hinekora is inspired by this project
