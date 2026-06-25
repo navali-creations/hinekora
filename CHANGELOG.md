@@ -1,3 +1,16 @@
+## 0.2.1
+
+### Patch Changes
+
+- [`d9b6d7d`](https://github.com/navali-creations/hinekora/commit/d9b6d7deae511f15cbb5217d02daff427fb59d7b) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Show the correct Path of Exile game as running.
+
+  Hinekora now handles Steam's generic Path of Exile process more carefully, so playing Path of Exile 2 should no longer make Path of Exile 1 appear as the running game.
+
+  - **Game status:** Generic Steam process detection now uses the game window title when available instead of guessing from the selected game.
+  - **Game switching:** Re-selecting the current game no longer restarts the Client.txt watcher or refreshes game status unnecessarily.
+
 ## 0.2.0
 
 ### Minor Changes
