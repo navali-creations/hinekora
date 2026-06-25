@@ -67,6 +67,7 @@ interface EditorSlice {
     copyExport: (exportId: string) => Promise<EditorExportFileActionResult>;
     copyProjectToClipboard: () => Promise<EditorExportFileActionResult>;
     createProject: (input?: EditorCreateProjectInput) => Promise<void>;
+    deleteAllProjects: () => Promise<void>;
     deleteProject: (projectId: string) => Promise<void>;
     exportProject: (input: {
       fileName: string;

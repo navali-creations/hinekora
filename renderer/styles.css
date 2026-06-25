@@ -35,7 +35,7 @@
   --color-success-content: #080909;
   --color-warning: #96826c;
   --color-warning-content: #080909;
-  --color-error: #533026;
+  --color-error: oklch(44.4% 0.177 26.899);
   --color-error-content: #f0e4d2;
   --radius-selector: 0.375rem;
   --radius-field: 0.375rem;
@@ -65,7 +65,7 @@
   --color-success-content: #080909;
   --color-warning: #96826c;
   --color-warning-content: #080909;
-  --color-error: #533026;
+  --color-error: oklch(44.4% 0.177 26.899);
   --color-error-content: #f0e4d2;
   --radius-selector: 0.375rem;
   --radius-field: 0.375rem;

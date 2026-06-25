@@ -13,6 +13,7 @@ type EditorStateFields = Omit<
   | "copyExport"
   | "copyProjectToClipboard"
   | "createProject"
+  | "deleteAllProjects"
   | "deleteProject"
   | "exportProject"
   | "hydrate"

@@ -13,7 +13,7 @@ import {
 } from "../EditorDeleteConfirmationModal/EditorDeleteConfirmationModal.test-utils";
 
 const storeMocks = vi.hoisted(() => ({
-  deleteProject: vi.fn(),
+  deleteAllProjects: vi.fn(),
   useEditorShallow: vi.fn(),
 }));
 
@@ -21,7 +21,7 @@ vi.mock("~/renderer/store", () => ({
   useEditorShallow: storeMocks.useEditorShallow,
 }));
 
-import { EditorDeleteEditAction } from "./EditorDeleteEditAction";
+import { EditorDeleteAllEditsAction } from "./EditorDeleteAllEditsAction";
 
 const asset = createEditorTestAsset();
 const project = createEditorTestProject(asset, {
@@ -32,15 +32,15 @@ const project = createEditorTestProject(asset, {
 let container: HTMLDivElement;
 let root: Root;
 
-function configureEditorState(isSavedProject = true) {
+function configureEditorState(hasSavedProjects = true) {
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
-      deleteProject: storeMocks.deleteProject,
-      project,
+      deleteAllProjects: storeMocks.deleteAllProjects,
       workspace: {
         assets: [asset],
+        hasMoreProjects: false,
         project,
-        projects: isSavedProject
+        projects: hasSavedProjects
           ? [
               {
                 clipCount: 1,
@@ -57,22 +57,22 @@ function configureEditorState(isSavedProject = true) {
   );
 }
 
-async function renderDeleteAction() {
+async function renderDeleteAllAction() {
   await act(async () => {
-    root.render(<EditorDeleteEditAction />);
+    root.render(<EditorDeleteAllEditsAction />);
   });
 }
 
-function getDeleteButton(): HTMLButtonElement {
+function getDeleteAllButton(): HTMLButtonElement {
   const button = container.querySelector<HTMLButtonElement>("button");
   if (!button) {
-    throw new Error("Expected delete edit button to render");
+    throw new Error("Expected delete all edits button to render");
   }
 
   return button;
 }
 
-describe("EditorDeleteEditAction", () => {
+describe("EditorDeleteAllEditsAction", () => {
   beforeEach(() => {
     container = document.createElement("div");
     document.body.append(container);
@@ -87,44 +87,46 @@ describe("EditorDeleteEditAction", () => {
     vi.clearAllMocks();
   });
 
-  it("confirms before deleting the current saved project", async () => {
-    await renderDeleteAction();
+  it("confirms before deleting all saved editor projects", async () => {
+    await renderDeleteAllAction();
 
     await act(async () => {
-      getDeleteButton().click();
+      getDeleteAllButton().click();
     });
 
-    expect(storeMocks.deleteProject).not.toHaveBeenCalled();
+    expect(storeMocks.deleteAllProjects).not.toHaveBeenCalled();
     expect(getEditorConfirmationDialog().open).toBe(true);
-    expect(getEditorConfirmationDialog().textContent).toContain("Delete edit?");
+    expect(getEditorConfirmationDialog().textContent).toContain(
+      "Delete all edits?",
+    );
 
     await act(async () => {
-      getEditorDialogButton("Delete edit").click();
+      getEditorDialogButton("Delete all edits").click();
     });
 
-    expect(storeMocks.deleteProject).toHaveBeenCalledWith("project-1");
+    expect(storeMocks.deleteAllProjects).toHaveBeenCalledTimes(1);
     expect(document.body.querySelector("dialog")).toBeNull();
   });
 
-  it("keeps the saved project when deletion is cancelled", async () => {
-    await renderDeleteAction();
+  it("keeps saved editor projects when deletion is cancelled", async () => {
+    await renderDeleteAllAction();
 
     await act(async () => {
-      getDeleteButton().click();
+      getDeleteAllButton().click();
     });
     await act(async () => {
       getEditorDialogButton("Cancel").click();
     });
 
-    expect(storeMocks.deleteProject).not.toHaveBeenCalled();
+    expect(storeMocks.deleteAllProjects).not.toHaveBeenCalled();
     expect(document.body.querySelector("dialog")).toBeNull();
   });
 
-  it("is disabled when the current edit is not saved", async () => {
+  it("is disabled when there are no saved edits", async () => {
     configureEditorState(false);
 
-    await renderDeleteAction();
+    await renderDeleteAllAction();
 
-    expect(getDeleteButton().disabled).toBe(true);
+    expect(getDeleteAllButton().disabled).toBe(true);
   });
 });

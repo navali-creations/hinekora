@@ -77,6 +77,7 @@ import { EditorProjectRepository } from "./EditorProject.repository";
 
 const recentAssetPageSize = 50;
 const defaultEditorProjectListLimit = 5;
+const editorAutoPruneProjectLimit = 5;
 const maxEditorExportPathEntries = 20;
 const editorExportMediaScheme = "hinekora-editor-export";
 const editorLogScope = "editor";
@@ -123,6 +124,7 @@ class EditorService {
   getWorkspace(query: EditorWorkspaceQuery = {}): EditorWorkspace {
     const assets = this.listEditorAssets();
     const project = this.resolveWorkspaceProject(assets, query);
+    this.pruneStoredProjects(project.id);
     const projectList = this.projectRepository.list({
       limit: query.projectLimit ?? defaultEditorProjectListLimit,
     });
@@ -155,6 +157,7 @@ class EditorService {
       input,
     );
     this.projectRepository.upsert(project);
+    this.pruneStoredProjects(project.id);
     logInfo(editorLogScope, "Editor project created", {
       projectIdHash: createTextHash(project.id),
       titleHash: createTextHash(project.title),
@@ -175,6 +178,7 @@ class EditorService {
       updatedAt: new Date().toISOString(),
     };
     this.projectRepository.upsert(project);
+    this.pruneStoredProjects(project.id);
     logInfo(editorLogScope, "Editor project saved", {
       projectIdHash: createTextHash(project.id),
       titleHash: createTextHash(project.title),
@@ -190,6 +194,13 @@ class EditorService {
     logInfo(editorLogScope, "Editor project deleted", {
       projectIdHash: createTextHash(projectId),
     });
+
+    return this.getWorkspace();
+  }
+
+  deleteAllProjects(): EditorWorkspace {
+    this.projectRepository.deleteAll();
+    logInfo(editorLogScope, "All editor projects deleted");
 
     return this.getWorkspace();
   }
@@ -515,6 +526,27 @@ class EditorService {
     return this.createProjectFromAssetList(assets, query);
   }
 
+  private pruneStoredProjects(protectedProjectId: string | null): void {
+    const settings = SettingsStoreService.getInstance().get();
+    if (!settings.editorAutoPruneProjects) {
+      return;
+    }
+
+    const deletedProjectCount = this.projectRepository.deleteOlderThanLimit({
+      limit: editorAutoPruneProjectLimit,
+      protectedProjectId,
+    });
+    if (deletedProjectCount > 0) {
+      logInfo(editorLogScope, "Editor projects pruned", {
+        deletedProjectCount,
+        limit: editorAutoPruneProjectLimit,
+        protectedProjectIdHash: protectedProjectId
+          ? createTextHash(protectedProjectId)
+          : null,
+      });
+    }
+  }
+
   private refreshEditorProjectMedia(
     project: EditorProject,
     refreshedAssets: EditorMediaAsset[],
@@ -674,6 +706,11 @@ class EditorService {
           return handleValidationError(error);
         }
       },
+    );
+    registerGuardedIpcHandler(
+      EditorChannel.DeleteAllProjects,
+      [WindowName.Main],
+      () => this.deleteAllProjects(),
     );
     registerGuardedIpcHandler(
       EditorChannel.ExportProject,

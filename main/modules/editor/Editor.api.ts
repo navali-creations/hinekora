@@ -41,6 +41,8 @@ const EditorAPI = {
     ipcRenderer
       .invoke(EditorChannel.CreateProject, input)
       .then(unwrapIpcResult),
+  deleteAllProjects: (): Promise<EditorWorkspace> =>
+    ipcRenderer.invoke(EditorChannel.DeleteAllProjects).then(unwrapIpcResult),
   deleteProject: (projectId: string): Promise<EditorWorkspace> =>
     ipcRenderer
       .invoke(EditorChannel.DeleteProject, projectId)

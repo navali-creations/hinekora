@@ -18,6 +18,11 @@ vi.mock("../EditorCopyActions/EditorCopyActions", () => ({
     <button type="button">Copy {variant}</button>
   ),
 }));
+vi.mock("../EditorDeleteAllEditsAction/EditorDeleteAllEditsAction", () => ({
+  EditorDeleteAllEditsAction: () => (
+    <button type="button">Delete all edits</button>
+  ),
+}));
 vi.mock("../EditorDeleteEditAction/EditorDeleteEditAction", () => ({
   EditorDeleteEditAction: () => <button type="button">Delete edit</button>,
 }));
@@ -25,6 +30,9 @@ vi.mock("../EditorNewEditAction/EditorNewEditAction", () => ({
   EditorNewEditAction: ({ variant }: { variant: string }) => (
     <button type="button">New edit {variant}</button>
   ),
+}));
+vi.mock("../EditorProjectRetentionToggle/EditorProjectRetentionToggle", () => ({
+  EditorProjectRetentionToggle: () => <label>Auto-prune all but last 5</label>,
 }));
 
 import { EditorActionsMenu } from "./EditorActionsMenu";

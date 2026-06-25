@@ -138,6 +138,70 @@ describe("EditorProjectRepository", () => {
 
     expect(repository.get(project.id)).toBeNull();
     expect(repository.list({ limit: 10 }).projects).toHaveLength(1);
+
+    repository.deleteAll();
+
+    expect(repository.list({ limit: 10 }).projects).toEqual([]);
+  });
+
+  it("deletes saved projects past the newest limit while preserving a protected project", () => {
+    const repository = createRepository();
+
+    for (let index = 0; index < 7; index += 1) {
+      repository.upsert(
+        createEditorProject({
+          id: `project-${index}`,
+          title: `Saved edit ${index}`,
+          updatedAt: `2026-06-18T00:0${index}:00.000Z`,
+        }),
+      );
+    }
+
+    expect(
+      repository.deleteOlderThanLimit({
+        limit: 5,
+        protectedProjectId: "project-0",
+      }),
+    ).toBe(2);
+
+    expect(
+      repository.list({ limit: 10 }).projects.map((project) => project.id),
+    ).toEqual([
+      "project-6",
+      "project-5",
+      "project-4",
+      "project-3",
+      "project-0",
+    ]);
+    expect(repository.get("project-2")).toBeNull();
+    expect(repository.get("project-1")).toBeNull();
+    expect(repository.get("project-0")).not.toBeNull();
+  });
+
+  it("prunes saved projects to the newest limit without a protected project", () => {
+    const repository = createRepository();
+
+    for (let index = 0; index < 30; index += 1) {
+      repository.upsert(
+        createEditorProject({
+          id: `project-${index}`,
+          title: `Saved edit ${index}`,
+          updatedAt: `2026-06-18T00:${index.toString().padStart(2, "0")}:00.000Z`,
+        }),
+      );
+    }
+
+    expect(repository.deleteOlderThanLimit({ limit: 5 })).toBe(25);
+    expect(
+      repository.list({ limit: 10 }).projects.map((project) => project.id),
+    ).toEqual([
+      "project-29",
+      "project-28",
+      "project-27",
+      "project-26",
+      "project-25",
+    ]);
+    expect(repository.get("project-24")).toBeNull();
   });
 
   it("rejects corrupted stored project JSON", () => {

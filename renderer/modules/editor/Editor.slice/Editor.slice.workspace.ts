@@ -26,6 +26,7 @@ import {
 type EditorWorkspaceActions = Pick<
   EditorSlice["editor"],
   | "createProject"
+  | "deleteAllProjects"
   | "deleteProject"
   | "hydrate"
   | "loadMoreProjects"
@@ -101,6 +102,50 @@ function createEditorWorkspaceActions({
           };
         });
         trackEvent("editor-project-deleted");
+      } catch (error) {
+        set((state) => {
+          state.editor.error =
+            error instanceof Error ? error.message : "Editor failed";
+          state.editor.isLoading = false;
+        });
+      }
+    },
+    deleteAllProjects: async () => {
+      set((state) => {
+        state.editor.error = null;
+        state.editor.exportState = initialExportState;
+        state.editor.isLoading = true;
+      });
+
+      try {
+        const workspace = await window.electron.editor.deleteAllProjects();
+        const project = createHydratedEditorProject({
+          project: workspace.project,
+          shouldStartWithEmptyTimeline: true,
+        });
+        set((state) => {
+          state.editor.error = null;
+          state.editor.exportState = initialExportState;
+          state.editor.historyFuture = [];
+          state.editor.historyFutureLabels = [];
+          state.editor.historyPast = [];
+          state.editor.historyPastLabels = [];
+          state.editor.historyTransactionLabel = null;
+          state.editor.historyTransactionProject = null;
+          state.editor.hoveredTimelineGap = null;
+          state.editor.isLoading = false;
+          state.editor.isPreviewPlaying = false;
+          state.editor.playbackSeconds = 0;
+          state.editor.project = project;
+          state.editor.projectLimit = editorProjectPageSize;
+          state.editor.selectedAssetKey = null;
+          state.editor.selectedClipId = null;
+          state.editor.workspace = {
+            ...workspace,
+            project,
+          };
+        });
+        trackEvent("editor-projects-deleted-all");
       } catch (error) {
         set((state) => {
           state.editor.error =
@@ -236,8 +281,12 @@ function createEditorWorkspaceActions({
       });
 
       try {
+        const currentEditor = get().editor;
         const refreshedWorkspace = await window.electron.editor.getWorkspace({
-          projectLimit: get().editor.projectLimit,
+          ...(currentEditor.project
+            ? { projectId: currentEditor.project.id }
+            : {}),
+          projectLimit: currentEditor.projectLimit,
         });
         set((state) => {
           const project = state.editor.project
@@ -254,7 +303,7 @@ function createEditorWorkspaceActions({
 
           state.editor.error = null;
           state.editor.project = project;
-          state.editor.projectLimit = get().editor.projectLimit;
+          state.editor.projectLimit = currentEditor.projectLimit;
           state.editor.workspace = workspace;
         });
         trackEvent("editor-media-refreshed");

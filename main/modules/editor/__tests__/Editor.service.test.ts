@@ -144,6 +144,7 @@ function createRecordingDetail(
 function mockEditorLibraries(
   input: {
     clips?: Record<string, ReplayClipDetail | null>;
+    editorAutoPruneProjects?: boolean;
     recordings?: Record<string, RunRecordingDetail | null>;
     storageRoot?: string | null;
   } = {},
@@ -171,6 +172,7 @@ function mockEditorLibraries(
   } as unknown as RecordingStorageService);
   vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
     get: () => ({
+      editorAutoPruneProjects: input.editorAutoPruneProjects ?? false,
       recordingStoragePath: input.storageRoot ?? null,
     }),
   } as unknown as SettingsStoreService);
@@ -227,6 +229,7 @@ describe("EditorService IPC", () => {
     const service = new EditorService();
     vi.spyOn(service, "getWorkspace").mockReturnValue(emptyWorkspace);
     vi.spyOn(service, "createProject").mockReturnValue(emptyProject);
+    vi.spyOn(service, "deleteAllProjects").mockReturnValue(emptyWorkspace);
     vi.spyOn(service, "deleteProject").mockReturnValue(emptyWorkspace);
     vi.spyOn(service, "saveProject").mockReturnValue(emptyProject);
 
@@ -261,6 +264,10 @@ describe("EditorService IPC", () => {
       await handlers.get(EditorChannel.DeleteProject)?.({}, "project-1"),
     ).toEqual(emptyWorkspace);
     expect(service.deleteProject).toHaveBeenCalledWith("project-1");
+    expect(await handlers.get(EditorChannel.DeleteAllProjects)?.({})).toEqual(
+      emptyWorkspace,
+    );
+    expect(service.deleteAllProjects).toHaveBeenCalledTimes(1);
     expect(
       await handlers.get(EditorChannel.SaveProject)?.(
         {},
@@ -485,6 +492,33 @@ describe("EditorService IPC", () => {
     expect(
       service.getWorkspace({ projectId: "missing-project" }).project,
     ).toMatchObject({
+      assets: [],
+      durationSeconds: 0,
+      title: "Untitled edit",
+    });
+  });
+
+  it("deletes all saved editor projects", () => {
+    mockEditorLibraries();
+    const service = new EditorService();
+
+    service.saveProject({
+      project: createEditorProject({
+        id: "saved-project-1",
+        title: "Saved edit 1",
+      }),
+    });
+    service.saveProject({
+      project: createEditorProject({
+        id: "saved-project-2",
+        title: "Saved edit 2",
+      }),
+    });
+
+    const workspace = service.deleteAllProjects();
+
+    expect(workspace.projects).toEqual([]);
+    expect(workspace.project).toMatchObject({
       assets: [],
       durationSeconds: 0,
       title: "Untitled edit",
@@ -810,6 +844,38 @@ describe("EditorService IPC", () => {
       ]);
       expect(expandedWorkspace.projects).toHaveLength(6);
       expect(expandedWorkspace.hasMoreProjects).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("prunes saved editor projects when the retention setting is enabled", () => {
+    vi.useFakeTimers();
+    mockEditorLibraries({ editorAutoPruneProjects: true });
+    const service = new EditorService();
+
+    try {
+      for (let index = 0; index < 7; index += 1) {
+        vi.setSystemTime(new Date(`2026-06-18T00:0${index}:00.000Z`));
+        service.saveProject({
+          project: createEditorProject({
+            id: `saved-project-${index}`,
+            title: `Saved edit ${index}`,
+            updatedAt: "2026-06-01T00:00:00.000Z",
+          }),
+        });
+      }
+
+      const workspace = service.getWorkspace({ projectLimit: 10 });
+
+      expect(workspace.hasMoreProjects).toBe(false);
+      expect(workspace.projects.map((project) => project.title)).toEqual([
+        "Saved edit 6",
+        "Saved edit 5",
+        "Saved edit 4",
+        "Saved edit 3",
+        "Saved edit 2",
+      ]);
     } finally {
       vi.useRealTimers();
     }

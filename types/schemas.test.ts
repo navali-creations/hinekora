@@ -36,6 +36,7 @@ describe("shared schemas", () => {
       activeLeague: "Standard",
       poe1SelectedLeague: "Standard",
       poe2SelectedLeague: "Standard",
+      editorAutoPruneProjects: false,
       deathClipSeconds: 10,
       telemetryCrashReporting: false,
       telemetryUsageAnalytics: false,

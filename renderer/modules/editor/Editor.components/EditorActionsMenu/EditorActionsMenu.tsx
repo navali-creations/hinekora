@@ -5,8 +5,10 @@ import { FiClock, FiMoreHorizontal } from "react-icons/fi";
 import { useEditorShallow } from "~/renderer/store";
 
 import { EditorCopyActions } from "../EditorCopyActions/EditorCopyActions";
+import { EditorDeleteAllEditsAction } from "../EditorDeleteAllEditsAction/EditorDeleteAllEditsAction";
 import { EditorDeleteEditAction } from "../EditorDeleteEditAction/EditorDeleteEditAction";
 import { EditorNewEditAction } from "../EditorNewEditAction/EditorNewEditAction";
+import { EditorProjectRetentionToggle } from "../EditorProjectRetentionToggle/EditorProjectRetentionToggle";
 import { EditorSaveActions } from "../EditorSaveActions/EditorSaveActions";
 
 interface EditorActionsMenuProps {
@@ -102,6 +104,12 @@ function EditorActionsMenu({
         </li>
         <li className="list-none">
           <EditorDeleteEditAction />
+        </li>
+        <li className="list-none">
+          <EditorDeleteAllEditsAction />
+        </li>
+        <li className="list-none">
+          <EditorProjectRetentionToggle disabled={isClipboardBusy} />
         </li>
       </ul>
     </details>

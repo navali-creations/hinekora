@@ -252,6 +252,52 @@ describe("Editor workspace slice", () => {
     expect(store.getState().editor.workspace?.projects).toEqual([]);
   });
 
+  it("deletes all saved projects and resets to the default edit", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const asset = createEditorTestAsset();
+    const project = createEditorTestProject(asset, {
+      id: "saved-project",
+      title: "Saved edit",
+    });
+    const defaultProject = createEditorTestProject(asset, {
+      id: "default-project",
+      title: "Untitled edit",
+    });
+    editorApi.deleteAllProjects.mockResolvedValue({
+      assets: [asset],
+      hasMoreProjects: false,
+      project: defaultProject,
+      projects: [],
+    });
+    loadEditorProject(store, project, [asset], {
+      historyFuture: [createEditorTestProject(asset, { id: "future-project" })],
+      historyPast: [createEditorTestProject(asset, { id: "past-project" })],
+      isPreviewPlaying: true,
+      playbackSeconds: 8,
+      selectedAssetKey: asset.assetKey,
+      selectedClipId: "timeline-1",
+    });
+
+    await store.getState().editor.deleteAllProjects();
+
+    expect(editorApi.deleteAllProjects).toHaveBeenCalledTimes(1);
+    expect(store.getState().editor.project).toMatchObject({
+      activeClipId: null,
+      durationSeconds: 0,
+      id: "default-project",
+      selectedAssetKey: null,
+    });
+    expect(store.getState().editor.project?.tracks[0]?.clips).toEqual([]);
+    expect(store.getState().editor.historyPast).toEqual([]);
+    expect(store.getState().editor.historyFuture).toEqual([]);
+    expect(store.getState().editor.isPreviewPlaying).toBe(false);
+    expect(store.getState().editor.playbackSeconds).toBe(0);
+    expect(store.getState().editor.selectedAssetKey).toBeNull();
+    expect(store.getState().editor.selectedClipId).toBeNull();
+    expect(store.getState().editor.workspace?.projects).toEqual([]);
+  });
+
   it("stores open project failures", async () => {
     const store = createTestStore();
     const editorApi = getEditorApi();
@@ -269,6 +315,12 @@ describe("Editor workspace slice", () => {
     editorApi.deleteProject.mockRejectedValueOnce(new Error("delete failed"));
     await store.getState().editor.deleteProject("missing-project");
     expect(store.getState().editor.error).toBe("delete failed");
+
+    editorApi.deleteAllProjects.mockRejectedValueOnce(
+      new Error("delete all failed"),
+    );
+    await store.getState().editor.deleteAllProjects();
+    expect(store.getState().editor.error).toBe("delete all failed");
   });
 
   it("logs project autosave failures", async () => {
@@ -419,6 +471,7 @@ describe("Editor workspace slice", () => {
     const editor = store.getState().editor;
     const timelineClip = editor.project?.tracks[0]?.clips[0];
     expect(editorApi.getWorkspace).toHaveBeenCalledWith({
+      projectId: "project-1",
       projectLimit: 5,
     });
     expect(editor.workspace?.assets).toEqual([refreshedAsset, availableAsset]);

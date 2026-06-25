@@ -1,6 +1,6 @@
-import { FiTrash2 } from "react-icons/fi";
-
 import { useEditorShallow } from "~/renderer/store";
+
+import { EditorDeleteAction } from "../EditorDeleteAction/EditorDeleteAction";
 
 function EditorDeleteEditAction() {
   const { deleteProject, project, workspace } = useEditorShallow((editor) => ({
@@ -12,7 +12,7 @@ function EditorDeleteEditAction() {
     project && workspace?.projects.some((item) => item.id === project.id),
   );
 
-  const handleDeleteEdit = () => {
+  const handleConfirmDeleteEdit = () => {
     if (!project || !isSavedProject) {
       return;
     }
@@ -21,15 +21,14 @@ function EditorDeleteEditAction() {
   };
 
   return (
-    <button
-      className="flex h-8 w-full cursor-pointer items-center justify-between gap-3 rounded-md px-3 text-left text-red-400 text-sm transition-colors hover:bg-red-500/10 disabled:cursor-not-allowed disabled:text-red-400/55 disabled:opacity-100"
+    <EditorDeleteAction
+      confirmDescription={`This will remove "${project?.title ?? "this edit"}" from saved editor edits. Source recordings and clips will not be deleted.`}
+      confirmLabel="Delete edit"
+      confirmTitle="Delete edit?"
       disabled={!isSavedProject}
-      type="button"
-      onClick={handleDeleteEdit}
-    >
-      Delete edit
-      <FiTrash2 size={15} />
-    </button>
+      label="Delete edit"
+      onConfirm={handleConfirmDeleteEdit}
+    />
   );
 }
 

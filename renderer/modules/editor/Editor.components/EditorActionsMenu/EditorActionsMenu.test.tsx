@@ -15,6 +15,11 @@ vi.mock("../EditorCopyActions/EditorCopyActions", () => ({
     <button type="button">Copy {variant}</button>
   ),
 }));
+vi.mock("../EditorDeleteAllEditsAction/EditorDeleteAllEditsAction", () => ({
+  EditorDeleteAllEditsAction: () => (
+    <button type="button">Delete all edits</button>
+  ),
+}));
 vi.mock("../EditorDeleteEditAction/EditorDeleteEditAction", () => ({
   EditorDeleteEditAction: () => <button type="button">Delete edit</button>,
 }));
@@ -22,6 +27,9 @@ vi.mock("../EditorNewEditAction/EditorNewEditAction", () => ({
   EditorNewEditAction: ({ variant }: { variant: string }) => (
     <button type="button">New edit {variant}</button>
   ),
+}));
+vi.mock("../EditorProjectRetentionToggle/EditorProjectRetentionToggle", () => ({
+  EditorProjectRetentionToggle: () => <label>Auto-prune all but last 5</label>,
 }));
 vi.mock("../EditorSaveActions/EditorSaveActions", () => ({
   EditorSaveActions: ({ variant }: { variant: string }) => (
@@ -88,6 +96,12 @@ describe("EditorActionsMenu", () => {
     );
     expect(content.indexOf("Hide history")).toBeLessThan(
       content.indexOf("Delete edit"),
+    );
+    expect(content.indexOf("Delete edit")).toBeLessThan(
+      content.indexOf("Delete all edits"),
+    );
+    expect(content.indexOf("Delete all edits")).toBeLessThan(
+      content.indexOf("Auto-prune all but last 5"),
     );
     expect(dividers).toHaveLength(3);
   });

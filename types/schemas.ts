@@ -230,6 +230,7 @@ export const AppSettingsSchema = z.object({
   activeLeague: z.string().min(1).max(80).default("Standard"),
   poe1SelectedLeague: z.string().min(1).max(80).default("Standard"),
   poe2SelectedLeague: z.string().min(1).max(80).default("Standard"),
+  editorAutoPruneProjects: z.boolean().default(false),
   deathClipSeconds: z.number().int().min(1).max(120).default(10),
   telemetryCrashReporting: z.boolean().default(false),
   telemetryUsageAnalytics: z.boolean().default(false),

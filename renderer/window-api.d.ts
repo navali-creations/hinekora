@@ -132,6 +132,7 @@ declare global {
         createProject: (
           input?: EditorCreateProjectInput,
         ) => Promise<EditorProject>;
+        deleteAllProjects: () => Promise<EditorWorkspace>;
         deleteProject: (projectId: string) => Promise<EditorWorkspace>;
         exportProject: (
           input: EditorExportInput,

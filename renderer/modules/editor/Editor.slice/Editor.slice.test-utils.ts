@@ -19,6 +19,7 @@ function createEditorApiMock() {
     copyExport: vi.fn(),
     copyProjectToClipboard: vi.fn(),
     createProject: vi.fn(),
+    deleteAllProjects: vi.fn(),
     deleteProject: vi.fn(),
     exportProject: vi.fn(),
     getWorkspace: vi.fn(),

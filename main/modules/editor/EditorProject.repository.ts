@@ -83,6 +83,89 @@ class EditorProjectRepository {
       this.database.kysely.deleteFrom("editor_projects").where("id", "=", id),
     );
   }
+
+  deleteAll(): void {
+    this.database.runQuery(this.database.kysely.deleteFrom("editor_projects"));
+  }
+
+  deleteOlderThanLimit(input: {
+    limit: number;
+    protectedProjectId?: string | null;
+  }): number {
+    const retainedRows = this.database.queryAll(
+      this.database.kysely
+        .selectFrom("editor_projects")
+        .select(["id"])
+        .orderBy("updated_at", "desc")
+        .orderBy("id", "asc")
+        .limit(input.limit),
+    );
+    const retainedProjectIds = new Set(retainedRows.map((row) => row.id));
+    const protectedProjectId = input.protectedProjectId ?? null;
+    if (
+      protectedProjectId &&
+      !retainedProjectIds.has(protectedProjectId) &&
+      this.projectExists(protectedProjectId)
+    ) {
+      const oldestRetainedProjectId = retainedRows.at(-1)?.id;
+      if (oldestRetainedProjectId) {
+        retainedProjectIds.delete(oldestRetainedProjectId);
+      }
+      retainedProjectIds.add(protectedProjectId);
+    }
+
+    const retainedIds = Array.from(retainedProjectIds);
+    if (retainedIds.length === 0) {
+      const deletedProjectCount = this.countProjects();
+      this.deleteAll();
+      return deletedProjectCount;
+    }
+
+    const deletedProjectCount = this.countProjectsExcept(retainedIds);
+    if (deletedProjectCount === 0) {
+      return 0;
+    }
+
+    this.database.runQuery(
+      this.database.kysely
+        .deleteFrom("editor_projects")
+        .where("id", "not in", retainedIds),
+    );
+
+    return deletedProjectCount;
+  }
+
+  private countProjects(): number {
+    const row = this.database.queryOne(
+      this.database.kysely
+        .selectFrom("editor_projects")
+        .select((eb) => eb.fn.countAll<number>().as("count")),
+    );
+
+    return Number((row as { count: number }).count);
+  }
+
+  private projectExists(projectId: string): boolean {
+    const row = this.database.queryOne(
+      this.database.kysely
+        .selectFrom("editor_projects")
+        .select(["id"])
+        .where("id", "=", projectId),
+    );
+
+    return row !== undefined;
+  }
+
+  private countProjectsExcept(projectIds: string[]): number {
+    const row = this.database.queryOne(
+      this.database.kysely
+        .selectFrom("editor_projects")
+        .select((eb) => eb.fn.countAll<number>().as("count"))
+        .where("id", "not in", projectIds),
+    );
+
+    return Number((row as { count: number }).count);
+  }
 }
 
 export type { EditorProjectListResult };
