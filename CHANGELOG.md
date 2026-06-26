@@ -1,3 +1,57 @@
+## 0.3.0
+
+### Minor Changes
+
+- [`61335ed`](https://github.com/navali-creations/hinekora/commit/61335edaa4ac9237997fb0a66e85f51eaa042bf6) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Make game detection, Live Preview, and window controls more reliable.
+
+  Hinekora now tracks Path of Exile windows more accurately, keeps capture sources in sync when the game appears, and remembers app window placement between launches.
+
+  - **Game status:** Path of Exile 1 and Path of Exile 2 detection now handles shared Steam and standalone process names more carefully.
+  - **Live Preview:** Capture sources refresh again when a running game window appears shortly after process detection.
+  - **Windows and tray:** The main app and recording controls remember their positions, and the tray menu now includes Help, GitHub, Discord, and Quit actions.
+  - **Overlays:** Aura and recording overlays behave more predictably when games close, focus changes, or overlay setup windows are dismissed.
+
+### Patch Changes
+
+- [`948cdf9`](https://github.com/navali-creations/hinekora/commit/948cdf9894a1085b79ac5d75467bc2bd2d19b2d6) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Keep overlays steady while editing auras and crop regions.
+
+  Hinekora now handles overlay setup focus more carefully, so recording controls and aura overlays stay visible when setup tools briefly take focus from the game.
+
+  - **Aura editing:** Unlocking aura editing no longer makes recording controls flash off before crop selection opens.
+  - **Crop selection:** Closing the grid selector keeps overlays steady while focus returns to the game.
+  - **Game focus:** Overlay visibility now follows the latest Path of Exile focus events instead of assuming focus from the app window or running process.
+
+- [`f859683`](https://github.com/navali-creations/hinekora/commit/f85968399ba687cfb91829c1dac3f4e34f612cea) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Make the aura lock prompt easier to notice.
+
+  The “Auras locked” hint now appears near the top of the aura overlay with a clearer lock icon, matching status color, and a brief beige shimmer before it fades away.
+
+  - **Aura editing:** The lock handoff message is larger and easier to read when control returns to the game.
+  - **Visual polish:** The hint now matches Hinekora’s beige overlay styling while using the same running-status accent for the lock label.
+
+- [`6ff5ca0`](https://github.com/navali-creations/hinekora/commit/6ff5ca007c4a89f05623df59f8d7a4735250d1c0) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Keep aura positions steady after dragging or resizing.
+
+  Aura overlays now stay where you release them while Hinekora saves the edit, instead of briefly jumping back or continuing to follow the cursor after the mouse button is released.
+
+  - **Aura editing:** Dragged auras hold their released position while the save finishes.
+  - **Aura resizing:** Resized auras keep their released size and ignore extra pointer movement after release.
+
+- [`69cf19f`](https://github.com/navali-creations/hinekora/commit/69cf19f9be78c7b23b24ce0695b05dfac6a16496) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Hide setup overlays when focus moves away from the game and Hinekora overlays.
+
+  Aura editing and crop selection overlays now step out of the way if you focus another app while the game is unfocused, then return when Path of Exile is focused again.
+
+  - **Aura editing:** Unlocked aura overlays no longer keep the monitor blocked after focus moves elsewhere.
+  - **Crop selection:** The grid selector pauses without canceling the pending selection, then restores when you return to the game.
+
 ## 0.2.1
 
 ### Patch Changes
