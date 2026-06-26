@@ -72,7 +72,7 @@ class GridLinesOverlayService {
     this.pendingCropSelection?.resolve(null);
     this.pendingCropSelection = null;
     this.unregisterCropSelectionShortcuts();
-    this.setCropSelectorOverlayFocusActive(false);
+    this.setCropSelectorOverlayFocusActive(false, { startHandoff: false });
     const window = this.cropSelectorWindow;
     this.cropSelectorWindow = null;
     closeOverlayWindow(window);
@@ -146,12 +146,15 @@ class GridLinesOverlayService {
     closeOverlayWindow(window);
   }
 
-  private setCropSelectorOverlayFocusActive(active: boolean): void {
+  private setCropSelectorOverlayFocusActive(
+    active: boolean,
+    options: { startHandoff?: boolean } = {},
+  ): void {
     if (this.cropSelectorOverlayFocusActive === active) {
       return;
     }
 
-    if (!active) {
+    if (!active && options.startHandoff !== false) {
       this.onOverlayFocusRelease();
     }
 

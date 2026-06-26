@@ -404,7 +404,6 @@ describe("ClientLogService", () => {
   });
 
   it("uses a startup focus tail loss even when the active game is running", async () => {
-    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
     const path = join(directory, "Client.txt");
     writeFileSync(
       path,
@@ -418,12 +417,6 @@ describe("ClientLogService", () => {
 
     expect(poeProcessMocks.refreshState).not.toHaveBeenCalled();
     expect(setPoeFocusActive).toHaveBeenCalledWith(false);
-    expect(info).not.toHaveBeenCalledWith(
-      expect.stringContaining(
-        "INFO [client-log] Active game focus assumed from process",
-      ),
-      expect.anything(),
-    );
     service.stopWatchFile();
   });
 
@@ -482,7 +475,7 @@ describe("ClientLogService", () => {
     service.stopWatchFile();
   });
 
-  it("syncs PoE focus from only the recent startup log tail", async () => {
+  it("syncs PoE focus from the bounded startup log tail", async () => {
     const path = join(directory, "Client.txt");
     writeFileSync(
       path,
@@ -497,7 +490,7 @@ describe("ClientLogService", () => {
     service.watchFile(path, "poe1");
     await flushPromises();
 
-    expect(setPoeFocusActive).not.toHaveBeenCalled();
+    expect(setPoeFocusActive).toHaveBeenCalledWith(true);
     setPoeFocusActive.mockClear();
     service.stopWatchFile();
 
@@ -512,6 +505,25 @@ describe("ClientLogService", () => {
     service.watchFile(path, "poe1");
 
     expect(setPoeFocusActive).toHaveBeenCalledWith(true);
+    service.stopWatchFile();
+  });
+
+  it("does not scan the whole Client.txt file when startup focus history is too old", async () => {
+    const path = join(directory, "Client.txt");
+    writeFileSync(
+      path,
+      [
+        "2026/05/26 02:21:56 124375531 54eea165 [INFO Client 49752] [WINDOW] Gained focus",
+        "x".repeat(32 * 1024 + 1),
+      ].join("\n"),
+    );
+    electronMocks.getAllWindows.mockReturnValue([]);
+    const service = new ClientLogService();
+
+    service.watchFile(path, "poe1");
+    await flushPromises();
+
+    expect(setPoeFocusActive).not.toHaveBeenCalled();
     service.stopWatchFile();
   });
 

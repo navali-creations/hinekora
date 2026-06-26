@@ -1100,6 +1100,33 @@ describe("GridLinesOverlayService", () => {
     expect(handoffStartIndex).toBeLessThan(cropReleaseIndex);
   });
 
+  it("does not start an active-game handoff during crop selector cleanup", async () => {
+    const cropWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(cropWindow);
+    const service = new OverlayWindowsService();
+    service.setGameRunningActive(true);
+    service.setPoeFocusActive(false);
+    const setOverlayFocusActive = vi.spyOn(
+      getInternals(service).coordinator,
+      "setOverlayFocusActive",
+    );
+
+    const selection = service.selectCropRegion();
+    await flushTimers();
+    setOverlayFocusActive.mockClear();
+    service.suspendForSystem();
+
+    await expect(selection).resolves.toBeNull();
+    expect(setOverlayFocusActive).toHaveBeenCalledWith(
+      "crop-selector-overlay",
+      false,
+    );
+    expect(setOverlayFocusActive).not.toHaveBeenCalledWith(
+      "active-game-focus-handoff",
+      true,
+    );
+  });
+
   it("omits invalid viewport sizes without forcing PoE focus active", async () => {
     const cropWindow = createFakeWindow();
     cropWindow.getBounds.mockReturnValue({

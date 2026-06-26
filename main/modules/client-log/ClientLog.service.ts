@@ -42,6 +42,7 @@ const CLIENT_LOG_WATCH_INTERVAL_MS = 1_000;
 const CLIENT_LOG_READ_CHUNK_BYTES = 64 * 1024;
 const CLIENT_LOG_MAX_PARTIAL_LINE_CHARS = 64 * 1024;
 const CLIENT_LOG_FOCUS_STATE_TAIL_BYTES = 8 * 1024;
+const CLIENT_LOG_STARTUP_FOCUS_STATE_TAIL_BYTES = 32 * 1024;
 
 class ClientLogService extends EventEmitter {
   private static instance: ClientLogService | null = null;
@@ -422,12 +423,13 @@ class ClientLogService extends EventEmitter {
   private readLatestFocusStateFromRecentFileTail(
     filePath: string,
     fileSize = this.lastKnownSize,
+    maxBytesToRead = CLIENT_LOG_FOCUS_STATE_TAIL_BYTES,
   ): boolean | null {
     if (this.fd === null || fileSize <= 0) {
       return null;
     }
 
-    const bytesToRead = Math.min(fileSize, CLIENT_LOG_FOCUS_STATE_TAIL_BYTES);
+    const bytesToRead = Math.min(fileSize, maxBytesToRead);
     const buffer = Buffer.alloc(bytesToRead);
     const position = fileSize - bytesToRead;
 
@@ -456,8 +458,11 @@ class ClientLogService extends EventEmitter {
   }
 
   private seedPoeFocusState(filePath: string): void {
-    const recentFocusState =
-      this.readLatestFocusStateFromRecentFileTail(filePath);
+    const recentFocusState = this.readLatestFocusStateFromRecentFileTail(
+      filePath,
+      this.lastKnownSize,
+      CLIENT_LOG_STARTUP_FOCUS_STATE_TAIL_BYTES,
+    );
     if (recentFocusState !== null) {
       this.setPoeFocusActive(recentFocusState);
     }
