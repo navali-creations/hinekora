@@ -264,6 +264,12 @@ describe("TrayService", () => {
 
   it("logs when the tray icon asset cannot be loaded", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const expectedIconFile =
+      process.platform === "darwin"
+        ? "16x16.png"
+        : process.platform === "linux"
+          ? "32x32.png"
+          : "icon.ico";
     electronMocks.createFromPath.mockReturnValue(new FakeNativeImage(true));
     electronMocks.trayFactory.mockReturnValue(new FakeTray());
 
@@ -272,7 +278,7 @@ describe("TrayService", () => {
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining("Tray icon failed to load"),
       expect.objectContaining({
-        iconFile: "icon.ico",
+        iconFile: expectedIconFile,
         iconHash: expect.any(String),
       }),
     );
