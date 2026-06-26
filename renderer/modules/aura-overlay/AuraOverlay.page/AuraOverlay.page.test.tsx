@@ -821,7 +821,13 @@ describe("AuraOverlayPage", () => {
     );
 
     act(() => {
-      vi.advanceTimersByTime(2_500);
+      vi.advanceTimersByTime(2_999);
+    });
+
+    expect(container.textContent).toContain("Auras locked");
+
+    act(() => {
+      vi.advanceTimersByTime(1);
     });
 
     expect(container.textContent).not.toContain("Auras locked");

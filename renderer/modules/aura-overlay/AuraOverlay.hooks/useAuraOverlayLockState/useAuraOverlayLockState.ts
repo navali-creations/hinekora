@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-const lockHandoffHintMs = 2_500;
-
 interface ApplyAuraLockStateOptions {
   showHandoffHint?: boolean;
 }
+
+const lockHandoffHintMs = 3_000;
 
 function useAuraOverlayLockState() {
   const [auraOverlayLocked, setAuraOverlayLocked] = useState(true);

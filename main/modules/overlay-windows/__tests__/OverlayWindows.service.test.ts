@@ -1011,6 +1011,41 @@ describe("GridLinesOverlayService", () => {
     await expect(selection).resolves.toBeNull();
   });
 
+  it("tracks native crop selector focus changes", async () => {
+    const cropWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(cropWindow);
+    const service = new OverlayWindowsService();
+    const setOverlayFocusActive = vi.spyOn(
+      getInternals(service).coordinator,
+      "setOverlayFocusActive",
+    );
+
+    const selection = service.selectCropRegion();
+    await flushTimers();
+    const focusListener = cropWindow.on.mock.calls.find(
+      ([eventName]) => eventName === "focus",
+    )?.[1];
+    const blurListener = cropWindow.on.mock.calls.find(
+      ([eventName]) => eventName === "blur",
+    )?.[1];
+    setOverlayFocusActive.mockClear();
+
+    blurListener?.();
+    focusListener?.();
+
+    expect(setOverlayFocusActive).toHaveBeenCalledWith(
+      "crop-selector-overlay",
+      false,
+    );
+    expect(setOverlayFocusActive).toHaveBeenCalledWith(
+      "crop-selector-overlay",
+      true,
+    );
+
+    service.cancelCropRegionSelection();
+    await expect(selection).resolves.toBeNull();
+  });
+
   it("suspends crop selector selection on native blur and restores it on game focus", async () => {
     const cropWindow = createFakeWindow();
     electronMocks.browserWindowFactory.mockReturnValue(cropWindow);
