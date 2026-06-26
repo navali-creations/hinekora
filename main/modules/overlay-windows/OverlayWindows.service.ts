@@ -30,6 +30,7 @@ const ACTIVE_GAME_FOCUS_HANDOFF_GRACE_MS = 2_500;
 
 type ActiveGameFocusRestoreReason =
   | "aura-locked"
+  | "crop-selector-hidden"
   | "clip-preview-hidden"
   | "recorder-overlay-shown";
 type ActiveGameFocusHandoffEndReason =
@@ -64,6 +65,7 @@ class OverlayWindowsService {
   private readonly gridLinesOverlay = new GridLinesOverlayService(
     this.coordinator,
     this.getOverlayCaptureProtectionEnabled,
+    () => this.startActiveGameFocusHandoff("crop-selector-hidden"),
   );
   private readonly auraManagerOverlays = new AuraManagerOverlaysService(
     this.coordinator,

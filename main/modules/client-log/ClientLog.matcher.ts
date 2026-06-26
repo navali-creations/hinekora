@@ -4,6 +4,8 @@ const DEFAULT_DEATH_PATTERNS = [/\bhas been slain\b/i, /\bwas slain\b/i];
 const IGNORED_CHAT_PREFIXES = new Set(["#", "%", "$"]);
 const FOCUS_GAINED_MESSAGE = "[WINDOW] Gained focus";
 const FOCUS_LOST_MESSAGE = "[WINDOW] Lost focus";
+const LOG_FILE_OPENING_MARKER = "***** LOG FILE OPENING *****";
+const CLOSING_GAME_MESSAGE = "Closing game gracefully";
 
 interface ClientLogFocusEvent {
   focused: boolean;
@@ -31,11 +33,18 @@ function parseClientLogEvents(text: string): ParsedClientLogEvents {
 
   for (const rawLine of text.split(/\r?\n/)) {
     const line = rawLine.trim();
+    if (line.includes(LOG_FILE_OPENING_MARKER)) {
+      focusEvents.push({ focused: true, line });
+      continue;
+    }
+
     const message = extractMessage(line).trim();
 
     if (message === FOCUS_GAINED_MESSAGE) {
       focusEvents.push({ focused: true, line });
     } else if (message === FOCUS_LOST_MESSAGE) {
+      focusEvents.push({ focused: false, line });
+    } else if (message === CLOSING_GAME_MESSAGE) {
       focusEvents.push({ focused: false, line });
     }
 
@@ -62,10 +71,18 @@ function findLatestFocusState(text: string): boolean | null {
   let latest: boolean | null = null;
 
   for (const rawLine of text.split(/\r?\n/)) {
-    const message = extractMessage(rawLine.trim()).trim();
+    const line = rawLine.trim();
+    if (line.includes(LOG_FILE_OPENING_MARKER)) {
+      latest = true;
+      continue;
+    }
+
+    const message = extractMessage(line).trim();
     if (message === FOCUS_GAINED_MESSAGE) {
       latest = true;
     } else if (message === FOCUS_LOST_MESSAGE) {
+      latest = false;
+    } else if (message === CLOSING_GAME_MESSAGE) {
       latest = false;
     }
   }

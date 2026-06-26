@@ -27,9 +27,6 @@ const electronMocks = vi.hoisted(() => ({
 const updaterMocks = vi.hoisted(() => ({
   initialize: vi.fn(),
 }));
-const overlayMocks = vi.hoisted(() => ({
-  setPoeFocusActive: vi.fn(),
-}));
 const settingsStoreMocks = vi.hoisted(() => ({
   get: vi.fn(() => ({
     appCloseBehavior: "exit",
@@ -67,13 +64,6 @@ vi.mock("~/main/modules/updater", () => ({
   UpdaterService: {
     getInstance: () => ({
       initialize: updaterMocks.initialize,
-    }),
-  },
-}));
-vi.mock("~/main/modules/overlay-windows", () => ({
-  OverlayWindowsService: {
-    getInstance: () => ({
-      setPoeFocusActive: overlayMocks.setPoeFocusActive,
     }),
   },
 }));
@@ -234,7 +224,6 @@ afterEach(() => {
   settingsStoreMocks.update.mockReset();
   trayMocks.createTray.mockClear();
   trayMocks.destroyTray.mockClear();
-  overlayMocks.setPoeFocusActive.mockClear();
   updaterMocks.initialize.mockClear();
   vi.unstubAllGlobals();
 });
@@ -615,17 +604,6 @@ describe("MainWindowService", () => {
 
     expect(service.getMainWindow()).toBeNull();
     expect(electronMocks.quit).toHaveBeenCalledTimes(1);
-  });
-
-  it("clears PoE focus when the main window receives focus", async () => {
-    const fakeWindow = new FakeWindow();
-    electronMocks.browserWindowFactory.mockReturnValue(fakeWindow);
-    const service = new MainWindowService();
-
-    await service.createMainWindow();
-    fakeWindow.focusListener?.();
-
-    expect(overlayMocks.setPoeFocusActive).toHaveBeenCalledWith(false);
   });
 
   it("reuses an existing live main window", async () => {

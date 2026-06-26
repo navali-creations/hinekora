@@ -31,7 +31,7 @@ function createPathOfExileWindowTitleCandidates(value: string): string[] {
     normalized,
     normalized.split(":")[0]!.trim(),
     bracketTitle,
-    bracketTitle.split(":")[0]?.trim() ?? "",
+    bracketTitle.split(":")[0]!.trim(),
   ];
 
   return [...new Set(candidates.filter(Boolean))];

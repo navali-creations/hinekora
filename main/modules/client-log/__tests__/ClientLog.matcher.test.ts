@@ -76,6 +76,64 @@ describe("ClientLog matcher", () => {
     expect(findLatestFocusState("unrelated")).toBeNull();
   });
 
+  it("starts new client log sessions focused", () => {
+    expect(
+      findLatestFocusState(
+        [
+          "2026/06/26 20:04:31 204228109 528852ff [INFO Client 24172] [WINDOW] Gained focus",
+          "2026/06/26 20:04:35 204232000 a1e41514 [INFO Client 24172] Closing game gracefully",
+          "2026/06/26 20:05:41 ***** LOG FILE OPENING *****",
+          "2026/06/26 20:05:41 204297796 84b56f77 [INFO Client 35236] [JOB] Start",
+        ].join("\n"),
+      ),
+    ).toBe(true);
+
+    expect(
+      findLatestFocusState(
+        [
+          "2026/06/26 20:05:41 ***** LOG FILE OPENING *****",
+          "2026/06/26 20:05:45 204302046 528852be [INFO Client 35236] [WINDOW] Lost focus",
+        ].join("\n"),
+      ),
+    ).toBe(false);
+  });
+
+  it("treats graceful game close as no longer focused", () => {
+    expect(
+      findLatestFocusState(
+        [
+          "2026/06/26 20:04:31 204228109 528852ff [INFO Client 24172] [WINDOW] Gained focus",
+          "2026/06/26 20:04:35 204232000 a1e41514 [INFO Client 24172] Closing game gracefully",
+        ].join("\n"),
+      ),
+    ).toBe(false);
+  });
+
+  it("parses client log session boundaries as focus events", () => {
+    expect(
+      parseClientLogEvents(
+        [
+          "2026/06/26 20:05:41 ***** LOG FILE OPENING *****",
+          "2026/06/26 20:05:45 204302046 528852be [INFO Client 35236] [WINDOW] Lost focus",
+          "2026/06/26 20:06:35 204232000 a1e41514 [INFO Client 35236] Closing game gracefully",
+        ].join("\n"),
+      ).focusEvents,
+    ).toEqual([
+      {
+        focused: true,
+        line: "2026/06/26 20:05:41 ***** LOG FILE OPENING *****",
+      },
+      {
+        focused: false,
+        line: "2026/06/26 20:05:45 204302046 528852be [INFO Client 35236] [WINDOW] Lost focus",
+      },
+      {
+        focused: false,
+        line: "2026/06/26 20:06:35 204232000 a1e41514 [INFO Client 35236] Closing game gracefully",
+      },
+    ]);
+  });
+
   it("parses focus and death events from the same text pass", () => {
     expect(
       parseClientLogEvents(

@@ -24,6 +24,7 @@ const CROP_SELECTOR_OVERLAY_FOCUS_ID = "crop-selector-overlay";
 class GridLinesOverlayService {
   private cropSelectorWindow: BrowserWindow | null = null;
   private cropSelectionEscapeRegistered = false;
+  private cropSelectorOverlayFocusActive = false;
   private pendingCropSelection: {
     resolve: (selection: CropRegionSelection | null) => void;
   } | null = null;
@@ -31,6 +32,7 @@ class GridLinesOverlayService {
   constructor(
     private readonly coordinator: GameOverlayCoordinator,
     private readonly getContentProtectionEnabled = () => false,
+    private readonly onOverlayFocusRelease = () => {},
   ) {}
 
   async selectCropRegion(): Promise<CropRegionSelection | null> {
@@ -41,10 +43,7 @@ class GridLinesOverlayService {
     return new Promise((resolveSelection) => {
       this.pendingCropSelection = { resolve: resolveSelection };
       this.registerCropSelectionShortcuts();
-      this.coordinator.setOverlayFocusActive(
-        CROP_SELECTOR_OVERLAY_FOCUS_ID,
-        true,
-      );
+      this.setCropSelectorOverlayFocusActive(true);
       this.coordinator.showGameOverlayWindow(this.cropSelectorWindow);
       this.cropSelectorWindow?.focus();
     });
@@ -73,10 +72,7 @@ class GridLinesOverlayService {
     this.pendingCropSelection?.resolve(null);
     this.pendingCropSelection = null;
     this.unregisterCropSelectionShortcuts();
-    this.coordinator.setOverlayFocusActive(
-      CROP_SELECTOR_OVERLAY_FOCUS_ID,
-      false,
-    );
+    this.setCropSelectorOverlayFocusActive(false);
     const window = this.cropSelectorWindow;
     this.cropSelectorWindow = null;
     closeOverlayWindow(window);
@@ -126,10 +122,7 @@ class GridLinesOverlayService {
     cropSelectorWindow.on("closed", () => {
       unregisterIpcWindowRole(cropSelectorWebContents);
       logInfo(GRID_LINES_OVERLAY_SCOPE, "Crop selector overlay closed");
-      this.coordinator.setOverlayFocusActive(
-        CROP_SELECTOR_OVERLAY_FOCUS_ID,
-        false,
-      );
+      this.setCropSelectorOverlayFocusActive(false);
       if (this.cropSelectorWindow === cropSelectorWindow) {
         this.cropSelectorWindow = null;
       }
@@ -147,13 +140,26 @@ class GridLinesOverlayService {
 
   private closeWindow(): void {
     this.unregisterCropSelectionShortcuts();
-    this.coordinator.setOverlayFocusActive(
-      CROP_SELECTOR_OVERLAY_FOCUS_ID,
-      false,
-    );
+    this.setCropSelectorOverlayFocusActive(false);
     const window = this.cropSelectorWindow;
     this.cropSelectorWindow = null;
     closeOverlayWindow(window);
+  }
+
+  private setCropSelectorOverlayFocusActive(active: boolean): void {
+    if (this.cropSelectorOverlayFocusActive === active) {
+      return;
+    }
+
+    if (!active) {
+      this.onOverlayFocusRelease();
+    }
+
+    this.cropSelectorOverlayFocusActive = active;
+    this.coordinator.setOverlayFocusActive(
+      CROP_SELECTOR_OVERLAY_FOCUS_ID,
+      active,
+    );
   }
 
   private registerCropSelectionShortcuts(): void {

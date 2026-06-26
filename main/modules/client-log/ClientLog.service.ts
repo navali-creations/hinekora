@@ -218,7 +218,7 @@ class ClientLogService extends EventEmitter {
     };
     this.lastUnavailableLogAt = 0;
     this.openFileDescriptor(filePath);
-    this.seedPoeFocusState(filePath, game);
+    this.seedPoeFocusState(filePath);
     logInfo(CLIENT_LOG_SCOPE, "Client log watcher started", {
       game,
       initialSize: this.lastKnownSize,
@@ -455,58 +455,12 @@ class ClientLogService extends EventEmitter {
     }
   }
 
-  private seedPoeFocusState(filePath: string, game: GameId): void {
+  private seedPoeFocusState(filePath: string): void {
     const recentFocusState =
       this.readLatestFocusStateFromRecentFileTail(filePath);
-    if (recentFocusState === true) {
-      this.setPoeFocusActive(true);
-      return;
+    if (recentFocusState !== null) {
+      this.setPoeFocusActive(recentFocusState);
     }
-
-    this.seedPoeFocusFromRunningGame(filePath, game, recentFocusState);
-  }
-
-  private seedPoeFocusFromRunningGame(
-    filePath: string,
-    game: GameId,
-    fallbackFocusState: boolean | null,
-  ): void {
-    const poeProcessService = PoeProcessService.getInstance();
-    void poeProcessService
-      .refreshState()
-      .then((state) => {
-        if (
-          !this.status.watching ||
-          this.status.path !== filePath ||
-          this.status.activeGame !== game
-        ) {
-          return;
-        }
-
-        if (!poeProcessService.isActiveGameRunning(state)) {
-          if (fallbackFocusState !== null) {
-            this.setPoeFocusActive(fallbackFocusState);
-          }
-          return;
-        }
-
-        logInfo(CLIENT_LOG_SCOPE, "Active game focus assumed from process", {
-          fallbackFocusState,
-          game,
-          processName: state.processName,
-        });
-        this.setPoeFocusActive(true);
-      })
-      .catch((error) => {
-        if (fallbackFocusState !== null) {
-          this.setPoeFocusActive(fallbackFocusState);
-        }
-        logWarn(CLIENT_LOG_SCOPE, "Active game focus seed failed", {
-          game,
-          error: safeErrorMessage(error),
-          ...createSafePathLogFields(filePath, "clientLog"),
-        });
-      });
   }
 
   private setPoeFocusActive(active: boolean): void {

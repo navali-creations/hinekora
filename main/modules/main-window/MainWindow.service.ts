@@ -2,7 +2,6 @@ import { join } from "node:path";
 
 import { app, BrowserWindow, Menu, screen, shell } from "electron";
 
-import { OverlayWindowsService } from "~/main/modules/overlay-windows";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { TrayService } from "~/main/modules/tray";
 import { UpdaterService } from "~/main/modules/updater";
@@ -137,9 +136,6 @@ class MainWindowService {
       if (!this.isQuitting) {
         app.quit();
       }
-    });
-    mainWindow.on("focus", () => {
-      OverlayWindowsService.getInstance().setPoeFocusActive(false);
     });
     this.createTray();
     this.attachBoundsListeners(mainWindow);

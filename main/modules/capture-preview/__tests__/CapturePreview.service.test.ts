@@ -333,6 +333,20 @@ describe("CapturePreviewService", () => {
     ]);
   });
 
+  it("omits process-only capture sources when the process game is ambiguous", async () => {
+    poeProcessMocks.getState.mockReturnValue({
+      isRunning: true,
+      processName: "PathOfExileSteam.exe",
+    });
+    electronMocks.getAllDisplays.mockReturnValue([]);
+    electronMocks.getSources.mockResolvedValue([
+      createSource({ id: "window:process:1", name: "PathOfExileSteam.exe" }),
+    ]);
+    const service = new CapturePreviewService();
+
+    await expect(service.listSources()).resolves.toEqual([]);
+  });
+
   it("rejects broad Path of Exile title matches", async () => {
     electronMocks.getAllDisplays.mockReturnValue([]);
     electronMocks.getSources.mockResolvedValue([

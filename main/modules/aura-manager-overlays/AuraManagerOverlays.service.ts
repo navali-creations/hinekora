@@ -228,10 +228,15 @@ class AuraManagerOverlaysService {
       contentProtection: this.getContentProtectionEnabled(),
     });
     window.on("focus", () => {
-      this.coordinator.setOverlayFocusActive(AURA_OVERLAY_FOCUS_ID, true);
+      this.coordinator.setOverlayFocusActive(
+        AURA_OVERLAY_FOCUS_ID,
+        this.canOwnOverlayFocus(),
+      );
     });
     window.on("blur", () => {
-      this.coordinator.setOverlayFocusActive(AURA_OVERLAY_FOCUS_ID, false);
+      if (!this.canOwnOverlayFocus()) {
+        this.coordinator.setOverlayFocusActive(AURA_OVERLAY_FOCUS_ID, false);
+      }
     });
     window.on("closed", () => {
       this.coordinator.setOverlayFocusActive(AURA_OVERLAY_FOCUS_ID, false);
@@ -351,8 +356,13 @@ class AuraManagerOverlaysService {
       return;
     }
 
+    this.coordinator.setOverlayFocusActive(AURA_OVERLAY_FOCUS_ID, true);
     window.setFocusable(true);
     window.setIgnoreMouseEvents(false);
+  }
+
+  private canOwnOverlayFocus(): boolean {
+    return !this.auraOverlayLocked && !this.inputPassthroughActive;
   }
 
   private publishLockState(): void {
