@@ -25,6 +25,7 @@ interface AuraOverlayDragState {
   initialDisplayY: number;
   deltaX: number;
   deltaY: number;
+  isReleased: boolean;
 }
 
 interface AuraOverlayResizeState {
@@ -34,6 +35,7 @@ interface AuraOverlayResizeState {
   startY: number;
   initialPlacement: OverlayPlacement;
   draftPlacement: OverlayPlacement;
+  isReleased: boolean;
 }
 
 interface AuraOverlayPlacementProps {

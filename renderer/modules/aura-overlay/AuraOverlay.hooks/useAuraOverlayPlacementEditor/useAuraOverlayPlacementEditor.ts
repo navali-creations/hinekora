@@ -86,7 +86,12 @@ function useAuraOverlayPlacementEditor({
   useEffect(() => cancelInteractionFrame, [cancelInteractionFrame]);
 
   const handlePointerDown = (event: PointerEvent<HTMLElement>) => {
-    if (!profile || resizeStateRef.current || event.button !== 0) {
+    if (
+      !profile ||
+      dragStateRef.current ||
+      resizeStateRef.current ||
+      event.button !== 0
+    ) {
       return;
     }
 
@@ -122,12 +127,13 @@ function useAuraOverlayPlacementEditor({
       initialDisplayY: projectedPlacement.y,
       deltaX: 0,
       deltaY: 0,
+      isReleased: false,
     });
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
     const currentDragState = dragStateRef.current;
-    if (!currentDragState) {
+    if (!currentDragState || currentDragState.isReleased) {
       return;
     }
 
@@ -142,6 +148,9 @@ function useAuraOverlayPlacementEditor({
   const handlePointerUp = (event: PointerEvent<HTMLElement>) => {
     const currentDragState = dragStateRef.current;
     if (!profile || !currentDragState) {
+      return;
+    }
+    if (currentDragState.isReleased) {
       return;
     }
 
@@ -163,14 +172,15 @@ function useAuraOverlayPlacementEditor({
     const crop = profile.cropRegions.find(
       (item) => item.id === placement?.cropRegionId,
     );
-    commitDragState(null);
     if (
       x === Math.round(currentDragState.initialDisplayX) &&
       y === Math.round(currentDragState.initialDisplayY)
     ) {
+      commitDragState(null);
       return;
     }
     if (!placement) {
+      commitDragState(null);
       return;
     }
     const placementReferenceViewport = resolveAuraReferenceViewport(
@@ -189,6 +199,13 @@ function useAuraOverlayPlacementEditor({
     const nextY = Math.max(0, Math.round(referencePoint.y));
 
     recordAuraHistory();
+    const releasedDragState = {
+      ...currentDragState,
+      deltaX: x - currentDragState.initialDisplayX,
+      deltaY: y - currentDragState.initialDisplayY,
+      isReleased: true,
+    };
+    commitDragState(releasedDragState);
     void updateProfile({
       id: profile.id,
       cropRegions: profile.cropRegions.map((region) =>
@@ -206,15 +223,28 @@ function useAuraOverlayPlacementEditor({
             }
           : placement,
       ),
+    }).finally(() => {
+      if (dragStateRef.current === releasedDragState) {
+        commitDragState(null);
+      }
     });
   };
 
   const handlePointerCancel = () => {
+    if (dragStateRef.current?.isReleased) {
+      return;
+    }
+
     commitDragState(null);
   };
 
   const handleResizePointerDown = (event: PointerEvent<HTMLElement>) => {
-    if (!profile || event.button !== 0) {
+    if (
+      !profile ||
+      dragStateRef.current ||
+      resizeStateRef.current ||
+      event.button !== 0
+    ) {
       return;
     }
 
@@ -239,12 +269,13 @@ function useAuraOverlayPlacementEditor({
       startY: event.clientY,
       initialPlacement: placement,
       draftPlacement: placement,
+      isReleased: false,
     });
   };
 
   const handleResizePointerMove = (event: PointerEvent<HTMLElement>) => {
     const currentResizeState = resizeStateRef.current;
-    if (!profile || !currentResizeState) {
+    if (!profile || !currentResizeState || currentResizeState.isReleased) {
       return;
     }
 
@@ -276,6 +307,9 @@ function useAuraOverlayPlacementEditor({
     if (!profile || !currentResizeState) {
       return;
     }
+    if (currentResizeState.isReleased) {
+      return;
+    }
 
     event.stopPropagation();
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -294,9 +328,13 @@ function useAuraOverlayPlacementEditor({
         resolveAuraReferenceViewport(crop, referenceViewport),
       ),
     );
-    commitResizeState(null);
 
     recordAuraHistory();
+    const releasedResizeState = {
+      ...currentResizeState,
+      isReleased: true,
+    };
+    commitResizeState(releasedResizeState);
     void updateProfile({
       id: profile.id,
       cropRegions: profile.cropRegions.map((region) =>
@@ -309,11 +347,19 @@ function useAuraOverlayPlacementEditor({
           ? { ...draftPlacement, ...referenceDimensions }
           : placement,
       ),
+    }).finally(() => {
+      if (resizeStateRef.current === releasedResizeState) {
+        commitResizeState(null);
+      }
     });
   };
 
   const handleResizePointerCancel = (event: PointerEvent<HTMLElement>) => {
     event.stopPropagation();
+    if (resizeStateRef.current?.isReleased) {
+      return;
+    }
+
     commitResizeState(null);
   };
 

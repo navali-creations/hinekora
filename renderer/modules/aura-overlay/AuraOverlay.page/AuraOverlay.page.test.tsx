@@ -291,6 +291,115 @@ describe("AuraOverlayPage", () => {
     });
   });
 
+  it("keeps a dragged aura at the released position while saving", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    storeMocks.useCapturePreviewShallow.mockImplementation((selector) =>
+      selector({
+        selectedSourceId: "screen:1",
+        sources: [{ id: "screen:1", width: 3440, height: 1440 }],
+      }),
+    );
+    let resolveProfileUpdate: (() => void) | null = null;
+    storeMocks.updateProfile.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveProfileUpdate = resolve;
+        }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const auraFrame = container.querySelector(
+      'div[data-placement-id="placement-1"]',
+    );
+    const auraButton = container.querySelector(
+      'button[data-placement-id="placement-1"]',
+    );
+    expect(auraFrame).toBeInstanceOf(HTMLDivElement);
+    expect(auraButton).toBeInstanceOf(HTMLButtonElement);
+
+    await act(async () => {
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          button: 0,
+          clientX: 480,
+          clientY: 54,
+        }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointermove", {
+          button: 0,
+          clientX: 520,
+          clientY: 54,
+        }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerup", {
+          button: 0,
+          clientX: 520,
+          clientY: 54,
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect((auraFrame as HTMLDivElement).style.left).toBe("520px");
+    expect(storeMocks.updateProfile).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointermove", {
+          button: 0,
+          clientX: 700,
+          clientY: 54,
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect((auraFrame as HTMLDivElement).style.left).toBe("520px");
+    expect(storeMocks.updateProfile).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          button: 0,
+          clientX: 520,
+          clientY: 54,
+        }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointermove", {
+          button: 0,
+          clientX: 700,
+          clientY: 54,
+        }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerup", {
+          button: 0,
+          clientX: 700,
+          clientY: 54,
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect((auraFrame as HTMLDivElement).style.left).toBe("520px");
+    expect(storeMocks.updateProfile).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveProfileUpdate?.();
+      await flushPromises();
+    });
+  });
+
   it("resizes legacy ultrawide auras without splitting crop and placement references", async () => {
     electronMocks.isAuraLocked.mockResolvedValue(false);
     storeMocks.useCapturePreviewShallow.mockImplementation((selector) =>
@@ -355,6 +464,94 @@ describe("AuraOverlayPage", () => {
           referenceHeight: 1080,
         },
       ],
+    });
+  });
+
+  it("keeps a resized aura at the released size while saving", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    storeMocks.useCapturePreviewShallow.mockImplementation((selector) =>
+      selector({
+        selectedSourceId: "screen:1",
+        sources: [{ id: "screen:1", width: 3440, height: 1440 }],
+      }),
+    );
+    let resolveProfileUpdate: (() => void) | null = null;
+    storeMocks.updateProfile.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveProfileUpdate = resolve;
+        }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const auraFrame = container.querySelector(
+      'div[data-placement-id="placement-1"]',
+    );
+    const resizeHandle = container.querySelector(
+      'span[data-placement-id="placement-1"][data-corner="se"]',
+    );
+    expect(auraFrame).toBeInstanceOf(HTMLDivElement);
+    expect(resizeHandle).toBeInstanceOf(HTMLSpanElement);
+
+    await act(async () => {
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          button: 0,
+          clientX: 614,
+          clientY: 107,
+        }),
+      );
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointermove", {
+          button: 0,
+          clientX: 654,
+          clientY: 108,
+        }),
+      );
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointerup", {
+          button: 0,
+          clientX: 654,
+          clientY: 108,
+        }),
+      );
+      await flushPromises();
+    });
+
+    const releasedWidth = (auraFrame as HTMLDivElement).style.width;
+    expect(storeMocks.updateProfile).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointermove", {
+          button: 0,
+          clientX: 760,
+          clientY: 140,
+        }),
+      );
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointerup", {
+          button: 0,
+          clientX: 760,
+          clientY: 140,
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect((auraFrame as HTMLDivElement).style.width).toBe(releasedWidth);
+    expect(storeMocks.updateProfile).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveProfileUpdate?.();
+      await flushPromises();
     });
   });
 
