@@ -7,7 +7,7 @@ Hinekora is a gameplay recorder tailored for Path of Exile 1 and Path of Exile 2
 [![Download Latest Release](https://img.shields.io/github/v/release/navali-creations/hinekora?style=for-the-badge&label=Download+Latest+Release&labelColor=211b18&color=f5e6c8)](https://github.com/navali-creations/hinekora/releases/latest)
 
 
-[![Downloads](https://img.shields.io/github/downloads/navali-creations/hinekora/total?style=for-the-badge&label=Downloads&labelColor=211b18&color=f5e6c8)](https://github.com/navali-creations/hinekora/releases)
+[![Downloads](https://img.shields.io/github/downloads/navali-creations/hinekora/total?style=for-the-badge&label=Downloads&labelColor=211b18&color=f5e6c8)](https://github.com/navali-creations/hinekora/releases) [![Discord](https://img.shields.io/discord/1483030980783767666?style=for-the-badge&label=Discord&labelColor=211b18&color=f5e6c8&logo=discord&logoColor=white)](https://discord.gg/5rnWW6Mfa4)
 
 | system | extension |
 | -- | -- |
