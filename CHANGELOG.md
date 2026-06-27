@@ -1,3 +1,13 @@
+## 0.4.1
+
+### Patch Changes
+
+- [`c756923`](https://github.com/navali-creations/hinekora/commit/c75692398d4bdff7057225a66affd50993b7b472) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Show images in What’s New release notes.
+
+  GitHub release images now render inside the What’s New modal instead of appearing as raw image markup.
+
 ## 0.4.0
 
 ### Minor Changes
