@@ -4,6 +4,7 @@ interface AuraEditingNoticeProps {
   addingAura: boolean;
   canAddAura: boolean;
   onAddAura: () => void;
+  onAddArchedAura: () => void;
   onLockAuras: () => void;
 }
 
@@ -11,6 +12,7 @@ function AuraEditingNotice({
   addingAura,
   canAddAura,
   onAddAura,
+  onAddArchedAura,
   onLockAuras,
 }: AuraEditingNoticeProps) {
   return (
@@ -29,6 +31,14 @@ function AuraEditingNotice({
           onClick={onAddAura}
         >
           {addingAura ? "Selecting..." : "Add new aura"}
+        </button>
+        <button
+          className={styles.addButton}
+          disabled={!canAddAura || addingAura}
+          type="button"
+          onClick={onAddArchedAura}
+        >
+          {addingAura ? "Selecting..." : "Add arched aura"}
         </button>
         <button
           className={styles.lockButton}

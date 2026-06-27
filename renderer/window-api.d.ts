@@ -24,8 +24,10 @@ import type {
   ManagedReplaySaveResult,
 } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
 import type {
+  AuraAddRequest,
   CropRegionSelection,
   RecorderOverlayMode,
+  SelectCropRegionOptions,
   ShowAuraOverlayOptions,
 } from "~/main/modules/overlay-windows/OverlayWindows.dto";
 import type {
@@ -203,9 +205,11 @@ declare global {
         setAuraLocked: (locked: boolean) => Promise<void>;
         onAuraLockChanged: (callback: (locked: boolean) => void) => () => void;
         onAuraAddRequested: (
-          callback: (requestId: string) => void,
+          callback: (request: AuraAddRequest) => void,
         ) => () => void;
-        selectCropRegion: () => Promise<CropRegionSelection | null>;
+        selectCropRegion: (
+          options?: SelectCropRegionOptions,
+        ) => Promise<CropRegionSelection | null>;
         completeCropRegionSelection: (
           selection: CropRegionSelection,
         ) => Promise<void>;

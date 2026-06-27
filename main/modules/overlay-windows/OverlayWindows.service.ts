@@ -20,7 +20,9 @@ import { GameOverlayCoordinator } from "./GameOverlayCoordinator";
 import { OverlayWindowsChannel } from "./OverlayWindows.channels";
 import type {
   CropRegionSelection,
+  CropRegionSelectionShape,
   RecorderOverlayMode,
+  SelectCropRegionOptions,
   ShowAuraOverlayOptions,
 } from "./OverlayWindows.dto";
 
@@ -72,7 +74,6 @@ class OverlayWindowsService {
     this.getOverlayCaptureProtectionEnabled,
   );
   private gameRunningActive = false;
-  private shouldAssumePoeFocusFromRunning = true;
   private persistentAuraOverlayRequested = false;
   private activeGameFocusHandoffTimer: NodeJS.Timeout | null = null;
 
@@ -128,10 +129,7 @@ class OverlayWindowsService {
 
   setPoeFocusActive(active: boolean): void {
     if (active) {
-      this.shouldAssumePoeFocusFromRunning = true;
       this.endActiveGameFocusHandoff("game-focused");
-    } else {
-      this.shouldAssumePoeFocusFromRunning = false;
     }
     this.coordinator.setPoeFocusActive(active);
   }
@@ -143,13 +141,6 @@ class OverlayWindowsService {
     this.auraManagerOverlays.setGameRunningActive(active);
     if (!active) {
       this.endActiveGameFocusHandoff("game-stopped");
-    }
-
-    if (active && !wasActive && this.shouldAssumePoeFocusFromRunning) {
-      logInfo(OVERLAY_WINDOWS_SCOPE, "Active game focus assumed from running", {
-        active,
-      });
-      this.setPoeFocusActive(true);
     }
 
     if (active && !wasActive && !this.persistentAuraOverlayRequested) {
@@ -221,7 +212,6 @@ class OverlayWindowsService {
   }
 
   suspendForSystem(): void {
-    this.shouldAssumePoeFocusFromRunning = false;
     this.setPoeFocusActive(false);
     this.endActiveGameFocusHandoff("system-suspend");
     this.recordingControlsOverlay.suspendForSystem();
@@ -234,10 +224,12 @@ class OverlayWindowsService {
     return this.coordinator.applyFocusGateToGameOverlays();
   }
 
-  selectCropRegion(): Promise<CropRegionSelection | null> {
+  selectCropRegion(
+    options: SelectCropRegionOptions = {},
+  ): Promise<CropRegionSelection | null> {
     this.auraManagerOverlays.setInputPassthrough(true);
 
-    return this.gridLinesOverlay.selectCropRegion().finally(() => {
+    return this.gridLinesOverlay.selectCropRegion(options).finally(() => {
       this.auraManagerOverlays.setInputPassthrough(false);
     });
   }
@@ -331,7 +323,13 @@ class OverlayWindowsService {
     registerGuardedIpcHandler(
       OverlayWindowsChannel.SelectCropRegion,
       [WindowName.Main, WindowName.AuraOverlay],
-      () => this.selectCropRegion(),
+      (_event, options: unknown) => {
+        try {
+          return this.selectCropRegion(parseSelectCropRegionOptions(options));
+        } catch (error) {
+          return handleValidationError(error);
+        }
+      },
     );
     registerGuardedIpcHandler(
       OverlayWindowsChannel.CompleteCropRegionSelection,
@@ -438,8 +436,55 @@ function parseShowAuraOverlayOptions(
     "startAddingAura",
     OverlayWindowsChannel.ShowAura,
   );
+  const addAuraShape = parseOptionalCropRegionSelectionShape(
+    options.addAuraShape,
+    OverlayWindowsChannel.ShowAura,
+  );
 
-  return options.startAddingAura === true ? { startAddingAura: true } : {};
+  return {
+    ...(options.startAddingAura === true ? { startAddingAura: true } : {}),
+    ...(addAuraShape ? { addAuraShape } : {}),
+  };
+}
+
+function parseSelectCropRegionOptions(
+  options: unknown,
+): SelectCropRegionOptions {
+  if (options === undefined) {
+    return {};
+  }
+
+  assertObject(
+    options,
+    "crop selector options",
+    OverlayWindowsChannel.SelectCropRegion,
+  );
+  const shape = parseOptionalCropRegionSelectionShape(
+    options.shape,
+    OverlayWindowsChannel.SelectCropRegion,
+  );
+
+  return shape ? { shape } : {};
+}
+
+function parseOptionalCropRegionSelectionShape(
+  shape: unknown,
+  channel: OverlayWindowsChannel,
+): CropRegionSelectionShape | undefined {
+  if (shape === undefined) {
+    return undefined;
+  }
+
+  assertString(shape, "shape", channel, {
+    min: 3,
+    max: 4,
+  });
+
+  if (shape !== "rect" && shape !== "arc") {
+    throw new Error("shape must be rect or arc");
+  }
+
+  return shape;
 }
 
 function parseRecorderOverlayMode(mode: unknown): RecorderOverlayMode {

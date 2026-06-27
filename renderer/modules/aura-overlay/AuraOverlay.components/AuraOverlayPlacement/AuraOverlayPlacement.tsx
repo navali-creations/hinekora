@@ -1,75 +1,24 @@
 import clsx from "clsx";
-import type {
-  MouseEventHandler,
-  PointerEventHandler,
-  SyntheticEvent,
-} from "react";
 
-import type { CropRegion, OverlayPlacement } from "~/types";
 import {
-  type AuraResizeCorner,
-  type AuraVideoSize,
-  auraResizeCorners,
-  createAuraVideoStyle,
-  projectAuraCropRegion,
   projectAuraOverlayPlacement,
+  resolveAuraPlacementArcVisibleThickness,
+  resolveAuraPlacementDisplaySize,
   resolveAuraReferenceViewport,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
+import { AuraArcThicknessHandle } from "../AuraArcThicknessHandle/AuraArcThicknessHandle";
+import { AuraOverlayPlacementVideo } from "../AuraOverlayPlacementVideo/AuraOverlayPlacementVideo";
+import { AuraOverlayResizeHandles } from "../AuraOverlayResizeHandles/AuraOverlayResizeHandles";
+import { AuraPlacementPropertiesPanel } from "../AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel";
 import styles from "./AuraOverlayPlacement.module.css";
-
-interface AuraOverlayDragState {
-  placementId: string;
-  startX: number;
-  startY: number;
-  initialDisplayX: number;
-  initialDisplayY: number;
-  deltaX: number;
-  deltaY: number;
-  isReleased: boolean;
-}
-
-interface AuraOverlayResizeState {
-  placementId: string;
-  corner: AuraResizeCorner;
-  startX: number;
-  startY: number;
-  initialPlacement: OverlayPlacement;
-  draftPlacement: OverlayPlacement;
-  isReleased: boolean;
-}
-
-interface AuraOverlayPlacementProps {
-  auraOverlayLocked: boolean;
-  bindAuraVideo: (element: HTMLVideoElement | null) => void;
-  canEditAuras: boolean;
-  crop: CropRegion;
-  dragState: AuraOverlayDragState | null;
-  effectiveVideoSize: AuraVideoSize;
-  placement: OverlayPlacement;
-  referenceViewport: AuraVideoSize | null;
-  resizeState: AuraOverlayResizeState | null;
-  selectedPlacementId: string | null;
-  stream: MediaStream | null;
-  onAuraClick: MouseEventHandler<HTMLElement>;
-  onPointerCancel: PointerEventHandler<HTMLElement>;
-  onPointerDown: PointerEventHandler<HTMLElement>;
-  onPointerMove: PointerEventHandler<HTMLElement>;
-  onPointerUp: PointerEventHandler<HTMLElement>;
-  onResizePointerCancel: PointerEventHandler<HTMLElement>;
-  onResizePointerDown: PointerEventHandler<HTMLElement>;
-  onResizePointerMove: PointerEventHandler<HTMLElement>;
-  onResizePointerUp: PointerEventHandler<HTMLElement>;
-  onVideoSizeChange: (event: SyntheticEvent<HTMLVideoElement>) => void;
-}
-
-const auraResizeCornerClassNames: Record<AuraResizeCorner, string> = {
-  nw: styles.resizeHandleNw ?? "",
-  ne: styles.resizeHandleNe ?? "",
-  sw: styles.resizeHandleSw ?? "",
-  se: styles.resizeHandleSe ?? "",
-};
+import {
+  type AuraOverlayPlacementProps,
+  createPlacementContentTransform,
+  resolvePropertiesPanelSide,
+} from "./AuraOverlayPlacement.utils";
 
 function AuraOverlayPlacement({
+  arcThicknessResizeState,
   auraOverlayLocked,
   bindAuraVideo,
   canEditAuras,
@@ -90,19 +39,25 @@ function AuraOverlayPlacement({
   onResizePointerDown,
   onResizePointerMove,
   onResizePointerUp,
+  onPlacementPropertiesChange,
+  onThicknessPointerCancel,
+  onThicknessPointerDown,
+  onThicknessPointerMove,
+  onThicknessPointerUp,
   onVideoSizeChange,
 }: AuraOverlayPlacementProps) {
+  const currentResizeState =
+    resizeState?.placementId === placement.id ? resizeState : null;
+  const currentThicknessResizeState =
+    arcThicknessResizeState?.placementId === placement.id
+      ? arcThicknessResizeState
+      : null;
   const effectivePlacement =
-    resizeState?.placementId === placement.id
-      ? resizeState.draftPlacement
-      : placement;
+    currentResizeState?.draftPlacement ??
+    currentThicknessResizeState?.draftPlacement ??
+    placement;
   const cropReferenceViewport = resolveAuraReferenceViewport(
     crop,
-    referenceViewport,
-  );
-  const projectedCrop = projectAuraCropRegion(
-    crop,
-    effectiveVideoSize,
     referenceViewport,
   );
   const projectedPlacement = projectAuraOverlayPlacement(
@@ -110,19 +65,46 @@ function AuraOverlayPlacement({
     effectiveVideoSize,
     cropReferenceViewport,
   );
-  const isDragging = dragState?.placementId === placement.id;
-  const x = isDragging
-    ? dragState.initialDisplayX + dragState.deltaX
+  const currentDragState =
+    dragState?.placementId === placement.id ? dragState : null;
+  const x = currentDragState
+    ? currentDragState.initialDisplayX + currentDragState.deltaX
     : projectedPlacement.x;
-  const y = isDragging
-    ? dragState.initialDisplayY + dragState.deltaY
+  const y = currentDragState
+    ? currentDragState.initialDisplayY + currentDragState.deltaY
     : projectedPlacement.y;
-  const isResizing = resizeState?.placementId === placement.id;
+  const isResizing = currentResizeState !== null;
   const isSelected = selectedPlacementId === placement.id;
-  const width = Math.round(projectedCrop.width * effectivePlacement.scale);
-  const height = Math.round(projectedCrop.height * effectivePlacement.scale);
+  const placementSize = resolveAuraPlacementDisplaySize(
+    crop,
+    effectivePlacement,
+    effectiveVideoSize,
+    referenceViewport,
+  );
+  const displayWidth = Math.round(placementSize.width);
+  const displayHeight = Math.round(placementSize.height);
+  const width = displayWidth;
+  const height = displayHeight;
   const left = Math.round(x);
   const top = Math.round(y);
+  const visibleArcThickness = resolveAuraPlacementArcVisibleThickness(
+    crop,
+    effectivePlacement,
+    placementSize,
+  );
+  const effectiveVisibleArcThickness = visibleArcThickness;
+  const contentTransform = createPlacementContentTransform(effectivePlacement);
+  const isStraightenedArc =
+    effectivePlacement.arcStraightened === true &&
+    crop.shape === "arc" &&
+    !!crop.arc &&
+    effectiveVisibleArcThickness !== undefined;
+  const arcControlPoint = crop.arc
+    ? {
+        x: (crop.arc.controlX / crop.width) * 100,
+        y: (crop.arc.controlY / crop.height) * 100,
+      }
+    : null;
 
   return (
     <div
@@ -131,8 +113,8 @@ function AuraOverlayPlacement({
       style={{
         left: `${x}px`,
         top: `${y}px`,
-        width: `${projectedCrop.width * effectivePlacement.scale}px`,
-        height: `${projectedCrop.height * effectivePlacement.scale}px`,
+        width: `${placementSize.width}px`,
+        height: `${placementSize.height}px`,
       }}
     >
       <button
@@ -153,39 +135,39 @@ function AuraOverlayPlacement({
         onClick={canEditAuras ? onAuraClick : undefined}
       >
         {stream && (
-          <video
-            aria-label={crop.label}
-            className={styles.video}
-            muted
-            playsInline
-            ref={bindAuraVideo}
-            style={createAuraVideoStyle(
-              crop,
-              effectivePlacement,
-              effectiveVideoSize,
-              referenceViewport,
-            )}
-            onLoadedMetadata={onVideoSizeChange}
-            onResize={onVideoSizeChange}
+          <AuraOverlayPlacementVideo
+            bindAuraVideo={bindAuraVideo}
+            contentTransform={contentTransform}
+            crop={crop}
+            displaySize={placementSize}
+            isStraightenedArc={isStraightenedArc}
+            placement={effectivePlacement}
+            referenceViewport={referenceViewport}
+            videoSize={effectiveVideoSize}
+            visibleThickness={effectiveVisibleArcThickness}
+            onVideoSizeChange={onVideoSizeChange}
           />
         )}
-        {canEditAuras &&
-          auraResizeCorners.map((corner) => (
-            <span
-              aria-hidden="true"
-              className={clsx(
-                styles.resizeHandle,
-                auraResizeCornerClassNames[corner],
-              )}
-              data-corner={corner}
-              data-placement-id={placement.id}
-              key={corner}
-              onPointerCancel={onResizePointerCancel}
-              onPointerDown={onResizePointerDown}
-              onPointerMove={onResizePointerMove}
-              onPointerUp={onResizePointerUp}
-            />
-          ))}
+        {canEditAuras && (
+          <AuraOverlayResizeHandles
+            placementId={placement.id}
+            onPointerCancel={onResizePointerCancel}
+            onPointerDown={onResizePointerDown}
+            onPointerMove={onResizePointerMove}
+            onPointerUp={onResizePointerUp}
+          />
+        )}
+        {canEditAuras && arcControlPoint && (
+          <AuraArcThicknessHandle
+            controlXPercent={arcControlPoint.x}
+            controlYPercent={arcControlPoint.y}
+            placementId={placement.id}
+            onPointerCancel={onThicknessPointerCancel}
+            onPointerDown={onThicknessPointerDown}
+            onPointerMove={onThicknessPointerMove}
+            onPointerUp={onThicknessPointerUp}
+          />
+        )}
       </button>
       {!auraOverlayLocked && <span className={styles.label}>{crop.label}</span>}
       {!auraOverlayLocked && isResizing && (
@@ -195,9 +177,32 @@ function AuraOverlayPlacement({
           {width} x {height}
         </span>
       )}
+      {!auraOverlayLocked &&
+        currentThicknessResizeState &&
+        effectiveVisibleArcThickness !== undefined && (
+          <span className={styles.resizeReadout}>
+            thickness: {Math.round(effectiveVisibleArcThickness)}px
+          </span>
+        )}
+      {!auraOverlayLocked && canEditAuras && isSelected && (
+        <AuraPlacementPropertiesPanel
+          displayHeight={displayHeight}
+          displayWidth={displayWidth}
+          placement={effectivePlacement}
+          side={resolvePropertiesPanelSide(
+            left,
+            top,
+            displayWidth,
+            displayHeight,
+          )}
+          {...(effectiveVisibleArcThickness !== undefined
+            ? { visibleThickness: effectiveVisibleArcThickness }
+            : {})}
+          onChange={onPlacementPropertiesChange}
+        />
+      )}
     </div>
   );
 }
 
-export type { AuraOverlayDragState, AuraOverlayResizeState };
 export { AuraOverlayPlacement };

@@ -42,6 +42,14 @@
   pointer-events: none;
 }
 
+.arcSelectionBox {
+  position: absolute;
+  border: 1px dashed
+    color-mix(in oklch, var(--color-primary) 58%, transparent);
+  background: color-mix(in oklch, var(--color-primary) 7%, transparent);
+  pointer-events: none;
+}
+
 .selectionBox::after {
   position: absolute;
   inset: -2px;
@@ -77,6 +85,57 @@
   line-height: 1.2;
   pointer-events: none;
   white-space: nowrap;
+}
+
+.arcOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: visible;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+}
+
+.arcGuide {
+  stroke: color-mix(in oklch, var(--color-primary) 60%, transparent);
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+}
+
+.arcPreviewPath {
+  fill: none;
+  stroke: color-mix(in oklch, var(--color-info) 84%, transparent);
+  stroke-width: 20;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(
+    0 0 16px color-mix(in oklch, var(--color-info) 42%, transparent)
+  );
+}
+
+.arcPreviewDot {
+  fill: color-mix(in oklch, var(--color-primary) 70%, transparent);
+}
+
+.arcPointLabel {
+  position: absolute;
+  z-index: 2;
+  display: grid;
+  width: 1.35rem;
+  height: 1.35rem;
+  place-items: center;
+  border: var(--border) solid var(--color-base-300);
+  border-radius: 50%;
+  color: var(--color-primary-content);
+  background: var(--color-primary);
+  box-shadow: 0 0 18px
+    color-mix(in oklch, var(--color-primary) 42%, transparent);
+  font-size: 0.75rem;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
 }
 
 @keyframes cropMarch {

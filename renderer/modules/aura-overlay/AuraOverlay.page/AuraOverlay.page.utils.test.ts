@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Profile } from "~/types";
 import {
+  createAuraCropClipPath,
   createAuraHistorySnapshot,
   createAuraProfileUpdateDeletingPlacement,
   createAuraProfileUpdateFromSnapshot,
@@ -12,6 +13,7 @@ import {
   readAuraRouteParams,
   readAuraVideoSize,
   resizeAuraPlacementFromCorner,
+  resolveAuraPlacementArcVisibleThickness,
   unprojectAuraPoint,
 } from "./AuraOverlay.page.utils";
 
@@ -89,6 +91,77 @@ describe("AuraOverlay utils", () => {
       width: "3840px",
       height: "2160px",
     });
+  });
+
+  it("creates a polygon clip path for arched aura crops", () => {
+    const clipPath = createAuraCropClipPath({
+      id: "crop-arc",
+      label: "Arched aura",
+      shape: "arc",
+      x: 90,
+      y: 90,
+      width: 140,
+      height: 80,
+      arc: {
+        startX: 10,
+        startY: 70,
+        endX: 130,
+        endY: 70,
+        controlX: 70,
+        controlY: 10,
+        thickness: 20,
+      },
+    });
+
+    expect(clipPath).toMatch(/^polygon\(/);
+    expect(clipPath).toContain("%");
+    expect(
+      createAuraCropClipPath({
+        id: "crop-1",
+        label: "Life",
+        x: 10,
+        y: 20,
+        width: 100,
+        height: 40,
+      }),
+    ).toBeUndefined();
+  });
+
+  it("resolves arched aura thickness from explicit visible thickness or source thickness", () => {
+    const crop = {
+      id: "crop-arc",
+      label: "Shield",
+      shape: "arc" as const,
+      x: 90,
+      y: 90,
+      width: 140,
+      height: 80,
+      arc: {
+        startX: 10,
+        startY: 70,
+        endX: 130,
+        endY: 70,
+        controlX: 70,
+        controlY: 10,
+        thickness: 20,
+      },
+    };
+    const placement = {
+      id: "placement-1",
+      cropRegionId: "crop-arc",
+      x: 0,
+      y: 0,
+      scale: 1,
+      opacity: 1,
+    };
+
+    expect(resolveAuraPlacementArcVisibleThickness(crop, placement)).toBe(20);
+    expect(
+      resolveAuraPlacementArcVisibleThickness(crop, {
+        ...placement,
+        arcVisibleThickness: 36,
+      }),
+    ).toBe(36);
   });
 
   it("projects legacy 16:9 coordinates into a centered ultrawide safe area", () => {

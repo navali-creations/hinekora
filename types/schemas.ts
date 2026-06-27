@@ -37,15 +37,38 @@ const CoordinateReferenceSchema = {
   referenceHeight: z.number().int().min(1).max(100_000).optional(),
 };
 
-export const CropRegionSchema = z.object({
-  id: z.string().min(1).max(128),
-  label: z.string().min(1).max(80),
-  x: z.number().int().min(0).max(100_000),
-  y: z.number().int().min(0).max(100_000),
-  width: z.number().int().min(1).max(100_000),
-  height: z.number().int().min(1).max(100_000),
-  ...CoordinateReferenceSchema,
+export const CropRegionArcSchema = z.object({
+  startX: z.number().int().min(0).max(100_000),
+  startY: z.number().int().min(0).max(100_000),
+  endX: z.number().int().min(0).max(100_000),
+  endY: z.number().int().min(0).max(100_000),
+  controlX: z.number().int().min(0).max(100_000),
+  controlY: z.number().int().min(0).max(100_000),
+  thickness: z.number().int().min(1).max(100_000),
 });
+export type CropRegionArc = z.infer<typeof CropRegionArcSchema>;
+
+export const CropRegionSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    label: z.string().min(1).max(80),
+    x: z.number().int().min(0).max(100_000),
+    y: z.number().int().min(0).max(100_000),
+    width: z.number().int().min(1).max(100_000),
+    height: z.number().int().min(1).max(100_000),
+    shape: z.enum(["rect", "arc"]).optional(),
+    arc: CropRegionArcSchema.optional(),
+    ...CoordinateReferenceSchema,
+  })
+  .superRefine((region, context) => {
+    if (region.shape === "arc" && !region.arc) {
+      context.addIssue({
+        code: "custom",
+        message: "Arched crop regions require arc metadata.",
+        path: ["arc"],
+      });
+    }
+  });
 export type CropRegion = z.infer<typeof CropRegionSchema>;
 
 export const OverlayPlacementSchema = z.object({
@@ -53,8 +76,16 @@ export const OverlayPlacementSchema = z.object({
   cropRegionId: z.string().min(1).max(128),
   x: z.number().int().min(-100_000).max(100_000),
   y: z.number().int().min(-100_000).max(100_000),
+  width: z.number().int().min(1).max(100_000).optional(),
+  height: z.number().int().min(1).max(100_000).optional(),
   scale: z.number().min(0.1).max(8),
   opacity: z.number().min(0).max(1),
+  arcVisibleThickness: z.number().int().min(1).max(100_000).optional(),
+  arcStraightened: z.boolean().optional(),
+  mirrored: z.boolean().optional(),
+  rotationDegrees: z
+    .union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)])
+    .optional(),
   ...CoordinateReferenceSchema,
 });
 export type OverlayPlacement = z.infer<typeof OverlayPlacementSchema>;

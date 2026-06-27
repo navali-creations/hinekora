@@ -7,6 +7,10 @@ import {
   type Profile,
   type ProfileUpdateInput,
 } from "~/types";
+import {
+  createArcControlNormal,
+  createArcCurvePoints,
+} from "../AuraOverlay.utils/AuraOverlay.utils";
 
 type AuraResizeCorner = "nw" | "ne" | "sw" | "se";
 
@@ -23,6 +27,11 @@ interface AuraReferenceDimensions {
 interface AuraProjectedBox {
   x: number;
   y: number;
+  width: number;
+  height: number;
+}
+
+interface AuraSize {
   width: number;
   height: number;
 }
@@ -47,7 +56,6 @@ const legacyAuraReferenceViewport: AuraVideoSize = {
   width: 1920,
   height: 1080,
 };
-
 export const auraResizeCorners: AuraResizeCorner[] = ["nw", "ne", "sw", "se"];
 
 export function readAuraRouteParams(
@@ -98,13 +106,94 @@ export function createAuraVideoStyle(
     videoSize.height,
     projectedCrop.y + projectedCrop.height,
   );
+  const placementSize = resolveAuraPlacementDisplaySize(
+    crop,
+    placement,
+    videoSize,
+    referenceViewport,
+  );
+  const scaleX = placementSize.width / projectedCrop.width;
+  const scaleY = placementSize.height / projectedCrop.height;
 
   return {
-    left: `${-projectedCrop.x * placement.scale}px`,
-    top: `${-projectedCrop.y * placement.scale}px`,
-    width: `${width * placement.scale}px`,
-    height: `${height * placement.scale}px`,
+    left: `${-projectedCrop.x * scaleX}px`,
+    top: `${-projectedCrop.y * scaleY}px`,
+    width: `${width * scaleX}px`,
+    height: `${height * scaleY}px`,
   };
+}
+
+export function createAuraCropClipPath(
+  crop: CropRegion,
+  visibleThickness?: number,
+  displaySize?: AuraSize,
+): string | undefined {
+  if (
+    crop.shape !== "arc" ||
+    !crop.arc ||
+    crop.width <= 0 ||
+    crop.height <= 0
+  ) {
+    return undefined;
+  }
+
+  const curvePoints = createAuraArcPoints(crop.arc).map((point) =>
+    displaySize ? scaleAuraPointToDisplay(point, crop, displaySize) : point,
+  );
+  if (curvePoints.length < 2) {
+    return undefined;
+  }
+
+  const targetSize = displaySize ?? crop;
+  const defaultThickness = displaySize
+    ? resolveAuraArcDisplayThickness(crop, displaySize, crop.arc.thickness)
+    : crop.arc.thickness;
+  const radius =
+    clamp(
+      Math.round(visibleThickness ?? defaultThickness),
+      1,
+      Math.max(targetSize.width, targetSize.height),
+    ) / 2;
+  const outerPoints = curvePoints.map((point, index) => {
+    const previous = curvePoints[Math.max(0, index - 1)] ?? point;
+    const next =
+      curvePoints[Math.min(curvePoints.length - 1, index + 1)] ?? point;
+    const tangentX = next.x - previous.x;
+    const tangentY = next.y - previous.y;
+    const length = Math.hypot(tangentX, tangentY) || 1;
+    const normalX = -tangentY / length;
+    const normalY = tangentX / length;
+
+    return {
+      x: point.x + normalX * radius,
+      y: point.y + normalY * radius,
+    };
+  });
+  const innerPoints = curvePoints
+    .map((point, index) => {
+      const previous = curvePoints[Math.max(0, index - 1)] ?? point;
+      const next =
+        curvePoints[Math.min(curvePoints.length - 1, index + 1)] ?? point;
+      const tangentX = next.x - previous.x;
+      const tangentY = next.y - previous.y;
+      const length = Math.hypot(tangentX, tangentY) || 1;
+      const normalX = -tangentY / length;
+      const normalY = tangentX / length;
+
+      return {
+        x: point.x - normalX * radius,
+        y: point.y - normalY * radius,
+      };
+    })
+    .reverse();
+  const polygonPoints = [...outerPoints, ...innerPoints].map((point) => {
+    const x = clamp((point.x / targetSize.width) * 100, 0, 100);
+    const y = clamp((point.y / targetSize.height) * 100, 0, 100);
+
+    return `${roundCssPercent(x)}% ${roundCssPercent(y)}%`;
+  });
+
+  return `polygon(${polygonPoints.join(", ")})`;
 }
 
 export function resolveAuraReferenceViewport(
@@ -225,6 +314,118 @@ export function projectAuraOverlayPlacement(
     resolveAuraReferenceViewport(placement, fallbackReferenceViewport),
     targetViewport,
   );
+}
+
+export function resolveAuraPlacementBaseSize(
+  crop: CropRegion,
+  placement: OverlayPlacement,
+  targetViewport: AuraVideoSize,
+  fallbackReferenceViewport: AuraVideoSize | null = null,
+): AuraSize {
+  if (placement.width && placement.height) {
+    const placementReferenceViewport = resolveAuraReferenceViewport(
+      placement,
+      resolveAuraReferenceViewport(crop, fallbackReferenceViewport),
+    );
+
+    return projectAuraBox(
+      {
+        x: 0,
+        y: 0,
+        width: placement.width,
+        height: placement.height,
+      },
+      placementReferenceViewport,
+      targetViewport,
+    );
+  }
+
+  const projectedCrop = projectAuraCropRegion(
+    crop,
+    targetViewport,
+    fallbackReferenceViewport,
+  );
+
+  return {
+    width: projectedCrop.width,
+    height: projectedCrop.height,
+  };
+}
+
+export function resolveAuraPlacementDisplaySize(
+  crop: CropRegion,
+  placement: OverlayPlacement,
+  targetViewport: AuraVideoSize,
+  fallbackReferenceViewport: AuraVideoSize | null = null,
+): AuraSize {
+  const baseSize = resolveAuraPlacementBaseSize(
+    crop,
+    placement,
+    targetViewport,
+    fallbackReferenceViewport,
+  );
+
+  return {
+    width: baseSize.width * placement.scale,
+    height: baseSize.height * placement.scale,
+  };
+}
+
+export function resolveAuraPlacementArcVisibleThickness(
+  crop: CropRegion,
+  placement: OverlayPlacement,
+  displaySize?: AuraSize,
+): number | undefined {
+  if (crop.shape !== "arc" || !crop.arc) {
+    return undefined;
+  }
+
+  const defaultThickness = displaySize
+    ? resolveAuraArcDisplayThickness(crop, displaySize, crop.arc.thickness)
+    : crop.arc.thickness;
+  const visibleThickness = placement.arcVisibleThickness ?? defaultThickness;
+
+  return clamp(
+    Math.round(visibleThickness),
+    1,
+    displaySize
+      ? Math.max(displaySize.width, displaySize.height)
+      : Math.max(crop.width, crop.height),
+  );
+}
+
+export function resolveAuraArcDisplayThickness(
+  crop: CropRegion,
+  displaySize: AuraSize,
+  sourceThickness: number,
+): number {
+  return Math.max(
+    1,
+    Math.round(
+      sourceThickness * createAuraArcDisplayThicknessScale(crop, displaySize),
+    ),
+  );
+}
+
+export function resolveAuraArcSourceThickness(
+  crop: CropRegion,
+  displaySize: AuraSize,
+  displayThickness: number,
+): number {
+  return Math.max(
+    1,
+    Math.round(
+      displayThickness / createAuraArcDisplayThicknessScale(crop, displaySize),
+    ),
+  );
+}
+
+export function createAuraArcCurvePoints(crop: CropRegion): AuraPoint[] {
+  if (crop.shape !== "arc" || !crop.arc) {
+    return [];
+  }
+
+  return createAuraArcPoints(crop.arc);
 }
 
 export function readAuraVideoSize(
@@ -407,6 +608,48 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+function roundCssPercent(value: number): number {
+  return Math.round(value * 1_000) / 1_000;
+}
+
+function scaleAuraPointToDisplay(
+  point: AuraPoint,
+  crop: CropRegion,
+  displaySize: AuraSize,
+): AuraPoint {
+  return {
+    x: (point.x / crop.width) * displaySize.width,
+    y: (point.y / crop.height) * displaySize.height,
+  };
+}
+
+function createAuraArcDisplayThicknessScale(
+  crop: CropRegion,
+  displaySize: AuraSize,
+): number {
+  if (crop.shape !== "arc" || !crop.arc) {
+    return 1;
+  }
+
+  const normal = createArcControlNormal(
+    { x: crop.arc.startX, y: crop.arc.startY },
+    { x: crop.arc.endX, y: crop.arc.endY },
+    { x: crop.arc.controlX, y: crop.arc.controlY },
+  );
+  const scaleX = displaySize.width / crop.width;
+  const scaleY = displaySize.height / crop.height;
+
+  return Math.max(0.001, Math.hypot(normal.x * scaleX, normal.y * scaleY));
+}
+
+function createAuraArcPoints(arc: NonNullable<CropRegion["arc"]>): AuraPoint[] {
+  return createArcCurvePoints(
+    { x: arc.startX, y: arc.startY },
+    { x: arc.endX, y: arc.endY },
+    { x: arc.controlX, y: arc.controlY },
+  );
+}
+
 function isUsableAuraViewport(
   viewport: AuraVideoSize | null | undefined,
 ): viewport is AuraVideoSize {
@@ -420,4 +663,10 @@ function isUsableViewportDimension(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
-export type { AuraHistorySnapshot, AuraResizeCorner, AuraVideoSize };
+export type {
+  AuraHistorySnapshot,
+  AuraPoint,
+  AuraResizeCorner,
+  AuraSize,
+  AuraVideoSize,
+};

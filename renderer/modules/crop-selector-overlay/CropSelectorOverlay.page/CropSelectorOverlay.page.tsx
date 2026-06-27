@@ -1,21 +1,39 @@
 import type { CSSProperties, MouseEvent, PointerEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { CropRegionSelection } from "~/main/modules/overlay-windows/OverlayWindows.dto";
+import type {
+  CropRegionSelection,
+  CropRegionSelectionShape,
+} from "~/main/modules/overlay-windows/OverlayWindows.dto";
 import {
   type CropSelectorPoint,
+  createArcCropSelection,
   createCropSelection,
+  isUsableArcEndpointSelection,
   isUsableCropSelection,
 } from "~/renderer/modules/crop-selector-overlay/CropSelectorOverlay.utils/CropSelectorOverlay.utils";
 import { trackEvent } from "~/renderer/modules/umami";
 
+import { ArcSelectionPreview } from "../CropSelectorOverlay.components/ArcSelectionPreview/ArcSelectionPreview";
 import styles from "./CropSelectorOverlayPage.module.css";
 
 const cropSelectorRouteClassName = "is-crop-selector-route";
 
+function readCropSelectorShape(
+  hash = window.location.hash,
+): CropRegionSelectionShape {
+  return new URLSearchParams(hash.split("?")[1] ?? "").get("shape") === "arc"
+    ? "arc"
+    : "rect";
+}
+
 function CropSelectorOverlayPage() {
+  const [shape] = useState(readCropSelectorShape);
   const [selection, setSelection] = useState<CropRegionSelection | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [arcStart, setArcStart] = useState<CropSelectorPoint | null>(null);
+  const [arcEnd, setArcEnd] = useState<CropSelectorPoint | null>(null);
+  const [hoverPoint, setHoverPoint] = useState<CropSelectorPoint | null>(null);
   const startPointRef = useRef<CropSelectorPoint | null>(null);
 
   const handleCancel = useCallback(() => {
@@ -23,32 +41,93 @@ function CropSelectorOverlayPage() {
     void window.electron.overlayWindows.cancelCropRegionSelection();
   }, []);
 
+  const resetArcSelection = () => {
+    setArcStart(null);
+    setArcEnd(null);
+    setHoverPoint(null);
+    setSelection(null);
+  };
+
+  const handleArcPoint = (point: CropSelectorPoint) => {
+    if (!arcStart) {
+      resetArcSelection();
+      setArcStart(point);
+      setHoverPoint(point);
+      trackEvent("arc-selection-started");
+      return;
+    }
+
+    if (!arcEnd) {
+      if (!isUsableArcEndpointSelection(arcStart, point)) {
+        resetArcSelection();
+        trackEvent("crop-selection-discarded");
+        return;
+      }
+
+      setArcEnd(point);
+      setHoverPoint({
+        x: (arcStart.x + point.x) / 2,
+        y: (arcStart.y + point.y) / 2,
+      });
+      return;
+    }
+
+    const nextSelection = createArcCropSelection(arcStart, arcEnd, point);
+    if (!isUsableCropSelection(nextSelection)) {
+      resetArcSelection();
+      trackEvent("crop-selection-discarded");
+      return;
+    }
+
+    trackEvent("arc-selection-completed");
+    void window.electron.overlayWindows.completeCropRegionSelection(
+      nextSelection,
+    );
+  };
+
   const handlePointerDown = (event: PointerEvent<HTMLElement>) => {
     if (event.button !== 0) {
       return;
     }
 
-    event.currentTarget.setPointerCapture(event.pointerId);
     const point = { x: event.clientX, y: event.clientY };
+    if (shape === "arc") {
+      handleArcPoint(point);
+      return;
+    }
+
+    event.currentTarget.setPointerCapture(event.pointerId);
     startPointRef.current = point;
     setSelection(createCropSelection(point, point));
     setIsDragging(true);
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLElement>) => {
+    const point = { x: event.clientX, y: event.clientY };
+    if (shape === "arc") {
+      if (!arcStart) {
+        return;
+      }
+
+      setHoverPoint(point);
+      if (arcEnd) {
+        setSelection(createArcCropSelection(arcStart, arcEnd, point));
+      }
+      return;
+    }
+
     if (!isDragging || !startPointRef.current) {
       return;
     }
 
-    setSelection(
-      createCropSelection(startPointRef.current, {
-        x: event.clientX,
-        y: event.clientY,
-      }),
-    );
+    setSelection(createCropSelection(startPointRef.current, point));
   };
 
   const handlePointerUp = (event: PointerEvent<HTMLElement>) => {
+    if (shape === "arc") {
+      return;
+    }
+
     if (!isDragging || !startPointRef.current) {
       return;
     }
@@ -123,10 +202,21 @@ function CropSelectorOverlayPage() {
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
     >
+      {shape === "arc" && (
+        <ArcSelectionPreview
+          arcEnd={arcEnd}
+          arcStart={arcStart}
+          hoverPoint={hoverPoint}
+        />
+      )}
       {selection && (
         <>
           <div
-            className={styles.selectionBox}
+            className={
+              selection.shape === "arc"
+                ? styles.arcSelectionBox
+                : styles.selectionBox
+            }
             style={{
               left: `${selection.x}px`,
               top: `${selection.y}px`,
@@ -135,7 +225,9 @@ function CropSelectorOverlayPage() {
             }}
           />
           <span className={styles.selectionSize} style={selectionSizeStyle}>
-            {selection.width} x {selection.height}
+            {selection.shape === "arc"
+              ? `Arc ${selection.arc?.thickness ?? 0}px`
+              : `${selection.width} x ${selection.height}`}
           </span>
         </>
       )}

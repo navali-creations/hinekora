@@ -18,9 +18,15 @@ import {
   unregisterIpcWindowRole,
 } from "~/main/utils/ipc-window-roles";
 
-import type { CropRegionSelection } from "../overlay-windows/OverlayWindows.dto";
+import type {
+  CropRegionArcSelection,
+  CropRegionSelection,
+  CropRegionSelectionShape,
+  SelectCropRegionOptions,
+} from "../overlay-windows/OverlayWindows.dto";
 
 const MIN_CROP_SIZE = 8;
+const MIN_ARC_THICKNESS = 4;
 const GRID_LINES_OVERLAY_SCOPE = "grid-lines-overlay";
 const CROP_SELECTOR_OVERLAY_FOCUS_ID = "crop-selector-overlay";
 
@@ -31,6 +37,7 @@ class GridLinesOverlayService implements GameOverlayParticipant {
   private pendingCropSelection: {
     resolve: (selection: CropRegionSelection | null) => void;
   } | null = null;
+  private cropSelectorShape: CropRegionSelectionShape = "rect";
 
   constructor(
     private readonly coordinator: GameOverlayCoordinator,
@@ -40,8 +47,11 @@ class GridLinesOverlayService implements GameOverlayParticipant {
     this.coordinator.register(this);
   }
 
-  async selectCropRegion(): Promise<CropRegionSelection | null> {
+  async selectCropRegion(
+    options: SelectCropRegionOptions = {},
+  ): Promise<CropRegionSelection | null> {
     this.cancelCropRegionSelection();
+    this.cropSelectorShape = options.shape ?? "rect";
 
     await this.createWindow();
 
@@ -164,7 +174,7 @@ class GridLinesOverlayService implements GameOverlayParticipant {
 
     await loadOverlayRenderer(
       cropSelectorWindow,
-      `#/${WindowName.CropSelectorOverlay}`,
+      `#/${WindowName.CropSelectorOverlay}?shape=${this.cropSelectorShape}`,
     );
     logInfo(GRID_LINES_OVERLAY_SCOPE, "Crop selector overlay opened");
   }
@@ -239,6 +249,15 @@ class GridLinesOverlayService implements GameOverlayParticipant {
       return null;
     }
 
+    if (record.shape === "arc") {
+      const arc = this.parseCropRegionArcSelection(record.arc);
+      if (!arc) {
+        return null;
+      }
+
+      return { shape: "arc", x, y, width, height, arc };
+    }
+
     return { x, y, width, height };
   }
 
@@ -248,6 +267,38 @@ class GridLinesOverlayService implements GameOverlayParticipant {
     }
 
     return Math.max(0, Math.min(100_000, Math.round(value)));
+  }
+
+  private parseCropRegionArcSelection(
+    value: unknown,
+  ): CropRegionArcSelection | null {
+    if (typeof value !== "object" || value === null) {
+      return null;
+    }
+
+    const record = value as Record<string, unknown>;
+    const startX = this.parseCoordinate(record.startX);
+    const startY = this.parseCoordinate(record.startY);
+    const endX = this.parseCoordinate(record.endX);
+    const endY = this.parseCoordinate(record.endY);
+    const controlX = this.parseCoordinate(record.controlX);
+    const controlY = this.parseCoordinate(record.controlY);
+    const thickness = this.parseCoordinate(record.thickness);
+
+    if (
+      startX === null ||
+      startY === null ||
+      endX === null ||
+      endY === null ||
+      controlX === null ||
+      controlY === null ||
+      thickness === null ||
+      thickness < MIN_ARC_THICKNESS
+    ) {
+      return null;
+    }
+
+    return { startX, startY, endX, endY, controlX, controlY, thickness };
   }
 
   private withSelectionViewport(

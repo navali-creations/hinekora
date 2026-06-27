@@ -331,6 +331,7 @@ describe("RecorderControlsOverlayPage", () => {
     expect(analyticsMocks.trackEvent).toHaveBeenCalledWith(
       "aura-edit-started",
       {
+        shape: "rect",
         source: "recorder-overlay",
       },
     );
@@ -344,9 +345,28 @@ describe("RecorderControlsOverlayPage", () => {
 
     expect(electronMocks.setAuraLocked).toHaveBeenCalledWith(false);
     expect(electronMocks.showAura).toHaveBeenCalledWith("profile-1", {
+      addAuraShape: "rect",
       startAddingAura: true,
     });
     expect(analyticsMocks.trackEvent).toHaveBeenCalledWith("aura-add-started", {
+      shape: "rect",
+      source: "recorder-overlay",
+    });
+  });
+
+  it("starts arched add-aura mode from the moon button", async () => {
+    await renderOverlay();
+
+    getButton(container, "Add arched aura").click();
+    await flushPromises();
+
+    expect(electronMocks.setAuraLocked).toHaveBeenCalledWith(false);
+    expect(electronMocks.showAura).toHaveBeenCalledWith("profile-1", {
+      addAuraShape: "arc",
+      startAddingAura: true,
+    });
+    expect(analyticsMocks.trackEvent).toHaveBeenCalledWith("aura-add-started", {
+      shape: "arc",
       source: "recorder-overlay",
     });
   });

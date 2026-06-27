@@ -555,6 +555,43 @@ describe("AuraOverlayPage", () => {
     });
   });
 
+  it("does not save a resize when the handle is released without movement", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const resizeHandle = container.querySelector(
+      'span[data-placement-id="placement-1"][data-corner="se"]',
+    );
+    expect(resizeHandle).toBeInstanceOf(HTMLSpanElement);
+
+    await act(async () => {
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          button: 0,
+          clientX: 130,
+          clientY: 80,
+        }),
+      );
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointerup", {
+          button: 0,
+          clientX: 130,
+          clientY: 80,
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect(storeMocks.updateProfile).not.toHaveBeenCalled();
+  });
+
   it("adds a new aura from the unlocked overlay banner", async () => {
     electronMocks.isAuraLocked.mockResolvedValue(false);
     electronMocks.selectCropRegion.mockResolvedValue({
@@ -687,7 +724,9 @@ describe("AuraOverlayPage", () => {
       viewportWidth: 1920,
       viewportHeight: 1080,
     });
-    let handleAuraAddRequested: ((requestId: string) => void) | null = null;
+    let handleAuraAddRequested:
+      | ((request: { requestId: string; shape?: "rect" | "arc" }) => void)
+      | null = null;
     electronMocks.onAuraAddRequested.mockImplementation((callback) => {
       handleAuraAddRequested = callback;
       return vi.fn();
@@ -706,11 +745,14 @@ describe("AuraOverlayPage", () => {
 
     expect(handleAuraAddRequested).toBeTypeOf("function");
     await act(async () => {
-      handleAuraAddRequested?.("request-1");
+      handleAuraAddRequested?.({ requestId: "request-1", shape: "rect" });
       await flushPromises();
     });
 
     expect(electronMocks.selectCropRegion).toHaveBeenCalledTimes(1);
+    expect(electronMocks.selectCropRegion).toHaveBeenCalledWith({
+      shape: "rect",
+    });
     expect(storeMocks.updateProfile).toHaveBeenCalledWith({
       id: "profile-1",
       cropRegions: [

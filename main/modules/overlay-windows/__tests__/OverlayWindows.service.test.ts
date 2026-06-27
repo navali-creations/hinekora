@@ -403,7 +403,7 @@ describe("OverlayWindowsService", () => {
     expect(recorderWindow.showInactive).toHaveBeenCalled();
   });
 
-  it("requests persistent aura overlays when the game becomes running", () => {
+  it("requests persistent aura overlays without assuming game focus when the game becomes running", () => {
     vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
       list: () => [createProfile()],
     } as unknown as ProfilesService);
@@ -424,8 +424,7 @@ describe("OverlayWindowsService", () => {
     service.setGameRunningActive(true);
     service.setGameRunningActive(true);
 
-    expect(setPoeFocusActive).toHaveBeenCalledTimes(1);
-    expect(setPoeFocusActive).toHaveBeenCalledWith(true);
+    expect(setPoeFocusActive).not.toHaveBeenCalled();
     expect(auraManagerOverlays.show).toHaveBeenCalledTimes(1);
     expect(auraManagerOverlays.show).toHaveBeenCalledWith("profile-1");
   });
@@ -501,7 +500,7 @@ describe("OverlayWindowsService", () => {
     service.setGameRunningActive(false);
     service.setGameRunningActive(true);
 
-    expect(setPoeFocusActive).toHaveBeenCalledWith(true);
+    expect(setPoeFocusActive).not.toHaveBeenCalled();
   });
 
   it("requests persistent aura overlays before the game is running", () => {
@@ -777,6 +776,10 @@ describe("OverlayWindowsService", () => {
     await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, "profile-1", {
       startAddingAura: false,
     });
+    await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, "profile-1", {
+      addAuraShape: "arc",
+      startAddingAura: true,
+    });
     expect(await handlers.get(OverlayWindowsChannel.IsAuraLocked)?.({})).toBe(
       false,
     );
@@ -785,6 +788,14 @@ describe("OverlayWindowsService", () => {
     await handlers.get(OverlayWindowsChannel.SelectCropRegion)?.({});
     await handlers.get(OverlayWindowsChannel.SelectCropRegion)?.(
       auraOverlayEvent,
+    );
+    await handlers.get(OverlayWindowsChannel.SelectCropRegion)?.(
+      auraOverlayEvent,
+      {},
+    );
+    await handlers.get(OverlayWindowsChannel.SelectCropRegion)?.(
+      auraOverlayEvent,
+      { shape: "arc" },
     );
     handlers.get(OverlayWindowsChannel.CompleteCropRegionSelection)?.(
       {},
@@ -804,9 +815,14 @@ describe("OverlayWindowsService", () => {
       startAddingAura: true,
     });
     expect(showAuraOverlay).toHaveBeenCalledWith("profile-1", {});
+    expect(showAuraOverlay).toHaveBeenCalledWith("profile-1", {
+      addAuraShape: "arc",
+      startAddingAura: true,
+    });
     expect(setAuraOverlayLocked).toHaveBeenCalledWith(false);
     expect(setAuraOverlayLocked).toHaveBeenCalledWith(true);
-    expect(selectCropRegion).toHaveBeenCalledTimes(2);
+    expect(selectCropRegion).toHaveBeenCalledTimes(4);
+    expect(selectCropRegion).toHaveBeenCalledWith({ shape: "arc" });
     expect(completeCropRegionSelection).toHaveBeenCalled();
     expect(cancelCropRegionSelection).toHaveBeenCalled();
 
@@ -841,6 +857,23 @@ describe("OverlayWindowsService", () => {
     ).toEqual({
       ok: false,
       error: "startAddingAura must be a boolean",
+    });
+    expect(
+      await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, "profile-1", {
+        addAuraShape: "moon",
+      }),
+    ).toEqual({
+      ok: false,
+      error: "shape must be rect or arc",
+    });
+    expect(
+      await handlers.get(OverlayWindowsChannel.SelectCropRegion)?.(
+        auraOverlayEvent,
+        { shape: "moon" },
+      ),
+    ).toEqual({
+      ok: false,
+      error: "shape must be rect or arc",
     });
     expect(
       await handlers.get(OverlayWindowsChannel.SetRecorderMode)?.(
@@ -994,6 +1027,39 @@ describe("GridLinesOverlayService", () => {
     service.completeCropRegionSelection(null);
     service.cancelCropRegionSelection();
     await expect(invalidSelection).resolves.toBeNull();
+
+    const missingArcSelection = service.selectCropRegion({ shape: "arc" });
+    await flushTimers();
+    service.completeCropRegionSelection({
+      shape: "arc",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 80,
+    });
+    service.cancelCropRegionSelection();
+    await expect(missingArcSelection).resolves.toBeNull();
+
+    const thinArcSelection = service.selectCropRegion({ shape: "arc" });
+    await flushTimers();
+    service.completeCropRegionSelection({
+      shape: "arc",
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 80,
+      arc: {
+        startX: 10,
+        startY: 70,
+        endX: 90,
+        endY: 70,
+        controlX: 50,
+        controlY: 10,
+        thickness: 2,
+      },
+    });
+    service.cancelCropRegionSelection();
+    await expect(thinArcSelection).resolves.toBeNull();
   });
 
   it("uses disabled content protection by default", async () => {
@@ -1009,6 +1075,49 @@ describe("GridLinesOverlayService", () => {
 
     service.cancelCropRegionSelection();
     await expect(selection).resolves.toBeNull();
+  });
+
+  it("loads and resolves arched crop selector selections", async () => {
+    const cropWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(cropWindow);
+    const service = new OverlayWindowsService();
+
+    const selection = service.selectCropRegion({ shape: "arc" });
+    await flushTimers();
+
+    expect(cropWindow.loadFile).toHaveBeenCalledWith(expect.any(String), {
+      hash: `/${WindowName.CropSelectorOverlay}?shape=arc`,
+    });
+
+    service.completeCropRegionSelection({
+      shape: "arc",
+      x: 90,
+      y: 90,
+      width: 140,
+      height: 80,
+      arc: {
+        startX: 10,
+        startY: 70,
+        endX: 130,
+        endY: 70,
+        controlX: 70,
+        controlY: 10,
+        thickness: 20,
+      },
+    });
+
+    await expect(selection).resolves.toMatchObject({
+      shape: "arc",
+      x: 90,
+      y: 90,
+      width: 140,
+      height: 80,
+      arc: {
+        controlX: 70,
+        controlY: 10,
+        thickness: 20,
+      },
+    });
   });
 
   it("tracks native crop selector focus changes", async () => {
@@ -1333,6 +1442,14 @@ describe("GameOverlayCoordinator", () => {
     service.setGameRunningActive(true);
     await flushTimers();
 
+    expect(recorderWindow.setOpacity).toHaveBeenCalledWith(0);
+    expect(clipPreviewWindow.setOpacity).toHaveBeenCalledWith(0);
+    recorderWindow.setOpacity.mockClear();
+    clipPreviewWindow.setOpacity.mockClear();
+
+    service.setPoeFocusActive(true);
+    await flushTimers();
+
     expect(recorderWindow.setOpacity).toHaveBeenCalledWith(1);
     expect(clipPreviewWindow.setOpacity).toHaveBeenCalledWith(1);
 
@@ -1341,7 +1458,7 @@ describe("GameOverlayCoordinator", () => {
     expect(clipPreviewWindow.setOpacity).toHaveBeenCalledWith(0);
 
     service.setPoeFocusActive(false);
-    expect(recorderWindow.setOpacity).toHaveBeenCalledTimes(3);
+    expect(recorderWindow.setOpacity).toHaveBeenCalledTimes(2);
   });
 
   it("does not run overlapping restore passes", async () => {

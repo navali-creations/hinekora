@@ -110,6 +110,7 @@ describe("CropEditorActions", () => {
     const html = renderToStaticMarkup(<CropEditorActions />);
 
     expect(html).toContain("Add new aura");
+    expect(html).toContain("Add arched aura");
     expect(html).toContain("Lock");
     expect(html).toContain("Unlock");
     expect(html).toContain("Start the selected Path of Exile game");
@@ -162,6 +163,9 @@ describe("CropEditorActions", () => {
     expect(unlockCallOrder).toBeLessThan(selectCallOrder ?? 0);
     expect(electronMocks.minimize).toHaveBeenCalledTimes(1);
     expect(electronMocks.selectCropRegion).toHaveBeenCalledTimes(1);
+    expect(electronMocks.selectCropRegion).toHaveBeenCalledWith({
+      shape: "rect",
+    });
     expect(storeMocks.updateProfile).toHaveBeenCalledWith({
       id: "profile-1",
       cropRegions: [
@@ -236,5 +240,79 @@ describe("CropEditorActions", () => {
     expect(storeMocks.setAuraOverlayLocked).not.toHaveBeenCalled();
     expect(electronMocks.setAuraLocked).not.toHaveBeenCalled();
     expect(electronMocks.selectCropRegion).toHaveBeenCalledTimes(1);
+    expect(electronMocks.selectCropRegion).toHaveBeenCalledWith({
+      shape: "rect",
+    });
+  });
+
+  it("creates an arched aura from the arched aura action", async () => {
+    storeMocks.usePoeProcessSelector.mockImplementation((selector) =>
+      selector({
+        state: {
+          game: "poe1",
+          isRunning: true,
+          processName: "PathOfExile.exe",
+        },
+      }),
+    );
+    electronMocks.selectCropRegion.mockResolvedValue({
+      shape: "arc",
+      x: 90,
+      y: 90,
+      width: 140,
+      height: 80,
+      arc: {
+        startX: 10,
+        startY: 70,
+        endX: 130,
+        endY: 70,
+        controlX: 70,
+        controlY: 10,
+        thickness: 20,
+      },
+      viewportWidth: 1920,
+      viewportHeight: 1080,
+    });
+    vi.spyOn(crypto, "randomUUID")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
+      .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<CropEditorActions />);
+      await Promise.resolve();
+    });
+
+    const addButton = [...container.querySelectorAll("button")].find((button) =>
+      button.textContent?.includes("Add arched aura"),
+    );
+
+    await act(async () => {
+      addButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(electronMocks.selectCropRegion).toHaveBeenCalledWith({
+      shape: "arc",
+    });
+    expect(storeMocks.updateProfile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cropRegions: [
+          expect.objectContaining({
+            label: "Arched aura 1",
+            shape: "arc",
+            arc: expect.objectContaining({
+              controlX: 70,
+              controlY: 10,
+              thickness: 20,
+            }),
+          }),
+        ],
+      }),
+    );
   });
 });

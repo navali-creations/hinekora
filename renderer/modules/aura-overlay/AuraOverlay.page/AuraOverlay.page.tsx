@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AuraEditingNotice } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraEditingNotice/AuraEditingNotice";
 import { AuraLockHandoffNotice } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraLockHandoffNotice/AuraLockHandoffNotice";
 import { AuraOverlayPlacement } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraOverlayPlacement/AuraOverlayPlacement";
+import { AuraPlacementFocusStrip } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraPlacementFocusStrip/AuraPlacementFocusStrip";
 import { useAuraOverlayAddAuraSelection } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayAddAuraSelection/useAuraOverlayAddAuraSelection";
 import { useAuraOverlayEditingHistory } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayEditingHistory/useAuraOverlayEditingHistory";
 import { useAuraOverlayLockState } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayLockState/useAuraOverlayLockState";
@@ -110,16 +111,22 @@ function AuraOverlayPage() {
       stream,
     });
   const {
+    arcThicknessResizeState,
     dragState,
     handleAuraClick,
     handlePointerCancel,
     handlePointerDown,
     handlePointerMove,
     handlePointerUp,
+    handlePlacementPropertiesChange,
     handleResizePointerCancel,
     handleResizePointerDown,
     handleResizePointerMove,
     handleResizePointerUp,
+    handleThicknessPointerCancel,
+    handleThicknessPointerDown,
+    handleThicknessPointerMove,
+    handleThicknessPointerUp,
     resizeState,
   } = useAuraOverlayPlacementEditor({
     profile,
@@ -166,7 +173,11 @@ function AuraOverlayPage() {
   });
 
   const handleAddAuraClick = () => {
-    startAddAuraSelection();
+    startAddAuraSelection({ shape: "rect" });
+  };
+
+  const handleAddArchedAuraClick = () => {
+    startAddAuraSelection({ shape: "arc" });
   };
 
   return (
@@ -185,6 +196,7 @@ function AuraOverlayPage() {
 
         return (
           <AuraOverlayPlacement
+            arcThicknessResizeState={arcThicknessResizeState}
             auraOverlayLocked={auraOverlayLocked}
             bindAuraVideo={bindAuraVideo}
             canEditAuras={canEditAuras}
@@ -202,19 +214,31 @@ function AuraOverlayPage() {
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerUp={handlePointerUp}
+            onPlacementPropertiesChange={handlePlacementPropertiesChange}
             onResizePointerCancel={handleResizePointerCancel}
             onResizePointerDown={handleResizePointerDown}
             onResizePointerMove={handleResizePointerMove}
             onResizePointerUp={handleResizePointerUp}
+            onThicknessPointerCancel={handleThicknessPointerCancel}
+            onThicknessPointerDown={handleThicknessPointerDown}
+            onThicknessPointerMove={handleThicknessPointerMove}
+            onThicknessPointerUp={handleThicknessPointerUp}
             onVideoSizeChange={handleVideoSizeChange}
           />
         );
       })}
+      <AuraPlacementFocusStrip
+        cropRegions={profile?.cropRegions ?? []}
+        placements={canEditAuras ? (profile?.overlayPlacements ?? []) : []}
+        selectedPlacementId={selectedPlacementId}
+        onSelectPlacement={selectPlacement}
+      />
       {canEditAuras && (
         <AuraEditingNotice
           addingAura={addingAura}
           canAddAura={!!profile}
           onAddAura={handleAddAuraClick}
+          onAddArchedAura={handleAddArchedAuraClick}
           onLockAuras={handleLockAurasClick}
         />
       )}

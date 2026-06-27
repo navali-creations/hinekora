@@ -2,8 +2,10 @@ import { ipcRenderer } from "electron";
 
 import { OverlayWindowsChannel } from "./OverlayWindows.channels";
 import type {
+  AuraAddRequest,
   CropRegionSelection,
   RecorderOverlayMode,
+  SelectCropRegionOptions,
   ShowAuraOverlayOptions,
 } from "./OverlayWindows.dto";
 
@@ -75,9 +77,12 @@ const OverlayWindowsAPI = {
         listener,
       );
   },
-  onAuraAddRequested: (callback: (requestId: string) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, requestId: string) => {
-      callback(requestId);
+  onAuraAddRequested: (callback: (request: AuraAddRequest) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      request: AuraAddRequest,
+    ) => {
+      callback(request);
     };
     ipcRenderer.on(OverlayWindowsChannel.AuraAddRequested, listener);
 
@@ -87,8 +92,12 @@ const OverlayWindowsAPI = {
         listener,
       );
   },
-  selectCropRegion: (): Promise<CropRegionSelection | null> =>
-    ipcRenderer.invoke(OverlayWindowsChannel.SelectCropRegion),
+  selectCropRegion: (
+    options?: SelectCropRegionOptions,
+  ): Promise<CropRegionSelection | null> =>
+    options === undefined
+      ? ipcRenderer.invoke(OverlayWindowsChannel.SelectCropRegion)
+      : ipcRenderer.invoke(OverlayWindowsChannel.SelectCropRegion, options),
   completeCropRegionSelection: (
     selection: CropRegionSelection,
   ): Promise<void> =>

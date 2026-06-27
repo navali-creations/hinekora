@@ -244,7 +244,10 @@ describe("AuraManagerOverlaysService", () => {
     });
     expect(auraWindow.webContents.send).toHaveBeenCalledWith(
       OverlayWindowsChannel.AuraAddRequested,
-      "1",
+      {
+        requestId: "1",
+        shape: "rect",
+      },
     );
   });
 
@@ -265,7 +268,31 @@ describe("AuraManagerOverlaysService", () => {
     await service.show(profile.id, { startAddingAura: true });
 
     expect(auraWindow.loadFile).toHaveBeenCalledWith(expect.any(String), {
-      hash: `/${WindowName.AuraOverlay}?profileId=profile-1&startAddingAura=1&addAuraRequestId=1`,
+      hash: `/${WindowName.AuraOverlay}?profileId=profile-1&startAddingAura=1&addAuraRequestId=1&addAuraShape=rect`,
+    });
+  });
+
+  it("loads arched aura add mode through route params", async () => {
+    const profile = createAuraProfile({ id: "profile-1" });
+    vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+      list: () => [profile],
+      update: vi.fn(),
+    } as unknown as ProfilesService);
+    const auraWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(auraWindow);
+    const coordinator = new GameOverlayCoordinator();
+    const service = new AuraManagerOverlaysService(coordinator);
+    coordinator.setGameRunningActive(true);
+    service.setGameRunningActive(true);
+    coordinator.setPoeFocusActive(true);
+
+    await service.show(profile.id, {
+      startAddingAura: true,
+      addAuraShape: "arc",
+    });
+
+    expect(auraWindow.loadFile).toHaveBeenCalledWith(expect.any(String), {
+      hash: `/${WindowName.AuraOverlay}?profileId=profile-1&startAddingAura=1&addAuraRequestId=1&addAuraShape=arc`,
     });
   });
 
@@ -291,7 +318,7 @@ describe("AuraManagerOverlaysService", () => {
 
     expect(electronMocks.BrowserWindow).toHaveBeenCalledTimes(1);
     expect(auraWindow.loadFile).toHaveBeenCalledWith(expect.any(String), {
-      hash: `/${WindowName.AuraOverlay}?profileId=profile-1&startAddingAura=1&addAuraRequestId=1`,
+      hash: `/${WindowName.AuraOverlay}?profileId=profile-1&startAddingAura=1&addAuraRequestId=1&addAuraShape=rect`,
     });
     expect(auraWindow.close).not.toHaveBeenCalled();
   });

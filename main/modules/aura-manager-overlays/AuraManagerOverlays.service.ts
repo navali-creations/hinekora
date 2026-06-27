@@ -165,6 +165,7 @@ class AuraManagerOverlaysService {
     options: ShowAuraOverlayOptions = {},
   ): Promise<void> {
     const startAddingAura = options.startAddingAura === true;
+    const addAuraShape = options.addAuraShape ?? "rect";
     if (
       this.auraOverlayLocked &&
       !startAddingAura &&
@@ -191,7 +192,7 @@ class AuraManagerOverlaysService {
 
     this.showOrSuspendWindow(window);
     if (canDispatchAddAuraRequest) {
-      this.sendAddAuraRequest(window);
+      this.sendAddAuraRequest(window, addAuraShape);
     }
   }
 
@@ -294,6 +295,7 @@ class AuraManagerOverlaysService {
       if (startAddingAura) {
         routeParams.set("startAddingAura", "1");
         routeParams.set("addAuraRequestId", String(++this.addAuraRequestId));
+        routeParams.set("addAuraShape", options.addAuraShape ?? "rect");
       }
 
       await loadOverlayRenderer(
@@ -321,11 +323,14 @@ class AuraManagerOverlaysService {
     return true;
   }
 
-  private sendAddAuraRequest(window: BrowserWindow): void {
-    window.webContents.send(
-      OverlayWindowsChannel.AuraAddRequested,
-      String(++this.addAuraRequestId),
-    );
+  private sendAddAuraRequest(
+    window: BrowserWindow,
+    shape: ShowAuraOverlayOptions["addAuraShape"] = "rect",
+  ): void {
+    window.webContents.send(OverlayWindowsChannel.AuraAddRequested, {
+      requestId: String(++this.addAuraRequestId),
+      shape,
+    });
   }
 
   private showOrSuspendWindow(window: BrowserWindow): void {

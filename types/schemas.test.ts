@@ -180,6 +180,75 @@ describe("shared schemas", () => {
     });
   });
 
+  it("accepts arched aura crop regions with bounded arc metadata", () => {
+    const profile = {
+      id: "profile-1",
+      name: "Default",
+      game: "poe1",
+      targetFps: 30,
+      captureTarget: null,
+      cropRegions: [
+        {
+          id: "crop-1",
+          label: "Arched aura 1",
+          shape: "arc",
+          x: 10,
+          y: 20,
+          width: 140,
+          height: 80,
+          arc: {
+            startX: 10,
+            startY: 70,
+            endX: 130,
+            endY: 70,
+            controlX: 70,
+            controlY: 10,
+            thickness: 20,
+          },
+        },
+      ],
+      overlayPlacements: [],
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    };
+
+    expect(ProfileSchema.parse(profile)).toEqual(profile);
+    expect(() =>
+      ProfileSchema.parse({
+        ...profile,
+        cropRegions: [{ ...profile.cropRegions[0], arc: undefined }],
+      }),
+    ).toThrow("Arched crop regions require arc metadata.");
+  });
+
+  it("strips obsolete arched aura thickness scale from saved placements", () => {
+    const profile = {
+      id: "profile-1",
+      name: "Default",
+      game: "poe1",
+      targetFps: 30,
+      captureTarget: null,
+      cropRegions: [],
+      overlayPlacements: [
+        {
+          id: "placement-1",
+          cropRegionId: "crop-1",
+          x: 30,
+          y: 40,
+          scale: 1,
+          opacity: 1,
+          arcThicknessScale: 2,
+        },
+      ],
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    };
+
+    expect(
+      ProfileSchema.parse(profile).overlayPlacements[0],
+    ).not.toHaveProperty("arcThicknessScale");
+  });
+
   it("creates rounded coordinate reference dimensions", () => {
     expect(
       createCoordinateReferenceDimensions({

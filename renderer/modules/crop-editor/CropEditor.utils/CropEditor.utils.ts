@@ -1,5 +1,6 @@
 import {
   type CropRegion,
+  type CropRegionArc,
   createCoordinateReferenceDimensions,
   type OverlayPlacement,
   type Profile,
@@ -22,10 +23,12 @@ interface SelectionPlacementViewport {
 }
 
 interface AuraSourceSelection extends SelectionPlacementViewport {
+  shape?: "rect" | "arc";
   x: number;
   y: number;
   width: number;
   height: number;
+  arc?: CropRegionArc;
 }
 
 type AuraProfile = Pick<Profile, "id" | "cropRegions" | "overlayPlacements">;
@@ -98,11 +101,17 @@ export function createAuraProfileUpdateFromSelection(
   const placementViewport = resolveSelectionPlacementViewport(selection);
   const crop: CropRegion = {
     id: crypto.randomUUID(),
-    label: `Aura ${profile.cropRegions.length + 1}`,
+    label:
+      selection.shape === "arc"
+        ? `Arched aura ${profile.cropRegions.length + 1}`
+        : `Aura ${profile.cropRegions.length + 1}`,
     x: selection.x,
     y: selection.y,
     width: selection.width,
     height: selection.height,
+    ...(selection.shape === "arc" && selection.arc
+      ? { shape: "arc" as const, arc: selection.arc }
+      : {}),
     ...(placementViewport
       ? createCoordinateReferenceDimensions(placementViewport)
       : {}),

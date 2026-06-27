@@ -9,6 +9,7 @@ import {
 } from "react-icons/fi";
 import { HiViewGrid } from "react-icons/hi";
 import { PiFilmSlate } from "react-icons/pi";
+import { TbMoon as Moon } from "react-icons/tb";
 
 import { CaptureModeTabs } from "~/renderer/modules/recorder-controls-overlay/RecorderControlsOverlay.components/CaptureModeTabs/CaptureModeTabs";
 import { RecorderOverlayTimer } from "~/renderer/modules/recorder-controls-overlay/RecorderControlsOverlay.components/RecorderOverlayTimer/RecorderOverlayTimer";
@@ -73,6 +74,15 @@ function ExpandedRecorderControlsOverlay({
     });
   const handleAddAura = () =>
     openRecorderAuraOverlay({
+      addAuraShape: "rect",
+      gameRunning,
+      isRecorderBusy,
+      profileId: selectedProfile?.id ?? null,
+      startAddingAura: true,
+    });
+  const handleAddArchedAura = () =>
+    openRecorderAuraOverlay({
+      addAuraShape: "arc",
       gameRunning,
       isRecorderBusy,
       profileId: selectedProfile?.id ?? null,
@@ -165,6 +175,20 @@ function ExpandedRecorderControlsOverlay({
           aria-label="Add aura"
         >
           <PlusSquare size={19} />
+        </button>
+        <button
+          className={`${styles.iconButton} btn btn-primary btn-square`}
+          type="button"
+          disabled={!canUnlockAuras}
+          onClick={handleAddArchedAura}
+          title={
+            !gameRunning
+              ? "Start the selected game before adding arched auras"
+              : "Add arched aura"
+          }
+          aria-label="Add arched aura"
+        >
+          <Moon size={19} />
         </button>
         <span className={styles.divider} aria-hidden="true" />
         <select

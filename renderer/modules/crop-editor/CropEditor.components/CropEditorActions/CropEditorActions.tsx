@@ -1,7 +1,9 @@
 import clsx from "clsx";
 import type { ChangeEvent } from "react";
 import { FiPlus as Plus } from "react-icons/fi";
+import { TbMoon as Moon } from "react-icons/tb";
 
+import type { CropRegionSelectionShape } from "~/main/modules/overlay-windows/OverlayWindows.dto";
 import {
   createAuraProfileUpdateFromSelection,
   getSelectedProfile,
@@ -48,7 +50,7 @@ function CropEditorActions() {
     selectProfile(event.currentTarget.value);
   };
 
-  const handleAddAura = async () => {
+  const handleAddAura = async (shape: CropRegionSelectionShape) => {
     if (!profile || !canAddNewAura) {
       return;
     }
@@ -59,9 +61,12 @@ function CropEditorActions() {
 
     trackEvent("aura-capture-started", {
       game: activeGame,
+      shape,
     });
     await window.electron.mainWindow.minimize().catch(() => undefined);
-    const selection = await window.electron.overlayWindows.selectCropRegion();
+    const selection = await window.electron.overlayWindows.selectCropRegion({
+      shape,
+    });
     if (!selection) {
       trackEvent("aura-capture-cancelled");
       return;
@@ -77,6 +82,7 @@ function CropEditorActions() {
     await window.electron.overlayWindows.showAura(profile.id);
     trackEvent("aura-created", {
       overlayCount: profile.overlayPlacements.length + 1,
+      shape,
     });
   };
 
@@ -100,6 +106,14 @@ function CropEditorActions() {
 
   const handleUnlockClick = () => {
     void setAuraLocked(false);
+  };
+
+  const handleAddRectAuraClick = () => {
+    void handleAddAura("rect");
+  };
+
+  const handleAddArchedAuraClick = () => {
+    void handleAddAura("arc");
   };
 
   return (
@@ -163,10 +177,27 @@ function CropEditorActions() {
           className="btn btn-primary btn-sm disabled:cursor-not-allowed disabled:opacity-50"
           disabled={!canAddNewAura}
           type="button"
-          onClick={handleAddAura}
+          onClick={handleAddRectAuraClick}
         >
           <Plus size={16} />
           Add new aura
+        </button>
+      </div>
+      <div
+        className={clsx(
+          "tooltip tooltip-left no-drag",
+          canAddNewAura && "before:hidden after:hidden",
+        )}
+        data-tip={canAddNewAura ? "" : addAuraTooltip}
+      >
+        <button
+          className="btn btn-primary btn-sm disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={!canAddNewAura}
+          type="button"
+          onClick={handleAddArchedAuraClick}
+        >
+          <Moon size={16} />
+          Add arched aura
         </button>
       </div>
     </div>
