@@ -17,7 +17,7 @@ interface UseAuraVideoCanvasFrameInput<Geometry> {
   videoRef: RefObject<HTMLVideoElement | null>;
 }
 
-const defaultFallbackFrameIntervalMs = 100;
+const defaultFallbackFrameIntervalMs = 1_000 / 60;
 
 function useAuraVideoCanvasFrame<Geometry>({
   canvasRef,
@@ -81,17 +81,24 @@ function useAuraVideoCanvasFrame<Geometry>({
 
     let timeoutId = 0;
     let isActive = true;
+    let lastDrawMs: number | null = null;
     const drawTimedFrame = () => {
       if (!isActive) {
         return;
       }
-      drawCurrentFrame();
+      const nowMs = performance.now();
+      if (shouldDrawFrame(nowMs, lastDrawMs)) {
+        lastDrawMs = nowMs;
+        drawCurrentFrame();
+      }
       if (isActive) {
         timeoutId = window.setTimeout(drawTimedFrame, fallbackFrameIntervalMs);
       }
     };
 
-    drawTimedFrame();
+    lastDrawMs = performance.now();
+    drawCurrentFrame();
+    timeoutId = window.setTimeout(drawTimedFrame, fallbackFrameIntervalMs);
 
     return () => {
       isActive = false;

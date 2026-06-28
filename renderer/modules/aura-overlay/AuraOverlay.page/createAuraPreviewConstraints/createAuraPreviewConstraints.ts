@@ -9,7 +9,7 @@ function createAuraPreviewConstraints(
         chromeMediaSourceId: sourceId,
         maxWidth: 7680,
         maxHeight: 4320,
-        maxFrameRate: 10,
+        maxFrameRate: 60,
       },
     } as unknown as MediaTrackConstraints,
   };

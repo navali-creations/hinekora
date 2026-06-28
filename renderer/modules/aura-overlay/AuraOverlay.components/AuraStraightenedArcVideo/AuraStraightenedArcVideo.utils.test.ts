@@ -220,7 +220,7 @@ describe("AuraStraightenedArcVideo utils", () => {
 
   it("gates straightened arc redraws to the frame budget", () => {
     expect(shouldDrawStraightenedArcFrame(1_000, null)).toBe(true);
-    expect(shouldDrawStraightenedArcFrame(1_010, 1_000)).toBe(false);
-    expect(shouldDrawStraightenedArcFrame(1_050, 1_000)).toBe(true);
+    expect(shouldDrawStraightenedArcFrame(1_016, 1_000)).toBe(false);
+    expect(shouldDrawStraightenedArcFrame(1_017, 1_000)).toBe(true);
   });
 });

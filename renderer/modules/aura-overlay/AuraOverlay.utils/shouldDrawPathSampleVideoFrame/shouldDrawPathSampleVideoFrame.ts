@@ -1,4 +1,4 @@
-const pathSampleVideoMaxFps = 24;
+const pathSampleVideoMaxFps = 60;
 const pathSampleVideoFrameIntervalMs = 1_000 / pathSampleVideoMaxFps;
 
 function shouldDrawPathSampleVideoFrame(

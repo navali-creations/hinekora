@@ -139,7 +139,7 @@ describe("AuraPointStackVideo utils", () => {
 
   it("gates point stack redraws to the frame budget", () => {
     expect(shouldDrawPointStackFrame(1_000, null)).toBe(true);
-    expect(shouldDrawPointStackFrame(1_010, 1_000)).toBe(false);
-    expect(shouldDrawPointStackFrame(1_050, 1_000)).toBe(true);
+    expect(shouldDrawPointStackFrame(1_016, 1_000)).toBe(false);
+    expect(shouldDrawPointStackFrame(1_017, 1_000)).toBe(true);
   });
 });
