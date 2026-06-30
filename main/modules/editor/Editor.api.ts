@@ -10,6 +10,8 @@ import type {
   EditorExportInput,
   EditorExportProgress,
   EditorExportResult,
+  EditorMediaAssetPage,
+  EditorMediaAssetPageQuery,
   EditorProject,
   EditorSaveProjectInput,
   EditorWorkspace,
@@ -39,6 +41,12 @@ const EditorAPI = {
       .then(unwrapIpcResult),
   getWorkspace: (query?: EditorWorkspaceQuery): Promise<EditorWorkspace> =>
     ipcRenderer.invoke(EditorChannel.GetWorkspace, query).then(unwrapIpcResult),
+  listMediaAssets: (
+    query: EditorMediaAssetPageQuery,
+  ): Promise<EditorMediaAssetPage> =>
+    ipcRenderer
+      .invoke(EditorChannel.ListMediaAssets, query)
+      .then(unwrapIpcResult),
   revealExport: (exportId: string): Promise<EditorExportFileActionResult> =>
     ipcRenderer.invoke(EditorChannel.RevealExport, exportId),
   saveProject: (input: EditorSaveProjectInput): Promise<EditorProject> =>

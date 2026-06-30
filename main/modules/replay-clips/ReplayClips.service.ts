@@ -32,6 +32,7 @@ import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 import { readMp4DurationSeconds } from "~/main/utils/media-metadata";
 
 import {
+  type GameId,
   GameIdSchema,
   type ReplayClip,
   type ReplayClipKind,
@@ -117,30 +118,59 @@ class ReplayClipsService {
     };
   }
 
-  listRecentEditorReplayDetails(input: {
+  listEditorReplayDetailPage(input: {
+    createdAfter?: string;
+    excludeIds?: string[];
+    game?: GameId;
+    includeIds?: string[];
     kind: ReplayClipKind;
-    limit: number;
-  }): ReplayClipDetail[] {
+    league?: string;
+    pageIndex: number;
+    pageSize: number;
+  }): { items: ReplayClipDetail[]; totalCount: number } {
+    const filter: ReplayClipListFilter & {
+      createdAfter?: string;
+      excludeIds?: string[];
+      includeIds?: string[];
+    } = {
+      kind: input.kind,
+      ...(input.createdAfter ? { createdAfter: input.createdAfter } : {}),
+      ...(input.excludeIds && input.excludeIds.length > 0
+        ? { excludeIds: input.excludeIds }
+        : {}),
+      ...(input.includeIds && input.includeIds.length > 0
+        ? { includeIds: input.includeIds }
+        : {}),
+    };
+    if (input.game) {
+      filter.game = input.game;
+    }
+    if (input.league) {
+      filter.league = input.league;
+    }
     const page = this.repository.listLibraryPage({
-      filter: { kind: input.kind },
-      pageIndex: 0,
-      pageSize: input.limit,
+      filter,
+      pageIndex: input.pageIndex,
+      pageSize: input.pageSize,
       sortBy: "createdAt",
       sortDirection: "desc",
     });
 
-    return page.items.map((clip) => {
-      const sizedClip = this.withClipSize(clip, true);
-      const storedClipPath = this.getStoredClipPathForClip(sizedClip);
+    return {
+      items: page.items.map((clip) => {
+        const sizedClip = this.withClipSize(clip, true);
+        const storedClipPath = this.getStoredClipPathForClip(sizedClip);
 
-      return {
-        clip: sizedClip,
-        durationSeconds: this.readReplayClipDuration(storedClipPath),
-        mediaUrl: storedClipPath
-          ? createReplayClipMediaUrl(sizedClip.id)
-          : null,
-      };
-    });
+        return {
+          clip: sizedClip,
+          durationSeconds: this.readReplayClipDuration(storedClipPath),
+          mediaUrl: storedClipPath
+            ? createReplayClipMediaUrl(sizedClip.id)
+            : null,
+        };
+      }),
+      totalCount: page.totalCount,
+    };
   }
 
   listLibrary(query: ReplayClipLibraryQuery = {}): ReplayClipLibraryPage {

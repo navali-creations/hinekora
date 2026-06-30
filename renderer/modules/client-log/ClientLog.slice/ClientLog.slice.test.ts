@@ -8,6 +8,7 @@ import { createClientLogSlice } from "./ClientLog.slice";
 
 const poe1Status: ClientLogStatus = {
   activeGame: "poe1",
+  activeGameFocused: null,
   lastError: null,
   path: "C:\\PoE\\Client.txt",
   watching: true,
@@ -15,6 +16,7 @@ const poe1Status: ClientLogStatus = {
 
 const poe2Status: ClientLogStatus = {
   activeGame: "poe2",
+  activeGameFocused: null,
   lastError: null,
   path: "C:\\PoE2\\Client.txt",
   watching: true,

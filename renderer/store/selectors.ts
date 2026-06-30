@@ -121,6 +121,10 @@ export const useChangelogShallow = <T>(
   selector: (changelog: BoundStore["changelog"]) => T,
 ) => useBoundStore(useShallow((state) => selector(state.changelog)));
 
+export const useSavedEditsShallow = <T>(
+  selector: (savedEdits: BoundStore["savedEdits"]) => T,
+) => useBoundStore(useShallow((state) => selector(state.savedEdits)));
+
 export const useStateTransferShallow = <T>(
   selector: (stateTransfer: BoundStore["stateTransfer"]) => T,
 ) => useBoundStore(useShallow((state) => selector(state.stateTransfer)));

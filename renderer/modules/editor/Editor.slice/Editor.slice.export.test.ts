@@ -22,7 +22,7 @@ describe("Editor export slice", () => {
     const editorApi = getEditorApi();
     const progressTracker = getProgressTracker();
     const asset = createEditorTestAsset();
-    const project = createEditorTestProject(asset);
+    const project = createEditorTestProject(asset, { isAudioMuted: true });
     let resolveExport: (value: EditorExportResult) => void = () => undefined;
     const unsubscribe = vi.fn();
     progressTracker.setExportProgressUnsubscribe(unsubscribe);
@@ -92,7 +92,7 @@ describe("Editor export slice", () => {
     const store = createTestStore();
     const editorApi = getEditorApi();
     const asset = createEditorTestAsset();
-    const project = createEditorTestProject(asset);
+    const project = createEditorTestProject(asset, { isAudioMuted: true });
     const unsubscribe = vi.fn();
     const performanceNow = vi
       .spyOn(performance, "now")
@@ -137,7 +137,7 @@ describe("Editor export slice", () => {
       ok: false,
     });
     expect(store.getState().editor.exportState.error).toBe(
-      "Could not copy export to clipboard",
+      "Could not copy saved video to clipboard",
     );
   });
 
@@ -146,7 +146,7 @@ describe("Editor export slice", () => {
     const store = createTestStore();
     const editorApi = getEditorApi();
     const asset = createEditorTestAsset();
-    const project = createEditorTestProject(asset);
+    const project = createEditorTestProject(asset, { isAudioMuted: true });
     let resolveCopy: (value: { error: null; ok: true }) => void = () =>
       undefined;
     editorApi.copyProjectToClipboard.mockImplementation(
@@ -177,6 +177,7 @@ describe("Editor export slice", () => {
       expect(editorApi.copyProjectToClipboard).toHaveBeenCalledWith(
         expect.objectContaining({
           durationSeconds: project.durationSeconds,
+          muteAudio: true,
           resolution: "1080p",
         }),
       );
@@ -241,7 +242,7 @@ describe("Editor export slice", () => {
       resolution: "1080p",
     });
     expect(store.getState().editor.exportState).toMatchObject({
-      error: "Export failed",
+      error: "Save failed",
       status: "failed",
     });
     expect(unsubscribe).toHaveBeenCalled();
@@ -328,7 +329,7 @@ describe("Editor export slice", () => {
     await store.getState().editor.revealExport("export-1");
 
     expect(store.getState().editor.exportState.error).toBe(
-      "Exported file is not available",
+      "Saved video is not available",
     );
   });
 });

@@ -10,6 +10,33 @@ const playbackSyncToleranceSeconds = 0.08;
 const clipBoundaryToleranceSeconds = 0.02;
 const playbackStoreSyncIntervalMs = 50;
 
+interface AudioTrackCapableVideoElement extends HTMLVideoElement {
+  audioTracks?: { length: number };
+  mozHasAudio?: boolean;
+  webkitAudioDecodedByteCount?: number;
+}
+
+function detectPreviewVideoHasAudio(video: HTMLVideoElement): boolean | null {
+  const audioCapableVideo = video as AudioTrackCapableVideoElement;
+
+  if (typeof audioCapableVideo.mozHasAudio === "boolean") {
+    return audioCapableVideo.mozHasAudio;
+  }
+
+  if (typeof audioCapableVideo.audioTracks?.length === "number") {
+    return audioCapableVideo.audioTracks.length > 0;
+  }
+
+  if (
+    typeof audioCapableVideo.webkitAudioDecodedByteCount === "number" &&
+    audioCapableVideo.webkitAudioDecodedByteCount > 0
+  ) {
+    return true;
+  }
+
+  return null;
+}
+
 function useEditorPreviewPlayback() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playbackAnimationFrameRef = useRef<number | null>(null);
@@ -19,18 +46,22 @@ function useEditorPreviewPlayback() {
   const {
     isPreviewPlaying,
     playbackSeconds,
+    previewVolume,
     project,
     selectedAssetKey,
     selectedClipId,
     setPlaybackSeconds,
+    setPreviewHasAudio,
     setPreviewPlaying,
   } = useEditorShallow((editor) => ({
     isPreviewPlaying: editor.isPreviewPlaying,
     playbackSeconds: editor.playbackSeconds,
+    previewVolume: editor.previewVolume,
     project: editor.project,
     selectedAssetKey: editor.selectedAssetKey,
     selectedClipId: editor.selectedClipId,
     setPlaybackSeconds: editor.setPlaybackSeconds,
+    setPreviewHasAudio: editor.setPreviewHasAudio,
     setPreviewPlaying: editor.setPreviewPlaying,
   }));
   const timelineClips = useMemo(
@@ -89,6 +120,20 @@ function useEditorPreviewPlayback() {
       setPreviewPlaying(false);
     }
   }, [hasTimelineClips, isPreviewPlaying, mediaUrl, setPreviewPlaying]);
+
+  useEffect(() => {
+    setPreviewHasAudio(mediaUrl ? null : false);
+  }, [mediaUrl, setPreviewHasAudio]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) {
+      return;
+    }
+
+    video.volume = previewVolume;
+    video.muted = previewVolume <= 0;
+  }, [previewVolume]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -248,12 +293,20 @@ function useEditorPreviewPlayback() {
   const handleLoadedMetadata = () => {
     const video = videoRef.current;
     if (video) {
+      setPreviewHasAudio(detectPreviewVideoHasAudio(video));
       video.currentTime = sourceSeconds;
     }
   };
 
   const handleTimeUpdate = () => {
     if (isPreviewPlaying) {
+      const video = videoRef.current;
+      if (video) {
+        const hasAudio = detectPreviewVideoHasAudio(video);
+        if (hasAudio === true) {
+          setPreviewHasAudio(true);
+        }
+      }
       return;
     }
 

@@ -50,13 +50,14 @@ function EditorAssetCard({ asset }: EditorAssetCardProps) {
   return (
     <button
       className={clsx(
-        "w-full rounded-lg border p-2 text-left transition",
+        "flex w-full items-stretch gap-1 rounded-lg border p-2 text-left transition-colors",
+        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-not-allowed",
         "hover:border-primary/50 hover:bg-base-content/[0.03]",
-        "focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary",
         isReady
           ? "cursor-grab active:cursor-grabbing"
           : "cursor-not-allowed opacity-60",
-        isDragging && "cursor-grabbing opacity-55",
+        isDragging &&
+          "pointer-events-none cursor-grabbing opacity-70 ring-1 ring-primary/40",
         isSelected
           ? "border-primary/60 bg-primary/10"
           : "border-base-content/10 bg-base-300/55",
@@ -67,25 +68,26 @@ function EditorAssetCard({ asset }: EditorAssetCardProps) {
       type="button"
       onClick={handleAssetClick}
     >
-      <div className="flex items-start gap-2">
-        <span className="mt-0.5 rounded bg-base-100 p-1.5 text-primary">
-          <Icon size={15} />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-semibold text-sm">
-            {asset.name}
+      <span className="min-w-0 flex-1">
+        <span className="flex items-start gap-2">
+          <span className="mt-0.5 shrink-0 rounded bg-base-100 p-1.5 text-primary">
+            <Icon aria-hidden size={15} />
           </span>
-          <span className="block truncate text-base-content/60 text-xs">
-            {asset.subtitle}
-          </span>
-          <span className="mt-1 flex items-center justify-between gap-2 text-[11px] text-base-content/45">
-            <span>{formatDateTime(asset.createdAt)}</span>
-            <span>
-              {isReady ? formatBytes(asset.sizeBytes) : assetStatusLabel(asset)}
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-semibold text-sm">
+              {asset.name}
+            </span>
+            <span className="mt-1 flex items-center justify-between gap-2 text-[11px] text-base-content/45">
+              <span>{formatDateTime(asset.createdAt)}</span>
+              <span>
+                {isReady
+                  ? formatBytes(asset.sizeBytes)
+                  : assetStatusLabel(asset)}
+              </span>
             </span>
           </span>
         </span>
-      </div>
+      </span>
     </button>
   );
 }

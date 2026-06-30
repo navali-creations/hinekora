@@ -9,7 +9,7 @@ interface MediaLibraryPageActionsProps {
   league: string;
   leagueOptions: MediaLibraryLeagueOption[];
   onLeagueChange: (league: string) => void;
-  onRefresh: () => void;
+  onRefresh?: () => void;
 }
 
 function MediaLibraryPageActions({
@@ -45,14 +45,16 @@ function MediaLibraryPageActions({
 
       {bulkAction}
 
-      <button
-        className="btn btn-primary btn-sm no-drag"
-        type="button"
-        onClick={onRefresh}
-      >
-        <RefreshCw size={15} />
-        Refresh
-      </button>
+      {onRefresh && (
+        <button
+          className="btn btn-primary btn-sm no-drag"
+          type="button"
+          onClick={onRefresh}
+        >
+          <RefreshCw size={15} />
+          Refresh
+        </button>
+      )}
     </div>
   );
 }

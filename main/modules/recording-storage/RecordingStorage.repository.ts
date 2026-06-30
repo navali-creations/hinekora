@@ -32,7 +32,10 @@ interface RunRecordingRow {
 }
 
 interface RunRecordingLibraryFilter {
+  createdAfter?: string;
+  excludeIds?: string[];
   game?: "poe1" | "poe2";
+  includeIds?: string[];
   league?: string;
 }
 
@@ -470,6 +473,16 @@ class RecordingStorageRepository {
 
     if (filter.game) {
       query = query.where("source_game", "=", filter.game);
+    }
+    if (filter.createdAfter) {
+      query = query.where("created_at", ">=", filter.createdAfter);
+    }
+    if (filter.includeIds && filter.includeIds.length > 0) {
+      query = query.where("id", "in", filter.includeIds);
+    }
+    const excludeIds = filter.excludeIds;
+    if (excludeIds && excludeIds.length > 0) {
+      query = query.where((eb) => eb.not(eb("id", "in", excludeIds)));
     }
     if (filter.league) {
       query = query.where("source_league", "=", filter.league);

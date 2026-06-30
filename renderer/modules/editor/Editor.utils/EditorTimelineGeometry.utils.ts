@@ -2,7 +2,6 @@ import type { EditorProject, EditorTimelineTrack } from "~/main/modules/editor";
 
 import { calculateTimelineProjectDuration } from "~/types";
 import { roundToMilliseconds } from "./EditorTime.utils";
-import { resolveTimelineClipSourceRange } from "./EditorTimelineTrim.utils";
 
 interface EditorTimelineGap {
   durationSeconds: number;
@@ -33,13 +32,21 @@ function calculateExpandableTimelineDuration(input: {
     return timelineViewportDurationSeconds;
   }
 
-  const paddedDurationSeconds =
-    durationSeconds * (1 + timelineTailPaddingRatio);
-
   return Math.max(
-    roundToMilliseconds(paddedDurationSeconds),
+    roundToMilliseconds(durationSeconds * (1 + timelineTailPaddingRatio)),
     timelineMinimumDurationSeconds,
   );
+}
+
+function calculateFittedTimelineDuration(input: {
+  projectDurationSeconds: number;
+}): number {
+  const durationSeconds = Math.max(input.projectDurationSeconds, 0);
+  if (durationSeconds <= 0) {
+    return timelineViewportDurationSeconds;
+  }
+
+  return roundToMilliseconds(durationSeconds);
 }
 
 function calculateEditorTimelineDuration(
@@ -49,31 +56,7 @@ function calculateEditorTimelineDuration(
     return 0;
   }
 
-  const assetDurationByKey = new Map(
-    project.assets.map((asset) => [
-      asset.assetKey,
-      Number.isFinite(asset.durationSeconds ?? Number.NaN)
-        ? (asset.durationSeconds ?? 0)
-        : 0,
-    ]),
-  );
-  const expandableClipEndSeconds = project.tracks.flatMap((track) =>
-    track.clips.map((clip) => {
-      const assetDurationSeconds = assetDurationByKey.get(clip.assetKey) ?? 0;
-      const sourceRange = resolveTimelineClipSourceRange({
-        assetDurationSeconds,
-        clip,
-      });
-      const expandableDurationSeconds = Math.max(
-        clip.durationSeconds,
-        sourceRange.sourceOutSeconds - clip.inSeconds,
-      );
-
-      return roundToMilliseconds(clip.startSeconds + expandableDurationSeconds);
-    }),
-  );
-
-  return Math.max(project.durationSeconds, ...expandableClipEndSeconds, 0);
+  return Math.max(calculateTimelineDuration(project.tracks), 0);
 }
 
 function calculateTimelineContentScale(input: {
@@ -307,6 +290,7 @@ export type { EditorTimelineGap };
 export {
   calculateEditorTimelineDuration,
   calculateExpandableTimelineDuration,
+  calculateFittedTimelineDuration,
   calculateTimelineContentScale,
   calculateTimelineDuration,
   calculateTimelineGaps,

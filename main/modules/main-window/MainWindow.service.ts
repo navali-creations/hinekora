@@ -18,6 +18,7 @@ import {
   unregisterIpcWindowRole,
 } from "~/main/utils/ipc-window-roles";
 
+import { HINEKORA_DISCORD_URL, HINEKORA_GITHUB_URL } from "~/types";
 import { MainWindowChannel } from "./MainWindow.channels";
 import { WindowName } from "./MainWindow.types";
 import { isAllowedExternalUrl } from "./MainWindow.utils";
@@ -30,8 +31,6 @@ const MAIN_WINDOW_DEFAULT_WIDTH = 1200;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 800;
 const MAIN_WINDOW_BOUNDS_MIN_OVERLAP = 100;
 const MAIN_WINDOW_BOUNDS_SAVE_DEBOUNCE_MS = 500;
-const HINEKORA_DISCORD_URL = "https://discord.gg/mrqmPYXHHT";
-const HINEKORA_GITHUB_URL = "https://github.com/navali-creations/hinekora";
 
 class MainWindowService {
   private static instance: MainWindowService | null = null;

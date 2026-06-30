@@ -35,7 +35,7 @@ describe("EditorCopyActions utils", () => {
         project: { id: "project-1" },
         selectedClipId: "clip-1",
       }),
-    ).toBe("Wait for the current export to finish.");
+    ).toBe("Wait for the current save to finish.");
     expect(
       createCopyDisabledReason({
         exportStatus: "idle",

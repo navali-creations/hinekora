@@ -17,6 +17,7 @@ import { createPoeProcessSlice } from "~/renderer/modules/poe-process/PoeProcess
 import { createProfilesSlice } from "~/renderer/modules/profiles/Profiles.slice/Profiles.slice";
 import { createRecordingStorageSlice } from "~/renderer/modules/recording-storage/RecordingStorage.slice/RecordingStorage.slice";
 import { createReplayClipsSlice } from "~/renderer/modules/replay-clips/ReplayClips.slice/ReplayClips.slice";
+import { createSavedEditsSlice } from "~/renderer/modules/saved-edits";
 import { createSettingsSlice } from "~/renderer/modules/settings/Settings.slice/Settings.slice";
 import { createStorageSlice } from "~/renderer/modules/settings/Storage.slice/Storage.slice";
 import { createStateTransferSlice } from "~/renderer/modules/state-transfer/StateTransfer.slice/StateTransfer.slice";
@@ -56,6 +57,7 @@ export const useBoundStore = create<BoundStore>()(
       const storageSlice = createStorageSlice(...args);
       const updaterSlice = createUpdaterSlice(...args);
       const changelogSlice = createChangelogSlice(...args);
+      const savedEditsSlice = createSavedEditsSlice(...args);
 
       return {
         ...appMenuSlice,
@@ -76,6 +78,7 @@ export const useBoundStore = create<BoundStore>()(
         ...storageSlice,
         ...updaterSlice,
         ...changelogSlice,
+        ...savedEditsSlice,
         hydrate: async () => {
           await profilesSlice.profiles.hydrate();
           await Promise.all([

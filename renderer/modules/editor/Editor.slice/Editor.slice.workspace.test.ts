@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { EditorWorkspace } from "~/main/modules/editor";
+import type {
+  EditorMediaAssetPage,
+  EditorWorkspace,
+} from "~/main/modules/editor";
+import type { BoundStore } from "~/renderer/store/store.types";
 
 import {
   createEditorTestAsset,
@@ -11,6 +15,17 @@ import {
 } from "./Editor.slice.test-utils";
 
 const { createTestStore, getEditorApi } = setupEditorSliceTest();
+
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+
+  return { promise, reject, resolve };
+}
 
 describe("Editor workspace slice", () => {
   it("hydrates the default editor with a fresh empty timeline", async () => {
@@ -46,6 +61,8 @@ describe("Editor workspace slice", () => {
     expect(store.getState().editor.selectedAssetKey).toBeNull();
     expect(store.getState().editor.selectedClipId).toBeNull();
     expect(store.getState().editor.playbackSeconds).toBe(0);
+    expect(store.getState().editor.mediaRailTab).toBe("all");
+    expect(store.getState().editor.mediaPageIndex).toBe(0);
   });
 
   it("creates projects and surfaces create failures", async () => {
@@ -57,7 +74,10 @@ describe("Editor workspace slice", () => {
       historyFuture: [createEditorTestProject(asset, { id: "future-project" })],
       historyPast: [createEditorTestProject(asset, { id: "past-project" })],
       isPreviewPlaying: true,
+      mediaPageIndex: 2,
+      mediaRailTab: "in-timeline",
       playbackSeconds: 4,
+      savedEditPageIndex: 2,
     });
     editorApi.createProject
       .mockResolvedValueOnce(project)
@@ -71,7 +91,10 @@ describe("Editor workspace slice", () => {
     expect(store.getState().editor.historyPast).toEqual([]);
     expect(store.getState().editor.historyFuture).toEqual([]);
     expect(store.getState().editor.isPreviewPlaying).toBe(false);
+    expect(store.getState().editor.mediaRailTab).toBe("all");
+    expect(store.getState().editor.mediaPageIndex).toBe(0);
     expect(store.getState().editor.playbackSeconds).toBe(0);
+    expect(store.getState().editor.savedEditPageIndex).toBe(0);
     expect(store.getState().editor.workspace?.projects).toEqual([
       {
         clipCount: 1,
@@ -103,6 +126,19 @@ describe("Editor workspace slice", () => {
       id: "saved-project",
       title: "Saved edit",
     });
+    const previousProject = createEditorTestProject(asset, {
+      id: "saved-project-previous",
+      title: "Saved edit previous",
+    });
+    const projectWithHistory = {
+      ...project,
+      history: {
+        editCount: 1,
+        labels: ["Split"],
+        subtitles: ["asset-1.mp4"],
+        snapshots: [previousProject],
+      },
+    };
     const savedProject = {
       ...project,
       title: "Saved edit updated",
@@ -111,7 +147,7 @@ describe("Editor workspace slice", () => {
     editorApi.getWorkspace.mockResolvedValue({
       assets: [asset],
       hasMoreProjects: false,
-      project,
+      project: projectWithHistory,
       projects: [
         {
           clipCount: 1,
@@ -145,8 +181,12 @@ describe("Editor workspace slice", () => {
       projectLimit: 5,
       projectId: project.id,
     });
-    expect(store.getState().editor.project).toBe(project);
-    expect(store.getState().editor.historyPast).toEqual([]);
+    expect(store.getState().editor.project).toBe(projectWithHistory);
+    expect(store.getState().editor.historyPast).toEqual([previousProject]);
+    expect(store.getState().editor.historyPastLabels).toEqual(["Split"]);
+    expect(store.getState().editor.historyPastSubtitles).toEqual([
+      "asset-1.mp4",
+    ]);
     expect(store.getState().editor.historyFuture).toEqual([]);
     expect(store.getState().editor.playbackSeconds).toBe(0);
 
@@ -154,7 +194,17 @@ describe("Editor workspace slice", () => {
       savedProject,
     );
 
-    expect(editorApi.saveProject).toHaveBeenCalledWith({ project });
+    expect(editorApi.saveProject).toHaveBeenCalledWith({
+      project: expect.objectContaining({
+        history: {
+          editCount: 1,
+          labels: ["Split"],
+          subtitles: ["asset-1.mp4"],
+          snapshots: [previousProject],
+        },
+        id: project.id,
+      }),
+    });
     expect(store.getState().editor.project).toBe(savedProject);
     expect(store.getState().editor.workspace?.projects[0]).toMatchObject({
       id: "alpha-project",
@@ -166,6 +216,46 @@ describe("Editor workspace slice", () => {
       title: savedProject.title,
       updatedAt: savedProject.updatedAt,
     });
+  });
+
+  it("persists compact history metadata when saving projects", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const asset = createEditorTestAsset();
+    const project = createEditorTestProject(asset);
+    editorApi.saveProject.mockImplementation(({ project: savedProject }) =>
+      Promise.resolve(savedProject),
+    );
+    loadEditorProject(store, project, [asset], {
+      historyPast: [
+        createEditorTestProject(asset, {
+          history: { editCount: 1, labels: ["Nested"] },
+          id: "previous-project",
+        }),
+      ],
+      historyPastLabels: ["Split", "Mute audio"],
+      historyPastSubtitles: ["asset-1.mp4", null],
+    });
+
+    await store.getState().editor.saveProject(project);
+
+    expect(editorApi.saveProject).toHaveBeenCalledWith({
+      project: expect.objectContaining({
+        history: {
+          editCount: 2,
+          labels: ["Split", "Mute audio"],
+          subtitles: ["asset-1.mp4", null],
+          snapshots: [
+            expect.objectContaining({
+              id: "previous-project",
+            }),
+          ],
+        },
+      }),
+    });
+    expect(
+      editorApi.saveProject.mock.calls[0]?.[0].project.history?.snapshots?.[0],
+    ).not.toHaveProperty("history");
   });
 
   it("repairs malformed timeline clip order when opening saved projects", async () => {
@@ -255,6 +345,29 @@ describe("Editor workspace slice", () => {
     expect(store.getState().editor.projectLimit).toBe(10);
     expect(store.getState().editor.workspace?.hasMoreProjects).toBe(false);
     expect(store.getState().editor.workspace?.projects).toHaveLength(10);
+  });
+
+  it("loads more project summaries without an active edit", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const asset = createEditorTestAsset();
+    const refreshedProject = createEditorTestProject(asset, {
+      id: "refreshed-project",
+      title: "Refreshed edit",
+    });
+    editorApi.getWorkspace.mockResolvedValue({
+      assets: [asset],
+      hasMoreProjects: false,
+      project: refreshedProject,
+      projects: [],
+    });
+
+    await store.getState().editor.loadMoreProjects();
+
+    expect(editorApi.getWorkspace).toHaveBeenCalledWith({
+      projectLimit: 10,
+    });
+    expect(store.getState().editor.project).toBe(refreshedProject);
   });
 
   it("deletes saved projects and resets to the default edit", async () => {
@@ -367,11 +480,19 @@ describe("Editor workspace slice", () => {
     await store.getState().editor.deleteProject("missing-project");
     expect(store.getState().editor.error).toBe("delete failed");
 
+    editorApi.deleteProject.mockRejectedValueOnce("delete offline");
+    await store.getState().editor.deleteProject("missing-project");
+    expect(store.getState().editor.error).toBe("Editor failed");
+
     editorApi.deleteAllProjects.mockRejectedValueOnce(
       new Error("delete all failed"),
     );
     await store.getState().editor.deleteAllProjects();
     expect(store.getState().editor.error).toBe("delete all failed");
+
+    editorApi.deleteAllProjects.mockRejectedValueOnce("delete all offline");
+    await store.getState().editor.deleteAllProjects();
+    expect(store.getState().editor.error).toBe("Editor failed");
   });
 
   it("logs project autosave failures", async () => {
@@ -451,6 +572,54 @@ describe("Editor workspace slice", () => {
     expect(store.getState().editor.selectedClipId).toBe("timeline-1");
   });
 
+  it("preserves source editor asset selection when the hydrated project has no clips", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const asset = createEditorTestAsset();
+    const project = createEditorTestProject(asset, {
+      activeClipId: "missing",
+      selectedAssetKey: asset.assetKey,
+      tracks: [{ ...createEditorTestProject(asset).tracks[0]!, clips: [] }],
+    });
+    editorApi.getWorkspace.mockResolvedValue({
+      assets: [asset],
+      hasMoreProjects: false,
+      project,
+      projects: [],
+    });
+
+    await store.getState().editor.hydrate({ id: asset.id, kind: asset.kind });
+
+    expect(store.getState().editor.project).toMatchObject({
+      activeClipId: null,
+      selectedAssetKey: asset.assetKey,
+    });
+  });
+
+  it("clears source editor selection when the hydrated project has no clips or asset selection", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const asset = createEditorTestAsset();
+    const project = createEditorTestProject(asset, {
+      activeClipId: "missing",
+      selectedAssetKey: null,
+      tracks: [{ ...createEditorTestProject(asset).tracks[0]!, clips: [] }],
+    });
+    editorApi.getWorkspace.mockResolvedValue({
+      assets: [asset],
+      hasMoreProjects: false,
+      project,
+      projects: [],
+    });
+
+    await store.getState().editor.hydrate({ id: asset.id, kind: asset.kind });
+
+    expect(store.getState().editor.project).toMatchObject({
+      activeClipId: null,
+      selectedAssetKey: null,
+    });
+  });
+
   it("stores hydrate and refresh errors", async () => {
     const store = createTestStore();
     const editorApi = getEditorApi();
@@ -471,6 +640,336 @@ describe("Editor workspace slice", () => {
     editorApi.getWorkspace.mockRejectedValueOnce("offline");
     await store.getState().editor.refreshMedia();
     expect(store.getState().editor.error).toBe("Editor failed");
+
+    editorApi.getWorkspace.mockRejectedValueOnce("offline");
+    await store.getState().editor.loadMoreProjects();
+    expect(store.getState().editor.error).toBe("Editor failed");
+
+    editorApi.getWorkspace.mockRejectedValueOnce(new Error("load more failed"));
+    await store.getState().editor.loadMoreProjects();
+    expect(store.getState().editor.error).toBe("load more failed");
+  });
+
+  it("hydrates editor media assets without toggling the page loading state", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const asset = createEditorTestAsset();
+    editorApi.listMediaAssets.mockResolvedValue({
+      items: [asset],
+      pageCount: 1,
+      pageIndex: 0,
+      pageSize: 5,
+      totalCount: 1,
+    });
+
+    await store.getState().editor.hydrateMediaAssets({
+      category: "death-clip",
+      game: "poe2",
+      league: "Standard",
+      pageIndex: 0,
+      pageSize: 5,
+    });
+
+    expect(editorApi.listMediaAssets).toHaveBeenCalledWith({
+      category: "death-clip",
+      game: "poe2",
+      league: "Standard",
+      pageIndex: 0,
+      pageSize: 5,
+    });
+    expect(store.getState().editor.mediaAssetPage).toMatchObject({
+      items: [asset],
+      pageSize: 5,
+      totalCount: 1,
+    });
+    expect(store.getState().editor.mediaAssetPendingQuery).toBeNull();
+    expect(store.getState().editor.mediaAssetQuery).toEqual({
+      category: "death-clip",
+      game: "poe2",
+      league: "Standard",
+      pageIndex: 0,
+      pageSize: 5,
+    });
+    expect(store.getState().editor.isLoading).toBe(false);
+
+    const nextAsset = createEditorTestAsset({
+      assetKey: "clip:asset-2",
+      id: "asset-2",
+      name: "asset-2.mp4",
+    });
+    editorApi.listMediaAssets.mockResolvedValueOnce({
+      items: [nextAsset],
+      pageCount: 1,
+      pageIndex: 1,
+      pageSize: 5,
+      totalCount: 2,
+    });
+    await store.getState().editor.hydrateMediaAssets({
+      category: "death-clip",
+      game: "poe2",
+      league: "Standard",
+      pageIndex: 1,
+      pageSize: 5,
+    });
+
+    expect(
+      store.getState().editor.mediaAssetPage?.items.map((item) => item.id),
+    ).toEqual(["asset-2"]);
+
+    editorApi.listMediaAssets.mockRejectedValueOnce(new Error("media failed"));
+    await store.getState().editor.hydrateMediaAssets({
+      category: "recording",
+      game: "poe1",
+      pageSize: 10,
+    });
+
+    expect(store.getState().editor.error).toBe("media failed");
+    expect(store.getState().editor.mediaAssetPendingQuery).toBeNull();
+    expect(
+      store.getState().editor.mediaAssetPage?.items.map((item) => item.id),
+    ).toEqual(["asset-2"]);
+
+    editorApi.listMediaAssets.mockRejectedValueOnce("offline");
+    await store.getState().editor.hydrateMediaAssets({
+      category: "recording",
+      game: "poe1",
+      pageIndex: 0,
+      pageSize: 10,
+    });
+
+    expect(store.getState().editor.error).toBe("Editor failed");
+  });
+
+  it("keeps editor media asset paging pending until the response loads", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const firstAsset = createEditorTestAsset({
+      assetKey: "clip:asset-1",
+      id: "asset-1",
+      name: "asset-1.mp4",
+    });
+    const secondAsset = createEditorTestAsset({
+      assetKey: "clip:asset-2",
+      id: "asset-2",
+      name: "asset-2.mp4",
+    });
+    const secondPage = createDeferred<EditorMediaAssetPage>();
+    editorApi.listMediaAssets
+      .mockResolvedValueOnce({
+        items: [firstAsset],
+        pageCount: 2,
+        pageIndex: 0,
+        pageSize: 1,
+        totalCount: 2,
+      })
+      .mockReturnValueOnce(secondPage.promise);
+
+    await store.getState().editor.hydrateMediaAssets({
+      category: "death-clip",
+      game: "poe2",
+      pageIndex: 0,
+      pageSize: 1,
+    });
+    const request = store.getState().editor.hydrateMediaAssets({
+      category: "death-clip",
+      game: "poe2",
+      pageIndex: 1,
+      pageSize: 1,
+    });
+    store.getState().editor.setMediaPageIndex(1);
+
+    expect(store.getState().editor.mediaPageIndex).toBe(0);
+    expect(store.getState().editor.mediaAssetPendingQuery).toEqual({
+      category: "death-clip",
+      game: "poe2",
+      pageIndex: 1,
+      pageSize: 1,
+    });
+    expect(store.getState().editor.mediaAssetQuery).toEqual({
+      category: "death-clip",
+      game: "poe2",
+      pageIndex: 0,
+      pageSize: 1,
+    });
+
+    secondPage.resolve({
+      items: [secondAsset],
+      pageCount: 2,
+      pageIndex: 1,
+      pageSize: 1,
+      totalCount: 2,
+    });
+    await request;
+
+    expect(store.getState().editor.mediaAssetPage?.items).toEqual([
+      secondAsset,
+    ]);
+    expect(store.getState().editor.mediaAssetPendingQuery).toBeNull();
+  });
+
+  it("ignores stale editor media asset responses", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const staleAsset = createEditorTestAsset({
+      assetKey: "clip:stale",
+      id: "stale",
+      name: "stale.mp4",
+    });
+    const currentAsset = createEditorTestAsset({
+      assetKey: "recording:current",
+      category: "recording",
+      id: "current",
+      kind: "recording",
+      name: "current.mp4",
+    });
+    const stalePage = createDeferred<EditorMediaAssetPage>();
+    const currentPage = createDeferred<EditorMediaAssetPage>();
+    editorApi.listMediaAssets
+      .mockReturnValueOnce(stalePage.promise)
+      .mockReturnValueOnce(currentPage.promise);
+
+    const staleRequest = store.getState().editor.hydrateMediaAssets({
+      category: "death-clip",
+      game: "poe2",
+      pageIndex: 0,
+      pageSize: 5,
+    });
+    const currentRequest = store.getState().editor.hydrateMediaAssets({
+      category: "recording",
+      game: "poe2",
+      pageIndex: 0,
+      pageSize: 5,
+    });
+
+    currentPage.resolve({
+      items: [currentAsset],
+      pageCount: 1,
+      pageIndex: 0,
+      pageSize: 5,
+      totalCount: 1,
+    });
+    await currentRequest;
+    stalePage.resolve({
+      items: [staleAsset],
+      pageCount: 1,
+      pageIndex: 0,
+      pageSize: 5,
+      totalCount: 1,
+    });
+    await staleRequest;
+
+    expect(store.getState().editor.mediaAssetPage?.items).toEqual([
+      currentAsset,
+    ]);
+    expect(store.getState().editor.mediaAssetQuery).toEqual({
+      category: "recording",
+      game: "poe2",
+      pageIndex: 0,
+      pageSize: 5,
+    });
+  });
+
+  it("ignores stale editor media asset failures", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const currentAsset = createEditorTestAsset({
+      assetKey: "recording:current",
+      category: "recording",
+      id: "current",
+      kind: "recording",
+      name: "current.mp4",
+    });
+    const stalePage = createDeferred<EditorMediaAssetPage>();
+    const currentPage = createDeferred<EditorMediaAssetPage>();
+    editorApi.listMediaAssets
+      .mockReturnValueOnce(stalePage.promise)
+      .mockReturnValueOnce(currentPage.promise);
+
+    const staleRequest = store.getState().editor.hydrateMediaAssets({
+      category: "death-clip",
+      game: "poe2",
+      pageIndex: 0,
+      pageSize: 5,
+    });
+    const currentRequest = store.getState().editor.hydrateMediaAssets({
+      category: "recording",
+      game: "poe2",
+      pageIndex: 0,
+      pageSize: 5,
+    });
+
+    currentPage.resolve({
+      items: [currentAsset],
+      pageCount: 1,
+      pageIndex: 0,
+      pageSize: 5,
+      totalCount: 1,
+    });
+    await currentRequest;
+    stalePage.reject(new Error("stale media failed"));
+    await staleRequest;
+
+    expect(store.getState().editor.error).toBeNull();
+    expect(store.getState().editor.mediaAssetPage?.items).toEqual([
+      currentAsset,
+    ]);
+  });
+
+  it("keeps media rail paging state in the editor slice", () => {
+    const store = createTestStore();
+
+    store.getState().editor.setMediaPageIndex(1);
+    store.getState().editor.setSavedEditPageIndex(1);
+
+    expect(store.getState().editor.mediaPageIndex).toBe(1);
+    expect(store.getState().editor.savedEditPageIndex).toBe(1);
+
+    store.setState({
+      editor: {
+        ...store.getState().editor,
+        mediaAssetPendingQuery: {
+          category: "death-clip",
+          game: "poe2",
+          pageIndex: 1,
+          pageSize: 5,
+        },
+      },
+    });
+    store.getState().editor.setMediaPageIndex(2);
+
+    expect(store.getState().editor.mediaPageIndex).toBe(1);
+
+    store.setState((state) => ({
+      savedEdits: {
+        ...(state.savedEdits as BoundStore["savedEdits"]),
+        libraryPendingQuery: { pageIndex: 1 },
+      },
+    }));
+    store.getState().editor.setSavedEditPageIndex(2);
+
+    expect(store.getState().editor.savedEditPageIndex).toBe(1);
+
+    store.getState().editor.setMediaFilter("recording");
+
+    expect(store.getState().editor.mediaFilter).toBe("recording");
+    expect(store.getState().editor.mediaPageIndex).toBe(0);
+    expect(store.getState().editor.savedEditPageIndex).toBe(0);
+
+    store.getState().editor.setMediaPageIndex(1);
+    store.getState().editor.setSavedEditPageIndex(1);
+
+    store.getState().editor.setMediaRailTab("in-timeline");
+
+    expect(store.getState().editor.mediaRailTab).toBe("in-timeline");
+    expect(store.getState().editor.mediaPageIndex).toBe(0);
+    expect(store.getState().editor.savedEditPageIndex).toBe(0);
+
+    store.getState().editor.setMediaPageIndex(1);
+    store.getState().editor.setSavedEditPageIndex(1);
+    store.getState().editor.resetMediaPagination();
+
+    expect(store.getState().editor.mediaPageIndex).toBe(0);
+    expect(store.getState().editor.savedEditPageIndex).toBe(0);
   });
 
   it("refreshes available media without resetting the active edit", async () => {
@@ -575,13 +1074,22 @@ describe("Editor workspace slice", () => {
     store.getState().editor.setPlaybackSeconds(-5);
     store.getState().editor.setPlaybackSeconds(50);
     store.getState().editor.setPreviewPlaying(true);
+    store.getState().editor.setPreviewHasAudio(true);
+    store.getState().editor.setPreviewVolume(2);
+    store.getState().editor.setPreviewVolume(-1);
+    store.getState().editor.fitTimelineToEdit();
+    expect(store.getState().editor.isTimelineFitToEdit).toBe(true);
+    expect(store.getState().editor.zoom).toBe(1);
     store.getState().editor.setZoom(0.1);
+    expect(store.getState().editor.isTimelineFitToEdit).toBe(false);
     expect(store.getState().editor.zoom).toBe(1);
     store.getState().editor.setZoom(10);
 
     expect(store.getState().editor).toMatchObject({
       isPreviewPlaying: true,
       playbackSeconds: 10,
+      previewHasAudio: true,
+      previewVolume: 0,
       selectedAssetKey: asset.assetKey,
       selectedClipId: "timeline-1",
       zoom: 4,

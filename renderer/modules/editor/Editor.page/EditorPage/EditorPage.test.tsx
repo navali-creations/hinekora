@@ -6,18 +6,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EditorProject } from "~/main/modules/editor";
 
 const storeMocks = vi.hoisted(() => ({
+  copyProjectToClipboard: vi.fn(),
+  createProject: vi.fn(),
   hydrate: vi.fn(),
+  openProject: vi.fn(),
   redoProjectChange: vi.fn(),
+  removeAllTimelineGaps: vi.fn(),
   removeTimelineClip: vi.fn(),
   removeTimelineGap: vi.fn(),
   setHoveredTimelineGap: vi.fn(),
+  splitTimelineClipAt: vi.fn(),
+  toggleProjectAudioMuted: vi.fn(),
   undoProjectChange: vi.fn(),
   useEditorShallow: vi.fn(),
+  useSavedEditsShallow: vi.fn(),
   useSettingsSelector: vi.fn(),
 }));
 
 vi.mock("~/renderer/store", () => ({
   useEditorShallow: storeMocks.useEditorShallow,
+  useSavedEditsShallow: storeMocks.useSavedEditsShallow,
   useSettingsSelector: storeMocks.useSettingsSelector,
 }));
 
@@ -27,13 +35,21 @@ vi.mock("../../Editor.components/EditorAssetRail/EditorAssetRail", () => ({
 vi.mock("../../Editor.components/EditorActionsMenu/EditorActionsMenu", () => ({
   EditorActionsMenu: ({
     onToggleHistory,
+    onToggleShortcuts,
   }: {
     isHistoryVisible: boolean;
+    isShortcutsVisible: boolean;
     onToggleHistory: () => void;
+    onToggleShortcuts: () => void;
   }) => (
-    <button type="button" onClick={onToggleHistory}>
-      Toggle history
-    </button>
+    <>
+      <button type="button" onClick={onToggleHistory}>
+        Toggle history
+      </button>
+      <button type="button" onClick={onToggleShortcuts}>
+        Toggle shortcuts
+      </button>
+    </>
   ),
 }));
 vi.mock(
@@ -63,6 +79,18 @@ vi.mock("../../Editor.components/EditorHistoryRail/EditorHistoryRail", () => ({
   ),
 }));
 vi.mock(
+  "../../Editor.components/EditorShortcutsRail/EditorShortcutsRail",
+  () => ({
+    EditorShortcutsRail: ({ onClose }: { onClose: () => void }) => (
+      <div data-testid="shortcuts-rail">
+        <button type="button" onClick={onClose}>
+          Close shortcuts
+        </button>
+      </div>
+    ),
+  }),
+);
+vi.mock(
   "../../Editor.components/EditorPreviewStage/EditorPreviewStage",
   () => ({
     EditorPreviewStage: () => <div data-testid="preview-stage" />,
@@ -78,6 +106,7 @@ vi.mock("../../Editor.components/EditorTimeline/EditorTimeline", () => ({
   EditorTimeline: () => <div data-testid="timeline" />,
 }));
 
+import { editorShortcutEventNames } from "../../Editor.utils/EditorShortcuts.utils";
 import { EditorPage } from "./EditorPage";
 
 const project: EditorProject = {
@@ -112,10 +141,19 @@ const project: EditorProject = {
 let container: HTMLDivElement;
 let root: Root;
 let editorState: Record<string, unknown>;
+const settingsSlice = {
+  value: {
+    activeGame: "poe2",
+    poe1SelectedLeague: "Standard",
+    poe2SelectedLeague: "Standard",
+  },
+} as const;
 
 function configureEditorState(overrides: Record<string, unknown> = {}) {
   editorState = {
     clipboardState: { error: null, requestId: null, status: "idle" },
+    copyProjectToClipboard: storeMocks.copyProjectToClipboard,
+    createProject: storeMocks.createProject,
     error: null,
     exportState: {
       fileName: null,
@@ -125,13 +163,25 @@ function configureEditorState(overrides: Record<string, unknown> = {}) {
     hoveredTimelineGap: null,
     hydrate: storeMocks.hydrate,
     isLoading: false,
+    openProject: storeMocks.openProject,
+    playbackSeconds: 4,
+    previewHasAudio: true,
     project,
     redoProjectChange: storeMocks.redoProjectChange,
+    removeAllTimelineGaps: storeMocks.removeAllTimelineGaps,
     removeTimelineClip: storeMocks.removeTimelineClip,
     removeTimelineGap: storeMocks.removeTimelineGap,
     selectedClipId: "timeline-1",
     setHoveredTimelineGap: storeMocks.setHoveredTimelineGap,
+    splitTimelineClipAt: storeMocks.splitTimelineClipAt,
+    toggleProjectAudioMuted: storeMocks.toggleProjectAudioMuted,
     undoProjectChange: storeMocks.undoProjectChange,
+    workspace: {
+      assets: project.assets,
+      hasMoreProjects: false,
+      project,
+      projects: [],
+    },
     ...overrides,
   };
   storeMocks.useEditorShallow.mockImplementation((selector) =>
@@ -158,11 +208,18 @@ describe("EditorPage shortcuts", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
+    storeMocks.hydrate.mockResolvedValue(true);
+    storeMocks.openProject.mockResolvedValue(true);
     configureEditorState();
     storeMocks.useSettingsSelector.mockImplementation((selector) =>
+      selector(settingsSlice),
+    );
+    storeMocks.useSavedEditsShallow.mockImplementation((selector) =>
       selector({
-        value: {
-          activeGame: "poe2",
+        libraryPage: {
+          availableLeagues: ["Standard"],
+          globalTotalCount: 0,
+          totalCount: 0,
         },
       }),
     );
@@ -242,16 +299,235 @@ describe("EditorPage shortcuts", () => {
     expect(storeMocks.redoProjectChange).toHaveBeenCalledTimes(2);
   });
 
-  it("blocks editor shortcuts while copying to clipboard", async () => {
+  it("supports editor command shortcuts", async () => {
+    const openSaveDialog = vi.fn();
+    const openDeleteEditDialog = vi.fn();
+    window.addEventListener(
+      editorShortcutEventNames.openSaveDialog,
+      openSaveDialog,
+    );
+    window.addEventListener(
+      editorShortcutEventNames.openDeleteEditDialog,
+      openDeleteEditDialog,
+    );
+    await renderEditorPage();
+
+    await act(async () => {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "c",
+        }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "s",
+        }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "n",
+        }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "d",
+        }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "h",
+        }),
+      );
+    });
+
+    expect(storeMocks.copyProjectToClipboard).toHaveBeenCalledTimes(1);
+    expect(openSaveDialog).toHaveBeenCalledTimes(1);
+    expect(storeMocks.createProject).toHaveBeenCalledWith({ assetKeys: [] });
+    expect(openDeleteEditDialog).toHaveBeenCalledTimes(1);
+    expect(container.querySelector("[data-testid='history-rail']")).not.toBe(
+      null,
+    );
+
+    window.removeEventListener(
+      editorShortcutEventNames.openSaveDialog,
+      openSaveDialog,
+    );
+    window.removeEventListener(
+      editorShortcutEventNames.openDeleteEditDialog,
+      openDeleteEditDialog,
+    );
+  });
+
+  it("ignores editor shortcuts while a dialog is focused", async () => {
+    const openSaveDialog = vi.fn();
+    const openDeleteEditDialog = vi.fn();
+    window.addEventListener(
+      editorShortcutEventNames.openSaveDialog,
+      openSaveDialog,
+    );
+    window.addEventListener(
+      editorShortcutEventNames.openDeleteEditDialog,
+      openDeleteEditDialog,
+    );
+    await renderEditorPage();
+
+    const dialog = document.createElement("dialog");
+    const dialogButton = document.createElement("button");
+    dialog.setAttribute("open", "");
+    dialog.append(dialogButton);
+    document.body.append(dialog);
+    dialogButton.focus();
+
+    await act(async () => {
+      dialogButton.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          key: "Delete",
+        }),
+      );
+      dialogButton.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "c",
+        }),
+      );
+      dialogButton.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "s",
+        }),
+      );
+      dialogButton.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "d",
+        }),
+      );
+    });
+
+    expect(storeMocks.removeTimelineClip).not.toHaveBeenCalled();
+    expect(storeMocks.copyProjectToClipboard).not.toHaveBeenCalled();
+    expect(openSaveDialog).not.toHaveBeenCalled();
+    expect(openDeleteEditDialog).not.toHaveBeenCalled();
+
+    window.removeEventListener(
+      editorShortcutEventNames.openSaveDialog,
+      openSaveDialog,
+    );
+    window.removeEventListener(
+      editorShortcutEventNames.openDeleteEditDialog,
+      openDeleteEditDialog,
+    );
+  });
+
+  it("supports focused timeline single-key shortcuts", async () => {
+    await renderEditorPage();
+
+    await act(async () => {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "s" }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "m" }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "c" }),
+      );
+    });
+
+    expect(storeMocks.splitTimelineClipAt).toHaveBeenCalledWith(4);
+    expect(storeMocks.toggleProjectAudioMuted).toHaveBeenCalledTimes(1);
+    expect(storeMocks.removeAllTimelineGaps).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks mutating editor shortcuts while processing", async () => {
+    const openSaveDialog = vi.fn();
+    const openDeleteEditDialog = vi.fn();
+    window.addEventListener(
+      editorShortcutEventNames.openSaveDialog,
+      openSaveDialog,
+    );
+    window.addEventListener(
+      editorShortcutEventNames.openDeleteEditDialog,
+      openDeleteEditDialog,
+    );
     configureEditorState({
       clipboardState: { error: null, requestId: "copy-1", status: "copying" },
     });
     await renderEditorPage();
 
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" }));
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete" }));
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "c",
+        }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "s",
+        }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "n",
+        }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "d",
+        }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "s" }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "m" }),
+      );
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "c" }),
+      );
+    });
 
     expect(container.textContent).toContain("Processing");
     expect(storeMocks.removeTimelineClip).not.toHaveBeenCalled();
+    expect(storeMocks.copyProjectToClipboard).not.toHaveBeenCalled();
+    expect(openSaveDialog).not.toHaveBeenCalled();
+    expect(storeMocks.createProject).not.toHaveBeenCalled();
+    expect(openDeleteEditDialog).not.toHaveBeenCalled();
+    expect(storeMocks.splitTimelineClipAt).not.toHaveBeenCalled();
+    expect(storeMocks.toggleProjectAudioMuted).not.toHaveBeenCalled();
+    expect(storeMocks.removeAllTimelineGaps).not.toHaveBeenCalled();
+
+    window.removeEventListener(
+      editorShortcutEventNames.openSaveDialog,
+      openSaveDialog,
+    );
+    window.removeEventListener(
+      editorShortcutEventNames.openDeleteEditDialog,
+      openDeleteEditDialog,
+    );
   });
 
   it("hydrates when no editor project exists", async () => {
@@ -260,6 +536,15 @@ describe("EditorPage shortcuts", () => {
     await renderEditorPage();
 
     expect(storeMocks.hydrate).toHaveBeenCalledWith(null);
+  });
+
+  it("opens a saved edit from the editor route project id", async () => {
+    await act(async () => {
+      root.render(<EditorPage projectId="project-2" />);
+    });
+
+    expect(storeMocks.openProject).toHaveBeenCalledWith("project-2");
+    expect(storeMocks.hydrate).not.toHaveBeenCalled();
   });
 
   it("does not rehydrate over an existing local editor project", async () => {
@@ -293,6 +578,36 @@ describe("EditorPage shortcuts", () => {
     });
 
     expect(container.querySelector("[data-testid='history-rail']")).toBe(null);
+  });
+
+  it("shows shortcuts in the right rail in place of history", async () => {
+    await renderEditorPage();
+
+    const shortcutsButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((button) => button.textContent === "Toggle shortcuts");
+    await act(async () => {
+      shortcutsButton?.click();
+    });
+
+    expect(container.querySelector("[data-testid='shortcuts-rail']")).not.toBe(
+      null,
+    );
+    expect(container.querySelector("[data-testid='history-rail']")).toBe(null);
+
+    const historyButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Toggle history",
+    );
+    await act(async () => {
+      historyButton?.click();
+    });
+
+    expect(container.querySelector("[data-testid='history-rail']")).not.toBe(
+      null,
+    );
+    expect(container.querySelector("[data-testid='shortcuts-rail']")).toBe(
+      null,
+    );
   });
 
   it("rehydrates when opening a different editor source", async () => {

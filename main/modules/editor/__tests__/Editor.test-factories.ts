@@ -56,14 +56,18 @@ function createEditorProject(
 ): EditorProject {
   const asset = createEditorMediaAsset();
   const clip = createEditorTimelineClip(asset);
+  const assets = overrides.assets ?? [asset];
+  const firstAsset = assets[0] ?? asset;
 
   return {
     activeClipId: clip.id,
-    assets: [asset],
+    assets,
     createdAt: "2026-06-18T00:00:00.000Z",
     durationSeconds: clip.durationSeconds,
     id: "project-1",
     selectedAssetKey: asset.assetKey,
+    sourceGame: firstAsset.sourceGame,
+    sourceLeague: firstAsset.sourceLeague,
     title: "source.mp4 edit",
     tracks: [
       {
@@ -75,6 +79,22 @@ function createEditorProject(
     ],
     updatedAt: "2026-06-18T00:00:00.000Z",
     ...overrides,
+  };
+}
+
+function createEditorVideoTrackForAssets(
+  assets: EditorMediaAsset[],
+): EditorProject["tracks"][number] {
+  return {
+    clips: assets.map((asset, index) =>
+      createEditorTimelineClip(asset, {
+        id: `timeline-${asset.assetKey}`,
+        startSeconds: index * 10,
+      }),
+    ),
+    id: "video-track",
+    kind: "video",
+    label: "Video",
   };
 }
 
@@ -112,4 +132,5 @@ export {
   createEditorMediaAsset,
   createEditorProject,
   createEditorTimelineClip,
+  createEditorVideoTrackForAssets,
 };

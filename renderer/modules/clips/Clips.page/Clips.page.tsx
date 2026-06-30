@@ -23,13 +23,11 @@ function ClipsPage() {
     clearSelectedClips,
     deleteSelectedClips,
     libraryLeagues,
-    refreshLibrary,
     selectedClipCount,
   } = useReplayClipsShallow((replayClips) => ({
     clearSelectedClips: replayClips.clearSelectedClips,
     deleteSelectedClips: replayClips.deleteSelectedClips,
     libraryLeagues: replayClips.libraryLeagues,
-    refreshLibrary: replayClips.refreshLibrary,
     selectedClipCount: Object.values(replayClips.selectedClipIds).filter(
       Boolean,
     ).length,
@@ -53,11 +51,6 @@ function ClipsPage() {
   }, [clipKind, scope.game, scope.league]);
   const showLeagueColumn = scope.league === ALL_LEAGUES_VALUE;
   const tableQueryKey = `${scope.game}:${scope.league}:${clipKind}`;
-
-  const handleRefresh = () => {
-    clearSelectedClips();
-    void refreshLibrary();
-  };
 
   const handleDeleteSelected = () => {
     void deleteSelectedClips();
@@ -110,7 +103,7 @@ function ClipsPage() {
                   type="button"
                   onClick={handleManualClipsTab}
                 >
-                  Manual Clips
+                  Manual Replays
                 </button>
               </div>
             }
@@ -127,7 +120,6 @@ function ClipsPage() {
               ) : null
             }
             onLeagueChange={setLeague}
-            onRefresh={handleRefresh}
           />
         }
       />

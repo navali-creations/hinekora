@@ -10,7 +10,10 @@ import type { EditorSlice } from "./Editor.slice.types";
 
 type EditorTimelineGapActions = Pick<
   EditorSlice["editor"],
-  "removeTimelineGap" | "setHoveredTimelineGap"
+  | "removeAllTimelineGaps"
+  | "removeTimelineGap"
+  | "setHoveredTimelineGap"
+  | "setTimelineGapsHighlighted"
 >;
 
 function createEditorTimelineGapActions({
@@ -70,9 +73,74 @@ function createEditorTimelineGapActions({
       );
       trackEvent("editor-gap-deleted");
     },
+    removeAllTimelineGaps: () => {
+      set((state) => {
+        state.editor.areTimelineGapsHighlighted = false;
+        state.editor.hoveredTimelineGap = null;
+      });
+
+      let didRemoveAnyGap = false;
+      updateProject(
+        (project) => {
+          let didCompact = false;
+          const tracks = project.tracks.map((track) => {
+            let cursorSeconds = 0;
+            const clips = [...track.clips]
+              .sort(
+                (first, second) =>
+                  first.startSeconds - second.startSeconds ||
+                  first.id.localeCompare(second.id),
+              )
+              .map((clip) => {
+                const startSeconds = roundToMilliseconds(cursorSeconds);
+                cursorSeconds = roundToMilliseconds(
+                  startSeconds + clip.durationSeconds,
+                );
+
+                if (clip.startSeconds === startSeconds) {
+                  return clip;
+                }
+
+                didCompact = true;
+                return {
+                  ...clip,
+                  startSeconds,
+                };
+              });
+
+            return {
+              ...track,
+              clips,
+            };
+          });
+
+          const durationSeconds = calculateTimelineDuration(tracks);
+          if (!didCompact && durationSeconds === project.durationSeconds) {
+            return project;
+          }
+
+          didRemoveAnyGap = true;
+          return {
+            ...project,
+            durationSeconds,
+            tracks,
+            updatedAt: new Date().toISOString(),
+          };
+        },
+        { historyLabel: "Clear gaps" },
+      );
+      if (didRemoveAnyGap) {
+        trackEvent("editor-all-gaps-deleted");
+      }
+    },
     setHoveredTimelineGap: (gap) => {
       set((state) => {
         state.editor.hoveredTimelineGap = gap;
+      });
+    },
+    setTimelineGapsHighlighted: (isHighlighted) => {
+      set((state) => {
+        state.editor.areTimelineGapsHighlighted = isHighlighted;
       });
     },
   };

@@ -39,6 +39,7 @@ describe("AppMenu slice", () => {
   const getSettings = vi.fn();
   const getVersion = vi.fn();
   const isMaximized = vi.fn();
+  const isRecorderRequested = vi.fn();
   const isRecorderVisible = vi.fn();
   const maximize = vi.fn();
   const minimize = vi.fn();
@@ -57,6 +58,7 @@ describe("AppMenu slice", () => {
     getSettings.mockResolvedValue({ lastSeenAppVersion: null });
     getVersion.mockResolvedValue("0.2.1");
     isMaximized.mockResolvedValue(false);
+    isRecorderRequested.mockResolvedValue(true);
     isRecorderVisible.mockResolvedValue(true);
     maximize.mockResolvedValue(undefined);
     minimize.mockResolvedValue(undefined);
@@ -78,6 +80,7 @@ describe("AppMenu slice", () => {
           unmaximize,
         },
         overlayWindows: {
+          isRecorderRequested,
           isRecorderVisible,
           onRecorderVisibilityChanged: vi.fn(
             (listener: (isVisible: boolean) => void) => {
@@ -109,6 +112,7 @@ describe("AppMenu slice", () => {
 
     expect(store.getState().appMenu).toMatchObject({
       isMaximized: false,
+      isRecorderOverlayRequested: true,
       isRecorderOverlayVisible: true,
     });
     expect(updateSettings).toHaveBeenCalledWith({
@@ -127,6 +131,7 @@ describe("AppMenu slice", () => {
 
     expect(store.getState().appMenu).toMatchObject({
       isMaximized: false,
+      isRecorderOverlayRequested: false,
       isRecorderOverlayVisible: false,
       isWhatsNewOpen: true,
       whatsNewCurrentVersion: "0.2.1",
@@ -138,6 +143,7 @@ describe("AppMenu slice", () => {
   it("runs window and overlay actions", async () => {
     const store = createTestStore();
     isMaximized.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+    isRecorderRequested.mockResolvedValueOnce(false);
     isRecorderVisible.mockResolvedValueOnce(false);
 
     store.getState().appMenu.minimize();
@@ -155,6 +161,7 @@ describe("AppMenu slice", () => {
     expect(toggleRecorder).toHaveBeenCalled();
     expect(store.getState().appMenu).toMatchObject({
       isMaximized: true,
+      isRecorderOverlayRequested: false,
       isRecorderOverlayVisible: true,
     });
   });
@@ -239,14 +246,30 @@ describe("AppMenu slice", () => {
     expect(store.getState().appMenu.whatsNewError).toBe("network failed");
   });
 
-  it("listens for recorder visibility changes", () => {
+  it("listens for recorder visibility changes", async () => {
     const store = createTestStore();
     const stopListening = store.getState().appMenu.startListening();
+    isRecorderRequested.mockResolvedValueOnce(false);
 
     recorderVisibilityListener?.(true);
+    await Promise.resolve();
     stopListening();
 
+    expect(store.getState().appMenu.isRecorderOverlayRequested).toBe(false);
     expect(store.getState().appMenu.isRecorderOverlayVisible).toBe(true);
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it("falls back when recorder requested state changes cannot be read", async () => {
+    const store = createTestStore();
+    const stopListening = store.getState().appMenu.startListening();
+    isRecorderRequested.mockRejectedValueOnce(new Error("overlay failed"));
+
+    recorderVisibilityListener?.(true);
+    await Promise.resolve();
+    stopListening();
+
+    expect(store.getState().appMenu.isRecorderOverlayRequested).toBe(false);
+    expect(store.getState().appMenu.isRecorderOverlayVisible).toBe(true);
   });
 });

@@ -3,9 +3,11 @@ import { FiClock, FiX } from "react-icons/fi";
 
 import { useEditorShallow } from "~/renderer/store";
 
-import { editorVisibleHistoryPageSize } from "../../Editor.slice/Editor.slice.constants";
+import {
+  editorHistoryLimit,
+  editorVisibleHistoryPageSize,
+} from "../../Editor.slice/Editor.slice.constants";
 import { formatEditorTime } from "../../Editor.utils/Editor.utils";
-import { EditorHistoryActions } from "../EditorHistoryActions/EditorHistoryActions";
 
 interface EditorHistoryRailProps {
   onClose: () => void;
@@ -15,21 +17,31 @@ function EditorHistoryRail({ onClose }: EditorHistoryRailProps) {
   const [visibleHistoryCount, setVisibleHistoryCount] = useState(
     editorVisibleHistoryPageSize,
   );
-  const { historyPast, historyPastLabels } = useEditorShallow((editor) => ({
-    historyPast: editor.historyPast,
-    historyPastLabels: editor.historyPastLabels,
-  }));
-  const historyEntries = historyPast
-    .map((project, index) => ({
-      actionLabel: historyPastLabels[index] ?? "Edit",
-      clipCount: project.tracks.reduce(
-        (count, track) => count + track.clips.length,
-        0,
-      ),
-      durationSeconds: project.durationSeconds,
-      id: project.id,
-      index: index + 1,
-    }))
+  const { historyPast, historyPastLabels, historyPastSubtitles, project } =
+    useEditorShallow((editor) => ({
+      historyPast: editor.historyPast,
+      historyPastLabels: editor.historyPastLabels,
+      historyPastSubtitles: editor.historyPastSubtitles,
+      project: editor.project,
+    }));
+  const historyEntries = historyPastLabels
+    .map((actionLabel, index) => {
+      const historyProject = historyPast[index];
+      const actionSubtitle = historyPastSubtitles[index] ?? null;
+
+      return {
+        actionLabel,
+        actionSubtitle,
+        clipCount:
+          historyProject?.tracks.reduce(
+            (count, track) => count + track.clips.length,
+            0,
+          ) ?? 0,
+        durationSeconds: historyProject?.durationSeconds ?? null,
+        id: historyProject?.id ?? project?.id ?? "persisted-history",
+        index: index + 1,
+      };
+    })
     .reverse();
   const visibleHistoryEntries = historyEntries.slice(0, visibleHistoryCount);
   const hasMoreHistory = visibleHistoryEntries.length < historyEntries.length;
@@ -49,7 +61,7 @@ function EditorHistoryRail({ onClose }: EditorHistoryRailProps) {
         <div className="min-w-0 flex-1">
           <h2 className="m-0 font-semibold text-sm">History</h2>
           <p className="m-0 text-base-content/55 text-xs">
-            {historyPast.length} changes
+            {historyPastLabels.length} out of {editorHistoryLimit} changes
           </p>
         </div>
         <div
@@ -67,10 +79,6 @@ function EditorHistoryRail({ onClose }: EditorHistoryRailProps) {
         </div>
       </div>
 
-      <div className="border-base-content/10 border-b p-3">
-        <EditorHistoryActions />
-      </div>
-
       <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
         {visibleHistoryEntries.map((entry) => (
           <div
@@ -84,12 +92,17 @@ function EditorHistoryRail({ onClose }: EditorHistoryRailProps) {
               <span className="min-w-0 truncate font-semibold text-sm">
                 {entry.actionLabel}
               </span>
-              <span className="shrink-0 text-[11px] text-base-content/45 tabular-nums">
-                {formatEditorTime(entry.durationSeconds)}
-              </span>
+              {entry.durationSeconds !== null && (
+                <span className="shrink-0 text-[11px] text-base-content/45 tabular-nums">
+                  {formatEditorTime(entry.durationSeconds)}
+                </span>
+              )}
             </div>
             <p className="relative z-10 m-0 mt-1 text-[11px] text-base-content/45">
-              {entry.clipCount} clips
+              {entry.actionSubtitle ??
+                (entry.durationSeconds === null
+                  ? "Saved edit history"
+                  : `${entry.clipCount} clips`)}
             </p>
           </div>
         ))}

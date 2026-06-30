@@ -8,9 +8,11 @@ type EditorTimelineActions = Pick<
   EditorSlice["editor"],
   | "addAssetToTimelineAt"
   | "moveTimelineClip"
+  | "removeAllTimelineGaps"
   | "removeTimelineClip"
   | "removeTimelineGap"
   | "setHoveredTimelineGap"
+  | "setTimelineGapsHighlighted"
   | "splitTimelineClipAt"
   | "trimTimelineClipEdge"
 >;

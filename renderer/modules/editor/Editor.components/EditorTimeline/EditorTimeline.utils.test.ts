@@ -5,9 +5,20 @@ import {
   formatEditorTimelineRailWidth,
   resolveEditorTimelineFollowScroll,
   resolveEditorTimelineHoverSeconds,
+  resolveEditorTimelineUseCompactTrimHandles,
   resolveEditorTimelineWheelZoom,
   resolveTrimEdgeHoverSeconds,
 } from "./EditorTimeline.utils";
+
+function createTrackWithClipDurations(durationsSeconds: number[]) {
+  return {
+    clips: durationsSeconds.map((durationSeconds) => ({
+      durationSeconds,
+    })),
+  } as Parameters<
+    typeof resolveEditorTimelineUseCompactTrimHandles
+  >[0]["videoTracks"][number];
+}
 
 describe("EditorTimeline utils", () => {
   it("resolves trim edge hover seconds from clip metadata", () => {
@@ -53,12 +64,41 @@ describe("EditorTimeline utils", () => {
   });
 
   it("resolves ctrl wheel zoom steps inside timeline bounds", () => {
-    expect(resolveEditorTimelineWheelZoom({ deltaY: -100, zoom: 1 })).toBe(
-      1.25,
-    );
-    expect(resolveEditorTimelineWheelZoom({ deltaY: 100, zoom: 1.25 })).toBe(1);
-    expect(resolveEditorTimelineWheelZoom({ deltaY: 100, zoom: 1 })).toBe(null);
-    expect(resolveEditorTimelineWheelZoom({ deltaY: 0, zoom: 2 })).toBe(null);
+    expect(
+      resolveEditorTimelineWheelZoom({
+        deltaY: -100,
+        isTimelineFitToEdit: false,
+        zoom: 1,
+      }),
+    ).toBe(1.25);
+    expect(
+      resolveEditorTimelineWheelZoom({
+        deltaY: 100,
+        isTimelineFitToEdit: false,
+        zoom: 1.25,
+      }),
+    ).toBe(1);
+    expect(
+      resolveEditorTimelineWheelZoom({
+        deltaY: 100,
+        isTimelineFitToEdit: false,
+        zoom: 1,
+      }),
+    ).toBe(null);
+    expect(
+      resolveEditorTimelineWheelZoom({
+        deltaY: 100,
+        isTimelineFitToEdit: true,
+        zoom: 1,
+      }),
+    ).toBe(1);
+    expect(
+      resolveEditorTimelineWheelZoom({
+        deltaY: 0,
+        isTimelineFitToEdit: false,
+        zoom: 2,
+      }),
+    ).toBe(null);
   });
 
   it("formats rail positions with symmetric internal padding", () => {
@@ -73,6 +113,33 @@ describe("EditorTimeline utils", () => {
   it("formats rail positions as percentages without internal padding", () => {
     expect(formatEditorTimelineRailLeft(25, 0)).toBe("25%");
     expect(formatEditorTimelineRailWidth(40, 0)).toBe("40%");
+  });
+
+  it("uses compact trim handles once any clip cannot fit handles and a frame", () => {
+    expect(
+      resolveEditorTimelineUseCompactTrimHandles({
+        railPaddingPixels: 24,
+        timelineGridWidthPixels: 1_100,
+        videoTracks: [createTrackWithClipDurations([20, 1])],
+        visibleDurationSeconds: 100,
+      }),
+    ).toBe(true);
+    expect(
+      resolveEditorTimelineUseCompactTrimHandles({
+        railPaddingPixels: 24,
+        timelineGridWidthPixels: 1_100,
+        videoTracks: [createTrackWithClipDurations([20, 10])],
+        visibleDurationSeconds: 100,
+      }),
+    ).toBe(false);
+    expect(
+      resolveEditorTimelineUseCompactTrimHandles({
+        railPaddingPixels: 24,
+        timelineGridWidthPixels: 0,
+        videoTracks: [createTrackWithClipDurations([1])],
+        visibleDurationSeconds: 100,
+      }),
+    ).toBe(true);
   });
 
   it("resolves playback follow scrolling with viewport padding", () => {

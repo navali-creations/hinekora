@@ -24,6 +24,7 @@ import { EditorAssetCard } from "./EditorAssetCard";
 
 let container: HTMLDivElement;
 let root: Root;
+let draggableRef: ReturnType<typeof vi.fn>;
 
 async function renderAssetCard(
   asset = createEditorTestAsset(),
@@ -46,9 +47,10 @@ describe("EditorAssetCard", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
+    draggableRef = vi.fn();
     dndMocks.useDraggable.mockReturnValue({
       isDragging: false,
-      ref: vi.fn(),
+      ref: draggableRef,
     });
     storeMocks.useEditorShallow.mockImplementation((selector) =>
       selector({
@@ -68,6 +70,7 @@ describe("EditorAssetCard", () => {
     const button = await renderAssetCard(asset);
 
     expect(button.disabled).toBe(false);
+    expect(draggableRef).toHaveBeenCalledWith(button);
     expect(dndMocks.useDraggable).toHaveBeenCalledWith(
       expect.objectContaining({
         disabled: false,
@@ -104,5 +107,18 @@ describe("EditorAssetCard", () => {
     });
 
     expect(storeMocks.selectAsset).not.toHaveBeenCalled();
+  });
+
+  it("keeps the active drag source in rail flow", async () => {
+    dndMocks.useDraggable.mockReturnValue({
+      isDragging: true,
+      ref: draggableRef,
+    });
+    const button = await renderAssetCard();
+
+    expect(button.className).not.toContain("absolute");
+    expect(button.className).toContain("opacity-70");
+    expect(button.className).toContain("pointer-events-none");
+    expect(draggableRef).toHaveBeenCalledWith(button);
   });
 });

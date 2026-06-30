@@ -13,6 +13,7 @@ vi.mock("~/renderer/store", () => ({
   useEditorShallow: storeMocks.useEditorShallow,
 }));
 
+import { editorShortcutEventNames } from "../../Editor.utils/EditorShortcuts.utils";
 import { EditorSaveActions } from "./EditorSaveActions";
 
 const project: EditorProject = {
@@ -131,7 +132,7 @@ describe("EditorSaveActions", () => {
     });
     const submitButton = Array.from(
       document.body.querySelectorAll("button"),
-    ).find((button) => button.textContent?.includes("Export video"));
+    ).find((button) => button.textContent?.includes("Save video"));
 
     await act(async () => {
       submitButton?.click();
@@ -156,5 +157,37 @@ describe("EditorSaveActions", () => {
 
     expect(dialog?.open).toBe(true);
     expect(container.querySelector("dialog")).toBeNull();
+  });
+
+  it("shows the save shortcut in the menu row", async () => {
+    await renderSaveActions("menu");
+
+    expect(container.textContent).toContain("Save");
+    expect(container.textContent).toContain("Ctrl");
+    expect(container.textContent).toContain("S");
+  });
+
+  it("renders a filename suffix while editing the base file name", async () => {
+    await renderSaveActions();
+    const saveButton = container.querySelector("button");
+
+    await act(async () => {
+      saveButton?.click();
+    });
+
+    expect(document.body.querySelector<HTMLInputElement>("input")?.value).toBe(
+      "asset-1",
+    );
+    expect(document.body.textContent).toContain(".mp4");
+  });
+
+  it("opens the save dialog from the editor shortcut event", async () => {
+    await renderSaveActions();
+
+    await act(async () => {
+      window.dispatchEvent(new Event(editorShortcutEventNames.openSaveDialog));
+    });
+
+    expect(document.body.querySelector("dialog")?.open).toBe(true);
   });
 });

@@ -2,6 +2,7 @@ import { trackEvent } from "~/renderer/modules/umami";
 
 import {
   calculateTimelineDuration,
+  createEditorTrimHistoryLabel,
   normalizeEditorDuration,
   resolveTimelineClipSourceRange,
   roundToMilliseconds,
@@ -16,6 +17,7 @@ type EditorTimelineTrimActions = Pick<
 >;
 
 function createEditorTimelineTrimActions({
+  get,
   updateProject,
 }: EditorSliceActionContext): EditorTimelineTrimActions {
   return {
@@ -108,6 +110,11 @@ function createEditorTimelineTrimActions({
       trackEvent("editor-clip-split");
     },
     trimTimelineClipEdge: (clipId, edge, timelineSeconds) => {
+      const trimActionLabel = createEditorTrimHistoryLabel(edge);
+      const trimActionSubtitle =
+        get()
+          .editor.project?.tracks.flatMap((track) => track.clips)
+          .find((clip) => clip.id === clipId)?.name ?? null;
       updateProject(
         (project) => {
           const assetByKey = new Map(
@@ -205,7 +212,10 @@ function createEditorTimelineTrimActions({
             updatedAt: new Date().toISOString(),
           };
         },
-        { historyLabel: "Trim" },
+        {
+          historyLabel: trimActionLabel,
+          historySubtitle: trimActionSubtitle,
+        },
       );
     },
   };

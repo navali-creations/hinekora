@@ -47,7 +47,10 @@ describe("Editor timeline trim slice", () => {
       durationSeconds: 5,
       startSeconds: 7,
     });
-    expect(store.getState().editor.historyPastLabels.at(-1)).toBe("Trim");
+    expect(store.getState().editor.historyPastLabels.at(-1)).toBe("Trim end");
+    expect(store.getState().editor.historyPastSubtitles.at(-1)).toBe(
+      "asset-1.mp4",
+    );
     expect(store.getState().editor.project?.durationSeconds).toBe(12);
   });
 
@@ -158,6 +161,10 @@ describe("Editor timeline trim slice", () => {
       sourceOutSeconds: 10,
       startSeconds: 5,
     });
+    expect(store.getState().editor.historyPastLabels.at(-1)).toBe("Trim start");
+    expect(store.getState().editor.historyPastSubtitles.at(-1)).toBe(
+      "first.mp4",
+    );
     expect(store.getState().editor.project?.durationSeconds).toBe(15);
   });
 

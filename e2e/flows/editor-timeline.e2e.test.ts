@@ -42,23 +42,50 @@ test("covers asset rail, project picker, rename, history, retention, and new edi
   page,
 }) => {
   await setupEditorE2E(page);
-  const initialCalls = await getEditorE2ECalls(page);
 
-  await page.locator("[data-asset-key='clip:asset-1']").click();
-  await expect(page.locator("video[title='asset-1.mp4']")).toBeVisible();
+  await page
+    .getByRole("button", { name: "Open current media folder in explorer" })
+    .click();
+  await expect
+    .poll(async () => {
+      const calls = await getEditorE2ECalls(page);
+
+      return calls.revealedClipIds;
+    })
+    .toEqual(["asset-2"]);
+
+  await page.locator("[data-asset-key='clip:asset-2']").click();
+  await page.getByRole("button", { name: "Next media page" }).click();
+  await expect
+    .poll(async () => {
+      const calls = await getEditorE2ECalls(page);
+
+      return calls.mediaAssetQueries.some(
+        (query) =>
+          typeof query === "object" &&
+          query !== null &&
+          "pageIndex" in query &&
+          query.pageIndex === 1,
+      );
+    })
+    .toBe(true);
+  await expect(
+    page.getByRole("button", { name: /asset-7\.mp4/ }),
+  ).toBeVisible();
 
   await page.getByLabel("Media type").selectOption("recording");
   await expect(
     page.getByRole("button", { name: /recording-1\.mp4/ }),
   ).toBeVisible();
+  const callsBeforeMediaRefresh = await getEditorE2ECalls(page);
   await page.getByRole("button", { name: "Refresh media" }).click();
   await expect
     .poll(async () => {
       const calls = await getEditorE2ECalls(page);
 
-      return calls.workspaceQueries.length;
+      return calls.mediaAssetQueries.length;
     })
-    .toBeGreaterThan(initialCalls.workspaceQueries.length);
+    .toBeGreaterThan(callsBeforeMediaRefresh.mediaAssetQueries.length);
 
   await page.getByLabel("Media type").selectOption("manual-replay");
   await expect(
@@ -110,6 +137,281 @@ test("covers asset rail, project picker, rename, history, retention, and new edi
     .toBe(1);
 });
 
+test("covers My Media tabs, pagination, league filters, and moving clips into and out of the timeline", async ({
+  page,
+}) => {
+  await setupEditorE2E(page);
+  const mediaRail = page.locator("[data-onboarding='editor-my-media']");
+
+  await page.getByLabel("Media type").selectOption("death-clip");
+  await page.getByRole("tab", { name: "All" }).click();
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-2\.mp4/ }),
+  ).toBeVisible();
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-1\.mp4/ }),
+  ).toBeHidden();
+
+  await page.getByRole("button", { name: "Next media page" }).click();
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-7\.mp4/ }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Previous media page" }).click();
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-2\.mp4/ }),
+  ).toBeVisible();
+
+  await page.getByLabel("Editor media league").selectOption("Runes of Aldur");
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-runes\.mp4/ }),
+  ).toBeVisible();
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-2\.mp4/ }),
+  ).toBeHidden();
+
+  await page.getByLabel("Editor media league").selectOption("Standard");
+  await page.getByRole("tab", { name: "Recent" }).click();
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-2\.mp4/ }),
+  ).toBeVisible();
+  await expect
+    .poll(async () => {
+      const calls = await getEditorE2ECalls(page);
+
+      return calls.mediaAssetQueries.some(
+        (query) =>
+          typeof query === "object" &&
+          query !== null &&
+          "createdAfter" in query,
+      );
+    })
+    .toBe(true);
+
+  const clipsBeforeAdd = await readRenderedTimelineClips(page);
+  await dragAssetToTimeline(page, /asset-2\.mp4/);
+  await expect(page.locator("[data-clip-body='true']")).toHaveCount(
+    clipsBeforeAdd.length + 1,
+  );
+  const clipsAfterAdd = await readRenderedTimelineClips(page);
+  const addedClipId = clipsAfterAdd.find(
+    (clip) => !clipsBeforeAdd.some((beforeClip) => beforeClip.id === clip.id),
+  )?.id;
+  if (!addedClipId) {
+    throw new Error("Expected dragging asset-2.mp4 to create a timeline clip");
+  }
+
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-2\.mp4/ }),
+  ).toBeHidden();
+  await page.getByRole("tab", { name: "Timeline" }).click();
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-2\.mp4/ }),
+  ).toBeVisible();
+
+  await page
+    .locator(`[data-clip-body='true'][data-clip-id='${addedClipId}']`)
+    .click();
+  await page.getByRole("button", { name: "Delete selected clip" }).click();
+  await expect(page.locator("[data-clip-body='true']")).toHaveCount(
+    clipsBeforeAdd.length,
+  );
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-2\.mp4/ }),
+  ).toBeHidden();
+
+  await page.getByRole("tab", { name: "All" }).click();
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-2\.mp4/ }),
+  ).toBeVisible();
+  await expectNoTimelineOverlap(page);
+});
+
+test("covers editor help, shortcuts, saved-edit rail, and debug actions", async ({
+  page,
+}) => {
+  await setupEditorE2E(page);
+
+  await page.getByRole("button", { name: "Editor help" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Editor help" }),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Saving" }).click();
+  await expect(page.getByText(/Save video renders a new MP4/)).toBeVisible();
+  await page.getByRole("tab", { name: "History" }).click();
+  await expect(page.getByText(/up to 50 history entries/)).toBeVisible();
+  await page.getByRole("tab", { name: "More" }).click();
+  await expect(page.getByText("Auto-prune all but last 5:")).toBeVisible();
+  await page
+    .getByRole("dialog")
+    .getByRole("button", { exact: true, name: "Close" })
+    .click();
+  await expect(page.getByRole("heading", { name: "Editor help" })).toBeHidden();
+
+  await openEditorActionsMenu(page);
+  await page.getByRole("button", { name: "Show shortcuts" }).click();
+  await expect(page.getByRole("heading", { name: "Shortcuts" })).toBeVisible();
+  await expect(
+    page.getByText("Split the selected clip at the playhead."),
+  ).toBeVisible();
+  await page.getByRole("tab", { name: "Editor" }).click();
+  await expect(page.getByText("Open the save modal.")).toBeVisible();
+  await page.getByRole("button", { name: "Close shortcuts panel" }).click();
+  await expect(page.getByRole("heading", { name: "Shortcuts" })).toBeHidden();
+
+  await page.getByLabel("Media type").selectOption("saved-edits");
+  await expect(
+    page.getByRole("button", { name: /asset-1\.mp4 edit/ }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Open current media folder in explorer" })
+    .click();
+  await expect
+    .poll(async () => {
+      const calls = await getEditorE2ECalls(page);
+
+      return calls.revealedSavedEditIds;
+    })
+    .toEqual(["project-1"]);
+
+  await page.getByRole("button", { name: /secondary\.mp4 edit/ }).click();
+  await expect(page).toHaveURL(/#\/editor\?projectId=project-2/);
+
+  await openEditorActionsMenu(page);
+  await page.getByRole("button", { name: "Debug" }).click();
+  await expect
+    .poll(async () => {
+      const calls = await getEditorE2ECalls(page);
+
+      return calls.debugClipboardWrites.at(-1) ?? "";
+    })
+    .toContain('"capturedAt"');
+});
+
+test("covers history rail population and the 50 change retention limit", async ({
+  page,
+}) => {
+  await setupEditorE2E(page);
+  await page
+    .getByLabel("Editor project")
+    .selectOption("project-history-overflow");
+
+  await openEditorActionsMenu(page);
+  await page.getByRole("button", { name: "Show history" }).click();
+  const historyRail = page.locator("aside", {
+    has: page.getByRole("heading", { name: "History" }),
+  });
+
+  await expect(historyRail).toBeVisible();
+  await expect(historyRail.getByText("50 out of 50 changes")).toBeVisible();
+  await expect(
+    historyRail.getByText("History edit 51", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    historyRail.getByText("asset-51.mp4", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    historyRail.getByText("History edit 1", { exact: true }),
+  ).toBeHidden();
+  await expect(historyRail.getByText("#50", { exact: true })).toHaveCount(1);
+  await expect(historyRail.getByText("#1", { exact: true })).toHaveCount(0);
+
+  for (let pageIndex = 0; pageIndex < 4; pageIndex += 1) {
+    await page.getByRole("button", { name: "Load more" }).click();
+  }
+
+  await expect(
+    historyRail.getByText("History edit 2", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    historyRail.getByText("asset-2.mp4", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    historyRail.getByText("History edit 1", { exact: true }),
+  ).toBeHidden();
+  await expect(historyRail.getByText("#1", { exact: true })).toHaveCount(1);
+  await expect(page.getByRole("button", { name: "Load more" })).toBeHidden();
+});
+
+test("covers saved edits route library interactions", async ({ page }) => {
+  await setupEditorE2E(page);
+  await page.goto("/#/saved-edits");
+  await expect(
+    page.getByRole("heading", { name: "Saved Edits" }),
+  ).toBeVisible();
+
+  await page.getByLabel("Library league").selectOption("Standard");
+  await expect(page.getByText("asset-1.mp4 edit")).toBeVisible();
+  await expect(page.getByText("mixed league edit")).toBeVisible();
+  await expect(
+    page.getByRole("columnheader", { name: /History/ }),
+  ).toBeVisible();
+  await expect(page.getByText("0 edits").first()).toBeVisible();
+
+  await page.getByLabel("Library league").selectOption("Runes of Aldur");
+  await expect(page.getByText("mixed league edit")).toBeVisible();
+  await expect(page.getByText("asset-1.mp4 edit")).toBeHidden();
+
+  await page.getByLabel("Library league").selectOption("Standard");
+
+  await page.goto("/#/editor?projectId=project-mixed-league");
+  await page.getByRole("button", { name: "Rename project" }).click();
+  await page.getByLabel("Project name").fill("runtime mixed league edit");
+  await page.getByRole("button", { name: "Rename", exact: true }).click();
+  await waitForSavedProjectCount(page, 1);
+
+  await page.goto("/#/saved-edits");
+  await page.getByLabel("Library league").selectOption("Runes of Aldur");
+  await expect(page.getByText("runtime mixed league edit")).toBeVisible();
+  await page.getByLabel("Library league").selectOption("Standard");
+  await expect(page.getByText("runtime mixed league edit")).toBeVisible();
+
+  await page.getByLabel("Open asset-1.mp4 edit in explorer").click();
+  await expect
+    .poll(async () => {
+      const calls = await getEditorE2ECalls(page);
+
+      return calls.revealedSavedEditIds;
+    })
+    .toEqual(["project-1"]);
+
+  await page.getByText("asset-1.mp4 edit").click();
+  await expect(page).toHaveURL(/#\/editor\?projectId=project-1/);
+
+  await page.goto("/#/saved-edits");
+  await page.getByLabel("Library league").selectOption("Standard");
+  await page.getByLabel("Delete saved edit asset-1.mp4 edit").click();
+  await expect(
+    page.getByRole("heading", { name: "Delete edit?" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Delete edit", exact: true })
+    .last()
+    .click();
+  await expect
+    .poll(async () => {
+      const calls = await getEditorE2ECalls(page);
+
+      return calls.deletedSavedEditIds;
+    })
+    .toEqual(["project-1"]);
+
+  await page.getByRole("button", { name: "Delete all edits" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Delete all edits?" }),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Delete all edits", exact: true })
+    .last()
+    .click();
+  await expect
+    .poll(async () => {
+      const calls = await getEditorE2ECalls(page);
+
+      return calls.savedEditDeleteAllCount;
+    })
+    .toBe(1);
+});
+
 test("covers copy and export dialog actions", async ({ page }) => {
   await setupEditorE2E(page);
 
@@ -125,13 +427,11 @@ test("covers copy and export dialog actions", async ({ page }) => {
 
   await openEditorActionsMenu(page);
   await page.getByRole("button", { name: "Save" }).click();
-  await expect(
-    page.getByRole("heading", { name: "Save edited clip" }),
-  ).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Save video" })).toBeVisible();
   await page.getByLabel("File name").fill("boss-kill.mp4");
   await page.getByRole("button", { name: "Override" }).click();
   await page.getByRole("button", { name: "720p" }).click();
-  await page.getByRole("button", { name: "Export video" }).click();
+  await page.getByRole("button", { name: "Save video" }).click();
 
   await expect
     .poll(async () => {
@@ -144,6 +444,28 @@ test("covers copy and export dialog actions", async ({ page }) => {
       mode: "overwrite",
       resolution: "720p",
     });
+
+  await expect(
+    page.getByRole("button", { name: "Keep editing" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Copy to clipboard" }).click();
+  await expect
+    .poll(async () => {
+      const calls = await getEditorE2ECalls(page);
+
+      return calls.copiedExportIds;
+    })
+    .toEqual(["export-1"]);
+  await page.getByRole("button", { name: "Open file location" }).click();
+  await expect
+    .poll(async () => {
+      const calls = await getEditorE2ECalls(page);
+
+      return calls.revealedExportIds;
+    })
+    .toEqual(["export-1"]);
+  await page.getByRole("button", { name: "Keep editing" }).click();
+  await expect(page.getByRole("heading", { name: "Editor" })).toBeVisible();
 });
 
 test("covers destructive confirmation modals", async ({ page }) => {
@@ -204,6 +526,10 @@ test("covers timeline toolbar, playback controls, zoom, and keyboard shortcuts",
   await expect(
     page.getByText("0:05.00", { exact: true }).first(),
   ).toBeVisible();
+  await page.getByRole("button", { name: "Seek backward 5 seconds" }).click();
+  await expect(
+    page.getByText("0:00.00", { exact: true }).first(),
+  ).toBeVisible();
   await page.getByRole("button", { name: "Jump to start" }).click();
   await expect(
     page.getByText("0:00.00", { exact: true }).first(),
@@ -217,6 +543,15 @@ test("covers timeline toolbar, playback controls, zoom, and keyboard shortcuts",
   await expect(
     page.getByRole("button", { name: "Play preview" }),
   ).toBeVisible();
+  const volumeControl = page.getByLabel("Editor preview volume");
+  await expect(volumeControl).toHaveValue("1");
+  await volumeControl.focus();
+  await page.keyboard.press("Home");
+  await expect(volumeControl).toHaveValue("0");
+  for (let volumeStep = 0; volumeStep < 35; volumeStep += 1) {
+    await page.keyboard.press("ArrowRight");
+  }
+  await expect(volumeControl).toHaveValue("0.35");
 
   const timelineWidthBeforeZoom = await page
     .locator("[data-timeline-grid='true']")
@@ -230,6 +565,10 @@ test("covers timeline toolbar, playback controls, zoom, and keyboard shortcuts",
     )
     .not.toBe(timelineWidthBeforeZoom);
   await page.getByRole("button", { name: "Zoom out timeline" }).click();
+  await page.getByRole("button", { name: "Fit timeline" }).click();
+  await expect(
+    page.getByRole("button", { name: "Fit timeline" }),
+  ).toBeDisabled();
 
   await clickTimelineMarkerAtClipOffset({
     clipId: "timeline-a",
@@ -239,10 +578,22 @@ test("covers timeline toolbar, playback controls, zoom, and keyboard shortcuts",
   await page.getByRole("button", { name: "Split" }).click();
   await expect(page.locator("[data-clip-body='true']")).toHaveCount(4);
 
+  await page.getByRole("button", { name: "Undo" }).click();
+  await expect(page.locator("[data-clip-body='true']")).toHaveCount(3);
+  await page.getByRole("button", { name: "Redo" }).click();
+  await expect(page.locator("[data-clip-body='true']")).toHaveCount(4);
+
   await page.keyboard.press("ControlOrMeta+Z");
   await expect(page.locator("[data-clip-body='true']")).toHaveCount(3);
   await page.keyboard.press("ControlOrMeta+Y");
   await expect(page.locator("[data-clip-body='true']")).toHaveCount(4);
+
+  await page.getByRole("button", { name: "Mute audio" }).click();
+  await expect(
+    page.getByRole("button", { name: "Unmute audio" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Unmute audio" }).click();
+  await expect(page.getByRole("button", { name: "Mute audio" })).toBeVisible();
 
   await page.getByRole("button", { name: "Delete selected clip" }).click();
   await expect(page.locator("[data-clip-body='true']")).toHaveCount(3);
@@ -251,11 +602,47 @@ test("covers timeline toolbar, playback controls, zoom, and keyboard shortcuts",
   await expect(page.locator("[data-clip-body='true']")).toHaveCount(4);
   await page.keyboard.press("Delete");
   await expect(page.locator("[data-clip-body='true']")).toHaveCount(3);
+  await expect(page.locator("[data-timeline-gap-zone='true']")).not.toHaveCount(
+    0,
+  );
+  await page.getByRole("button", { name: "Clear gaps" }).click();
+  await expect(page.locator("[data-timeline-gap-zone='true']")).toHaveCount(0);
 
+  await page.keyboard.press("ControlOrMeta+Z");
+  await expect(page.locator("[data-timeline-gap-zone='true']")).not.toHaveCount(
+    0,
+  );
   await page.locator("[data-timeline-gap-zone='true']").first().hover();
   await page.keyboard.press("Delete");
   await expect(page.locator("[data-timeline-gap-zone='true']")).toHaveCount(0);
   await expectNoTimelineOverlap(page);
+});
+
+test("covers timeline letter keyboard shortcuts", async ({ page }) => {
+  await setupEditorE2E(page);
+
+  await clickTimelineMarkerAtClipOffset({
+    clipId: "timeline-a",
+    offsetSeconds: 1,
+    page,
+  });
+  await page.keyboard.press("s");
+  await expect(page.locator("[data-clip-body='true']")).toHaveCount(4);
+
+  await page.keyboard.press("m");
+  await expect(
+    page.getByRole("button", { name: "Unmute audio" }),
+  ).toBeVisible();
+  await page.keyboard.press("m");
+  await expect(page.getByRole("button", { name: "Mute audio" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Delete selected clip" }).click();
+  await expect(page.locator("[data-timeline-gap-zone='true']")).not.toHaveCount(
+    0,
+  );
+  await page.locator("[data-timeline-grid='true']").click();
+  await page.keyboard.press("c");
+  await expect(page.locator("[data-timeline-gap-zone='true']")).toHaveCount(0);
 });
 
 test("covers timeline pointer move, trimming, and asset drag into the track", async ({
@@ -289,6 +676,19 @@ test("covers timeline pointer move, trimming, and asset drag into the track", as
       return clip.durationSeconds;
     })
     .toBeLessThan(clipBeforeTrim.durationSeconds);
+
+  const clipBeforeStartTrim = await readClip(page, "timeline-b");
+  await dragLocatorBy(
+    page.locator("[data-trim-edge='start'][data-clip-id='timeline-b']"),
+    { x: 40, y: 0 },
+  );
+  await expect
+    .poll(async () => {
+      const clip = await readClip(page, "timeline-b");
+
+      return clip.startSeconds;
+    })
+    .toBeGreaterThan(clipBeforeStartTrim.startSeconds);
 
   await page.getByLabel("Media type").selectOption("manual-replay");
   await dragAssetToTimeline(page, /manual-1\.mp4/);

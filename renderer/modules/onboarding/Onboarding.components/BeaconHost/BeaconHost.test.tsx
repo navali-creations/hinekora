@@ -35,6 +35,7 @@ vi.mock("@repere/react", () => {
       LeftCenter: "left-center",
       RightCenter: "right-center",
       TopCenter: "top-center",
+      TopLeft: "top-left",
     },
     Animation: {
       Fade: "fade",

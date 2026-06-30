@@ -42,6 +42,7 @@ function createZoomTooltip(input: {
 }
 
 function resolveEditorTimelineZoomControlState(input: {
+  isTimelineFitToEdit: boolean;
   project: EditorProject | null;
   selectedClipId: string | null;
   zoom: number;
@@ -100,6 +101,7 @@ function resolveEditorTimelineZoomControlState(input: {
   const isZoomOutAtBoundary =
     zoom === nextZoomOut ||
     areTimelineZoomValuesEqual(currentContentScale, zoomOutContentScale);
+  const canZoomOutFromFit = input.isTimelineFitToEdit && zoom === nextZoomOut;
   const isZoomInAtBoundary =
     zoom === nextZoomIn ||
     areTimelineZoomValuesEqual(currentContentScale, zoomInContentScale);
@@ -108,8 +110,8 @@ function resolveEditorTimelineZoomControlState(input: {
     hasSelectedClip: true,
     isZoomInAtBoundary,
     isZoomInDisabled: isZoomInAtBoundary,
-    isZoomOutAtBoundary,
-    isZoomOutDisabled: isZoomOutAtBoundary,
+    isZoomOutAtBoundary: canZoomOutFromFit ? false : isZoomOutAtBoundary,
+    isZoomOutDisabled: canZoomOutFromFit ? false : isZoomOutAtBoundary,
     nextZoomIn,
     nextZoomOut,
   };

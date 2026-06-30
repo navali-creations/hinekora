@@ -1,179 +1,105 @@
 import clsx from "clsx";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import type { EditorMediaReference } from "~/main/modules/editor";
 import { PageContainer } from "~/renderer/components/PageContainer/PageContainer";
 import { PageContent } from "~/renderer/components/PageContent/PageContent";
 import { PageHeader } from "~/renderer/components/PageHeader/PageHeader";
-import { useEditorShallow } from "~/renderer/store";
+import { useMediaLibraryScope } from "~/renderer/modules/media-library/MediaLibrary.hooks/useMediaLibraryScope/useMediaLibraryScope";
+import { buildMediaLibraryLeagueOptions } from "~/renderer/modules/media-library/MediaLibrary.utils/MediaLibrary.utils";
+import { useEditorShallow, useSavedEditsShallow } from "~/renderer/store";
 
-import { EditorActionsMenu } from "../../Editor.components/EditorActionsMenu/EditorActionsMenu";
 import { EditorAssetRail } from "../../Editor.components/EditorAssetRail/EditorAssetRail";
-import { EditorClipboardStatus } from "../../Editor.components/EditorClipboardStatus/EditorClipboardStatus";
 import { EditorDragDropProvider } from "../../Editor.components/EditorDragDropProvider/EditorDragDropProvider";
 import { EditorExportActions } from "../../Editor.components/EditorExportActions/EditorExportActions";
 import { EditorExportView } from "../../Editor.components/EditorExportView/EditorExportView";
 import { EditorHistoryRail } from "../../Editor.components/EditorHistoryRail/EditorHistoryRail";
+import { EditorPageHeaderActions } from "../../Editor.components/EditorPageHeaderActions/EditorPageHeaderActions";
 import { EditorPreviewStage } from "../../Editor.components/EditorPreviewStage/EditorPreviewStage";
-import { EditorProjectPicker } from "../../Editor.components/EditorProjectPicker/EditorProjectPicker";
+import { EditorShortcutsRail } from "../../Editor.components/EditorShortcutsRail/EditorShortcutsRail";
 import { EditorTimeline } from "../../Editor.components/EditorTimeline/EditorTimeline";
-import {
-  createExportSubtitle,
-  createExportTitle,
-  isEditorDeleteShortcut,
-  isEditorShortcutEditableTarget,
-  shouldHydrateEditorProject,
-} from "./EditorPage.utils";
+import { createExportSubtitle, createExportTitle } from "./EditorPage.utils";
+import { useEditorKeyboardShortcuts } from "./useEditorKeyboardShortcuts";
+import { useEditorRouteHydration } from "./useEditorRouteHydration";
 
 interface EditorPageProps {
+  projectId?: string | null;
   source?: EditorMediaReference | null;
 }
 
-function EditorPage({ source = null }: EditorPageProps) {
-  const sourceId = source?.id;
-  const sourceKind = source?.kind;
-  const sourceKey = sourceId && sourceKind ? `${sourceKind}:${sourceId}` : null;
-  const hydratedSourceKeyRef = useRef<string | null>(null);
-  const [isHistoryVisible, setHistoryVisible] = useState(false);
+type EditorSidePanel = "history" | "shortcuts";
+
+function EditorPage({ projectId = null, source = null }: EditorPageProps) {
+  const [visibleSidePanel, setVisibleSidePanel] =
+    useState<EditorSidePanel | null>(null);
+  const { scope, setLeague } = useMediaLibraryScope();
+  const savedEditAvailableLeagues = useSavedEditsShallow(
+    (savedEdits) => savedEdits.libraryPage?.availableLeagues ?? [],
+  );
   const {
     error,
     clipboardStatus,
     exportFileName,
     exportResult,
     exportStatus,
-    hoveredTimelineGap,
     hydrate,
     isLoading,
+    openProject,
     project,
-    redoProjectChange,
-    removeTimelineGap,
-    removeTimelineClip,
-    setHoveredTimelineGap,
-    selectedClipId,
-    undoProjectChange,
+    workspace,
   } = useEditorShallow((editor) => ({
     clipboardStatus: editor.clipboardState.status,
     error: editor.error,
     exportFileName: editor.exportState.fileName,
     exportResult: editor.exportState.result,
     exportStatus: editor.exportState.status,
-    hoveredTimelineGap: editor.hoveredTimelineGap,
     hydrate: editor.hydrate,
     isLoading: editor.isLoading,
+    openProject: editor.openProject,
     project: editor.project,
-    redoProjectChange: editor.redoProjectChange,
-    removeTimelineGap: editor.removeTimelineGap,
-    removeTimelineClip: editor.removeTimelineClip,
-    setHoveredTimelineGap: editor.setHoveredTimelineGap,
-    selectedClipId: editor.selectedClipId,
-    undoProjectChange: editor.undoProjectChange,
+    workspace: editor.workspace,
   }));
   const isClipboardBusy = clipboardStatus === "copying";
-  const activeClipId = selectedClipId ?? project?.activeClipId ?? null;
+  const isHistoryVisible = visibleSidePanel === "history";
+  const isShortcutsVisible = visibleSidePanel === "shortcuts";
+  const editorMediaLeagueOptions = useMemo(() => {
+    const mediaLeagues =
+      workspace?.assets
+        .filter((asset) => asset.sourceGame === scope.game)
+        .map((asset) => asset.sourceLeague) ?? [];
 
-  const handleToggleHistory = () => {
-    setHistoryVisible((isVisible) => !isVisible);
-  };
-
-  const handleCloseHistory = () => {
-    setHistoryVisible(false);
-  };
-
-  useEffect(() => {
-    if (!sourceKey) {
-      hydratedSourceKeyRef.current = null;
-      if (!project) {
-        void hydrate(null);
-      }
-      return;
-    }
-
-    if (hydratedSourceKeyRef.current === sourceKey) {
-      return;
-    }
-
-    if (
-      project &&
-      !shouldHydrateEditorProject({ project, sourceId, sourceKind })
-    ) {
-      hydratedSourceKeyRef.current = sourceKey;
-      return;
-    }
-
-    hydratedSourceKeyRef.current = sourceKey;
-    void hydrate(
-      sourceId && sourceKind ? { id: sourceId, kind: sourceKind } : null,
+    return buildMediaLibraryLeagueOptions(
+      scope.game,
+      [...mediaLeagues, ...savedEditAvailableLeagues],
+      scope.league,
     );
-  }, [hydrate, project, sourceId, sourceKey, sourceKind]);
+  }, [savedEditAvailableLeagues, scope.game, scope.league, workspace?.assets]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      const target = event.target;
-      if (isClipboardBusy) {
-        return;
-      }
+  const handleToggleHistory = useCallback(() => {
+    setVisibleSidePanel((currentPanel) =>
+      currentPanel === "history" ? null : "history",
+    );
+  }, []);
 
-      if (isEditorShortcutEditableTarget(target)) {
-        return;
-      }
+  const handleToggleShortcuts = () => {
+    setVisibleSidePanel((currentPanel) =>
+      currentPanel === "shortcuts" ? null : "shortcuts",
+    );
+  };
 
-      if (isEditorDeleteShortcut(event)) {
-        if (hoveredTimelineGap) {
-          event.preventDefault();
-          removeTimelineGap({
-            endSeconds: hoveredTimelineGap.endSeconds,
-            startSeconds: hoveredTimelineGap.startSeconds,
-          });
-          setHoveredTimelineGap(null);
-          return;
-        }
+  const handleCloseSidePanel = () => {
+    setVisibleSidePanel(null);
+  };
 
-        if (activeClipId) {
-          event.preventDefault();
-          removeTimelineClip(activeClipId);
-          return;
-        }
-      }
+  useEditorRouteHydration({
+    hydrate,
+    openProject,
+    project,
+    projectId,
+    source,
+  });
 
-      const usesModifier = event.ctrlKey || event.metaKey;
-      if (!usesModifier || event.altKey) {
-        return;
-      }
-
-      const key = event.key.toLowerCase();
-      if (key === "z" && event.shiftKey) {
-        event.preventDefault();
-        redoProjectChange();
-        return;
-      }
-
-      if (key === "z") {
-        event.preventDefault();
-        undoProjectChange();
-        return;
-      }
-
-      if (key === "y") {
-        event.preventDefault();
-        redoProjectChange();
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown, true);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown, true);
-    };
-  }, [
-    activeClipId,
-    redoProjectChange,
-    isClipboardBusy,
-    hoveredTimelineGap,
-    removeTimelineGap,
-    removeTimelineClip,
-    setHoveredTimelineGap,
-    undoProjectChange,
-  ]);
+  useEditorKeyboardShortcuts({ onToggleHistory: handleToggleHistory });
 
   if (exportStatus !== "idle") {
     return (
@@ -203,14 +129,16 @@ function EditorPage({ source = null }: EditorPageProps) {
     <PageContainer className="relative gap-4">
       <PageHeader
         actions={
-          <>
-            <EditorClipboardStatus />
-            <EditorProjectPicker />
-            <EditorActionsMenu
-              isHistoryVisible={isHistoryVisible}
-              onToggleHistory={handleToggleHistory}
-            />
-          </>
+          <EditorPageHeaderActions
+            isClipboardBusy={isClipboardBusy}
+            isHistoryVisible={isHistoryVisible}
+            isShortcutsVisible={isShortcutsVisible}
+            league={scope.league}
+            leagueOptions={editorMediaLeagueOptions}
+            onLeagueChange={setLeague}
+            onToggleHistory={handleToggleHistory}
+            onToggleShortcuts={handleToggleShortcuts}
+          />
         }
         title="Editor"
       />
@@ -222,16 +150,19 @@ function EditorPage({ source = null }: EditorPageProps) {
       <PageContent
         className={clsx(
           "relative grid h-full min-h-0 grid-rows-[minmax(0,1fr)_220px] gap-3 !overflow-hidden",
-          isHistoryVisible
+          visibleSidePanel
             ? "grid-cols-[260px_minmax(0,1fr)_260px]"
             : "grid-cols-[260px_minmax(0,1fr)]",
         )}
       >
         <EditorDragDropProvider>
-          <EditorAssetRail />
+          <EditorAssetRail scope={scope} />
           <EditorPreviewStage />
           {isHistoryVisible && (
-            <EditorHistoryRail onClose={handleCloseHistory} />
+            <EditorHistoryRail onClose={handleCloseSidePanel} />
+          )}
+          {isShortcutsVisible && (
+            <EditorShortcutsRail onClose={handleCloseSidePanel} />
           )}
           <EditorTimeline />
         </EditorDragDropProvider>

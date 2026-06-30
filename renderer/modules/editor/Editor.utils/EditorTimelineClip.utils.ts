@@ -12,6 +12,7 @@ export {
 } from "./EditorTimelineMove.utils";
 export {
   clampTrimRange,
+  createEditorTrimHistoryLabel,
   minimumTimelineClipDurationSeconds,
   resolveTimelineClipSourceRange,
   type TimelineTrimEdge,

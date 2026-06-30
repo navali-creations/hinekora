@@ -32,6 +32,7 @@ export {
 } from "./EditorTime.utils";
 export {
   clampTrimRange,
+  createEditorTrimHistoryLabel,
   createTimelineClipFromAsset,
   minimumTimelineClipDurationSeconds,
   moveTimelineClipWithinTrack,
@@ -44,6 +45,7 @@ export {
 export {
   calculateEditorTimelineDuration,
   calculateExpandableTimelineDuration,
+  calculateFittedTimelineDuration,
   calculateTimelineContentScale,
   calculateTimelineDuration,
   calculateTimelineGaps,

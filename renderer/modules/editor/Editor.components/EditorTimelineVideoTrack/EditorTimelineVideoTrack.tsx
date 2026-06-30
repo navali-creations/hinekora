@@ -13,14 +13,18 @@ import { EditorTimelineClip } from "../EditorTimelineClip/EditorTimelineClip";
 interface EditorTimelineVideoTrackProps {
   dragPreviewClipId?: string | null;
   railPaddingPixels: number;
+  timelineRailWidthPixels: number;
   track: EditorTimelineTrack;
+  useCompactTrimHandles: boolean;
   visibleDurationSeconds: number;
 }
 
 function EditorTimelineVideoTrack({
   dragPreviewClipId = null,
   railPaddingPixels,
+  timelineRailWidthPixels,
   track,
+  useCompactTrimHandles,
   visibleDurationSeconds,
 }: EditorTimelineVideoTrackProps) {
   const { source } = useDragOperation();
@@ -63,6 +67,8 @@ function EditorTimelineVideoTrack({
           isDragPreviewSource={dragPreviewClipId === clip.id}
           key={clip.id}
           railPaddingPixels={railPaddingPixels}
+          timelineRailWidthPixels={timelineRailWidthPixels}
+          useCompactTrimHandles={useCompactTrimHandles}
           visibleDurationSeconds={visibleDurationSeconds}
         />
       ))}

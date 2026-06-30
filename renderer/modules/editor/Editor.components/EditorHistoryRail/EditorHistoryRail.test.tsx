@@ -15,10 +15,6 @@ vi.mock("~/renderer/store", () => ({
   useEditorShallow: storeMocks.useEditorShallow,
 }));
 
-vi.mock("../EditorHistoryActions/EditorHistoryActions", () => ({
-  EditorHistoryActions: () => <div data-testid="history-actions" />,
-}));
-
 import { EditorHistoryRail } from "./EditorHistoryRail";
 
 let container: HTMLDivElement;
@@ -28,11 +24,15 @@ let root: Root;
 function configureEditorState(
   historyPast: unknown[] = [],
   historyPastLabels: string[] = [],
+  historyPastSubtitles: Array<string | null> = [],
+  project: unknown = null,
 ) {
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
       historyPast,
       historyPastLabels,
+      historyPastSubtitles,
+      project,
     }),
   );
 }
@@ -61,11 +61,8 @@ describe("EditorHistoryRail", () => {
   it("shows an empty history state", async () => {
     await renderHistoryRail();
 
-    expect(container.textContent).toContain("0 changes");
+    expect(container.textContent).toContain("0 out of 50 changes");
     expect(container.textContent).toContain("No history yet.");
-    expect(container.querySelector("[data-testid='history-actions']")).not.toBe(
-      null,
-    );
   });
 
   it("closes the history panel from the header action", async () => {
@@ -100,19 +97,38 @@ describe("EditorHistoryRail", () => {
     });
     configureEditorState(
       [firstProject, latestProject],
-      ["Split", "Add boss.mp4"],
+      ["Split", "Trim end"],
+      [null, "boss.mp4"],
     );
 
     await renderHistoryRail();
 
     const content = container.textContent ?? "";
-    expect(content.indexOf("Add boss.mp4")).toBeLessThan(
-      content.indexOf("Split"),
-    );
+    expect(content.indexOf("Trim end")).toBeLessThan(content.indexOf("Split"));
+    expect(content).toContain("boss.mp4");
     expect(content).toContain("#2");
     expect(content).toContain("#1");
     expect(content).not.toContain("Latest state");
     expect(content).not.toContain("First state");
+  });
+
+  it("shows persisted history labels when undo snapshots are not available", async () => {
+    const project = createEditorTestProject(createEditorTestAsset(), {
+      durationSeconds: 7,
+      id: "project-persisted",
+    });
+    configureEditorState([], ["Split", "Mute audio"], [], project);
+
+    await renderHistoryRail();
+
+    const content = container.textContent ?? "";
+    expect(content).toContain("2 out of 50 changes");
+    expect(content.indexOf("Mute audio")).toBeLessThan(
+      content.indexOf("Split"),
+    );
+    expect(content).toContain("Saved edit history");
+    expect(content).not.toContain("0:07");
+    expect(content).not.toContain("1 clips");
   });
 
   it("shows ten history entries before loading more", async () => {
@@ -125,7 +141,7 @@ describe("EditorHistoryRail", () => {
       }),
     );
     const labels = history.map((_, index) => `Edit ${index + 1}`);
-    configureEditorState(history, labels);
+    configureEditorState(history, labels, []);
 
     await renderHistoryRail();
 

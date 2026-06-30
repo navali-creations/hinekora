@@ -193,6 +193,7 @@ function createDashboardE2EFixture(
     auraLocked: options.auraLocked ?? true,
     clientLogStatus: {
       activeGame: "poe2",
+      activeGameFocused: true,
       lastError: null,
       path: null,
       watching: false,
@@ -252,6 +253,7 @@ async function setupDashboardE2E(
       let settings = clone(fixture.settings);
       let recorderStatus = clone(fixture.recorderStatus);
       let captureMode: ManagedRecorderCaptureMode = "rewind";
+      let recorderOverlayRequested = fixture.recorderOverlayVisible;
       let recorderOverlayVisible = fixture.recorderOverlayVisible;
       let auraLocked = fixture.auraLocked;
       let isMaximized = false;
@@ -514,9 +516,11 @@ async function setupDashboardE2E(
         >("overlayWindows", {
           getRecorderMode: async () => "expanded",
           hideRecorder: async () => {
+            recorderOverlayRequested = false;
             emitRecorderVisibility(false);
           },
           isAuraLocked: async () => auraLocked,
+          isRecorderRequested: async () => recorderOverlayRequested,
           isRecorderVisible: async () => recorderOverlayVisible,
           onAuraAddRequested: () => unsubscribe,
           onAuraLockChanged: (callback) => {
@@ -535,11 +539,13 @@ async function setupDashboardE2E(
           },
           setRecorderMode: async (mode) => mode,
           showRecorder: async () => {
+            recorderOverlayRequested = true;
             emitRecorderVisibility(true);
           },
           toggleRecorder: async () => {
             calls.recorderOverlayToggles += 1;
-            emitRecorderVisibility(!recorderOverlayVisible);
+            recorderOverlayRequested = !recorderOverlayVisible;
+            emitRecorderVisibility(recorderOverlayRequested);
           },
         }),
         poeProcess: createBridgeDomain<DashboardE2EElectron["poeProcess"]>(
@@ -622,6 +628,22 @@ async function setupDashboardE2E(
               totalCount: 0,
             }),
             onStatusChanged: () => unsubscribe,
+          },
+        ),
+        savedEdits: createBridgeDomain<DashboardE2EElectron["savedEdits"]>(
+          "savedEdits",
+          {
+            listLibrary: async () => ({
+              availableLeagues: [],
+              globalTotalCount: 0,
+              items: [],
+              pageCount: 1,
+              pageIndex: 0,
+              pageSize: 20,
+              sortBy: "updatedAt",
+              sortDirection: "desc",
+              totalCount: 0,
+            }),
           },
         ),
         settings: createBridgeDomain<DashboardE2EElectron["settings"]>(

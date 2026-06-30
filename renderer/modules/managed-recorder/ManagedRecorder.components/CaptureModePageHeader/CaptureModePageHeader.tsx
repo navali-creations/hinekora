@@ -11,7 +11,10 @@ import {
   type TabsBoxItem,
   TabsBoxTabs,
 } from "~/renderer/components/TabsBoxTabs/TabsBoxTabs";
-import { useManagedRecorderShallow } from "~/renderer/store";
+import {
+  useManagedRecorderShallow,
+  useSettingsShallow,
+} from "~/renderer/store";
 
 import {
   type CaptureMode,
@@ -44,6 +47,10 @@ function CaptureModePageHeader({
     stopBuffer: managedRecorder.stopBuffer,
     stopRunRecording: managedRecorder.stopRunRecording,
   }));
+  const { settingsValue, updateSettings } = useSettingsShallow((settings) => ({
+    settingsValue: settings.value,
+    updateSettings: settings.update,
+  }));
   const canRecord = status?.available === true && status.gameRunning === true;
   const isRewindActive = status?.bufferActive === true;
   const isSessionActive = status?.runRecordingActive === true;
@@ -75,8 +82,10 @@ function CaptureModePageHeader({
     ? "Session Recording selected."
     : "Rewind selected.";
   const alertCopy = isSelectedSession
-    ? "Records everything from start to stop. Death clips and manual clips are off in this mode, but you can cut clips from the saved recording later."
-    : "Keeps only the last 60 seconds ready for death clips or manual clips. It does not save a full recording, so it uses much less disk space.";
+    ? "Records everything from start to stop. Death clips and manual replays are off in this mode, but you can cut clips from the saved recording later."
+    : "Keeps only the last 60 seconds ready for death clips or manual replays. It does not save a full recording, so it uses much less disk space.";
+  const isAlertDismissed =
+    settingsValue?.captureModeInfoAlertDismissed === true;
 
   const handleCaptureModeChange = (mode: CaptureMode) => {
     if (mode === "session" && isRewindActive) {
@@ -97,6 +106,12 @@ function CaptureModePageHeader({
     }
 
     void (isRewindActive ? stopBuffer() : startBuffer());
+  };
+
+  const handleDismissAlert = () => {
+    void updateSettings({
+      captureModeInfoAlertDismissed: true,
+    });
   };
 
   return (
@@ -158,16 +173,27 @@ function CaptureModePageHeader({
         }
       />
 
-      <div
-        className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2 rounded-lg border border-info bg-secondary px-4 py-3 text-[0.8125rem] text-info leading-relaxed shadow-sm"
-        role="status"
-      >
-        <Info size={18} />
-        <p className="m-0">
-          <strong className="block">{alertTitle}</strong>
-          <span className="block">{alertCopy}</span>
-        </p>
-      </div>
+      {!isAlertDismissed && (
+        <div
+          className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-2 rounded-lg border border-info bg-secondary px-4 py-3 text-[0.8125rem] text-info leading-relaxed shadow-sm"
+          role="status"
+        >
+          <Info size={18} />
+          <p className="m-0">
+            <strong className="block">{alertTitle}</strong>
+            <span className="block">{alertCopy}</span>
+          </p>
+          <button
+            aria-label="Dismiss capture mode info"
+            className="btn btn-xs border-info/20 bg-base-300/80 px-2 text-info hover:bg-base-300"
+            title="Dismiss"
+            type="button"
+            onClick={handleDismissAlert}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
     </>
   );
 }

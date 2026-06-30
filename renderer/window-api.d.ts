@@ -12,6 +12,8 @@ import type {
   EditorExportInput,
   EditorExportProgress,
   EditorExportResult,
+  EditorMediaAssetPage,
+  EditorMediaAssetPageQuery,
   EditorProject,
   EditorSaveProjectInput,
   EditorWorkspace,
@@ -51,6 +53,11 @@ import type {
   ReplayClipLibraryQuery,
   ReplayClipListFilter,
 } from "~/main/modules/replay-clips/ReplayClips.dto";
+import type {
+  SavedEditFileActionResult,
+  SavedEditsLibraryPage,
+  SavedEditsLibraryQuery,
+} from "~/main/modules/saved-edits/SavedEdits.dto";
 import type {
   StateImportResult,
   StateTransferResult,
@@ -143,6 +150,9 @@ declare global {
         getWorkspace: (
           query?: EditorWorkspaceQuery,
         ) => Promise<EditorWorkspace>;
+        listMediaAssets: (
+          query: EditorMediaAssetPageQuery,
+        ) => Promise<EditorMediaAssetPage>;
         revealExport: (
           exportId: string,
         ) => Promise<EditorExportFileActionResult>;
@@ -186,6 +196,7 @@ declare global {
         hideRecorder: () => Promise<void>;
         toggleRecorder: () => Promise<void>;
         isRecorderVisible: () => Promise<boolean>;
+        isRecorderRequested: () => Promise<boolean>;
         getRecorderMode: () => Promise<RecorderOverlayMode>;
         setRecorderMode: (
           mode: RecorderOverlayMode,
@@ -265,6 +276,16 @@ declare global {
         delete: (id: string) => Promise<ReplayClipFileActionResult>;
         deleteMany: (ids: string[]) => Promise<ReplayClipBatchFileActionResult>;
         onStatusChanged: (callback: (clip: ReplayClip) => void) => () => void;
+      };
+      savedEdits: {
+        delete: (projectId: string) => Promise<void>;
+        deleteAll: () => Promise<void>;
+        listLibrary: (
+          query?: SavedEditsLibraryQuery,
+        ) => Promise<SavedEditsLibraryPage>;
+        revealInExplorer: (
+          projectId: string,
+        ) => Promise<SavedEditFileActionResult>;
       };
       settings: {
         get: () => Promise<AppSettings>;

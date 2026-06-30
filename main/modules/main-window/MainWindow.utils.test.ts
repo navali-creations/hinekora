@@ -21,6 +21,7 @@ describe("MainWindow utils", () => {
 
   it("rejects untrusted local, executable, and web urls", () => {
     expect(isAllowedExternalUrl("https://example.com/path")).toBe(false);
+    expect(isAllowedExternalUrl("https://github.com/other/repo")).toBe(false);
     expect(isAllowedExternalUrl("https://discord.gg/other")).toBe(false);
     expect(isAllowedExternalUrl("file:///C:/Users/seb/token.txt")).toBe(false);
     expect(isAllowedExternalUrl("javascript:alert(1)")).toBe(false);

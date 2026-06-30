@@ -14,7 +14,7 @@ function createCopyDisabledReason(input: {
     return "Copy is already processing.";
   }
   if (input.exportStatus === "exporting") {
-    return "Wait for the current export to finish.";
+    return "Wait for the current save to finish.";
   }
 
   return null;

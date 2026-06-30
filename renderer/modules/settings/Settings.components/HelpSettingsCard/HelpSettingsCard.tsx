@@ -11,12 +11,11 @@ import {
 import { trackEvent } from "~/renderer/modules/umami";
 import { useOnboardingActions, useOnboardingState } from "~/renderer/store";
 
+import { HINEKORA_DISCORD_URL, HINEKORA_GITHUB_URL } from "~/types";
 import { BeaconManagementList } from "./BeaconManagementList/BeaconManagementList";
 import { DismissibleAlertsSettingsSection } from "./DismissibleAlertsSettingsSection/DismissibleAlertsSettingsSection";
 
 const DISMISS_ALL_BADGE_DURATION_MS = 2_000;
-const DISCORD_URL = "https://discord.gg/mrqmPYXHHT";
-const REPO_URL = "https://github.com/navali-creations/hinekora";
 
 function HelpSettingsCard() {
   const [isDismissingAll, setIsDismissingAll] = useState(false);
@@ -126,7 +125,7 @@ function HelpSettingsCard() {
           <a
             aria-label="Open Discord"
             className="btn btn-outline btn-sm"
-            href={DISCORD_URL}
+            href={HINEKORA_DISCORD_URL}
             rel="noopener noreferrer"
             target="_blank"
           >
@@ -146,7 +145,7 @@ function HelpSettingsCard() {
           <a
             aria-label="Open GitHub"
             className="btn btn-outline btn-sm"
-            href={REPO_URL}
+            href={HINEKORA_GITHUB_URL}
             rel="noopener noreferrer"
             target="_blank"
           >

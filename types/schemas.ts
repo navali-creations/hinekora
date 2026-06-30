@@ -388,6 +388,7 @@ export const AppSettingsSchema = z.object({
   poe2ClientTxtPath: z.string().max(2_048).nullable().default(null),
   poe1CharacterName: z.string().max(80).default(""),
   poe2CharacterName: z.string().max(80).default(""),
+  captureModeInfoAlertDismissed: z.boolean().default(false),
   groupPlayDeathAlertDismissed: z.boolean().default(false),
   activeGame: GameIdSchema.default("poe1"),
   activeLeague: z.string().min(1).max(80).default("Standard"),
@@ -462,6 +463,7 @@ export type ReplayClip = z.infer<typeof ReplayClipSchema>;
 
 export const ClientLogStatusSchema = z.object({
   activeGame: GameIdSchema,
+  activeGameFocused: z.boolean().nullable().default(null),
   path: z.string().max(2_048).nullable(),
   watching: z.boolean(),
   lastError: z.string().nullable(),

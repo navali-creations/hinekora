@@ -267,26 +267,31 @@ describe("RecordingStorageService", () => {
     expect(service.getRecordingMediaPath("missing")).toBeNull();
   });
 
-  it("lists recent recording details for the editor media rail", () => {
+  it("lists paged recording details for the editor media rail", () => {
     const filePath = join(root, "2026-06-12_10-30-00.mp4");
     const missingPath = join(root, "2026-06-12_10-31-00.mp4");
     writeFileSync(filePath, "run");
-    repository.upsertRunRecording({
+    const presentRecording = repository.upsertRunRecording({
       path: filePath,
       sourceGame: "poe2",
       sourceLeague: "Standard",
       startedAt: "2026-06-12T10:30:00.000Z",
       stoppedAt: "2026-06-12T10:31:00.000Z",
+      createdAt: "2026-06-12T10:30:00.000Z",
     });
-    repository.upsertRunRecording({
+    const missingRecording = repository.upsertRunRecording({
       path: missingPath,
       sourceGame: "poe2",
       sourceLeague: "Standard",
       startedAt: "2026-06-12T10:31:00.000Z",
       stoppedAt: "2026-06-12T10:32:00.000Z",
+      createdAt: "2026-06-12T10:32:00.000Z",
     });
 
-    const details = service.listRecentEditorRecordingDetails(10);
+    const details = service.listEditorRecordingDetailPage({
+      pageIndex: 0,
+      pageSize: 10,
+    }).items;
 
     expect(details).toEqual(
       expect.arrayContaining([
@@ -307,6 +312,25 @@ describe("RecordingStorageService", () => {
         },
       ]),
     );
+    expect(
+      service.listEditorRecordingDetailPage({
+        game: "poe2",
+        league: "Standard",
+        pageIndex: 0,
+        pageSize: 10,
+      }).items,
+    ).toHaveLength(2);
+    expect(
+      service
+        .listEditorRecordingDetailPage({
+          createdAfter: "2026-06-12T10:31:00.000Z",
+          excludeIds: [presentRecording.id],
+          includeIds: [presentRecording.id, missingRecording.id],
+          pageIndex: 0,
+          pageSize: 10,
+        })
+        .items.map((detail) => detail.recording.id),
+    ).toEqual([missingRecording.id]);
   });
 
   it("keeps matching recording metadata unchanged during library sync", () => {

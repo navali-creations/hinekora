@@ -1,8 +1,15 @@
 import { useEditorShallow } from "~/renderer/store";
 
+import { editorShortcutEventNames } from "../../Editor.utils/EditorShortcuts.utils";
 import { EditorDeleteAction } from "../EditorDeleteAction/EditorDeleteAction";
 
-function EditorDeleteEditAction() {
+interface EditorDeleteEditActionProps {
+  disabled?: boolean;
+}
+
+function EditorDeleteEditAction({
+  disabled = false,
+}: EditorDeleteEditActionProps) {
   const { deleteProject, project, workspace } = useEditorShallow((editor) => ({
     deleteProject: editor.deleteProject,
     project: editor.project,
@@ -25,8 +32,10 @@ function EditorDeleteEditAction() {
       confirmDescription={`This will remove "${project?.title ?? "this edit"}" from saved editor edits. Source recordings and clips will not be deleted.`}
       confirmLabel="Delete edit"
       confirmTitle="Delete edit?"
-      disabled={!isSavedProject}
+      disabled={disabled || !isSavedProject}
       label="Delete edit"
+      shortcutEventName={editorShortcutEventNames.openDeleteEditDialog}
+      shortcutKeys={["Ctrl", "D"]}
       onConfirm={handleConfirmDeleteEdit}
     />
   );

@@ -39,6 +39,7 @@ describe("EditorTimelineZoomControls utils", () => {
 
   it("disables zoom controls without a selected project clip", () => {
     const state = resolveEditorTimelineZoomControlState({
+      isTimelineFitToEdit: false,
       project: null,
       selectedClipId: null,
       zoom: 1,
@@ -55,6 +56,7 @@ describe("EditorTimelineZoomControls utils", () => {
     const asset = createEditorTestAsset({ durationSeconds: 10 });
     const project = createEditorTestProject(asset);
     const state = resolveEditorTimelineZoomControlState({
+      isTimelineFitToEdit: false,
       project,
       selectedClipId: project.activeClipId,
       zoom: 1,
@@ -73,6 +75,7 @@ describe("EditorTimelineZoomControls utils", () => {
     const asset = createEditorTestAsset({ durationSeconds: 10 });
     const project = createEditorTestProject(asset);
     const state = resolveEditorTimelineZoomControlState({
+      isTimelineFitToEdit: false,
       project,
       selectedClipId: project.activeClipId,
       zoom: 4,
@@ -90,6 +93,7 @@ describe("EditorTimelineZoomControls utils", () => {
     const asset = createEditorTestAsset({ durationSeconds: 10 });
     const project = createEditorTestProject(asset, { durationSeconds: 30 });
     const state = resolveEditorTimelineZoomControlState({
+      isTimelineFitToEdit: false,
       project,
       selectedClipId: project.activeClipId,
       zoom: 1.25,
@@ -99,6 +103,23 @@ describe("EditorTimelineZoomControls utils", () => {
       isZoomInDisabled: false,
       isZoomOutDisabled: false,
       nextZoomIn: 1.5,
+      nextZoomOut: 1,
+    });
+  });
+
+  it("keeps zoom out available from fitted view at minimum zoom", () => {
+    const asset = createEditorTestAsset({ durationSeconds: 10 });
+    const project = createEditorTestProject(asset);
+    const state = resolveEditorTimelineZoomControlState({
+      isTimelineFitToEdit: true,
+      project,
+      selectedClipId: project.activeClipId,
+      zoom: 1,
+    });
+
+    expect(state).toMatchObject({
+      isZoomOutAtBoundary: false,
+      isZoomOutDisabled: false,
       nextZoomOut: 1,
     });
   });

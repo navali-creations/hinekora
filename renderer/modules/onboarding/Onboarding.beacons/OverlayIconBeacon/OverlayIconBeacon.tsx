@@ -33,7 +33,7 @@ function OverlayIconBeacon(props: PopoverComponentProps) {
               <span className="mt-0.5 text-accent">•</span>
               <span>
                 Minimize the overlay when you only need the timer, start or stop
-                control, and the manual clip button in Rewind mode.
+                control, and the manual replay button in Rewind mode.
               </span>
             </li>
             <li className="flex items-start gap-2">

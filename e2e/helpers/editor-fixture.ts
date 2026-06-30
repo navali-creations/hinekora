@@ -4,12 +4,23 @@ import type {
   EditorCreateProjectInput,
   EditorExportInput,
   EditorMediaAsset,
+  EditorMediaAssetPageQuery,
   EditorProject,
   EditorProjectSummary,
   EditorTimelineClip,
   EditorWorkspace,
   EditorWorkspaceQuery,
 } from "../../main/modules/editor";
+import {
+  createEditorProjectPersistedMetadata,
+  type EditorProjectSourceLeagueMembership,
+} from "../../main/modules/editor/EditorProject.metadata";
+import type {
+  SavedEditItem,
+  SavedEditsLibraryPage,
+  SavedEditsLibraryQuery,
+  SavedEditsLibrarySortKey,
+} from "../../main/modules/saved-edits";
 import {
   type AppSettings,
   createDefaultSettings,
@@ -27,11 +38,19 @@ interface TimelineClipSnapshot {
 }
 
 interface EditorE2ECalls {
+  copiedExportIds: string[];
   copyRequests: unknown[];
   createProjectInputs: unknown[];
+  debugClipboardWrites: string[];
   deleteAllCount: number;
   deletedProjectIds: string[];
+  deletedSavedEditIds: string[];
   exportRequests: unknown[];
+  mediaAssetQueries: unknown[];
+  revealedClipIds: string[];
+  revealedExportIds: string[];
+  revealedSavedEditIds: string[];
+  savedEditDeleteAllCount: number;
   savedProjects: Array<{
     id: string;
     title: string;
@@ -46,21 +65,31 @@ interface EditorE2EFixture {
   assets: {
     deathAsset: EditorMediaAsset;
     manualAsset: EditorMediaAsset;
+    mediaAssets: EditorMediaAsset[];
     recordingAsset: EditorMediaAsset;
   };
   emptyProject: EditorProject;
+  historyOverflowProject: EditorProject;
   now: string;
+  mixedLeagueProject: EditorProject;
   primaryProject: EditorProject;
   recordingStatus: ManagedRecorderStatus;
+  savedEditRecords: EditorE2ESavedEditRecord[];
   secondaryProject: EditorProject;
   settings: AppSettings;
 }
 
 type EditorE2EElectron = Window["electron"];
 
+interface EditorE2ESavedEditRecord {
+  item: SavedEditItem;
+  sourceLeagueMemberships: EditorProjectSourceLeagueMembership[];
+}
+
 const editorE2ENow = "2026-06-25T00:00:00.000Z";
 
 function createEditorE2EFixture(): EditorE2EFixture {
+  const recentAssetCreatedAt = new Date().toISOString();
   const deathAsset = createEditorE2EAsset({
     category: "death-clip",
     id: "asset-1",
@@ -82,6 +111,31 @@ function createEditorE2EFixture(): EditorE2EFixture {
     name: "recording-1.mp4",
     subtitle: "Recording - Standard",
   });
+  const runesDeathAsset = createEditorE2EAsset({
+    category: "death-clip",
+    id: "asset-runes",
+    kind: "clip",
+    name: "asset-runes.mp4",
+    sourceLeague: "Runes of Aldur",
+    subtitle: "Death clip - Runes of Aldur",
+  });
+  const extraDeathAssets = Array.from({ length: 6 }, (_, index) =>
+    createEditorE2EAsset({
+      category: "death-clip",
+      ...(index === 0 ? { createdAt: recentAssetCreatedAt } : {}),
+      id: `asset-${index + 2}`,
+      kind: "clip",
+      name: `asset-${index + 2}.mp4`,
+      subtitle: "Death clip - Standard",
+    }),
+  );
+  const mediaAssets = [
+    deathAsset,
+    ...extraDeathAssets,
+    runesDeathAsset,
+    manualAsset,
+    recordingAsset,
+  ];
   const primaryProject = createEditorE2EProject({
     asset: deathAsset,
     clips: [
@@ -116,20 +170,66 @@ function createEditorE2EFixture(): EditorE2EFixture {
     id: "project-2",
     title: "secondary.mp4 edit",
   });
+  const mixedLeagueProject = createEditorE2EProject({
+    asset: deathAsset,
+    assets: [deathAsset, runesDeathAsset],
+    clips: [
+      createEditorE2EClip(deathAsset, {
+        durationSeconds: 3,
+        id: "timeline-mixed-standard",
+        startSeconds: 0,
+      }),
+      createEditorE2EClip(runesDeathAsset, {
+        durationSeconds: 3,
+        id: "timeline-mixed-runes",
+        startSeconds: 3,
+      }),
+    ],
+    id: "project-mixed-league",
+    title: "mixed league edit",
+  });
   const emptyProject = createEditorE2EProject({
     asset: deathAsset,
     clips: [],
     id: "project-empty",
     title: "Untitled edit",
   });
+  const historyOverflowProject = {
+    ...createEditorE2EProject({
+      asset: deathAsset,
+      clips: [
+        createEditorE2EClip(deathAsset, {
+          durationSeconds: 3,
+          id: "timeline-history-overflow",
+          startSeconds: 0,
+        }),
+      ],
+      id: "project-history-overflow",
+      title: "history overflow edit",
+    }),
+    history: {
+      editCount: 51,
+      labels: Array.from(
+        { length: 51 },
+        (_, index) => `History edit ${index + 1}`,
+      ),
+      subtitles: Array.from(
+        { length: 51 },
+        (_, index) => `asset-${index + 1}.mp4`,
+      ),
+    },
+  };
 
   return {
     assets: {
       deathAsset,
       manualAsset,
+      mediaAssets,
       recordingAsset,
     },
     emptyProject,
+    historyOverflowProject,
+    mixedLeagueProject,
     now: editorE2ENow,
     primaryProject,
     recordingStatus: {
@@ -154,13 +254,19 @@ function createEditorE2EFixture(): EditorE2EFixture {
       runtime: "packaged_obs",
       runtimePath: null,
     },
+    savedEditRecords: [
+      primaryProject,
+      secondaryProject,
+      mixedLeagueProject,
+      historyOverflowProject,
+    ].map(createEditorE2ESavedEditRecord),
     secondaryProject,
     settings: {
       ...createDefaultSettings(),
       activeGame: "poe2",
-      activeLeague: "Runes of Aldur",
+      activeLeague: "Standard",
       installedGames: ["poe2"],
-      poe2SelectedLeague: "Runes of Aldur",
+      poe2SelectedLeague: "Standard",
       setupCompleted: true,
       setupStep: 3,
       setupVersion: 1,
@@ -168,17 +274,53 @@ function createEditorE2EFixture(): EditorE2EFixture {
   };
 }
 
+function createEditorE2ESavedEditRecord(
+  project: EditorProject,
+): EditorE2ESavedEditRecord {
+  const metadata = createEditorProjectPersistedMetadata(project);
+
+  return {
+    item: {
+      ...createEditorE2EProjectSummary(project),
+      historyEditCount: metadata.historyEditCount,
+      sizeBytes: metadata.sourceSizeBytes,
+      sourceGame: metadata.sourceGame,
+      sourceLeague: metadata.sourceLeague,
+    },
+    sourceLeagueMemberships: metadata.sourceLeagueMemberships,
+  };
+}
+
+function createEditorE2EProjectSummary(
+  project: EditorProject,
+): EditorProjectSummary {
+  return {
+    clipCount: project.tracks.reduce(
+      (clipCount, track) => clipCount + track.clips.length,
+      0,
+    ),
+    createdAt: project.createdAt,
+    durationSeconds: project.durationSeconds,
+    id: project.id,
+    title: project.title,
+    updatedAt: project.updatedAt,
+  };
+}
+
 function createEditorE2EAsset(input: {
   category: EditorMediaAsset["category"];
+  createdAt?: string;
   id: string;
   kind: EditorMediaAsset["kind"];
   name: string;
+  sourceGame?: EditorMediaAsset["sourceGame"];
+  sourceLeague?: string;
   subtitle: string;
 }): EditorMediaAsset {
   return {
     assetKey: `${input.kind}:${input.id}`,
     category: input.category,
-    createdAt: editorE2ENow,
+    createdAt: input.createdAt ?? editorE2ENow,
     durationSeconds: 10,
     exists: true,
     id: input.id,
@@ -189,8 +331,8 @@ function createEditorE2EAsset(input: {
         : `hinekora-media://run-recording/${input.id}`,
     name: input.name,
     sizeBytes: 1024,
-    sourceGame: "poe2",
-    sourceLeague: "Standard",
+    sourceGame: input.sourceGame ?? "poe2",
+    sourceLeague: input.sourceLeague ?? "Standard",
     status: "ready",
     subtitle: input.subtitle,
   };
@@ -222,13 +364,22 @@ function createEditorE2EClip(
 
 function createEditorE2EProject(input: {
   asset: EditorMediaAsset;
+  assets?: EditorMediaAsset[];
   clips: EditorTimelineClip[];
   id: string;
   title: string;
 }): EditorProject {
+  const assets = input.assets ?? [input.asset];
+  const sourceGame = resolveCommonEditorE2EAssetValue(
+    assets.map((asset) => asset.sourceGame),
+  );
+  const sourceLeague = resolveCommonEditorE2EAssetValue(
+    assets.map((asset) => asset.sourceLeague),
+  );
+
   return {
     activeClipId: null,
-    assets: [input.asset],
+    assets,
     createdAt: editorE2ENow,
     durationSeconds: input.clips.reduce(
       (duration, clip) =>
@@ -237,6 +388,8 @@ function createEditorE2EProject(input: {
     ),
     id: input.id,
     selectedAssetKey: input.asset.assetKey,
+    sourceGame,
+    sourceLeague,
     title: input.title,
     tracks: [
       {
@@ -250,13 +403,36 @@ function createEditorE2EProject(input: {
   };
 }
 
+function resolveCommonEditorE2EAssetValue<TValue extends string>(
+  values: TValue[],
+): TValue | null {
+  const firstValue = values[0];
+  if (!firstValue) {
+    return null;
+  }
+
+  return values.every((value) => value === firstValue) ? firstValue : null;
+}
+
 async function setupEditorE2E(page: Page) {
   await page.setViewportSize({ height: 760, width: 1280 });
+  await page.exposeFunction(
+    "__HINEKORA_E2E_CREATE_SAVED_EDIT_RECORD__",
+    (project: EditorProject) => createEditorE2ESavedEditRecord(project),
+  );
   await page.addInitScript(
     (input: { bridgeFactorySource: string; fixture: EditorE2EFixture }) => {
       const { fixture } = input;
-      const { deathAsset, manualAsset, recordingAsset } = fixture.assets;
-      const { emptyProject, now, primaryProject, recordingStatus } = fixture;
+      const { deathAsset, manualAsset, mediaAssets, recordingAsset } =
+        fixture.assets;
+      const {
+        emptyProject,
+        historyOverflowProject,
+        mixedLeagueProject,
+        now,
+        primaryProject,
+        recordingStatus,
+      } = fixture;
       const settings = { ...fixture.settings };
       const secondaryProject = fixture.secondaryProject;
       const unsubscribe = () => undefined;
@@ -264,10 +440,23 @@ async function setupEditorE2E(page: Page) {
       const createBridgeDomainFactory = Function(
         `"use strict"; return (${input.bridgeFactorySource});`,
       )() as E2EBridgeDomainFactory;
+      const createSavedEditRecord = (project: EditorProject) =>
+        (
+          window as unknown as {
+            __HINEKORA_E2E_CREATE_SAVED_EDIT_RECORD__: (
+              project: EditorProject,
+            ) => Promise<EditorE2ESavedEditRecord>;
+          }
+        ).__HINEKORA_E2E_CREATE_SAVED_EDIT_RECORD__(clone(project));
       const projectsById = new Map([
         [primaryProject.id, primaryProject],
         [secondaryProject.id, secondaryProject],
+        [mixedLeagueProject.id, mixedLeagueProject],
+        [historyOverflowProject.id, historyOverflowProject],
       ]);
+      const savedEditRecordsById = new Map(
+        fixture.savedEditRecords.map((record) => [record.item.id, record]),
+      );
       const createProjectSummary = (
         project: EditorProject,
       ): EditorProjectSummary => ({
@@ -281,13 +470,123 @@ async function setupEditorE2E(page: Page) {
         title: project.title,
         updatedAt: project.updatedAt,
       });
+      const compareSavedEditItems = (
+        first: SavedEditItem,
+        second: SavedEditItem,
+        sortBy: SavedEditsLibrarySortKey,
+      ) => {
+        const firstValue = first[sortBy];
+        const secondValue = second[sortBy];
+        if (typeof firstValue === "number" && typeof secondValue === "number") {
+          return firstValue - secondValue;
+        }
+
+        return String(firstValue).localeCompare(String(secondValue));
+      };
+      const listSavedEdits = (
+        query: SavedEditsLibraryQuery = {},
+      ): SavedEditsLibraryPage => {
+        const pageIndex = query.pageIndex ?? 0;
+        const pageSize = query.pageSize ?? 20;
+        const sortBy = query.sortBy ?? "updatedAt";
+        const sortDirection = query.sortDirection ?? "desc";
+        const records = Array.from(savedEditRecordsById.values())
+          .filter((record) =>
+            record.sourceLeagueMemberships.some(
+              (membership) =>
+                (!query.game || membership.sourceGame === query.game) &&
+                (!query.league || membership.sourceLeague === query.league),
+            ),
+          )
+          .sort((first, second) => {
+            const multiplier = sortDirection === "asc" ? 1 : -1;
+
+            return (
+              compareSavedEditItems(first.item, second.item, sortBy) *
+                multiplier || first.item.id.localeCompare(second.item.id)
+            );
+          });
+        const items = records.map((record) => record.item);
+        const availableLeagues = Array.from(
+          new Set(
+            Array.from(savedEditRecordsById.values())
+              .flatMap((record) => record.sourceLeagueMemberships)
+              .filter(
+                (membership) =>
+                  !query.game || membership.sourceGame === query.game,
+              )
+              .map((membership) => membership.sourceLeague),
+          ),
+        ).sort((first, second) => first.localeCompare(second));
+
+        return {
+          availableLeagues,
+          globalTotalCount: savedEditRecordsById.size,
+          items: clone(
+            items.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize),
+          ),
+          pageCount: Math.max(1, Math.ceil(items.length / pageSize)),
+          pageIndex,
+          pageSize,
+          sortBy,
+          sortDirection,
+          totalCount: items.length,
+        };
+      };
+      const listEditorMediaAssets = (query: EditorMediaAssetPageQuery) => {
+        const pageIndex = query.pageIndex ?? 0;
+        const pageSize = query.pageSize ?? 5;
+        const items = mediaAssets.filter((asset) => {
+          if (asset.category !== query.category) {
+            return false;
+          }
+          if (query.includeAssetKeys) {
+            return query.includeAssetKeys.includes(asset.assetKey);
+          }
+          if (asset.sourceGame !== query.game) {
+            return false;
+          }
+          if (query.league && asset.sourceLeague !== query.league) {
+            return false;
+          }
+          if (query.excludeAssetKeys?.includes(asset.assetKey)) {
+            return false;
+          }
+          if (
+            query.createdAfter &&
+            Date.parse(asset.createdAt) < Date.parse(query.createdAfter)
+          ) {
+            return false;
+          }
+
+          return true;
+        });
+
+        return {
+          items: clone(
+            items.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize),
+          ),
+          pageCount: Math.max(1, Math.ceil(items.length / pageSize)),
+          pageIndex,
+          pageSize,
+          totalCount: items.length,
+        };
+      };
       const state = {
+        copiedExportIds: [] as string[],
         copyRequests: [] as unknown[],
         createProjectInputs: [] as unknown[],
+        debugClipboardWrites: [] as string[],
         currentProjectId: primaryProject.id,
         deleteAllCount: 0,
         deletedProjectIds: [] as string[],
+        deletedSavedEditIds: [] as string[],
         exportRequests: [] as unknown[],
+        mediaAssetQueries: [] as unknown[],
+        revealedClipIds: [] as string[],
+        revealedExportIds: [] as string[],
+        revealedSavedEditIds: [] as string[],
+        savedEditDeleteAllCount: 0,
         savedProjects: [] as EditorProject[],
         settingsUpdates: [] as Record<string, unknown>[],
         unexpectedBridgeCalls: [] as string[],
@@ -354,6 +653,14 @@ async function setupEditorE2E(page: Page) {
       HTMLMediaElement.prototype.pause = function pause() {
         stopPlaybackClock(this);
       };
+      Object.defineProperty(window.navigator, "clipboard", {
+        configurable: true,
+        value: {
+          writeText: async (text: string) => {
+            state.debugClipboardWrites.push(text);
+          },
+        },
+      });
       (
         window as unknown as {
           __HINEKORA_E2E__: typeof state;
@@ -390,6 +697,7 @@ async function setupEditorE2E(page: Page) {
           {
             getStatus: async () => ({
               activeGame: "poe2",
+              activeGameFocused: null,
               lastError: null,
               path: null,
               watching: false,
@@ -402,7 +710,11 @@ async function setupEditorE2E(page: Page) {
           {},
         ),
         editor: createBridgeDomain<EditorE2EElectron["editor"]>("editor", {
-          copyExport: async () => ({ error: null, ok: true }),
+          copyExport: async (exportId: string) => {
+            state.copiedExportIds.push(exportId);
+
+            return { error: null, ok: true };
+          },
           copyProjectToClipboard: async (input: unknown) => {
             state.copyRequests.push(clone(input));
 
@@ -416,12 +728,17 @@ async function setupEditorE2E(page: Page) {
             };
             state.currentProjectId = project.id;
             projectsById.set(project.id, project);
+            savedEditRecordsById.set(
+              project.id,
+              await createSavedEditRecord(project),
+            );
 
             return clone(project);
           },
           deleteAllProjects: async () => {
             state.deleteAllCount += 1;
             projectsById.clear();
+            savedEditRecordsById.clear();
             state.currentProjectId = emptyProject.id;
 
             return clone(createWorkspace(emptyProject));
@@ -429,6 +746,7 @@ async function setupEditorE2E(page: Page) {
           deleteProject: async (projectId: string) => {
             state.deletedProjectIds.push(projectId);
             projectsById.delete(projectId);
+            savedEditRecordsById.delete(projectId);
             state.currentProjectId =
               Array.from(projectsById.values())[0]?.id ?? emptyProject.id;
 
@@ -463,8 +781,17 @@ async function setupEditorE2E(page: Page) {
 
             return clone(createWorkspace(project));
           },
+          listMediaAssets: async (query: EditorMediaAssetPageQuery) => {
+            state.mediaAssetQueries.push(clone(query));
+
+            return listEditorMediaAssets(query);
+          },
           onExportProgress: () => unsubscribe,
-          revealExport: async () => ({ error: null, ok: true }),
+          revealExport: async (exportId: string) => {
+            state.revealedExportIds.push(exportId);
+
+            return { error: null, ok: true };
+          },
           saveProject: async ({
             project,
           }: {
@@ -474,6 +801,10 @@ async function setupEditorE2E(page: Page) {
             state.savedProjects.push(nextProject);
             state.currentProjectId = nextProject.id;
             projectsById.set(nextProject.id, nextProject);
+            savedEditRecordsById.set(
+              nextProject.id,
+              await createSavedEditRecord(nextProject),
+            );
 
             return clone(nextProject);
           },
@@ -496,6 +827,7 @@ async function setupEditorE2E(page: Page) {
           "overlayWindows",
           {
             isAuraLocked: async () => false,
+            isRecorderRequested: async () => false,
             isRecorderVisible: async () => false,
             onAuraLockChanged: () => unsubscribe,
             onRecorderVisibilityChanged: () => unsubscribe,
@@ -524,7 +856,34 @@ async function setupEditorE2E(page: Page) {
         replayClips: createBridgeDomain<EditorE2EElectron["replayClips"]>(
           "replayClips",
           {
+            reveal: async (id: string) => {
+              state.revealedClipIds.push(id);
+
+              return { error: null, ok: true };
+            },
             onStatusChanged: () => unsubscribe,
+          },
+        ),
+        savedEdits: createBridgeDomain<EditorE2EElectron["savedEdits"]>(
+          "savedEdits",
+          {
+            delete: async (projectId: string) => {
+              state.deletedSavedEditIds.push(projectId);
+              projectsById.delete(projectId);
+              savedEditRecordsById.delete(projectId);
+            },
+            deleteAll: async () => {
+              state.savedEditDeleteAllCount += 1;
+              projectsById.clear();
+              savedEditRecordsById.clear();
+            },
+            listLibrary: async (query?: SavedEditsLibraryQuery) =>
+              listSavedEdits(query),
+            revealInExplorer: async (projectId: string) => {
+              state.revealedSavedEditIds.push(projectId);
+
+              return { error: null, status: "success" };
+            },
           },
         ),
         settings: createBridgeDomain<EditorE2EElectron["settings"]>(

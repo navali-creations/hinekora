@@ -58,7 +58,7 @@ vi.mock("~/main/modules/settings-store", () => ({
 
 function createFakeWindow(options: FakeBrowserWindowOptions = {}) {
   return createFakeBrowserWindow({
-    bounds: { x: 100, y: 100, width: 360, height: 86 },
+    bounds: { x: 100, y: 100, width: 216, height: 200 },
     url: `app://-/${WindowName.RecorderOverlay}`,
     ...options,
   });
@@ -121,10 +121,10 @@ describe("RecordingControlsOverlayService", () => {
 
     expect(electronMocks.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
-        width: 360,
-        height: 86,
+        width: 216,
+        height: 200,
         focusable: false,
-        x: 1540,
+        x: 1684,
         y: 24,
         webPreferences: expect.objectContaining({ sandbox: true }),
       }),
@@ -137,8 +137,8 @@ describe("RecordingControlsOverlayService", () => {
     expect(service.createAnchorBounds()).toEqual({
       x: 100,
       y: 100,
-      width: 360,
-      height: 86,
+      width: 216,
+      height: 200,
     });
     expect(service.isVisible()).toBe(true);
     expect(mainWindow.webContents.send).toHaveBeenCalledWith(
@@ -240,7 +240,7 @@ describe("RecordingControlsOverlayService", () => {
     electronMocks.browserWindowFactory.mockReturnValue(recorderWindow);
     settingsStoreMocks.get.mockReturnValue({
       ...createDefaultSettings(),
-      recorderOverlayBounds: { x: 5000, y: 5000, width: 360, height: 86 },
+      recorderOverlayBounds: { x: 5000, y: 5000, width: 216, height: 200 },
     });
     const coordinator = new GameOverlayCoordinator();
     const service = new RecordingControlsOverlayService(coordinator);
@@ -249,10 +249,10 @@ describe("RecordingControlsOverlayService", () => {
 
     expect(electronMocks.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
-        x: 1540,
+        x: 1684,
         y: 24,
-        width: 360,
-        height: 86,
+        width: 216,
+        height: 200,
       }),
     );
   });
@@ -271,10 +271,10 @@ describe("RecordingControlsOverlayService", () => {
 
     expect(electronMocks.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
-        x: 1540,
+        x: 1684,
         y: 24,
-        width: 360,
-        height: 86,
+        width: 216,
+        height: 200,
       }),
     );
     expect(warn).toHaveBeenCalledWith(
@@ -304,15 +304,15 @@ describe("RecordingControlsOverlayService", () => {
       recorderWindow.getBounds.mockReturnValue({
         x: 32,
         y: 48,
-        width: 360,
-        height: 86,
+        width: 330,
+        height: 230,
       });
       movedListener?.();
       recorderWindow.getBounds.mockReturnValue({
         x: 48,
         y: 64,
-        width: 360,
-        height: 86,
+        width: 330,
+        height: 230,
       });
       resizedListener?.();
       vi.advanceTimersByTime(499);
@@ -320,7 +320,7 @@ describe("RecordingControlsOverlayService", () => {
 
       vi.advanceTimersByTime(1);
       expect(settingsStoreMocks.update).toHaveBeenLastCalledWith({
-        recorderOverlayBounds: { x: 48, y: 64, width: 360, height: 86 },
+        recorderOverlayBounds: { x: 48, y: 64, width: 330, height: 230 },
       });
     } finally {
       vi.useRealTimers();
@@ -390,8 +390,8 @@ describe("RecordingControlsOverlayService", () => {
     recorderWindow.getBounds.mockReturnValue({
       x: 72,
       y: 96,
-      width: 360,
-      height: 86,
+      width: 330,
+      height: 230,
     });
 
     const closeListener = recorderWindow.on.mock.calls.find(
@@ -400,7 +400,7 @@ describe("RecordingControlsOverlayService", () => {
     closeListener?.();
 
     expect(settingsStoreMocks.update).toHaveBeenCalledWith({
-      recorderOverlayBounds: { x: 72, y: 96, width: 360, height: 86 },
+      recorderOverlayBounds: { x: 72, y: 96, width: 330, height: 230 },
     });
   });
 
@@ -415,8 +415,8 @@ describe("RecordingControlsOverlayService", () => {
     recorderWindow.getBounds.mockReturnValue({
       x: 88,
       y: 112,
-      width: 360,
-      height: 86,
+      width: 330,
+      height: 230,
     });
 
     service.destroy();
@@ -427,7 +427,7 @@ describe("RecordingControlsOverlayService", () => {
 
     expect(settingsStoreMocks.update).toHaveBeenCalledTimes(1);
     expect(settingsStoreMocks.update).toHaveBeenCalledWith({
-      recorderOverlayBounds: { x: 88, y: 112, width: 360, height: 86 },
+      recorderOverlayBounds: { x: 88, y: 112, width: 330, height: 230 },
     });
   });
 
@@ -599,10 +599,10 @@ describe("RecordingControlsOverlayService", () => {
   it("resizes between expanded and minimized modes without moving the right edge", async () => {
     const recorderWindow = createFakeWindow();
     recorderWindow.getBounds.mockReturnValue({
-      x: 1540,
+      x: 1684,
       y: 24,
-      width: 360,
-      height: 86,
+      width: 216,
+      height: 200,
     });
     electronMocks.browserWindowFactory.mockReturnValue(recorderWindow);
     const coordinator = new GameOverlayCoordinator();
@@ -634,10 +634,10 @@ describe("RecordingControlsOverlayService", () => {
 
     expect(service.setMode("expanded")).toBe("expanded");
     expect(recorderWindow.setBounds).toHaveBeenLastCalledWith({
-      x: 1540,
+      x: 1684,
       y: 24,
-      width: 360,
-      height: 86,
+      width: 216,
+      height: 200,
     });
   });
 

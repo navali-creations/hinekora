@@ -1,3 +1,5 @@
+import { createEditorDefaultFileName } from "../../Editor.utils/Editor.utils";
+
 function createSaveDisabledReason(input: {
   isExporting: boolean;
   project: unknown;
@@ -10,10 +12,33 @@ function createSaveDisabledReason(input: {
     return "Select a timeline clip before saving.";
   }
   if (input.isExporting) {
-    return "Wait for the current export to finish.";
+    return "Wait for the current save to finish.";
   }
 
   return null;
 }
 
-export { createSaveDisabledReason };
+function createEditorFileNameDraft(
+  project: Parameters<typeof createEditorDefaultFileName>[0],
+): string {
+  return stripMp4Extension(createEditorDefaultFileName(project));
+}
+
+function createEditorOutputFileName(fileName: string): string {
+  const trimmedFileName = fileName.trim();
+
+  return trimmedFileName.toLowerCase().endsWith(".mp4")
+    ? trimmedFileName
+    : `${trimmedFileName}.mp4`;
+}
+
+function stripMp4Extension(fileName: string): string {
+  return fileName.replace(/\.mp4$/i, "");
+}
+
+export {
+  createEditorFileNameDraft,
+  createEditorOutputFileName,
+  createSaveDisabledReason,
+  stripMp4Extension,
+};

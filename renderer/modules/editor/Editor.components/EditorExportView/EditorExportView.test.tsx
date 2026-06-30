@@ -56,7 +56,7 @@ describe("EditorExportView", () => {
     document.body.replaceChildren();
   });
 
-  it("shows export progress while rendering", async () => {
+  it("shows save progress while rendering", async () => {
     configureEditorState({
       exportState: {
         error: null,
@@ -73,7 +73,7 @@ describe("EditorExportView", () => {
     expect(container.querySelector("progress")?.value).toBe(42);
   });
 
-  it("shows a failed export message", async () => {
+  it("shows a failed save message", async () => {
     configureEditorState({
       exportState: {
         error: "ffmpeg failed",
@@ -86,7 +86,7 @@ describe("EditorExportView", () => {
 
     await renderExportView();
 
-    expect(container.textContent).toContain("Export failed");
+    expect(container.textContent).toContain("Save failed");
     expect(container.textContent).toContain("ffmpeg failed");
   });
 

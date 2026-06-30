@@ -1,7 +1,7 @@
 import clsx from "clsx";
 import type { ChangeEvent } from "react";
-import { FiMousePointer as MousePointer, FiPlus as Plus } from "react-icons/fi";
-import { TbMoon as Moon } from "react-icons/tb";
+import { PiBezierCurve, PiSelection } from "react-icons/pi";
+import { TbRouteSquare2 } from "react-icons/tb";
 
 import type { CropRegionSelectionShape } from "~/main/modules/overlay-windows/OverlayWindows.dto";
 import {
@@ -183,7 +183,7 @@ function CropEditorActions() {
           type="button"
           onClick={handleAddRectAuraClick}
         >
-          <Plus size={16} />
+          <PiSelection size={16} />
           Add new aura
         </button>
       </div>
@@ -200,7 +200,7 @@ function CropEditorActions() {
           type="button"
           onClick={handleAddArchedAuraClick}
         >
-          <Moon size={16} />
+          <PiBezierCurve className="rotate-90" size={16} />
           Add arched aura
         </button>
       </div>
@@ -217,7 +217,7 @@ function CropEditorActions() {
           type="button"
           onClick={handleAddPointerAuraClick}
         >
-          <MousePointer size={16} />
+          <TbRouteSquare2 size={16} />
           Add pointer aura
         </button>
       </div>

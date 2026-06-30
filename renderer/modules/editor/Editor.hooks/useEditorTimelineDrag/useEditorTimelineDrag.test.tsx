@@ -299,6 +299,10 @@ describe("useEditorTimelineDrag", () => {
     dispatchPointer(getElement("timeline"), "pointerup", { clientX: 400 });
 
     expect(storeMocks.beginHistoryTransaction).toHaveBeenCalledTimes(1);
+    expect(storeMocks.beginHistoryTransaction).toHaveBeenCalledWith(
+      "Trim start",
+      "asset-1.mp4",
+    );
     expect(storeMocks.selectTimelineClip).toHaveBeenCalledWith("timeline-1");
     expect(storeMocks.trimTimelineClipEdge).toHaveBeenNthCalledWith(
       1,

@@ -145,30 +145,88 @@ function mockEditorLibraries(
   input: {
     clips?: Record<string, ReplayClipDetail | null>;
     editorAutoPruneProjects?: boolean;
+    leakedIncludedClips?: ReplayClipDetail[];
     recordings?: Record<string, RunRecordingDetail | null>;
     storageRoot?: string | null;
   } = {},
 ) {
+  const clipDetails = Object.values(input.clips ?? {}).filter(
+    (detail): detail is ReplayClipDetail => detail !== null,
+  );
   const recordingItems = Object.values(input.recordings ?? {})
     .filter((detail): detail is RunRecordingDetail => detail !== null)
     .map((detail) => detail.recording);
 
   vi.spyOn(ReplayClipsService, "getInstance").mockReturnValue({
     getClip: (id: string) => input.clips?.[id] ?? null,
-    listRecentEditorReplayDetails: (query: { kind: "death" | "manual" }) =>
-      Object.values(input.clips ?? {})
-        .filter((detail): detail is ReplayClipDetail => detail !== null)
-        .filter((detail) => detail.clip.kind === query.kind),
+    listEditorReplayDetailPage: (query: {
+      createdAfter?: string;
+      excludeIds?: string[];
+      game?: "poe1" | "poe2";
+      includeIds?: string[];
+      kind: "death" | "manual";
+      league?: string;
+      pageIndex: number;
+      pageSize: number;
+    }) => {
+      const offset = query.pageIndex * query.pageSize;
+      const items = clipDetails.filter(
+        (detail) =>
+          detail.clip.kind === query.kind &&
+          (!query.createdAfter ||
+            Date.parse(detail.clip.createdAt) >=
+              Date.parse(query.createdAfter)) &&
+          !query.excludeIds?.includes(detail.clip.id) &&
+          (!query.game || detail.clip.sourceGame === query.game) &&
+          (!query.includeIds || query.includeIds.includes(detail.clip.id)) &&
+          (!query.league || detail.clip.sourceLeague === query.league),
+      );
+      const pageItems =
+        query.includeIds && input.leakedIncludedClips
+          ? [...items, ...input.leakedIncludedClips]
+          : items;
+
+      return {
+        items: pageItems.slice(offset, offset + query.pageSize),
+        totalCount: pageItems.length,
+      };
+    },
   } as unknown as ReplayClipsService);
   vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
     getRecording: (id: string) => input.recordings?.[id] ?? null,
     getRecordingMediaPath: (id: string) =>
       input.recordings?.[id]?.recording.path ?? null,
-    listRecentEditorRecordingDetails: () =>
-      recordingItems.map((recording) => ({
-        mediaUrl: `hinekora-media://run-recording/${recording.id}`,
-        recording,
-      })),
+    listEditorRecordingDetailPage: (query: {
+      createdAfter?: string;
+      excludeIds?: string[];
+      game?: "poe1" | "poe2";
+      includeIds?: string[];
+      league?: string;
+      pageIndex: number;
+      pageSize: number;
+    }) => {
+      const offset = query.pageIndex * query.pageSize;
+      const items = recordingItems.filter(
+        (recording) =>
+          (!query.createdAfter ||
+            Date.parse(recording.createdAt) >=
+              Date.parse(query.createdAfter)) &&
+          !query.excludeIds?.includes(recording.id) &&
+          (!query.game || recording.sourceGame === query.game) &&
+          (!query.includeIds || query.includeIds.includes(recording.id)) &&
+          (!query.league || recording.sourceLeague === query.league),
+      );
+
+      return {
+        items: items
+          .slice(offset, offset + query.pageSize)
+          .map((recording) => ({
+            mediaUrl: `hinekora-media://run-recording/${recording.id}`,
+            recording,
+          })),
+        totalCount: items.length,
+      };
+    },
   } as unknown as RecordingStorageService);
   vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
     get: () => ({
@@ -228,6 +286,13 @@ describe("EditorService IPC", () => {
     const { handlers } = mockIpcMainHandlers();
     const service = new EditorService();
     vi.spyOn(service, "getWorkspace").mockReturnValue(emptyWorkspace);
+    vi.spyOn(service, "listMediaAssets").mockReturnValue({
+      items: [],
+      pageCount: 1,
+      pageIndex: 0,
+      pageSize: 5,
+      totalCount: 0,
+    });
     vi.spyOn(service, "createProject").mockReturnValue(emptyProject);
     vi.spyOn(service, "deleteAllProjects").mockReturnValue(emptyWorkspace);
     vi.spyOn(service, "deleteProject").mockReturnValue(emptyWorkspace);
@@ -254,6 +319,31 @@ describe("EditorService IPC", () => {
     ).toEqual(emptyProject);
     expect(service.getWorkspace).toHaveBeenCalledWith({
       source: { kind: "clip", id: "clip-1" },
+    });
+    expect(
+      await handlers.get(EditorChannel.ListMediaAssets)?.(
+        {},
+        {
+          category: "death-clip",
+          game: "poe2",
+          league: "Standard",
+          pageIndex: 0,
+          pageSize: 5,
+        },
+      ),
+    ).toEqual({
+      items: [],
+      pageCount: 1,
+      pageIndex: 0,
+      pageSize: 5,
+      totalCount: 0,
+    });
+    expect(service.listMediaAssets).toHaveBeenCalledWith({
+      category: "death-clip",
+      game: "poe2",
+      league: "Standard",
+      pageIndex: 0,
+      pageSize: 5,
     });
     expect(service.createProject).toHaveBeenCalledWith({
       assetKeys: ["clip:clip-1"],
@@ -291,6 +381,24 @@ describe("EditorService IPC", () => {
         { source: { kind: "clip", id: "" } },
       ),
     ).toEqual({ ok: false, error: "media id is too short" });
+    expect(
+      await handlers.get(EditorChannel.ListMediaAssets)?.(
+        {},
+        { category: "saved-edits", game: "poe2" },
+      ),
+    ).toEqual({ ok: false, error: "asset category is invalid" });
+    expect(
+      await handlers.get(EditorChannel.ListMediaAssets)?.(
+        {},
+        { category: "death-clip", game: "poe3" },
+      ),
+    ).toEqual({ ok: false, error: "asset source game is invalid" });
+    expect(
+      await handlers.get(EditorChannel.ListMediaAssets)?.(
+        {},
+        { category: "death-clip", game: "poe2", pageSize: 51 },
+      ),
+    ).toEqual({ ok: false, error: "page size is too large" });
     expect(
       await handlers.get(EditorChannel.CreateProject)?.(
         {},
@@ -348,6 +456,16 @@ describe("EditorService IPC", () => {
           kind: "manual",
         }),
       },
+      leakedIncludedClips: [
+        createReplayClipDetail({
+          id: "clip-manual-extra",
+          kind: "manual",
+        }),
+        createReplayClipDetail({
+          id: "clip-manual-unordered",
+          kind: "manual",
+        }),
+      ],
       recordings: {
         "recording-1": createRecordingDetail({
           createdAt: "2026-06-12T09:00:00.000Z",
@@ -372,13 +490,131 @@ describe("EditorService IPC", () => {
     const missingSourceProject = service.createProject({
       source: { id: "missing", kind: "clip" },
     });
+    const missingRecordingSourceProject = service.createProject({
+      source: { id: "missing", kind: "recording" },
+    });
     const missingAssetKeysProject = service.createProject({
       assetKeys: ["clip:missing"],
     });
 
-    expect(workspace.assets.map((asset) => asset.assetKey)).toEqual([
-      "clip:clip-manual",
+    const deathAssets = service.listMediaAssets({
+      category: "death-clip",
+      game: "poe2",
+      pageSize: 5,
+    });
+    const manualAssets = service.listMediaAssets({
+      category: "manual-replay",
+      game: "poe2",
+      pageSize: 5,
+    });
+    const recordingAssets = service.listMediaAssets({
+      category: "recording",
+      game: "poe1",
+      pageSize: 5,
+    });
+    const scopedDeathAssets = service.listMediaAssets({
+      category: "death-clip",
+      game: "poe2",
+      league: "Standard",
+      pageSize: 5,
+    });
+    const scopedRecordingAssets = service.listMediaAssets({
+      category: "recording",
+      game: "poe1",
+      league: "Standard",
+      pageSize: 5,
+    });
+    const defaultSizedAssets = service.listMediaAssets({
+      category: "death-clip",
+      game: "poe2",
+    });
+    const includedTimelineAssets = service.listMediaAssets({
+      category: "manual-replay",
+      game: "poe2",
+      includeAssetKeys: [
+        "clip:clip-manual",
+        "clip:clip-manual",
+        "clip:clip-manual-missing",
+        "clip:clip-manual-missing-again",
+        "recording:recording-1",
+      ],
+      league: "Different League",
+      pageSize: 5,
+    });
+    const includedRecordingAssets = service.listMediaAssets({
+      category: "recording",
+      game: "poe2",
+      includeAssetKeys: ["clip:clip-manual", "recording:recording-1"],
+      pageSize: 5,
+    });
+    const emptyIncludedRecordingAssets = service.listMediaAssets({
+      category: "recording",
+      game: "poe2",
+      includeAssetKeys: ["clip:clip-manual"],
+      pageSize: 5,
+    });
+    const excludedDeathAssets = service.listMediaAssets({
+      category: "death-clip",
+      excludeAssetKeys: [
+        "bad-key",
+        "clip:clip-death",
+        "clip:clip-death",
+        "recording:recording-1",
+        "recording:recording-1",
+      ],
+      game: "poe2",
+      pageSize: 5,
+    });
+    const recentDeathAssets = service.listMediaAssets({
+      category: "death-clip",
+      createdAfter: "2026-06-12T09:30:00.000Z",
+      game: "poe2",
+      pageSize: 5,
+    });
+    const recentRecordingAssets = service.listMediaAssets({
+      category: "recording",
+      createdAfter: "2026-06-12T08:30:00.000Z",
+      game: "poe1",
+      pageSize: 5,
+    });
+
+    expect(workspace.assets).toEqual([]);
+    expect(deathAssets.items.map((asset) => asset.assetKey)).toEqual([
       "clip:clip-death",
+    ]);
+    expect(manualAssets.items.map((asset) => asset.assetKey)).toEqual([
+      "clip:clip-manual",
+    ]);
+    expect(recordingAssets.items.map((asset) => asset.assetKey)).toEqual([
+      "recording:recording-1",
+    ]);
+    expect(scopedDeathAssets.items.map((asset) => asset.assetKey)).toEqual([
+      "clip:clip-death",
+    ]);
+    expect(scopedRecordingAssets.items.map((asset) => asset.assetKey)).toEqual([
+      "recording:recording-1",
+    ]);
+    expect(defaultSizedAssets.pageSize).toBe(5);
+    expect(defaultSizedAssets.items.map((asset) => asset.assetKey)).toEqual([
+      "clip:clip-death",
+    ]);
+    expect(includedTimelineAssets.items.map((asset) => asset.assetKey)).toEqual(
+      [
+        "clip:clip-manual",
+        "clip:clip-manual-extra",
+        "clip:clip-manual-unordered",
+      ],
+    );
+    expect(
+      includedRecordingAssets.items.map((asset) => asset.assetKey),
+    ).toEqual(["recording:recording-1"]);
+    expect(emptyIncludedRecordingAssets.items).toEqual([]);
+    expect(emptyIncludedRecordingAssets.totalCount).toBe(0);
+    expect(excludedDeathAssets.items).toEqual([]);
+    expect(recentDeathAssets.items.map((asset) => asset.assetKey)).toEqual([
+      "clip:clip-death",
+    ]);
+    expect(recentRecordingAssets.items.map((asset) => asset.assetKey)).toEqual([
       "recording:recording-1",
     ]);
     expect(workspace.project.assets).toEqual([]);
@@ -395,6 +631,7 @@ describe("EditorService IPC", () => {
       "clip:clip-death",
     ]);
     expect(missingSourceProject.assets).toEqual([]);
+    expect(missingRecordingSourceProject.assets).toEqual([]);
     expect(missingAssetKeysProject.assets).toEqual([]);
   });
 
@@ -489,6 +726,13 @@ describe("EditorService IPC", () => {
       mediaUrl: staleAsset.mediaUrl,
       name: staleAsset.name,
     });
+
+    expect(
+      service.createProject({
+        assetKeys: ["malformed", "unknown:source"],
+      }).assets,
+    ).toEqual([]);
+
     expect(
       service.getWorkspace({ projectId: "missing-project" }).project,
     ).toMatchObject({
@@ -558,6 +802,7 @@ describe("EditorService IPC", () => {
       { id: "timeline-c", startSeconds: 4 },
     ]);
     expect(savedProject.durationSeconds).toBe(5);
+    expect(savedProject.activeClipId).toBeNull();
     expect(
       reopenedClips.map((clip) => ({
         id: clip.id,
@@ -1019,7 +1264,9 @@ describe("EditorService IPC", () => {
       .mockResolvedValue({ ok: true, error: null });
 
     try {
-      const result = await service.exportProject(createExportInput());
+      const result = await service.exportProject(
+        createExportInput({ muteAudio: true }),
+      );
       const outputPath = internals.exportPaths.get(result.exportId);
 
       expect(result).toMatchObject({
@@ -1041,6 +1288,9 @@ describe("EditorService IPC", () => {
         error: null,
       });
       expect(copyFileToClipboard).toHaveBeenCalledWith(outputPath);
+      expect(renderExportWithFfmpeg).toHaveBeenCalledWith(
+        expect.objectContaining({ muteAudio: true }),
+      );
       expect(
         internals.handleExportMediaRequest(
           new Request((result.mediaUrl ?? "").replace("://export/", ":///")),
@@ -1207,12 +1457,12 @@ describe("EditorService IPC", () => {
       ).rejects.toThrow("No overwrite source is available to export");
       expect(service.revealExport("missing")).toEqual({
         ok: false,
-        error: "Exported file is not available",
+        error: "Saved video is not available",
       });
       internals.rememberExportPath("export-1", join(directory, "missing.mp4"));
       expect(service.revealExport("export-1")).toEqual({
         ok: false,
-        error: "Exported file is not available",
+        error: "Saved video is not available",
       });
       const existingExportPath = join(directory, "existing.mp4");
       await writeFile(existingExportPath, "video");
@@ -1226,7 +1476,7 @@ describe("EditorService IPC", () => {
         .mockRejectedValueOnce(new Error("copy crashed"));
       await expect(service.copyExport("missing")).resolves.toEqual({
         ok: false,
-        error: "Exported file is not available",
+        error: "Saved video is not available",
       });
       await expect(service.copyExport("export-2")).resolves.toEqual({
         ok: false,
@@ -1299,11 +1549,15 @@ describe("EditorService IPC", () => {
           clips: [createExportClip()],
           durationSeconds: 1,
           fileName: "copy.mp4",
+          muteAudio: true,
           resolution: "720p",
         }),
       ).resolves.toEqual({ ok: true, error: null });
       const copiedPath = copyFileToClipboard.mock.calls[0]?.[0];
       expect(copiedPath).toBeTruthy();
+      expect(renderExportWithFfmpeg).toHaveBeenCalledWith(
+        expect.objectContaining({ muteAudio: true }),
+      );
       await expect(readFile(copiedPath ?? "", "utf8")).resolves.toBe(
         "clipboard",
       );

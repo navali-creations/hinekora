@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { EditorDeleteConfirmationModal } from "../EditorDeleteConfirmationModal/EditorDeleteConfirmationModal";
+import { EditorShortcutCombo } from "../EditorShortcutCombo/EditorShortcutCombo";
 
 interface EditorDeleteActionProps {
   confirmDescription: string;
@@ -8,6 +9,8 @@ interface EditorDeleteActionProps {
   confirmTitle: string;
   disabled: boolean;
   label: string;
+  shortcutKeys?: string[];
+  shortcutEventName?: string;
   onConfirm: () => void;
 }
 
@@ -17,6 +20,8 @@ function EditorDeleteAction({
   confirmTitle,
   disabled,
   label,
+  shortcutKeys,
+  shortcutEventName,
   onConfirm,
 }: EditorDeleteActionProps) {
   const [isConfirmOpen, setIsConfirmOpen] = useState(false);
@@ -41,6 +46,26 @@ function EditorDeleteAction({
     setIsConfirmOpen(false);
   };
 
+  useEffect(() => {
+    if (!shortcutEventName) {
+      return;
+    }
+
+    const handleShortcutOpenConfirm = () => {
+      if (disabled) {
+        return;
+      }
+
+      setIsConfirmOpen(true);
+    };
+
+    window.addEventListener(shortcutEventName, handleShortcutOpenConfirm);
+
+    return () => {
+      window.removeEventListener(shortcutEventName, handleShortcutOpenConfirm);
+    };
+  }, [disabled, shortcutEventName]);
+
   return (
     <>
       <button
@@ -49,7 +74,8 @@ function EditorDeleteAction({
         type="button"
         onClick={handleOpenConfirm}
       >
-        {label}
+        <span>{label}</span>
+        {shortcutKeys && <EditorShortcutCombo keys={shortcutKeys} />}
       </button>
       <EditorDeleteConfirmationModal
         confirmLabel={confirmLabel}

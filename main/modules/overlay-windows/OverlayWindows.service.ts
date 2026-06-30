@@ -128,6 +128,10 @@ class OverlayWindowsService {
     return this.recordingControlsOverlay.isVisible();
   }
 
+  isRecorderOverlayRequested(): boolean {
+    return this.recordingControlsOverlay.isRequested();
+  }
+
   getRecorderOverlayMode(): RecorderOverlayMode {
     return this.recordingControlsOverlay.getMode();
   }
@@ -276,6 +280,11 @@ class OverlayWindowsService {
       OverlayWindowsChannel.IsRecorderVisible,
       [WindowName.Main],
       () => this.isRecorderOverlayVisible(),
+    );
+    registerGuardedIpcHandler(
+      OverlayWindowsChannel.IsRecorderRequested,
+      [WindowName.Main],
+      () => this.isRecorderOverlayRequested(),
     );
     registerGuardedIpcHandler(
       OverlayWindowsChannel.GetRecorderMode,

@@ -28,7 +28,7 @@ interface ReplayClipRow {
 }
 
 interface ReplayClipLibraryPageInput {
-  filter?: ReplayClipListFilter;
+  filter?: ReplayClipRepositoryListFilter;
   pageIndex: number;
   pageSize: number;
   sortBy: ReplayClipLibrarySortKey;
@@ -58,6 +58,15 @@ type ReplayClipFilterQuery = SelectQueryBuilder<
   "replay_clips",
   Record<keyof any, never>
 >;
+
+interface ReplayClipEditorListFilter {
+  createdAfter?: string;
+  excludeIds?: string[];
+  includeIds?: string[];
+}
+
+type ReplayClipRepositoryListFilter = ReplayClipListFilter &
+  ReplayClipEditorListFilter;
 
 function mapReplayClipRow(row: ReplayClipRow): ReplayClip {
   return ReplayClipSchema.parse({
@@ -329,12 +338,22 @@ class ReplayClipsRepository {
   }
 
   private createFilteredQuery(
-    filter: ReplayClipListFilter = {},
+    filter: ReplayClipRepositoryListFilter = {},
   ): ReplayClipFilterQuery {
     let query = this.database.kysely.selectFrom("replay_clips");
 
     if (filter.game) {
       query = query.where("source_game", "=", filter.game);
+    }
+    if (filter.createdAfter) {
+      query = query.where("created_at", ">=", filter.createdAfter);
+    }
+    if (filter.includeIds && filter.includeIds.length > 0) {
+      query = query.where("id", "in", filter.includeIds);
+    }
+    const excludeIds = filter.excludeIds;
+    if (excludeIds && excludeIds.length > 0) {
+      query = query.where((eb) => eb.not(eb("id", "in", excludeIds)));
     }
     if (filter.league) {
       query = query.where("source_league", "=", filter.league);

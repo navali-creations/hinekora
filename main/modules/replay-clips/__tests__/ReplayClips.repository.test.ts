@@ -64,28 +64,27 @@ describe("ReplayClipsRepository", () => {
         createdAt: "2026-06-12T10:00:00.000Z",
       }),
     );
-    repository.upsert(
-      createReplayClip({
-        id: "large",
-        kind: "death",
-        processedClipPath: "C:/clips/large.mp4",
-        sourceGame: "poe2",
-        sourceLeague: "Hardcore",
-        sizeBytes: 30,
-        createdAt: "2026-06-12T11:00:00.000Z",
-      }),
-    );
-    repository.upsert(
-      createReplayClip({
-        id: "manual",
-        kind: "manual",
-        processedClipPath: "C:/clips/manual.mp4",
-        sourceGame: "poe2",
-        sourceLeague: "Standard",
-        sizeBytes: 50,
-        triggerLineHash: "manual-hash",
-      }),
-    );
+    const large = createReplayClip({
+      id: "large",
+      kind: "death",
+      processedClipPath: "C:/clips/large.mp4",
+      sourceGame: "poe2",
+      sourceLeague: "Hardcore",
+      sizeBytes: 30,
+      createdAt: "2026-06-12T11:00:00.000Z",
+    });
+    repository.upsert(large);
+    const manual = createReplayClip({
+      id: "manual",
+      kind: "manual",
+      processedClipPath: "C:/clips/manual.mp4",
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      sizeBytes: 50,
+      triggerLineHash: "manual-hash",
+      createdAt: "2026-06-12T12:00:00.000Z",
+    });
+    repository.upsert(manual);
 
     expect(
       repository.listLibraryPage({
@@ -103,6 +102,21 @@ describe("ReplayClipsRepository", () => {
       "Hardcore",
       "Standard",
     ]);
+    expect(
+      repository
+        .listLibraryPage({
+          filter: {
+            createdAfter: "2026-06-12T11:30:00.000Z",
+            excludeIds: [large.id],
+            includeIds: [large.id, manual.id],
+          },
+          pageIndex: 0,
+          pageSize: 10,
+          sortBy: "createdAt",
+          sortDirection: "desc",
+        })
+        .items.map((clip) => clip.id),
+    ).toEqual([manual.id]);
     expect(
       repository.listLibraryPage({
         pageIndex: 0,

@@ -13,6 +13,7 @@ const storeMocks = vi.hoisted(() => ({
   toggleRecorderOverlay: vi.fn(),
   unmaximize: vi.fn(),
   useAppMenuShallow: vi.fn(),
+  useClientLogSelector: vi.fn(),
   useManagedRecorderSelector: vi.fn(),
 }));
 
@@ -35,6 +36,7 @@ vi.mock("../WhatsNewModal/WhatsNewModal", () => ({
 }));
 vi.mock("~/renderer/store", () => ({
   useAppMenuShallow: storeMocks.useAppMenuShallow,
+  useClientLogSelector: storeMocks.useClientLogSelector,
   useManagedRecorderSelector: storeMocks.useManagedRecorderSelector,
 }));
 
@@ -96,6 +98,7 @@ describe("AppControls", () => {
       selector({
         close: storeMocks.close,
         isMaximized: false,
+        isRecorderOverlayRequested: true,
         isRecorderOverlayVisible: false,
         maximize: storeMocks.maximize,
         minimize: storeMocks.minimize,
@@ -106,6 +109,9 @@ describe("AppControls", () => {
     );
     storeMocks.useManagedRecorderSelector.mockImplementation((selector) =>
       selector({ status: storeMocks.status }),
+    );
+    storeMocks.useClientLogSelector.mockImplementation((selector) =>
+      selector({ status: { activeGameFocused: true } }),
     );
   });
 
@@ -121,7 +127,8 @@ describe("AppControls", () => {
     const button = await renderControls();
 
     expect(button.disabled).toBe(true);
-    expect(button.title).toBe(
+    expect(button.title).toBe("Show Overlay");
+    expect(button.closest("[data-tip]")?.getAttribute("data-tip")).toBe(
       "Start the selected Path of Exile game before opening the recorder overlay.",
     );
 
@@ -142,6 +149,58 @@ describe("AppControls", () => {
 
     expect(button.disabled).toBe(false);
     expect(button.title).toBe("Show Overlay");
+    expect(button.closest("[data-tip]")?.getAttribute("data-tip")).toBe(
+      "Show recording overlay",
+    );
+
+    await act(async () => {
+      button.click();
+    });
+
+    expect(storeMocks.toggleRecorderOverlay).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks showing the recorder overlay while the active game is unfocused", async () => {
+    storeMocks.useClientLogSelector.mockImplementation((selector) =>
+      selector({ status: { activeGameFocused: false } }),
+    );
+
+    const button = await renderControls();
+
+    expect(button.disabled).toBe(true);
+    expect(button.title).toBe("Show Overlay");
+    expect(button.closest("[data-tip]")?.getAttribute("data-tip")).toBe(
+      "Focus the selected Path of Exile game before showing the recording overlay.",
+    );
+
+    await act(async () => {
+      button.click();
+    });
+
+    expect(storeMocks.toggleRecorderOverlay).not.toHaveBeenCalled();
+  });
+
+  it("allows requesting the recorder overlay when it was manually closed", async () => {
+    storeMocks.useAppMenuShallow.mockImplementation((selector) =>
+      selector({
+        close: storeMocks.close,
+        isMaximized: false,
+        isRecorderOverlayRequested: false,
+        isRecorderOverlayVisible: false,
+        maximize: storeMocks.maximize,
+        minimize: storeMocks.minimize,
+        openWhatsNew: storeMocks.openWhatsNew,
+        toggleRecorderOverlay: storeMocks.toggleRecorderOverlay,
+        unmaximize: storeMocks.unmaximize,
+      }),
+    );
+    storeMocks.useClientLogSelector.mockImplementation((selector) =>
+      selector({ status: { activeGameFocused: false } }),
+    );
+
+    const button = await renderControls();
+
+    expect(button.disabled).toBe(false);
 
     await act(async () => {
       button.click();

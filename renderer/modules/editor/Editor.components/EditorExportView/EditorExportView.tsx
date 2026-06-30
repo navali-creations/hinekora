@@ -49,9 +49,9 @@ function EditorExportView() {
         <div className="flex max-w-xl items-center gap-5 rounded-lg bg-base-300 p-6">
           <FiXCircle className="shrink-0 text-error" size={42} />
           <div>
-            <p className="m-0 font-bold">Export failed</p>
+            <p className="m-0 font-bold">Save failed</p>
             <p className="m-0 mt-1 text-base-content/65 text-sm">
-              {error ?? "The video could not be exported."}
+              {error ?? "The video could not be saved."}
             </p>
           </div>
         </div>

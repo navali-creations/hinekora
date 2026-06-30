@@ -50,7 +50,7 @@ describe("SidebarNav", () => {
     document.body.replaceChildren();
   });
 
-  it("renders editor as the last primary navigation item", async () => {
+  it("renders saved edits after editor in the primary navigation", async () => {
     await act(async () => {
       root.render(<SidebarNav />);
     });
@@ -65,6 +65,7 @@ describe("SidebarNav", () => {
       "Recordings",
       "Aura Manager",
       "Editor",
+      "Saved Edits",
     ]);
   });
 });

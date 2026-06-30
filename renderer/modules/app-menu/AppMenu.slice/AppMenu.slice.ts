@@ -10,6 +10,7 @@ import {
 export interface AppMenuSlice {
   appMenu: {
     isMaximized: boolean;
+    isRecorderOverlayRequested: boolean;
     isRecorderOverlayVisible: boolean;
     isWhatsNewOpen: boolean;
     whatsNewRelease: LatestReleaseInfo | null;
@@ -74,6 +75,7 @@ export const createAppMenuSlice: BoundStoreStateCreator<AppMenuSlice> = (
   return {
     appMenu: {
       isMaximized: false,
+      isRecorderOverlayRequested: false,
       isRecorderOverlayVisible: false,
       isWhatsNewOpen: false,
       whatsNewRelease: null,
@@ -94,15 +96,21 @@ export const createAppMenuSlice: BoundStoreStateCreator<AppMenuSlice> = (
         }
 
         try {
-          const isRecorderOverlayVisible =
-            await window.electron.overlayWindows.isRecorderVisible();
+          const [isRecorderOverlayVisible, isRecorderOverlayRequested] =
+            await Promise.all([
+              window.electron.overlayWindows.isRecorderVisible(),
+              window.electron.overlayWindows.isRecorderRequested(),
+            ]);
           setAppMenu(
-            { isRecorderOverlayVisible },
+            { isRecorderOverlayRequested, isRecorderOverlayVisible },
             "appMenuSlice/hydrate/recorderOverlay",
           );
         } catch (_error) {
           setAppMenu(
-            { isRecorderOverlayVisible: false },
+            {
+              isRecorderOverlayRequested: false,
+              isRecorderOverlayVisible: false,
+            },
             "appMenuSlice/hydrate/recorderOverlayError",
           );
         }
@@ -164,10 +172,13 @@ export const createAppMenuSlice: BoundStoreStateCreator<AppMenuSlice> = (
 
       toggleRecorderOverlay: async () => {
         await window.electron.overlayWindows.toggleRecorder();
-        const isRecorderOverlayVisible =
-          await window.electron.overlayWindows.isRecorderVisible();
+        const [isRecorderOverlayVisible, isRecorderOverlayRequested] =
+          await Promise.all([
+            window.electron.overlayWindows.isRecorderVisible(),
+            window.electron.overlayWindows.isRecorderRequested(),
+          ]);
         setAppMenu(
-          { isRecorderOverlayVisible },
+          { isRecorderOverlayRequested, isRecorderOverlayVisible },
           "appMenuSlice/toggleRecorderOverlay",
         );
         trackEvent("recorder-overlay-toggled", {
@@ -310,6 +321,20 @@ export const createAppMenuSlice: BoundStoreStateCreator<AppMenuSlice> = (
       startListening: () =>
         window.electron.overlayWindows.onRecorderVisibilityChanged(
           (isRecorderOverlayVisible) => {
+            void window.electron.overlayWindows
+              .isRecorderRequested()
+              .then((isRecorderOverlayRequested) => {
+                setAppMenu(
+                  { isRecorderOverlayRequested },
+                  "appMenuSlice/recorderOverlayRequestedChanged",
+                );
+              })
+              .catch(() => {
+                setAppMenu(
+                  { isRecorderOverlayRequested: false },
+                  "appMenuSlice/recorderOverlayRequestedError",
+                );
+              });
             setAppMenu(
               { isRecorderOverlayVisible },
               "appMenuSlice/recorderOverlayVisibilityChanged",

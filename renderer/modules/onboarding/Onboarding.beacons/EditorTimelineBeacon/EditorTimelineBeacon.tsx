@@ -7,7 +7,7 @@ function EditorTimelineBeacon(props: PopoverComponentProps) {
   return (
     <Popover
       title="Timeline"
-      subtitle="Arrange, trim, split, delete, and undo timeline changes."
+      subtitle="Arrange, trim, split, mute, clear gaps, and undo timeline changes."
       {...props}
     >
       <div className="space-y-3">
@@ -21,6 +21,14 @@ function EditorTimelineBeacon(props: PopoverComponentProps) {
               <span>
                 Hover an empty gap or select a clip, then press{" "}
                 <kbd className="kbd kbd-xs">Del</kbd> to remove it.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
+                Press <kbd className="kbd kbd-xs">S</kbd> to split,{" "}
+                <kbd className="kbd kbd-xs">M</kbd> to mute, or{" "}
+                <kbd className="kbd kbd-xs">C</kbd> to clear gaps.
               </span>
             </li>
             <li className="flex items-start gap-2">
@@ -46,8 +54,8 @@ function EditorTimelineBeacon(props: PopoverComponentProps) {
         <div className="alert border border-info bg-secondary text-info">
           <FiInfo size={20} />
           <span>
-            Drag clip edges to trim. Use Split at the playhead to divide a clip
-            into separately editable sections.
+            The More options button in the upper right corner can open grouped
+            Timeline and Editor shortcuts whenever you need the full key list.
           </span>
         </div>
       </div>

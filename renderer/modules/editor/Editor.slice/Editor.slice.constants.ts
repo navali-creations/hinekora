@@ -4,7 +4,8 @@ import type {
 } from "./Editor.slice.types";
 
 const clipboardStatusResetMs = 1_800;
-const editorHistoryLimit = 100;
+const editorHistoryLimit = 50;
+const editorAssetRailPageSize = 5;
 const editorMaxZoom = 4;
 const editorMinZoom = 1;
 const editorProjectPageSize = 5;
@@ -27,6 +28,7 @@ const initialClipboardState: EditorClipboardState = {
 
 export {
   clipboardStatusResetMs,
+  editorAssetRailPageSize,
   editorHistoryLimit,
   editorMaxZoom,
   editorMinZoom,

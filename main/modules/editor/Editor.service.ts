@@ -43,6 +43,9 @@ import type {
   EditorExportProgress,
   EditorExportResult,
   EditorMediaAsset,
+  EditorMediaAssetCategory,
+  EditorMediaAssetPage,
+  EditorMediaAssetPageQuery,
   EditorMediaReference,
   EditorProject,
   EditorSaveProjectInput,
@@ -68,18 +71,18 @@ import {
   createEditorAssetFromReplayClip,
   createEditorProjectFromAssets,
   normalizeAssetDuration,
-  sortEditorAssets,
 } from "./Editor.mapper";
 import {
   validateEditorCopyToClipboardInput,
   validateEditorCreateProjectInput,
   validateEditorExportInput,
+  validateEditorMediaAssetPageQuery,
   validateEditorSaveProjectInput,
   validateEditorWorkspaceQuery,
 } from "./Editor.validation";
 import { EditorProjectRepository } from "./EditorProject.repository";
 
-const recentAssetPageSize = 50;
+const defaultEditorMediaAssetPageSize = 5;
 const defaultEditorProjectListLimit = 5;
 const editorAutoPruneProjectLimit = 5;
 const maxEditorExportPathEntries = 20;
@@ -126,8 +129,8 @@ class EditorService {
   }
 
   getWorkspace(query: EditorWorkspaceQuery = {}): EditorWorkspace {
-    const assets = this.listEditorAssets();
-    const project = this.resolveWorkspaceProject(assets, query);
+    const project = this.resolveWorkspaceProject(query);
+    const assets = project.assets;
     this.pruneStoredProjects(project.id);
     const projectList = this.projectRepository.list({
       limit: query.projectLimit ?? defaultEditorProjectListLimit,
@@ -155,11 +158,31 @@ class EditorService {
     };
   }
 
+  listMediaAssets(query: EditorMediaAssetPageQuery): EditorMediaAssetPage {
+    const pageIndex = query.pageIndex ?? 0;
+    const pageSize = query.pageSize ?? defaultEditorMediaAssetPageSize;
+    const page = this.listEditorMediaAssetPage({
+      ...query,
+      pageIndex,
+      pageSize,
+    });
+
+    logInfo(editorLogScope, "Editor media assets listed", {
+      category: query.category,
+      game: query.game,
+      itemCount: page.items.length,
+      leagueHash: query.league ? createTextHash(query.league) : null,
+      pageIndex,
+      pageSize,
+      totalCount: page.totalCount,
+      ...createEditorAssetDiagnostics(page.items),
+    });
+
+    return page;
+  }
+
   createProject(input: EditorCreateProjectInput = {}): EditorProject {
-    const project = this.createProjectFromAssetList(
-      this.listEditorAssets(),
-      input,
-    );
+    const project = this.createProjectFromInput(input);
     this.projectRepository.upsert(project);
     this.pruneStoredProjects(project.id);
     logInfo(editorLogScope, "Editor project created", {
@@ -175,13 +198,13 @@ class EditorService {
   saveProject(input: EditorSaveProjectInput): EditorProject {
     const refreshedProject = this.refreshEditorProjectMedia(
       input.project,
-      this.listEditorAssets(),
+      this.resolveRefreshedProjectAssets(input.project),
     );
     const normalizedProject = normalizeTimelineProject(refreshedProject);
-    const project = {
+    const project = this.normalizeEditorProjectSelectionState({
       ...normalizedProject,
       updatedAt: new Date().toISOString(),
-    };
+    });
     this.projectRepository.upsert(project);
     this.pruneStoredProjects(project.id);
     logInfo(editorLogScope, "Editor project saved", {
@@ -254,6 +277,7 @@ class EditorService {
         ...createSafePathLogFields(tempOutputPath, "temporaryExport"),
       });
       await this.renderExportWithFfmpeg({
+        muteAudio: input.muteAudio === true,
         onProgress: (progress) => {
           options.onProgress?.({
             exportRequestId: input.exportRequestId,
@@ -314,7 +338,7 @@ class EditorService {
     try {
       const exportPath = this.exportPaths.get(exportId);
       if (!exportPath || !existsSync(exportPath)) {
-        return { ok: false, error: "Exported file is not available" };
+        return { ok: false, error: "Saved video is not available" };
       }
 
       shell.showItemInFolder(exportPath);
@@ -333,7 +357,7 @@ class EditorService {
           exportId,
         });
 
-        return { ok: false, error: "Exported file is not available" };
+        return { ok: false, error: "Saved video is not available" };
       }
 
       logInfo(editorLogScope, "Copying exported video to clipboard", {
@@ -392,6 +416,7 @@ class EditorService {
       });
 
       await this.renderExportWithFfmpeg({
+        muteAudio: input.muteAudio === true,
         outputPath,
         resolution: input.resolution,
         segments,
@@ -431,37 +456,130 @@ class EditorService {
     }
   }
 
-  private listEditorAssets(): EditorMediaAsset[] {
-    const replayClips = ReplayClipsService.getInstance();
-    const recordings = RecordingStorageService.getInstance();
-    const deathClips = replayClips.listRecentEditorReplayDetails({
-      kind: "death",
-      limit: recentAssetPageSize,
-    });
-    const manualClips = replayClips.listRecentEditorReplayDetails({
-      kind: "manual",
-      limit: recentAssetPageSize,
-    });
-    const runRecordings =
-      recordings.listRecentEditorRecordingDetails(recentAssetPageSize);
-    const clipAssets = [...deathClips, ...manualClips].map((detail) =>
-      createEditorAssetFromReplayClip(detail),
-    );
-    const recordingAssets = runRecordings.map((detail) =>
-      createEditorAssetFromRecording(detail),
-    );
+  private listEditorMediaAssetPage(
+    query: Required<
+      Pick<
+        EditorMediaAssetPageQuery,
+        "category" | "game" | "pageIndex" | "pageSize"
+      >
+    > &
+      Pick<
+        EditorMediaAssetPageQuery,
+        "createdAfter" | "excludeAssetKeys" | "includeAssetKeys" | "league"
+      >,
+  ): EditorMediaAssetPage {
+    if (query.includeAssetKeys) {
+      return this.listIncludedEditorMediaAssetPage({
+        ...query,
+        includeAssetKeys: query.includeAssetKeys,
+      });
+    }
 
-    return sortEditorAssets([...clipAssets, ...recordingAssets]).slice(
-      0,
-      recentAssetPageSize * 2,
-    );
+    const assetKeyIds = splitEditorMediaAssetKeys(query.excludeAssetKeys ?? []);
+    if (query.category === "recording") {
+      const page =
+        RecordingStorageService.getInstance().listEditorRecordingDetailPage({
+          excludeIds: assetKeyIds.recordingIds,
+          game: query.game,
+          ...(query.createdAfter ? { createdAfter: query.createdAfter } : {}),
+          ...(query.league ? { league: query.league } : {}),
+          pageIndex: query.pageIndex,
+          pageSize: query.pageSize,
+        });
+
+      return createEditorMediaAssetPage({
+        items: page.items.map((detail) =>
+          createEditorAssetFromRecording(detail),
+        ),
+        pageIndex: query.pageIndex,
+        pageSize: query.pageSize,
+        totalCount: page.totalCount,
+      });
+    }
+
+    const clipKind = toReplayClipKind(query.category);
+    const page = ReplayClipsService.getInstance().listEditorReplayDetailPage({
+      excludeIds: assetKeyIds.clipIds,
+      game: query.game,
+      kind: clipKind,
+      ...(query.createdAfter ? { createdAfter: query.createdAfter } : {}),
+      ...(query.league ? { league: query.league } : {}),
+      pageIndex: query.pageIndex,
+      pageSize: query.pageSize,
+    });
+
+    return createEditorMediaAssetPage({
+      items: page.items.map((detail) =>
+        createEditorAssetFromReplayClip(detail),
+      ),
+      pageIndex: query.pageIndex,
+      pageSize: query.pageSize,
+      totalCount: page.totalCount,
+    });
   }
 
-  private createProjectFromAssetList(
-    assets: EditorMediaAsset[],
+  private listIncludedEditorMediaAssetPage(
+    query: Required<
+      Pick<EditorMediaAssetPageQuery, "category" | "pageIndex" | "pageSize">
+    > &
+      Required<Pick<EditorMediaAssetPageQuery, "includeAssetKeys">>,
+  ): EditorMediaAssetPage {
+    const assetKeyIds = splitEditorMediaAssetKeys(query.includeAssetKeys);
+    const includedIds =
+      query.category === "recording"
+        ? assetKeyIds.recordingIds
+        : assetKeyIds.clipIds;
+    if (includedIds.length === 0) {
+      return createEditorMediaAssetPage({
+        items: [],
+        pageIndex: query.pageIndex,
+        pageSize: query.pageSize,
+        totalCount: 0,
+      });
+    }
+
+    const assets =
+      query.category === "recording"
+        ? RecordingStorageService.getInstance()
+            .listEditorRecordingDetailPage({
+              includeIds: includedIds,
+              pageIndex: 0,
+              pageSize: includedIds.length,
+            })
+            .items.map((detail) => createEditorAssetFromRecording(detail))
+        : ReplayClipsService.getInstance()
+            .listEditorReplayDetailPage({
+              includeIds: includedIds,
+              kind: toReplayClipKind(query.category),
+              pageIndex: 0,
+              pageSize: includedIds.length,
+            })
+            .items.map((detail) => createEditorAssetFromReplayClip(detail));
+    const assetOrderByKey = new Map<string, number>();
+    for (const [index, assetKey] of query.includeAssetKeys.entries()) {
+      if (!assetOrderByKey.has(assetKey)) {
+        assetOrderByKey.set(assetKey, index);
+      }
+    }
+    const pageStart = query.pageIndex * query.pageSize;
+    const orderedAssets = assets.sort(
+      (first, second) =>
+        (assetOrderByKey.get(first.assetKey) ?? Number.MAX_SAFE_INTEGER) -
+        (assetOrderByKey.get(second.assetKey) ?? Number.MAX_SAFE_INTEGER),
+    );
+
+    return createEditorMediaAssetPage({
+      items: orderedAssets.slice(pageStart, pageStart + query.pageSize),
+      pageIndex: query.pageIndex,
+      pageSize: query.pageSize,
+      totalCount: orderedAssets.length,
+    });
+  }
+
+  private createProjectFromInput(
     input: EditorCreateProjectInput | EditorWorkspaceQuery,
   ): EditorProject {
-    const selectedAssets = this.resolveProjectAssets(assets, input);
+    const selectedAssets = this.resolveProjectAssets(input);
     const projectInput = {
       assets: selectedAssets,
       id: randomUUID(),
@@ -474,15 +592,14 @@ class EditorService {
   }
 
   private resolveProjectAssets(
-    assets: EditorMediaAsset[],
     input: EditorCreateProjectInput | EditorWorkspaceQuery,
   ): EditorMediaAsset[] {
     if ("assetKeys" in input && input.assetKeys && input.assetKeys.length > 0) {
-      const assetByKey = new Map(
-        assets.map((asset) => [asset.assetKey, asset] as const),
+      const resolvedAssets = input.assetKeys.map((assetKey) =>
+        this.resolveEditorAssetByKey(assetKey),
       );
       const missingAssetKeys = input.assetKeys.filter(
-        (assetKey) => !assetByKey.has(assetKey),
+        (_assetKey, index) => resolvedAssets[index] === null,
       );
       if (missingAssetKeys.length > 0) {
         logWarn(editorLogScope, "Editor project requested missing assets", {
@@ -494,16 +611,13 @@ class EditorService {
         });
       }
 
-      return input.assetKeys
-        .map((assetKey) => assetByKey.get(assetKey))
-        .filter((asset): asset is EditorMediaAsset => asset !== undefined);
+      return resolvedAssets.filter(
+        (asset): asset is EditorMediaAsset => asset !== null,
+      );
     }
 
     if (input.source) {
-      const selectedAsset = assets.find(
-        (asset) =>
-          asset.kind === input.source?.kind && asset.id === input.source.id,
-      );
+      const selectedAsset = this.resolveEditorAssetByReference(input.source);
       if (!selectedAsset) {
         logWarn(editorLogScope, "Editor project source was not found", {
           sourceIdHash: createTextHash(input.source.id),
@@ -517,18 +631,58 @@ class EditorService {
     return [];
   }
 
-  private resolveWorkspaceProject(
-    assets: EditorMediaAsset[],
-    query: EditorWorkspaceQuery,
-  ): EditorProject {
+  private resolveWorkspaceProject(query: EditorWorkspaceQuery): EditorProject {
     if (query.projectId) {
       const project = this.projectRepository.get(query.projectId);
       if (project) {
-        return this.refreshEditorProjectMedia(project, assets);
+        return this.refreshEditorProjectMedia(
+          project,
+          this.resolveRefreshedProjectAssets(project),
+        );
       }
     }
 
-    return this.createProjectFromAssetList(assets, query);
+    return this.createProjectFromInput(query);
+  }
+
+  private resolveRefreshedProjectAssets(
+    project: EditorProject,
+  ): EditorMediaAsset[] {
+    const assetKeys = new Set([
+      ...project.assets.map((asset) => asset.assetKey),
+      ...project.tracks.flatMap((track) =>
+        track.clips.map((clip) => clip.assetKey),
+      ),
+    ]);
+
+    return Array.from(assetKeys)
+      .map((assetKey) => this.resolveEditorAssetByKey(assetKey))
+      .filter((asset): asset is EditorMediaAsset => asset !== null);
+  }
+
+  private resolveEditorAssetByKey(assetKey: string): EditorMediaAsset | null {
+    const reference = parseEditorMediaAssetKey(assetKey);
+    if (!reference) {
+      return null;
+    }
+
+    return this.resolveEditorAssetByReference(reference);
+  }
+
+  private resolveEditorAssetByReference(
+    reference: EditorMediaReference,
+  ): EditorMediaAsset | null {
+    if (reference.kind === "recording") {
+      const detail = RecordingStorageService.getInstance().getRecording(
+        reference.id,
+      );
+
+      return detail ? createEditorAssetFromRecording(detail) : null;
+    }
+
+    const detail = ReplayClipsService.getInstance().getClip(reference.id);
+
+    return detail ? createEditorAssetFromReplayClip(detail) : null;
   }
 
   private pruneStoredProjects(protectedProjectId: string | null): void {
@@ -644,6 +798,36 @@ class EditorService {
     };
   }
 
+  private normalizeEditorProjectSelectionState(
+    project: EditorProject,
+  ): EditorProject {
+    const clipIds = new Set(
+      project.tracks.flatMap((track) => track.clips.map((clip) => clip.id)),
+    );
+    const assetKeys = new Set(project.assets.map((asset) => asset.assetKey));
+    const activeClipId =
+      project.activeClipId && clipIds.has(project.activeClipId)
+        ? project.activeClipId
+        : null;
+    const selectedAssetKey =
+      project.selectedAssetKey && assetKeys.has(project.selectedAssetKey)
+        ? project.selectedAssetKey
+        : null;
+
+    if (
+      activeClipId === project.activeClipId &&
+      selectedAssetKey === project.selectedAssetKey
+    ) {
+      return project;
+    }
+
+    return {
+      ...project,
+      activeClipId,
+      selectedAssetKey,
+    };
+  }
+
   private setupHandlers(): void {
     registerGuardedIpcHandler(
       EditorChannel.CopyExport,
@@ -680,6 +864,17 @@ class EditorService {
       (_event, query: unknown) => {
         try {
           return this.getWorkspace(validateEditorWorkspaceQuery(query));
+        } catch (error) {
+          return handleValidationError(error);
+        }
+      },
+    );
+    registerGuardedIpcHandler(
+      EditorChannel.ListMediaAssets,
+      [WindowName.Main],
+      (_event, query: unknown) => {
+        try {
+          return this.listMediaAssets(validateEditorMediaAssetPageQuery(query));
         } catch (error) {
           return handleValidationError(error);
         }
@@ -816,7 +1011,9 @@ class EditorService {
   }
 
   private createExportMediaUrl(exportId: string): string {
-    return `${editorExportMediaScheme}://export/${encodeURIComponent(exportId)}`;
+    return `${editorExportMediaScheme}://export/${encodeURIComponent(
+      exportId,
+    )}`;
   }
 
   private rememberExportPath(exportId: string, outputPath: string): void {
@@ -1029,6 +1226,74 @@ function clampEditorSeconds(value: number, min: number, max: number): number {
   }
 
   return Math.round(Math.min(Math.max(value, min), max) * 1_000) / 1_000;
+}
+
+function createEditorMediaAssetPage(input: {
+  items: EditorMediaAsset[];
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+}): EditorMediaAssetPage {
+  return {
+    items: input.items,
+    pageCount: Math.max(1, Math.ceil(input.totalCount / input.pageSize)),
+    pageIndex: input.pageIndex,
+    pageSize: input.pageSize,
+    totalCount: input.totalCount,
+  };
+}
+
+function toReplayClipKind(
+  category: Exclude<EditorMediaAssetCategory, "recording">,
+) {
+  return category === "manual-replay" ? "manual" : "death";
+}
+
+function splitEditorMediaAssetKeys(assetKeys: string[]): {
+  clipIds: string[];
+  recordingIds: string[];
+} {
+  const seenClipIds = new Set<string>();
+  const seenRecordingIds = new Set<string>();
+  const clipIds: string[] = [];
+  const recordingIds: string[] = [];
+
+  for (const assetKey of assetKeys) {
+    const reference = parseEditorMediaAssetKey(assetKey);
+    if (!reference) {
+      continue;
+    }
+
+    if (reference.kind === "clip" && !seenClipIds.has(reference.id)) {
+      seenClipIds.add(reference.id);
+      clipIds.push(reference.id);
+    } else if (
+      reference.kind === "recording" &&
+      !seenRecordingIds.has(reference.id)
+    ) {
+      seenRecordingIds.add(reference.id);
+      recordingIds.push(reference.id);
+    }
+  }
+
+  return { clipIds, recordingIds };
+}
+
+function parseEditorMediaAssetKey(
+  assetKey: string,
+): EditorMediaReference | null {
+  const separatorIndex = assetKey.indexOf(":");
+  if (separatorIndex <= 0 || separatorIndex === assetKey.length - 1) {
+    return null;
+  }
+
+  const kind = assetKey.slice(0, separatorIndex);
+  const id = assetKey.slice(separatorIndex + 1);
+  if (kind !== "clip" && kind !== "recording") {
+    return null;
+  }
+
+  return { id, kind };
 }
 
 function createEditorAssetDiagnostics(assets: EditorMediaAsset[]) {

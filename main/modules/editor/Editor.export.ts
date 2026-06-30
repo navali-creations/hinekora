@@ -90,6 +90,7 @@ function createEditorExportSegments(
 }
 
 function createEditorExportFilterScript(input: {
+  muteAudio?: boolean;
   resolution: EditorExportResolution;
   segments: EditorExportRenderSegment[];
 }): string {
@@ -120,7 +121,7 @@ function createEditorExportFilterScript(input: {
       )},setpts=PTS-STARTPTS,${createScaleFilter(size)}[${videoLabel}]`,
     );
     lines.push(
-      segment.hasAudio
+      segment.hasAudio && !input.muteAudio
         ? `[${segment.inputIndex}:a:0]atrim=duration=${formatFfmpegSeconds(
             segment.durationSeconds,
           )},asetpts=PTS-STARTPTS[${audioLabel}]`

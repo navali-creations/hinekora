@@ -2,12 +2,15 @@ import type { DragEndEvent } from "@dnd-kit/react";
 
 import {
   calculateExpandableTimelineDuration,
+  calculateFittedTimelineDuration,
   resolveTimelineSecondsFromClientX,
 } from "../../Editor.utils/Editor.utils";
 
 function resolveDropTimelineSeconds(input: {
   durationSeconds: number;
   event: DragEndEvent;
+  isTimelineFitToEdit: boolean;
+  railPaddingPixels: number;
 }): number {
   const bounds = input.event.operation.target?.shape?.boundingRectangle;
   const nativeEvent = input.event.nativeEvent;
@@ -17,11 +20,15 @@ function resolveDropTimelineSeconds(input: {
 
   return resolveTimelineSecondsFromClientX({
     clientX: nativeEvent.clientX,
-    timelineLeft: bounds.left,
-    timelineWidth: bounds.width,
-    visibleDurationSeconds: calculateExpandableTimelineDuration({
-      projectDurationSeconds: input.durationSeconds,
-    }),
+    timelineLeft: bounds.left + input.railPaddingPixels,
+    timelineWidth: bounds.width - input.railPaddingPixels * 2,
+    visibleDurationSeconds: input.isTimelineFitToEdit
+      ? calculateFittedTimelineDuration({
+          projectDurationSeconds: input.durationSeconds,
+        })
+      : calculateExpandableTimelineDuration({
+          projectDurationSeconds: input.durationSeconds,
+        }),
   });
 }
 

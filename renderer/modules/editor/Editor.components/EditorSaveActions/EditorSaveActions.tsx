@@ -1,5 +1,11 @@
 import clsx from "clsx";
-import { type ChangeEvent, type FormEvent, useRef, useState } from "react";
+import {
+  type ChangeEvent,
+  type FormEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { FiSave } from "react-icons/fi";
 
 import type {
@@ -9,15 +15,25 @@ import type {
 import type { ModalHandle } from "~/renderer/components/Modal/Modal";
 import { useEditorShallow } from "~/renderer/store";
 
-import { createEditorDefaultFileName } from "../../Editor.utils/Editor.utils";
+import { editorShortcutEventNames } from "../../Editor.utils/EditorShortcuts.utils";
 import { EditorSaveDialog } from "../EditorSaveDialog/EditorSaveDialog";
-import { createSaveDisabledReason } from "./EditorSaveActions.utils";
+import { EditorShortcutCombo } from "../EditorShortcutCombo/EditorShortcutCombo";
+import {
+  createEditorFileNameDraft,
+  createEditorOutputFileName,
+  createSaveDisabledReason,
+  stripMp4Extension,
+} from "./EditorSaveActions.utils";
 
 interface EditorSaveActionsProps {
+  disabled?: boolean;
   variant?: "button" | "menu";
 }
 
-function EditorSaveActions({ variant = "button" }: EditorSaveActionsProps) {
+function EditorSaveActions({
+  disabled = false,
+  variant = "button",
+}: EditorSaveActionsProps) {
   const dialogRef = useRef<ModalHandle>(null);
   const { exportProject, exportStatus, project, selectedClipId } =
     useEditorShallow((editor) => ({
@@ -30,7 +46,7 @@ function EditorSaveActions({ variant = "button" }: EditorSaveActionsProps) {
   const [mode, setMode] = useState<EditorExportInput["mode"]>("new-file");
   const [resolution, setResolution] = useState<EditorExportResolution>("1080p");
   const isExporting = exportStatus === "exporting";
-  const isSaveDisabled = !project || !selectedClipId || isExporting;
+  const isSaveDisabled = disabled || !project || !selectedClipId || isExporting;
   const disabledReason = createSaveDisabledReason({
     isExporting,
     project,
@@ -42,7 +58,7 @@ function EditorSaveActions({ variant = "button" }: EditorSaveActionsProps) {
       return;
     }
 
-    setFileName(createEditorDefaultFileName(project));
+    setFileName(createEditorFileNameDraft(project));
     setMode("new-file");
     setResolution("1080p");
     dialogRef.current?.open();
@@ -53,7 +69,7 @@ function EditorSaveActions({ variant = "button" }: EditorSaveActionsProps) {
   };
 
   const handleFileNameChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setFileName(event.currentTarget.value);
+    setFileName(stripMp4Extension(event.currentTarget.value));
   };
 
   const handleSetOverwriteMode = () => {
@@ -80,11 +96,36 @@ function EditorSaveActions({ variant = "button" }: EditorSaveActionsProps) {
 
     handleCloseDialog();
     void exportProject({
-      fileName: fileName.trim(),
+      fileName: createEditorOutputFileName(fileName),
       mode,
       resolution,
     });
   };
+
+  useEffect(() => {
+    const handleOpenSaveDialogShortcut = () => {
+      if (isSaveDisabled || !project) {
+        return;
+      }
+
+      setFileName(createEditorFileNameDraft(project));
+      setMode("new-file");
+      setResolution("1080p");
+      dialogRef.current?.open();
+    };
+
+    window.addEventListener(
+      editorShortcutEventNames.openSaveDialog,
+      handleOpenSaveDialogShortcut,
+    );
+
+    return () => {
+      window.removeEventListener(
+        editorShortcutEventNames.openSaveDialog,
+        handleOpenSaveDialogShortcut,
+      );
+    };
+  }, [isSaveDisabled, project]);
 
   const button = (
     <button
@@ -99,7 +140,11 @@ function EditorSaveActions({ variant = "button" }: EditorSaveActionsProps) {
       onClick={handleOpenDialog}
     >
       Save
-      <FiSave size={15} />
+      {variant === "menu" ? (
+        <EditorShortcutCombo keys={["Ctrl", "S"]} />
+      ) : (
+        <FiSave size={15} />
+      )}
     </button>
   );
   const disabledMenuRow =
@@ -113,7 +158,7 @@ function EditorSaveActions({ variant = "button" }: EditorSaveActionsProps) {
           className="flex h-8 w-full cursor-not-allowed items-center justify-between gap-3 rounded-md px-3 text-left text-base-content/45 text-sm"
         >
           <span>Save</span>
-          <FiSave size={15} />
+          <EditorShortcutCombo keys={["Ctrl", "S"]} />
         </span>
       </div>
     ) : null;

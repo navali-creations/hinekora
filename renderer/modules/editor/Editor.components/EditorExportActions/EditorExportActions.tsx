@@ -35,10 +35,10 @@ function EditorExportActions() {
 
     runCopyAction(() => copyExport(result.exportId), {
       onCrash: (error) => {
-        console.warn("[editor] Copy exported video crashed", { error });
+        console.warn("[editor] Copy saved video crashed", { error });
       },
       onFailure: (error) => {
-        console.warn("[editor] Copy exported video failed", {
+        console.warn("[editor] Copy saved video failed", {
           error,
         });
       },

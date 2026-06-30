@@ -25,7 +25,10 @@ function RecorderOverlayTimer() {
   }, [startedAt]);
 
   return (
-    <span className={styles.timer} aria-label="Recording timer">
+    <span
+      className={`${styles.timer} inline-flex h-6 w-max min-w-0 shrink-0 items-center justify-center px-2 font-mono text-xs font-semibold leading-none [font-variant-numeric:tabular-nums]`}
+      aria-label="Recording timer"
+    >
       {formatElapsedTime(startedAt, nowMs)}
     </span>
   );

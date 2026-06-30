@@ -13,6 +13,7 @@ const frameMocks = vi.hoisted(() => ({
 }));
 const storeMocks = vi.hoisted(() => ({
   setPlaybackSeconds: vi.fn(),
+  setPreviewHasAudio: vi.fn(),
   setPreviewPlaying: vi.fn(),
   useEditorShallow: vi.fn(),
 }));
@@ -55,10 +56,12 @@ function configureEditorState(overrides: Record<string, unknown> = {}) {
     selector({
       isPreviewPlaying: false,
       playbackSeconds: 2.5,
+      previewVolume: 1,
       project,
       selectedAssetKey: asset.assetKey,
       selectedClipId: "timeline-1",
       setPlaybackSeconds: storeMocks.setPlaybackSeconds,
+      setPreviewHasAudio: storeMocks.setPreviewHasAudio,
       setPreviewPlaying: storeMocks.setPreviewPlaying,
       ...overrides,
     }),
@@ -127,6 +130,26 @@ describe("useEditorPreviewPlayback", () => {
     });
 
     expect(video?.currentTime).toBeCloseTo(1.5);
+  });
+
+  it("publishes known no-audio media metadata", async () => {
+    await renderHarness();
+    const video = container.querySelector<HTMLVideoElement>(
+      '[data-testid="preview-video"]',
+    );
+    if (!video) {
+      throw new Error("Expected preview video to render");
+    }
+    Object.defineProperty(video, "audioTracks", {
+      configurable: true,
+      value: { length: 0 },
+    });
+
+    await act(async () => {
+      video.dispatchEvent(new Event("loadedmetadata", { bubbles: true }));
+    });
+
+    expect(storeMocks.setPreviewHasAudio).toHaveBeenLastCalledWith(false);
   });
 
   it("syncs timeline playback from video time updates", async () => {

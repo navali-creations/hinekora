@@ -119,7 +119,10 @@ function AuraOverlayControlsHelp() {
               return (
                 <li className={shapeItemClassName} key={shape}>
                   <span className={shapeIconClassName} aria-hidden="true">
-                    <SelectionIcon size={15} />
+                    <SelectionIcon
+                      className={selectionType.iconClassName}
+                      size={15}
+                    />
                   </span>
                   <span className="grid min-w-0 gap-0.5">
                     <span className="font-black text-base-content">

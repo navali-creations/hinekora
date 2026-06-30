@@ -7,10 +7,17 @@ import type { BoundStoreStateCreator } from "~/renderer/store/store.types";
 import { editorHistoryLimit } from "./Editor.slice.constants";
 import { createEditorExportActions } from "./Editor.slice.export";
 import { createEditorHistoryActions } from "./Editor.slice.history";
+import { createEditorProjectActions } from "./Editor.slice.project";
 import { createEditorInitialState } from "./Editor.slice.state";
 import { createEditorTimelineActions } from "./Editor.slice.timeline";
 import type { EditorSlice, SetProjectOptions } from "./Editor.slice.types";
-import { normalizeEditorProjectTimeline } from "./Editor.slice.utils";
+import {
+  createEditorProjectHistorySnapshot,
+  getEditorProjectHistoryLabels,
+  getEditorProjectHistorySnapshots,
+  getEditorProjectHistorySubtitles,
+  normalizeEditorProjectTimeline,
+} from "./Editor.slice.utils";
 import { createEditorWorkspaceActions } from "./Editor.slice.workspace";
 
 const createEditorSlice: BoundStoreStateCreator<EditorSlice> = (set, get) => {
@@ -18,42 +25,61 @@ const createEditorSlice: BoundStoreStateCreator<EditorSlice> = (set, get) => {
     project: EditorProject,
     options: SetProjectOptions = {},
   ) => {
+    const {
+      historyLabel = "Edit",
+      historySubtitle = null,
+      recordHistory,
+      resetHistory,
+      resetViewState,
+    } = options;
     set((state) => {
       const shouldRecordHistory = Boolean(
-        options.recordHistory &&
+        recordHistory &&
           !state.editor.historyTransactionProject &&
           state.editor.project &&
           state.editor.project !== project,
       );
 
-      if (options.resetHistory || shouldRecordHistory) {
+      if (resetHistory || shouldRecordHistory) {
         state.editor.historyFuture = [];
         state.editor.historyFutureLabels = [];
+        state.editor.historyFutureSubtitles = [];
       }
 
-      if (options.resetHistory) {
-        state.editor.historyPast = [];
-        state.editor.historyPastLabels = [];
+      if (resetHistory) {
+        state.editor.historyPast = getEditorProjectHistorySnapshots(project);
+        state.editor.historyPastLabels = getEditorProjectHistoryLabels(project);
+        state.editor.historyPastSubtitles =
+          getEditorProjectHistorySubtitles(project);
       } else if (shouldRecordHistory && state.editor.project) {
         state.editor.historyPast = [
           ...state.editor.historyPast,
-          state.editor.project,
+          createEditorProjectHistorySnapshot(state.editor.project),
         ].slice(-editorHistoryLimit);
         state.editor.historyPastLabels = [
           ...state.editor.historyPastLabels,
-          options.historyLabel ?? "Edit",
+          historyLabel,
+        ].slice(-editorHistoryLimit);
+        state.editor.historyPastSubtitles = [
+          ...state.editor.historyPastSubtitles,
+          historySubtitle,
         ].slice(-editorHistoryLimit);
       }
 
-      if (options.resetHistory) {
+      if (resetHistory) {
         state.editor.historyTransactionLabel = null;
+        state.editor.historyTransactionSubtitle = null;
         state.editor.historyTransactionProject = null;
       }
 
+      state.editor.areTimelineGapsHighlighted = false;
       state.editor.hoveredTimelineGap = null;
       state.editor.isLoading = false;
       state.editor.isPreviewPlaying = false;
-      state.editor.playbackSeconds = options.resetViewState
+      if (resetViewState) {
+        state.editor.isTimelineFitToEdit = false;
+      }
+      state.editor.playbackSeconds = resetViewState
         ? 0
         : Math.min(state.editor.playbackSeconds, project.durationSeconds);
       state.editor.project = project;
@@ -61,19 +87,21 @@ const createEditorSlice: BoundStoreStateCreator<EditorSlice> = (set, get) => {
       state.editor.selectedClipId = project.activeClipId;
       if (state.editor.workspace) {
         state.editor.workspace.project = project;
-        if (options.syncProjectList !== false) {
-          state.editor.workspace.projects = upsertEditorProjectSummary(
-            state.editor.workspace.projects,
-            project,
-          );
-        }
+        state.editor.workspace.projects = upsertEditorProjectSummary(
+          state.editor.workspace.projects,
+          project,
+        );
       }
     });
   };
 
   const updateProject = (
     updater: (project: EditorProject) => EditorProject,
-    options: { historyLabel?: string; recordHistory?: boolean } = {},
+    options: {
+      historyLabel?: string;
+      historySubtitle?: string | null;
+      recordHistory?: boolean;
+    } = {},
   ) => {
     const project = get().editor.project;
     if (!project) {
@@ -87,7 +115,8 @@ const createEditorSlice: BoundStoreStateCreator<EditorSlice> = (set, get) => {
 
     const nextProject = normalizeEditorProjectTimeline(updatedProject);
     setProject(nextProject, {
-      ...(options.historyLabel ? { historyLabel: options.historyLabel } : {}),
+      historyLabel: options.historyLabel ?? "Edit",
+      historySubtitle: options.historySubtitle ?? null,
       recordHistory: options.recordHistory ?? true,
     });
     scheduleEditorProjectSave(nextProject, get().editor.saveProject);
@@ -104,6 +133,7 @@ const createEditorSlice: BoundStoreStateCreator<EditorSlice> = (set, get) => {
     editor: {
       ...createEditorInitialState(),
       ...createEditorHistoryActions(context),
+      ...createEditorProjectActions(context),
       ...createEditorWorkspaceActions(context),
       ...createEditorExportActions(context),
       ...createEditorTimelineActions(context),

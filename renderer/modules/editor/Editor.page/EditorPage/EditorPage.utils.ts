@@ -12,10 +12,10 @@ function createExportTitle(status: string): string {
   }
 
   if (status === "failed") {
-    return "Export failed";
+    return "Save failed";
   }
 
-  return "Exporting video";
+  return "Saving video";
 }
 
 function createExportSubtitle(input: {
@@ -33,7 +33,7 @@ function createExportSubtitle(input: {
     )} - ${formatBytes(input.result.sizeBytes)}`;
   }
 
-  return input.fileName ?? (input.status === "failed" ? "Export failed" : "");
+  return input.fileName ?? (input.status === "failed" ? "Save failed" : "");
 }
 
 function shouldHydrateEditorProject(input: {
@@ -73,10 +73,39 @@ function isEditorShortcutEditableTarget(target: EventTarget | null): boolean {
   );
 }
 
+function isEditorShortcutSuppressedTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    isEditorShortcutEditableTarget(target) ||
+    target.closest('dialog[open], [role="dialog"], [aria-modal="true"]') !==
+      null
+  );
+}
+
+function isEditorTimelineShortcutTarget(target: EventTarget | null): boolean {
+  if (target === window || target === document) {
+    return true;
+  }
+
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return (
+    target === document.body ||
+    target.closest('[data-onboarding="editor-timeline"]') !== null
+  );
+}
+
 export {
   createExportSubtitle,
   createExportTitle,
   isEditorDeleteShortcut,
   isEditorShortcutEditableTarget,
+  isEditorShortcutSuppressedTarget,
+  isEditorTimelineShortcutTarget,
   shouldHydrateEditorProject,
 };

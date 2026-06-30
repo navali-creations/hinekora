@@ -21,6 +21,17 @@ export interface EditorWorkspaceQuery {
   source?: EditorMediaReference | null;
 }
 
+export interface EditorMediaAssetPageQuery {
+  category: EditorMediaAssetCategory;
+  createdAfter?: string;
+  excludeAssetKeys?: string[];
+  game: GameId;
+  includeAssetKeys?: string[];
+  league?: string;
+  pageIndex?: number;
+  pageSize?: number;
+}
+
 export interface EditorCreateProjectInput extends EditorWorkspaceQuery {
   assetKeys?: string[];
   title?: string;
@@ -65,13 +76,39 @@ export interface EditorTimelineTrack {
   label: string;
 }
 
-export interface EditorProject {
+export interface EditorProjectHistoryMetadata {
+  editCount: number;
+  labels: string[];
+  subtitles?: Array<string | null>;
+  snapshots?: EditorProjectHistorySnapshot[];
+}
+
+export interface EditorProjectHistorySnapshot {
   activeClipId: string | null;
   assets: EditorMediaAsset[];
   createdAt: string;
   durationSeconds: number;
   id: string;
+  isAudioMuted?: boolean;
   selectedAssetKey: string | null;
+  sourceGame?: GameId | null;
+  sourceLeague?: string | null;
+  title: string;
+  tracks: EditorTimelineTrack[];
+  updatedAt: string;
+}
+
+export interface EditorProject {
+  activeClipId: string | null;
+  assets: EditorMediaAsset[];
+  createdAt: string;
+  durationSeconds: number;
+  history?: EditorProjectHistoryMetadata;
+  id: string;
+  isAudioMuted?: boolean;
+  selectedAssetKey: string | null;
+  sourceGame?: GameId | null;
+  sourceLeague?: string | null;
   title: string;
   tracks: EditorTimelineTrack[];
   updatedAt: string;
@@ -93,6 +130,14 @@ export interface EditorWorkspace {
   projects: EditorProjectSummary[];
 }
 
+export interface EditorMediaAssetPage {
+  items: EditorMediaAsset[];
+  pageCount: number;
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+}
+
 export interface EditorSaveProjectInput {
   project: EditorProject;
 }
@@ -111,6 +156,7 @@ export interface EditorExportInput {
   exportRequestId: string;
   fileName: string;
   mode: EditorExportMode;
+  muteAudio?: boolean;
   overwriteSource: EditorMediaReference | null;
   resolution: EditorExportResolution;
 }
@@ -119,6 +165,7 @@ export interface EditorCopyToClipboardInput {
   clips: EditorExportClipInput[];
   durationSeconds: number;
   fileName: string;
+  muteAudio?: boolean;
   resolution: EditorExportResolution;
 }
 

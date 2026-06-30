@@ -19,6 +19,7 @@ import { PoeProcessService } from "./modules/poe-process";
 import { ProfilesService } from "./modules/profiles";
 import { RecordingStorageService } from "./modules/recording-storage";
 import { ReplayClipsService } from "./modules/replay-clips";
+import { SavedEditsService } from "./modules/saved-edits";
 import { SentryService } from "./modules/sentry";
 import { captureSentryException } from "./modules/sentry/Sentry.reporter";
 import { SettingsStoreService } from "./modules/settings-store";
@@ -146,6 +147,9 @@ async function bootstrap(): Promise<void> {
 
   EditorService.getInstance();
   logInfo("startup", "Editor initialized");
+
+  SavedEditsService.getInstance();
+  logInfo("startup", "Saved edits initialized");
 
   const overlayWindows = OverlayWindowsService.getInstance();
   logInfo("startup", "Overlay windows initialized");

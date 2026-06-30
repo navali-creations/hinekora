@@ -38,10 +38,13 @@ import { EditorDragDropProvider } from "./EditorDragDropProvider";
 let container: HTMLDivElement;
 let root: Root;
 
-function configureEditorState() {
+function configureEditorState(
+  overrides: { isTimelineFitToEdit?: boolean } = {},
+) {
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
       addAssetToTimelineAt: storeMocks.addAssetToTimelineAt,
+      isTimelineFitToEdit: overrides.isTimelineFitToEdit ?? false,
       project: createEditorTestProject(),
     }),
   );
@@ -96,6 +99,34 @@ describe("EditorDragDropProvider", () => {
     expect(storeMocks.addAssetToTimelineAt).toHaveBeenCalledWith(
       "clip:asset-1",
       6.25,
+    );
+  });
+
+  it("drops media assets against the exact edit duration when the timeline is fitted", async () => {
+    configureEditorState({ isTimelineFitToEdit: true });
+    await renderProvider();
+
+    act(() => {
+      dndMocks.onDragEnd?.({
+        canceled: false,
+        nativeEvent: { clientX: 50 },
+        operation: {
+          source: {
+            data: { assetKey: "clip:asset-1", kind: editorMediaAssetDragType },
+          },
+          target: {
+            data: { kind: editorVideoTrackDropType, trackId: "video-track" },
+            shape: {
+              boundingRectangle: { left: 0, width: 100 },
+            },
+          },
+        },
+      });
+    });
+
+    expect(storeMocks.addAssetToTimelineAt).toHaveBeenCalledWith(
+      "clip:asset-1",
+      5,
     );
   });
 

@@ -20,11 +20,13 @@ const storeMocks = vi.hoisted(() => ({
   setZoom: vi.fn(),
   undoProjectChange: vi.fn(),
   useEditorShallow: vi.fn(),
+  useSavedEditsShallow: vi.fn(),
   useSettingsSelector: vi.fn(),
 }));
 
 vi.mock("~/renderer/store", () => ({
   useEditorShallow: storeMocks.useEditorShallow,
+  useSavedEditsShallow: storeMocks.useSavedEditsShallow,
   useSettingsSelector: storeMocks.useSettingsSelector,
 }));
 
@@ -127,6 +129,19 @@ import { EditorPage } from "./EditorPage";
 let container: HTMLDivElement;
 let root: Root;
 let editorState: Record<string, unknown>;
+const settingsState = {
+  value: {
+    activeGame: "poe2",
+    poe2SelectedLeague: "Standard",
+  },
+};
+const savedEditsState = {
+  libraryPage: {
+    availableLeagues: [],
+    globalTotalCount: 0,
+    totalCount: 0,
+  },
+};
 
 function configureEditorState(overrides: Record<string, unknown> = {}) {
   editorState = {
@@ -178,11 +193,10 @@ describe("EditorPage integration", () => {
       timelineGridRef: { current: null },
     });
     storeMocks.useSettingsSelector.mockImplementation((selector) =>
-      selector({
-        value: {
-          activeGame: "poe2",
-        },
-      }),
+      selector(settingsState),
+    );
+    storeMocks.useSavedEditsShallow.mockImplementation((selector) =>
+      selector(savedEditsState),
     );
     configureEditorState();
   });

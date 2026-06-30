@@ -62,12 +62,23 @@ interface EditorProjectTable {
   title: string;
   duration_seconds: number;
   clip_count: number;
+  history_edit_count: number;
   project_json: string;
+  source_game: GameId | null;
+  source_league: string | null;
+  source_size_bytes: number;
   created_at: TimestampColumn;
   updated_at: TimestampColumn;
 }
 
+interface EditorProjectSourceLeagueTable {
+  project_id: string;
+  source_game: GameId;
+  source_league: string;
+}
+
 export interface DatabaseSchema {
+  editor_project_source_leagues: EditorProjectSourceLeagueTable;
   editor_projects: EditorProjectTable;
   migrations: MigrationTable;
   profiles: ProfileTable;

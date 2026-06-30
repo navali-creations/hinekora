@@ -18,6 +18,8 @@ const OverlayWindowsAPI = {
     ipcRenderer.invoke(OverlayWindowsChannel.ToggleRecorder),
   isRecorderVisible: (): Promise<boolean> =>
     ipcRenderer.invoke(OverlayWindowsChannel.IsRecorderVisible),
+  isRecorderRequested: (): Promise<boolean> =>
+    ipcRenderer.invoke(OverlayWindowsChannel.IsRecorderRequested),
   onRecorderVisibilityChanged: (callback: (isVisible: boolean) => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,

@@ -1,15 +1,94 @@
 import type { DatabaseService } from "~/main/modules/database";
 
+import type { GameId } from "~/types";
 import type { EditorProject, EditorProjectSummary } from "./Editor.dto";
 import {
   countEditorProjectClips,
   mapEditorProjectRow,
   mapEditorProjectSummaryRow,
 } from "./EditorProject.mapper";
+import {
+  createEditorProjectPersistedMetadata,
+  type EditorProjectPersistedMetadata,
+} from "./EditorProject.metadata";
 
 interface EditorProjectListResult {
   hasMore: boolean;
   projects: EditorProjectSummary[];
+}
+
+type EditorProjectSummarySortDirection = "asc" | "desc";
+type EditorProjectSummarySortKey =
+  | "clipCount"
+  | "createdAt"
+  | "durationSeconds"
+  | "title"
+  | "updatedAt";
+
+interface EditorProjectPageInput {
+  pageIndex: number;
+  pageSize: number;
+  sortBy: EditorProjectSummarySortKey;
+  sortDirection: EditorProjectSummarySortDirection;
+}
+
+interface EditorProjectPageResult {
+  projects: EditorProjectSummary[];
+  totalCount: number;
+}
+
+interface EditorProjectSavedEditSummary extends EditorProjectSummary {
+  historyEditCount: number;
+  sizeBytes: number;
+  sourceGame: GameId | null;
+  sourceLeague: string | null;
+}
+
+type EditorProjectSavedEditSortKey =
+  | Exclude<EditorProjectSummarySortKey, "clipCount">
+  | "historyEditCount"
+  | "sizeBytes";
+
+const editorProjectSavedEditSortColumns = {
+  createdAt: "created_at",
+  durationSeconds: "duration_seconds",
+  historyEditCount: "history_edit_count",
+  sizeBytes: "source_size_bytes",
+  title: "title",
+  updatedAt: "updated_at",
+} as const satisfies Record<EditorProjectSavedEditSortKey, string>;
+
+const editorProjectSavedEditSortKeys = Object.keys(
+  editorProjectSavedEditSortColumns,
+) as EditorProjectSavedEditSortKey[];
+
+interface EditorProjectSavedEditPageInput {
+  game?: GameId;
+  league?: string;
+  pageIndex: number;
+  pageSize: number;
+  sortBy: EditorProjectSavedEditSortKey;
+  sortDirection: EditorProjectSummarySortDirection;
+}
+
+interface EditorProjectSavedEditPageResult {
+  availableLeagues: string[];
+  globalTotalCount: number;
+  projects: EditorProjectSavedEditSummary[];
+  totalCount: number;
+}
+
+interface EditorProjectSavedEditRow {
+  clip_count: number;
+  created_at: string;
+  duration_seconds: number;
+  history_edit_count: number;
+  id: string;
+  source_size_bytes: number;
+  source_game: string | null;
+  source_league: string | null;
+  title: string;
+  updated_at: string;
 }
 
 class EditorProjectRepository {
@@ -39,6 +118,111 @@ class EditorProjectRepository {
     };
   }
 
+  listPage(input: EditorProjectPageInput): EditorProjectPageResult {
+    const rows = this.database.queryAll(
+      this.database.kysely
+        .selectFrom("editor_projects")
+        .select([
+          "id",
+          "title",
+          "duration_seconds",
+          "clip_count",
+          "created_at",
+          "updated_at",
+        ])
+        .orderBy(
+          resolveEditorProjectSummarySortColumn(input.sortBy),
+          input.sortDirection,
+        )
+        .orderBy("id", "asc")
+        .offset(input.pageIndex * input.pageSize)
+        .limit(input.pageSize),
+    );
+
+    return {
+      projects: rows.map(mapEditorProjectSummaryRow),
+      totalCount: this.countProjects(),
+    };
+  }
+
+  listSavedEditPage(
+    input: EditorProjectSavedEditPageInput,
+  ): EditorProjectSavedEditPageResult {
+    const filter = createSavedEditFilter(input);
+    const availableLeaguesFilter = createSavedEditAvailableLeaguesFilter(
+      input.game ? { game: input.game } : {},
+    );
+    const sortColumn = resolveEditorProjectSavedEditSortColumn(input.sortBy);
+    const sortDirection = input.sortDirection.toUpperCase();
+    const pageRows = this.database.db
+      .prepare(
+        `
+        SELECT
+          id,
+          title,
+          duration_seconds,
+          clip_count,
+          history_edit_count,
+          created_at,
+          updated_at,
+          source_game,
+          source_league,
+          source_size_bytes
+        FROM editor_projects
+        ${filter.sql}
+        ORDER BY ${sortColumn} ${sortDirection}, id ASC
+        LIMIT ? OFFSET ?
+      `,
+      )
+      .all(
+        ...filter.params,
+        input.pageSize,
+        input.pageIndex * input.pageSize,
+      ) as unknown as EditorProjectSavedEditRow[];
+    const totalCountRow = this.database.db
+      .prepare(
+        `
+        SELECT COUNT(*) AS count
+        FROM editor_projects
+        ${filter.sql}
+      `,
+      )
+      .get(...filter.params) as { count: number };
+    const availableLeagueRows = this.database.db
+      .prepare(
+        `
+        SELECT DISTINCT source_league
+        FROM editor_project_source_leagues
+        ${availableLeaguesFilter.sql}
+        ORDER BY source_league ASC
+      `,
+      )
+      .all(...availableLeaguesFilter.params) as unknown as Array<{
+      source_league: string | null;
+    }>;
+
+    return {
+      availableLeagues: availableLeagueRows
+        .map((row) => row.source_league)
+        .filter((league): league is string => Boolean(league)),
+      globalTotalCount: this.countProjects(),
+      projects: pageRows.map(mapEditorProjectSavedEditRow),
+      totalCount: Number(totalCountRow.count),
+    };
+  }
+
+  listAll(): EditorProject[] {
+    const rows = this.database.queryAll(
+      this.database.kysely
+        .selectFrom("editor_projects")
+        .selectAll()
+        .orderBy("updated_at", "desc")
+        .orderBy("id", "asc"),
+    );
+
+    return rows.map(mapEditorProjectRow);
+  }
+
   get(id: string): EditorProject | null {
     const row = this.database.queryOne(
       this.database.kysely
@@ -53,39 +237,68 @@ class EditorProjectRepository {
   upsert(project: EditorProject): void {
     const projectJson = JSON.stringify(project);
     const clipCount = countEditorProjectClips(project);
+    const metadata = createEditorProjectPersistedMetadata(project);
 
-    this.database.runQuery(
-      this.database.kysely
-        .insertInto("editor_projects")
-        .values({
-          clip_count: clipCount,
-          created_at: project.createdAt,
-          duration_seconds: project.durationSeconds,
-          id: project.id,
-          project_json: projectJson,
-          title: project.title,
-          updated_at: project.updatedAt,
-        })
-        .onConflict((conflict) =>
-          conflict.column("id").doUpdateSet({
+    this.database.transaction(() => {
+      this.database.runQuery(
+        this.database.kysely
+          .insertInto("editor_projects")
+          .values({
             clip_count: clipCount,
+            created_at: project.createdAt,
             duration_seconds: project.durationSeconds,
+            history_edit_count: metadata.historyEditCount,
+            id: project.id,
             project_json: projectJson,
+            source_game: metadata.sourceGame,
+            source_league: metadata.sourceLeague,
+            source_size_bytes: metadata.sourceSizeBytes,
             title: project.title,
             updated_at: project.updatedAt,
-          }),
-        ),
-    );
+          })
+          .onConflict((conflict) =>
+            conflict.column("id").doUpdateSet({
+              clip_count: clipCount,
+              duration_seconds: project.durationSeconds,
+              history_edit_count: metadata.historyEditCount,
+              project_json: projectJson,
+              source_game: metadata.sourceGame,
+              source_league: metadata.sourceLeague,
+              source_size_bytes: metadata.sourceSizeBytes,
+              title: project.title,
+              updated_at: project.updatedAt,
+            }),
+          ),
+      );
+      this.replaceSourceLeagueMemberships(
+        project.id,
+        metadata.sourceLeagueMemberships,
+      );
+    });
   }
 
   delete(id: string): void {
-    this.database.runQuery(
-      this.database.kysely.deleteFrom("editor_projects").where("id", "=", id),
-    );
+    this.database.transaction(() => {
+      this.database.runQuery(
+        this.database.kysely
+          .deleteFrom("editor_project_source_leagues")
+          .where("project_id", "=", id),
+      );
+      this.database.runQuery(
+        this.database.kysely.deleteFrom("editor_projects").where("id", "=", id),
+      );
+    });
   }
 
   deleteAll(): void {
-    this.database.runQuery(this.database.kysely.deleteFrom("editor_projects"));
+    this.database.transaction(() => {
+      this.database.runQuery(
+        this.database.kysely.deleteFrom("editor_project_source_leagues"),
+      );
+      this.database.runQuery(
+        this.database.kysely.deleteFrom("editor_projects"),
+      );
+    });
   }
 
   deleteOlderThanLimit(input: {
@@ -126,11 +339,18 @@ class EditorProjectRepository {
       return 0;
     }
 
-    this.database.runQuery(
-      this.database.kysely
-        .deleteFrom("editor_projects")
-        .where("id", "not in", retainedIds),
-    );
+    this.database.transaction(() => {
+      this.database.runQuery(
+        this.database.kysely
+          .deleteFrom("editor_project_source_leagues")
+          .where("project_id", "not in", retainedIds),
+      );
+      this.database.runQuery(
+        this.database.kysely
+          .deleteFrom("editor_projects")
+          .where("id", "not in", retainedIds),
+      );
+    });
 
     return deletedProjectCount;
   }
@@ -166,7 +386,136 @@ class EditorProjectRepository {
 
     return Number((row as { count: number }).count);
   }
+
+  private replaceSourceLeagueMemberships(
+    projectId: string,
+    memberships: EditorProjectPersistedMetadata["sourceLeagueMemberships"],
+  ): void {
+    this.database.runQuery(
+      this.database.kysely
+        .deleteFrom("editor_project_source_leagues")
+        .where("project_id", "=", projectId),
+    );
+
+    for (const membership of memberships) {
+      this.database.runQuery(
+        this.database.kysely
+          .insertInto("editor_project_source_leagues")
+          .values({
+            project_id: projectId,
+            source_game: membership.sourceGame,
+            source_league: membership.sourceLeague,
+          })
+          .onConflict((conflict) => conflict.doNothing()),
+      );
+    }
+  }
 }
 
-export type { EditorProjectListResult };
-export { EditorProjectRepository };
+function createSavedEditFilter(input: { game?: GameId; league?: string }): {
+  params: string[];
+  sql: string;
+} {
+  const clauses: string[] = [];
+  const params: string[] = [];
+
+  if (input.game || input.league) {
+    const membershipClauses = ["source_scope.project_id = editor_projects.id"];
+    if (input.game) {
+      membershipClauses.push("source_scope.source_game = ?");
+      params.push(input.game);
+    }
+    if (input.league) {
+      membershipClauses.push("source_scope.source_league = ?");
+      params.push(input.league);
+    }
+    clauses.push(`
+      EXISTS (
+        SELECT 1
+        FROM editor_project_source_leagues AS source_scope
+        WHERE ${membershipClauses.join(" AND ")}
+      )
+    `);
+  }
+
+  return {
+    params,
+    sql: clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "",
+  };
+}
+
+function createSavedEditAvailableLeaguesFilter(input: { game?: GameId }): {
+  params: string[];
+  sql: string;
+} {
+  if (!input.game) {
+    return { params: [], sql: "" };
+  }
+
+  return {
+    params: [input.game],
+    sql: "WHERE source_game = ?",
+  };
+}
+
+function mapEditorProjectSavedEditRow(
+  row: EditorProjectSavedEditRow,
+): EditorProjectSavedEditSummary {
+  return {
+    clipCount: row.clip_count,
+    createdAt: row.created_at,
+    durationSeconds: row.duration_seconds,
+    historyEditCount: row.history_edit_count,
+    id: row.id,
+    sizeBytes: row.source_size_bytes,
+    sourceGame:
+      row.source_game === "poe1" || row.source_game === "poe2"
+        ? row.source_game
+        : null,
+    sourceLeague: row.source_league,
+    title: row.title,
+    updatedAt: row.updated_at,
+  };
+}
+
+function resolveEditorProjectSummarySortColumn(
+  sortBy: EditorProjectSummarySortKey,
+): "clip_count" | "created_at" | "duration_seconds" | "title" | "updated_at" {
+  switch (sortBy) {
+    case "clipCount":
+      return "clip_count";
+    case "createdAt":
+      return "created_at";
+    case "durationSeconds":
+      return "duration_seconds";
+    case "title":
+      return "title";
+    case "updatedAt":
+      return "updated_at";
+  }
+}
+
+function resolveEditorProjectSavedEditSortColumn(
+  sortBy: EditorProjectSavedEditSortKey,
+):
+  | "created_at"
+  | "duration_seconds"
+  | "history_edit_count"
+  | "source_size_bytes"
+  | "title"
+  | "updated_at" {
+  return editorProjectSavedEditSortColumns[sortBy];
+}
+
+export type {
+  EditorProjectListResult,
+  EditorProjectPageInput,
+  EditorProjectPageResult,
+  EditorProjectSavedEditPageInput,
+  EditorProjectSavedEditPageResult,
+  EditorProjectSavedEditSortKey,
+  EditorProjectSavedEditSummary,
+  EditorProjectSummarySortDirection,
+  EditorProjectSummarySortKey,
+};
+export { EditorProjectRepository, editorProjectSavedEditSortKeys };

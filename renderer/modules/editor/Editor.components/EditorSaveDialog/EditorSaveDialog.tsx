@@ -44,7 +44,7 @@ function EditorSaveDialog({
       surface="base-200"
     >
       <div className="border-base-content/10 border-b p-4">
-        <h2 className="m-0 font-bold text-base">Save edited clip</h2>
+        <h2 className="m-0 font-bold text-base">Save video</h2>
         <p className="m-0 mt-1 text-base-content/60 text-sm">
           Choose how this edit should be written.
         </p>
@@ -52,27 +52,37 @@ function EditorSaveDialog({
 
       <form onSubmit={onSubmit}>
         <div className="grid gap-4 p-4">
-          <label className="form-control gap-1">
+          <label className="form-control gap-2">
             <span className="label-text text-base-content/70 text-xs">
               File name
             </span>
-            <input
-              className="input input-bordered input-sm"
-              maxLength={160}
-              required
-              type="text"
-              value={fileName}
-              onChange={onFileNameChange}
-            />
+            <span className="join">
+              <input
+                className="input input-bordered input-sm join-item min-w-0 flex-1"
+                maxLength={156}
+                required
+                type="text"
+                value={fileName}
+                onChange={onFileNameChange}
+              />
+              <span
+                aria-disabled="true"
+                className="join-item grid h-8 place-items-center border border-base-content/20 border-l-0 bg-base-300 px-3 text-base-content/55 text-sm"
+              >
+                .mp4
+              </span>
+            </span>
           </label>
 
           <div className="grid gap-2">
-            <span className="text-base-content/70 text-xs">Export as</span>
-            <div className="grid grid-cols-2 gap-2">
+            <span className="text-base-content/70 text-xs">Save as</span>
+            <div className="grid grid-cols-2 gap-2 rounded-lg border border-base-content/10 bg-base-300/60 p-1">
               <button
                 className={clsx(
                   "btn btn-sm justify-start",
-                  mode === "overwrite" ? "btn-primary" : "btn-ghost",
+                  mode === "overwrite"
+                    ? "btn-primary"
+                    : "border-base-content/15 bg-base-200/80 hover:bg-base-300",
                 )}
                 type="button"
                 onClick={onSetOverwriteMode}
@@ -83,7 +93,9 @@ function EditorSaveDialog({
               <button
                 className={clsx(
                   "btn btn-sm justify-start",
-                  mode === "new-file" ? "btn-primary" : "btn-ghost",
+                  mode === "new-file"
+                    ? "btn-primary"
+                    : "border-base-content/15 bg-base-200/80 hover:bg-base-300",
                 )}
                 type="button"
                 onClick={onSetNewFileMode}
@@ -96,11 +108,13 @@ function EditorSaveDialog({
 
           <div className="grid gap-2">
             <span className="text-base-content/70 text-xs">Resolution</span>
-            <div className="join no-drag">
+            <div className="join no-drag rounded-lg border border-base-content/10 bg-base-300/60 p-1">
               <button
                 className={clsx(
                   "btn btn-sm join-item flex-1",
-                  resolution === "720p" ? "btn-primary" : "btn-ghost",
+                  resolution === "720p"
+                    ? "btn-primary"
+                    : "border-base-content/15 bg-base-200/80 hover:bg-base-300",
                 )}
                 type="button"
                 onClick={onSet720p}
@@ -110,7 +124,9 @@ function EditorSaveDialog({
               <button
                 className={clsx(
                   "btn btn-sm join-item flex-1",
-                  resolution === "1080p" ? "btn-primary" : "btn-ghost",
+                  resolution === "1080p"
+                    ? "btn-primary"
+                    : "border-base-content/15 bg-base-200/80 hover:bg-base-300",
                 )}
                 type="button"
                 onClick={onSet1080p}
@@ -134,7 +150,7 @@ function EditorSaveDialog({
             disabled={!fileName.trim() || isSaveDisabled}
             type="submit"
           >
-            Export video
+            Save video
           </button>
         </div>
       </form>

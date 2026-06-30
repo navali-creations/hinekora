@@ -38,6 +38,7 @@ describe("shared schemas", () => {
       poe2ClientTxtPath: null,
       poe1CharacterName: "",
       poe2CharacterName: "",
+      captureModeInfoAlertDismissed: false,
       groupPlayDeathAlertDismissed: false,
       activeGame: "poe1",
       activeLeague: "Standard",

@@ -10,30 +10,58 @@ vi.mock("~/renderer/store", () => ({
   useEditorShallow: storeMocks.useEditorShallow,
 }));
 
-vi.mock("../EditorCopyActions/EditorCopyActions", () => ({
-  EditorCopyActions: ({ variant }: { variant: string }) => (
-    <button type="button">Copy {variant}</button>
-  ),
-}));
 vi.mock("../EditorDeleteAllEditsAction/EditorDeleteAllEditsAction", () => ({
   EditorDeleteAllEditsAction: () => (
     <button type="button">Delete all edits</button>
   ),
 }));
 vi.mock("../EditorDeleteEditAction/EditorDeleteEditAction", () => ({
-  EditorDeleteEditAction: () => <button type="button">Delete edit</button>,
+  EditorDeleteEditAction: ({ disabled }: { disabled?: boolean }) => (
+    <button disabled={disabled} type="button">
+      Delete edit
+    </button>
+  ),
+}));
+vi.mock("../EditorCopyActions/EditorCopyActions", () => ({
+  EditorCopyActions: ({
+    disabled,
+    variant,
+  }: {
+    disabled?: boolean;
+    variant: string;
+  }) => (
+    <button disabled={disabled} type="button">
+      Copy {variant}
+    </button>
+  ),
 }));
 vi.mock("../EditorNewEditAction/EditorNewEditAction", () => ({
-  EditorNewEditAction: ({ variant }: { variant: string }) => (
-    <button type="button">New edit {variant}</button>
+  EditorNewEditAction: ({
+    disabled,
+    variant,
+  }: {
+    disabled?: boolean;
+    variant: string;
+  }) => (
+    <button disabled={disabled} type="button">
+      New edit {variant}
+    </button>
   ),
 }));
 vi.mock("../EditorProjectRetentionToggle/EditorProjectRetentionToggle", () => ({
   EditorProjectRetentionToggle: () => <label>Auto-prune all but last 5</label>,
 }));
 vi.mock("../EditorSaveActions/EditorSaveActions", () => ({
-  EditorSaveActions: ({ variant }: { variant: string }) => (
-    <button type="button">Save {variant}</button>
+  EditorSaveActions: ({
+    disabled,
+    variant,
+  }: {
+    disabled?: boolean;
+    variant: string;
+  }) => (
+    <button disabled={disabled} type="button">
+      Save {variant}
+    </button>
   ),
 }));
 
@@ -42,11 +70,13 @@ import { EditorActionsMenu } from "./EditorActionsMenu";
 let container: HTMLDivElement;
 let root: Root;
 const onToggleHistory = vi.fn();
+const onToggleShortcuts = vi.fn();
 
 function configureEditorState(overrides: Record<string, unknown> = {}) {
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
       clipboardState: { error: null, requestId: null, status: "idle" },
+      exportState: { status: "idle" },
       ...overrides,
     }),
   );
@@ -57,7 +87,9 @@ async function renderActionsMenu(isHistoryVisible: boolean) {
     root.render(
       <EditorActionsMenu
         isHistoryVisible={isHistoryVisible}
+        isShortcutsVisible={false}
         onToggleHistory={onToggleHistory}
+        onToggleShortcuts={onToggleShortcuts}
       />,
     );
   });
@@ -80,6 +112,7 @@ describe("EditorActionsMenu", () => {
   it("renders compact editor actions in the menu", async () => {
     await renderActionsMenu(true);
     const content = container.textContent ?? "";
+    const menu = container.querySelector("ul");
     const dividers = container.querySelectorAll('li[aria-hidden="true"]');
 
     expect(
@@ -95,6 +128,9 @@ describe("EditorActionsMenu", () => {
       content.indexOf("Hide history"),
     );
     expect(content.indexOf("Hide history")).toBeLessThan(
+      content.indexOf("Show shortcuts"),
+    );
+    expect(content.indexOf("Hide history")).toBeLessThan(
       content.indexOf("Delete edit"),
     );
     expect(content.indexOf("Delete edit")).toBeLessThan(
@@ -103,6 +139,13 @@ describe("EditorActionsMenu", () => {
     expect(content.indexOf("Delete all edits")).toBeLessThan(
       content.indexOf("Auto-prune all but last 5"),
     );
+    expect(content.indexOf("Auto-prune all but last 5")).toBeLessThan(
+      content.indexOf("Debug"),
+    );
+    expect(content).toContain("Ctrl");
+    expect(content).toContain("H");
+    expect(menu?.className).toContain("p-2");
+    expect(menu?.className).not.toContain("pr-3");
     expect(dividers).toHaveLength(3);
   });
 
@@ -119,7 +162,20 @@ describe("EditorActionsMenu", () => {
     expect(onToggleHistory).toHaveBeenCalledTimes(1);
   });
 
-  it("disables the menu while copying to clipboard", async () => {
+  it("toggles the shortcuts rail", async () => {
+    await renderActionsMenu(false);
+    const shortcutsButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((button) => button.textContent?.includes("Show shortcuts"));
+
+    await act(async () => {
+      shortcutsButton?.click();
+    });
+
+    expect(onToggleShortcuts).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables processing actions while keeping menu toggles available", async () => {
     configureEditorState({
       clipboardState: { error: null, requestId: "copy-1", status: "copying" },
     });
@@ -127,6 +183,18 @@ describe("EditorActionsMenu", () => {
     const summary = container.querySelector<HTMLElement>(
       '[aria-label="More editor actions"]',
     );
+    const saveButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Save menu"),
+    );
+    const copyButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Copy menu"),
+    );
+    const newEditButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("New edit menu"),
+    );
+    const deleteEditButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((button) => button.textContent?.includes("Delete edit"));
     const historyButton = Array.from(container.querySelectorAll("button")).find(
       (button) => button.textContent?.includes("Show history"),
     );
@@ -136,8 +204,13 @@ describe("EditorActionsMenu", () => {
       historyButton?.click();
     });
 
-    expect(summary?.getAttribute("aria-disabled")).toBe("true");
-    expect(summary?.className).toContain("btn-disabled");
-    expect(onToggleHistory).not.toHaveBeenCalled();
+    expect(summary?.getAttribute("aria-disabled")).toBeNull();
+    expect(summary?.className).not.toContain("btn-disabled");
+    expect(saveButton?.disabled).toBe(true);
+    expect(copyButton?.disabled).toBe(true);
+    expect(newEditButton?.disabled).toBe(true);
+    expect(deleteEditButton?.disabled).toBe(true);
+    expect(onToggleHistory).toHaveBeenCalledTimes(1);
+    expect(onToggleShortcuts).not.toHaveBeenCalled();
   });
 });

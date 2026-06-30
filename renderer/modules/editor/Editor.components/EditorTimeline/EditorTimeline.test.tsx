@@ -32,6 +32,9 @@ vi.mock(
 vi.mock("../EditorPlaybackControls/EditorPlaybackControls", () => ({
   EditorPlaybackControls: () => <div data-testid="playback-controls" />,
 }));
+vi.mock("../EditorAudioControls/EditorAudioControls", () => ({
+  EditorAudioControls: () => <div data-testid="audio-controls" />,
+}));
 vi.mock(
   "../EditorTimelineClipDragPreview/EditorTimelineClipDragPreview",
   () => ({
@@ -59,12 +62,15 @@ vi.mock("../EditorTimelineTools/EditorTimelineTools", () => ({
 vi.mock("../EditorTimelineVideoTrack/EditorTimelineVideoTrack", () => ({
   EditorTimelineVideoTrack: ({
     track,
+    useCompactTrimHandles,
     visibleDurationSeconds,
   }: {
     track: { clips: unknown[]; id: string; label: string };
+    useCompactTrimHandles: boolean;
     visibleDurationSeconds: number;
   }) => (
     <div
+      data-compact-trim-handles={String(useCompactTrimHandles)}
       data-testid={`track-${track.id}`}
       data-visible-duration={visibleDurationSeconds}
     >
@@ -84,6 +90,11 @@ let root: Root;
 function configureEditorState(overrides: Record<string, unknown> = {}) {
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
+      clipboardState: { error: null, requestId: null, status: "idle" },
+      exportState: { status: "idle" },
+      isPreviewPlaying: false,
+      isTimelineFitToEdit: false,
+      playbackSeconds: 0,
       project: createEditorTestProject(),
       selectedClipId: "timeline-1",
       setZoom: storeMocks.setZoom,
@@ -164,6 +175,11 @@ describe("EditorTimeline", () => {
     ).toBe("97.5");
     expect(
       container
+        .querySelector('[data-testid="track-video-track"]')
+        ?.getAttribute("data-compact-trim-handles"),
+    ).toBe("false");
+    expect(
+      container
         .querySelector<HTMLElement>("[data-timeline-grid]")
         ?.style.getPropertyValue("width"),
     ).toBe("100%");
@@ -172,7 +188,7 @@ describe("EditorTimeline", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("stretches fitted recordings when zoomed in", async () => {
+  it("keeps spacious recordings zoomable after the trailing tail", async () => {
     const asset = createEditorTestAsset({ durationSeconds: 78 });
     configureEditorState({
       project: createEditorTestProject(asset),
@@ -187,7 +203,7 @@ describe("EditorTimeline", () => {
     ).toBe("181.3%");
   });
 
-  it("fits short recordings against their padded duration instead of the empty timeline floor", async () => {
+  it("keeps a short trailing tail for short recordings", async () => {
     const asset = createEditorTestAsset({ durationSeconds: 11.92 });
     configureEditorState({
       project: createEditorTestProject(asset),
@@ -207,7 +223,7 @@ describe("EditorTimeline", () => {
     ).toBe("100%");
   });
 
-  it("keeps the rail duration anchored to source media after trimming", async () => {
+  it("keeps a short trailing tail after trimming", async () => {
     const asset = createEditorTestAsset({ durationSeconds: 54.95 });
     configureEditorState({
       project: createEditorTestProject(asset, {
@@ -235,7 +251,76 @@ describe("EditorTimeline", () => {
       container
         .querySelector('[data-testid="track-video-track"]')
         ?.getAttribute("data-visible-duration"),
-    ).toBe("68.688");
+    ).toBe("37.5");
+  });
+
+  it("fits the rail duration to the current edit when fit mode is active", async () => {
+    const asset = createEditorTestAsset({ durationSeconds: 54.95 });
+    configureEditorState({
+      isTimelineFitToEdit: true,
+      project: createEditorTestProject(asset, {
+        durationSeconds: 30,
+        tracks: [
+          {
+            clips: [
+              createEditorTestTimelineClip(asset, {
+                durationSeconds: 30,
+                outSeconds: 30,
+                sourceOutSeconds: 54.95,
+              }),
+            ],
+            id: "video-track",
+            kind: "video",
+            label: "Video",
+          },
+        ],
+      }),
+      zoom: 1,
+    });
+    await renderTimeline();
+
+    expect(
+      container
+        .querySelector('[data-testid="track-video-track"]')
+        ?.getAttribute("data-visible-duration"),
+    ).toBe("30");
+  });
+
+  it("uses compact trim handles for every clip once any clip is too narrow", async () => {
+    const asset = createEditorTestAsset({ durationSeconds: 20 });
+    const firstClip = createEditorTestTimelineClip(asset, {
+      durationSeconds: 10,
+      id: "timeline-first",
+      outSeconds: 10,
+      startSeconds: 0,
+    });
+    const secondClip = createEditorTestTimelineClip(asset, {
+      durationSeconds: 0.5,
+      id: "timeline-second",
+      outSeconds: 0.5,
+      startSeconds: 10,
+    });
+    configureEditorState({
+      project: createEditorTestProject(asset, {
+        durationSeconds: 10.5,
+        tracks: [
+          {
+            clips: [firstClip, secondClip],
+            id: "video-track",
+            kind: "video",
+            label: "Video",
+          },
+        ],
+      }),
+      zoom: 1,
+    });
+    await renderTimeline();
+
+    expect(
+      container
+        .querySelector('[data-testid="track-video-track"]')
+        ?.getAttribute("data-compact-trim-handles"),
+    ).toBe("true");
   });
 
   it("resolves hover seconds from the marker zone", async () => {
@@ -281,6 +366,39 @@ describe("EditorTimeline", () => {
 
     expect(storeMocks.setZoom).toHaveBeenNthCalledWith(1, 1.25);
     expect(storeMocks.setZoom).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks timeline interaction while the editor is processing", async () => {
+    configureEditorState({
+      clipboardState: { error: null, requestId: "copy-1", status: "copying" },
+    });
+    await renderTimeline();
+    const scrollContainer = container.querySelector<HTMLElement>(
+      "[data-timeline-scroll]",
+    );
+    const grid = container.querySelector<HTMLElement>("[data-timeline-grid]");
+
+    await act(async () => {
+      grid?.dispatchEvent(
+        new MouseEvent("pointerdown", { bubbles: true, clientX: 566 }),
+      );
+      grid?.dispatchEvent(
+        new MouseEvent("pointermove", { bubbles: true, clientX: 566 }),
+      );
+      scrollContainer?.dispatchEvent(
+        new WheelEvent("wheel", {
+          bubbles: true,
+          ctrlKey: true,
+          deltaY: -100,
+        }),
+      );
+    });
+
+    expect(grid?.getAttribute("aria-disabled")).toBe("true");
+    expect(grid?.className).toContain("pointer-events-none");
+    expect(dragMocks.handleTimelinePointerDown).not.toHaveBeenCalled();
+    expect(dragMocks.handleTimelinePointerMove).not.toHaveBeenCalled();
+    expect(storeMocks.setZoom).not.toHaveBeenCalled();
   });
 
   it("uses the active drag marker ahead of passive hover", async () => {

@@ -8,13 +8,16 @@ import {
   isEditorMediaAssetDragData,
   isEditorVideoTrackDropData,
 } from "../../Editor.utils/Editor.utils";
+import { editorTimelineRailPaddingPixels } from "../EditorTimeline/EditorTimeline.utils";
 import { resolveDropTimelineSeconds } from "./EditorDragDropProvider.utils";
 
 function EditorDragDropProvider({ children }: PropsWithChildren) {
-  const { addAssetToTimelineAt, project } = useEditorShallow((editor) => ({
-    addAssetToTimelineAt: editor.addAssetToTimelineAt,
-    project: editor.project,
-  }));
+  const { addAssetToTimelineAt, isTimelineFitToEdit, project } =
+    useEditorShallow((editor) => ({
+      addAssetToTimelineAt: editor.addAssetToTimelineAt,
+      isTimelineFitToEdit: editor.isTimelineFitToEdit,
+      project: editor.project,
+    }));
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (event.canceled) {
@@ -33,6 +36,8 @@ function EditorDragDropProvider({ children }: PropsWithChildren) {
     const timelineSeconds = resolveDropTimelineSeconds({
       durationSeconds: calculateEditorTimelineDuration(project),
       event,
+      isTimelineFitToEdit,
+      railPaddingPixels: editorTimelineRailPaddingPixels,
     });
     addAssetToTimelineAt(sourceData.assetKey, timelineSeconds);
   };

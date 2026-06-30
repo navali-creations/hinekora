@@ -20,7 +20,7 @@ function CaptureModeBeacon(props: PopoverComponentProps) {
               <span className="mt-0.5 text-accent">•</span>
               <span>
                 <strong className="text-base-content">Rewind</strong> keeps a
-                rolling buffer for death clips and manual clips.
+                rolling buffer for death clips and manual replays.
               </span>
             </li>
             <li className="flex items-start gap-2">

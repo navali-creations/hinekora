@@ -12,11 +12,6 @@ const storeMocks = vi.hoisted(() => ({
   useEditorShallow: vi.fn(),
 }));
 const thumbnailMocks = vi.hoisted(() => ({
-  calculateEditorThumbnailCount: vi.fn((widthPixels: number) =>
-    widthPixels <= 0
-      ? 0
-      : Math.min(Math.max(Math.ceil(widthPixels / 96), 1), 8),
-  ),
   useEditorClipThumbnails: vi.fn(),
 }));
 
@@ -34,12 +29,13 @@ import { EditorTimelineClip } from "./EditorTimelineClip";
 let container: HTMLDivElement;
 let root: Root;
 
-class ResizeObserverMock {
-  observe = vi.fn();
-  disconnect = vi.fn();
-}
-
-async function renderClip() {
+async function renderClip({
+  timelineRailWidthPixels = 240,
+  useCompactTrimHandles = false,
+}: {
+  timelineRailWidthPixels?: number;
+  useCompactTrimHandles?: boolean;
+} = {}) {
   const asset = createEditorTestAsset();
   const clip = createEditorTestTimelineClip(asset);
 
@@ -48,6 +44,8 @@ async function renderClip() {
       <EditorTimelineClip
         clip={clip}
         railPaddingPixels={0}
+        timelineRailWidthPixels={timelineRailWidthPixels}
+        useCompactTrimHandles={useCompactTrimHandles}
         visibleDurationSeconds={10}
       />,
     );
@@ -62,21 +60,6 @@ describe("EditorTimelineClip", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
-    Object.defineProperty(globalThis, "ResizeObserver", {
-      configurable: true,
-      value: ResizeObserverMock,
-    });
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
-      bottom: 48,
-      height: 48,
-      left: 0,
-      right: 240,
-      top: 0,
-      width: 240,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
     thumbnailMocks.useEditorClipThumbnails.mockImplementation((input) =>
       input.mediaUrl
         ? ["data:image/jpeg;base64,first", "data:image/jpeg;base64,second"]
@@ -130,6 +113,8 @@ describe("EditorTimelineClip", () => {
         <EditorTimelineClip
           clip={clip}
           railPaddingPixels={0}
+          timelineRailWidthPixels={240}
+          useCompactTrimHandles={false}
           visibleDurationSeconds={10}
         />,
       );
@@ -143,7 +128,7 @@ describe("EditorTimelineClip", () => {
     expect(container.querySelectorAll("img")).toHaveLength(2);
   });
 
-  it("sizes a trimmed clip against the stable source rail duration", async () => {
+  it("sizes a trimmed clip against the fitted edit duration", async () => {
     const asset = createEditorTestAsset({ durationSeconds: 54.95 });
     const clip = createEditorTestTimelineClip(asset, {
       durationSeconds: 30,
@@ -156,7 +141,9 @@ describe("EditorTimelineClip", () => {
         <EditorTimelineClip
           clip={clip}
           railPaddingPixels={0}
-          visibleDurationSeconds={68.688}
+          timelineRailWidthPixels={240}
+          useCompactTrimHandles={false}
+          visibleDurationSeconds={30}
         />,
       );
     });
@@ -166,7 +153,7 @@ describe("EditorTimelineClip", () => {
     );
 
     expect(Number.parseFloat(clipElement?.style.width ?? "")).toBeCloseTo(
-      43.68,
+      100,
       2,
     );
   });
@@ -183,6 +170,8 @@ describe("EditorTimelineClip", () => {
         <EditorTimelineClip
           clip={clip}
           railPaddingPixels={24}
+          timelineRailWidthPixels={240}
+          useCompactTrimHandles={false}
           visibleDurationSeconds={10}
         />,
       );
@@ -194,6 +183,42 @@ describe("EditorTimelineClip", () => {
 
     expect(clipElement?.style.left).toBe("calc(24px + 0.2 * (100% - 48px))");
     expect(clipElement?.style.width).toBe("calc(0.4 * (100% - 48px))");
+    expect(clipElement?.style.minWidth).toBe("4px");
+    expect(
+      container
+        .querySelector<HTMLElement>('[data-trim-edge="start"]')
+        ?.className.includes("border-r"),
+    ).toBe(true);
+    expect(
+      container
+        .querySelector<HTMLElement>('[data-trim-edge="end"]')
+        ?.className.includes("border-l"),
+    ).toBe(true);
+    expect(
+      container
+        .querySelector<HTMLElement>('[data-trim-edge="start"]')
+        ?.className.includes("bg-base-content/20"),
+    ).toBe(true);
+  });
+
+  it("uses compact border trim handles when the timeline requires compact handles", async () => {
+    await renderClip({ useCompactTrimHandles: true });
+
+    expect(
+      container
+        .querySelector<HTMLElement>('[data-trim-edge="start"]')
+        ?.className.includes("border-l-2"),
+    ).toBe(true);
+    expect(
+      container
+        .querySelector<HTMLElement>('[data-trim-edge="end"]')
+        ?.className.includes("border-r-2"),
+    ).toBe(true);
+    expect(
+      container
+        .querySelector<HTMLElement>('[data-trim-edge="start"]')
+        ?.className.includes("bg-transparent"),
+    ).toBe(true);
   });
 
   it("renders available thumbnails for the selected clip", async () => {
@@ -211,6 +236,8 @@ describe("EditorTimelineClip", () => {
         <EditorTimelineClip
           clip={clip}
           railPaddingPixels={0}
+          timelineRailWidthPixels={240}
+          useCompactTrimHandles={false}
           visibleDurationSeconds={10}
         />,
       );

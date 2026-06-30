@@ -1,8 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
+import clsx from "clsx";
 import { useEffect } from "react";
 import { TbDatabaseExclamation } from "react-icons/tb";
 
 import { useStorageShallow } from "~/renderer/store";
+
+import { appbarButtonClass } from "../AppMenu.utils";
 
 const APPBAR_ICON_SIZE = 16;
 
@@ -52,7 +55,7 @@ const DiskSpaceWarning = () => {
       <button
         type="button"
         onClick={handleOpenStorageSettings}
-        className="no-drag btn btn-ghost btn-sm text-warning"
+        className={clsx(appbarButtonClass, "text-warning")}
       >
         <TbDatabaseExclamation size={APPBAR_ICON_SIZE} />
       </button>

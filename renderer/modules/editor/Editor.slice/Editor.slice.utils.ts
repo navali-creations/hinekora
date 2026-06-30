@@ -4,7 +4,9 @@ import type {
   EditorExportInput,
   EditorExportResolution,
   EditorMediaAsset,
+  EditorMediaAssetPageQuery,
   EditorProject,
+  EditorProjectHistorySnapshot,
   EditorTimelineClip,
   EditorWorkspace,
 } from "~/main/modules/editor";
@@ -14,6 +16,12 @@ import {
   createEditorDefaultFileName,
   roundToMilliseconds,
 } from "../Editor.utils/Editor.utils";
+import {
+  editorAssetRailPageSize,
+  editorHistoryLimit,
+} from "./Editor.slice.constants";
+
+const editorRecentlyClippedWindowMs = 60 * 60 * 1_000;
 
 function findTimelineClip(
   project: EditorProject | null,
@@ -133,6 +141,7 @@ function createEditorExportInput(
     exportRequestId: input.exportRequestId,
     fileName: input.fileName,
     mode: input.mode,
+    muteAudio: project.isAudioMuted === true,
     overwriteSource,
     resolution: input.resolution,
   };
@@ -154,6 +163,7 @@ function createEditorCopyToClipboardInput(
     clips,
     durationSeconds: project.durationSeconds,
     fileName: createEditorDefaultFileName(project),
+    muteAudio: project.isAudioMuted === true,
     resolution: "1080p",
   };
 }
@@ -249,6 +259,196 @@ function normalizeEditorProjectTimeline(
   return normalizeTimelineProject(project, options);
 }
 
+function createEditorProjectWithHistoryMetadata(
+  project: EditorProject,
+  historyLabels: string[],
+  historySubtitles: Array<string | null> = [],
+  historySnapshots: EditorProject[] = [],
+): EditorProject {
+  const { labels, subtitles } = normalizeEditorProjectHistoryEntries(
+    historyLabels,
+    historySubtitles,
+  );
+  const snapshots = normalizeEditorProjectHistorySnapshots(
+    historySnapshots,
+  ).slice(0, labels.length);
+  const shouldPersistSubtitles = subtitles.some(
+    (subtitle) => subtitle !== null,
+  );
+  if (
+    labels.length === 0 &&
+    !shouldPersistSubtitles &&
+    snapshots.length === 0 &&
+    !project.history
+  ) {
+    return project;
+  }
+
+  return {
+    ...project,
+    history: {
+      editCount: labels.length,
+      labels,
+      ...(shouldPersistSubtitles ? { subtitles } : {}),
+      ...(snapshots.length === 0 ? {} : { snapshots }),
+    },
+  };
+}
+
+function createEditorProjectHistorySnapshot(
+  project: EditorProject,
+): EditorProjectHistorySnapshot {
+  const snapshotCandidate = project as EditorProject & {
+    scrollLeft?: unknown;
+    scrollTop?: unknown;
+    timelineScrollLeft?: unknown;
+    zoom?: unknown;
+  };
+  if (
+    snapshotCandidate.history === undefined &&
+    snapshotCandidate.scrollLeft === undefined &&
+    snapshotCandidate.scrollTop === undefined &&
+    snapshotCandidate.timelineScrollLeft === undefined &&
+    snapshotCandidate.zoom === undefined
+  ) {
+    return project;
+  }
+
+  const {
+    history: _history,
+    scrollLeft: _scrollLeft,
+    scrollTop: _scrollTop,
+    timelineScrollLeft: _timelineScrollLeft,
+    zoom: _zoom,
+    ...projectSnapshot
+  } = snapshotCandidate;
+
+  return projectSnapshot;
+}
+
+function getEditorProjectHistoryLabels(project: EditorProject): string[] {
+  return normalizeEditorProjectHistoryEntries(
+    project.history?.labels ?? [],
+    project.history?.subtitles ?? [],
+  ).labels;
+}
+
+function getEditorProjectHistorySubtitles(
+  project: EditorProject,
+): Array<string | null> {
+  return normalizeEditorProjectHistoryEntries(
+    project.history?.labels ?? [],
+    project.history?.subtitles ?? [],
+  ).subtitles;
+}
+
+function getEditorProjectHistorySnapshots(
+  project: EditorProject,
+): EditorProject[] {
+  return (project.history?.snapshots ?? []).map((snapshot) =>
+    createEditorProjectHistorySnapshot(snapshot),
+  );
+}
+
+function normalizeEditorProjectHistoryEntries(
+  labels: string[],
+  subtitles: Array<string | null>,
+): { labels: string[]; subtitles: Array<string | null> } {
+  const entries = labels
+    .map((label, index) => {
+      const trimmedLabel = label.trim();
+      const subtitle = subtitles[index] ?? null;
+      const trimmedSubtitle =
+        subtitle === null ? null : subtitle.trim() || null;
+
+      return {
+        label: trimmedLabel,
+        subtitle: trimmedSubtitle,
+      };
+    })
+    .filter((entry) => entry.label.length > 0)
+    .slice(-editorHistoryLimit);
+
+  return {
+    labels: entries.map((entry) => entry.label),
+    subtitles: entries.map((entry) => entry.subtitle),
+  };
+}
+
+function normalizeEditorProjectHistorySnapshots(
+  snapshots: EditorProject[],
+): EditorProjectHistorySnapshot[] {
+  return snapshots
+    .slice(-editorHistoryLimit)
+    .map(createEditorProjectHistorySnapshot);
+}
+
+function areEditorMediaAssetPageQueriesEqual(
+  first: EditorMediaAssetPageQuery,
+  second: EditorMediaAssetPageQuery,
+): boolean {
+  return (
+    first.category === second.category &&
+    (first.createdAfter ?? null) === (second.createdAfter ?? null) &&
+    first.game === second.game &&
+    areEditorMediaAssetKeyListsEqual(
+      first.excludeAssetKeys,
+      second.excludeAssetKeys,
+    ) &&
+    areEditorMediaAssetKeyListsEqual(
+      first.includeAssetKeys,
+      second.includeAssetKeys,
+    ) &&
+    (first.league ?? null) === (second.league ?? null) &&
+    (first.pageIndex ?? 0) === (second.pageIndex ?? 0) &&
+    (first.pageSize ?? editorAssetRailPageSize) ===
+      (second.pageSize ?? editorAssetRailPageSize)
+  );
+}
+
+function canUseEditorMediaAssetPage(
+  requestedQuery: EditorMediaAssetPageQuery,
+  currentQuery: EditorMediaAssetPageQuery,
+): boolean {
+  return (
+    requestedQuery.category === currentQuery.category &&
+    (requestedQuery.createdAfter ?? null) ===
+      (currentQuery.createdAfter ?? null) &&
+    requestedQuery.game === currentQuery.game &&
+    areEditorMediaAssetKeyListsEqual(
+      requestedQuery.excludeAssetKeys,
+      currentQuery.excludeAssetKeys,
+    ) &&
+    areEditorMediaAssetKeyListsEqual(
+      requestedQuery.includeAssetKeys,
+      currentQuery.includeAssetKeys,
+    ) &&
+    (requestedQuery.league ?? null) === (currentQuery.league ?? null) &&
+    (requestedQuery.pageIndex ?? 0) === (currentQuery.pageIndex ?? 0) &&
+    (requestedQuery.pageSize ?? editorAssetRailPageSize) ===
+      (currentQuery.pageSize ?? editorAssetRailPageSize)
+  );
+}
+
+function areEditorMediaAssetKeyListsEqual(
+  first: string[] | undefined,
+  second: string[] | undefined,
+): boolean {
+  const normalizedFirst = first ?? [];
+  const normalizedSecond = second ?? [];
+  if (normalizedFirst.length !== normalizedSecond.length) {
+    return false;
+  }
+
+  return normalizedFirst.every(
+    (assetKey, index) => assetKey === normalizedSecond[index],
+  );
+}
+
+function createEditorRecentlyClippedSince(nowMs = Date.now()): string {
+  return new Date(nowMs - editorRecentlyClippedWindowMs).toISOString();
+}
+
 function waitMs(milliseconds: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, milliseconds);
@@ -281,10 +481,18 @@ function findTimelineClipAt(
 }
 
 export {
+  areEditorMediaAssetPageQueriesEqual,
+  canUseEditorMediaAssetPage,
   createEditorCopyToClipboardInput,
   createEditorExportInput,
+  createEditorProjectHistorySnapshot,
+  createEditorProjectWithHistoryMetadata,
+  createEditorRecentlyClippedSince,
   findTimelineClip,
   findTimelineClipAt,
+  getEditorProjectHistoryLabels,
+  getEditorProjectHistorySnapshots,
+  getEditorProjectHistorySubtitles,
   mergeProjectAssets,
   normalizeEditorProjectTimeline,
   refreshProjectAssets,

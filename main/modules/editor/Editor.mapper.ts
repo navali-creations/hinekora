@@ -98,6 +98,7 @@ function createEditorProjectFromAssets(input: {
   title?: string;
 }): EditorProject {
   const clips = createTimelineClips(input.assets);
+  const sourceScope = resolveProjectSourceScope(input.assets);
   const durationSeconds = clips.reduce(
     (duration, clip) =>
       Math.max(duration, clip.startSeconds + clip.durationSeconds),
@@ -119,10 +120,39 @@ function createEditorProjectFromAssets(input: {
     durationSeconds,
     id: input.id,
     selectedAssetKey: input.assets[0]?.assetKey ?? null,
+    ...(sourceScope.sourceGame ? { sourceGame: sourceScope.sourceGame } : {}),
+    ...(sourceScope.sourceLeague
+      ? { sourceLeague: sourceScope.sourceLeague }
+      : {}),
     title: input.title ?? createProjectTitle(input.assets),
     tracks,
     updatedAt: input.now,
   };
+}
+
+function resolveProjectSourceScope(assets: EditorMediaAsset[]): {
+  sourceGame: EditorMediaAsset["sourceGame"] | null;
+  sourceLeague: string | null;
+} {
+  return {
+    sourceGame: resolveCommonAssetValue(
+      assets.map((asset) => asset.sourceGame),
+    ),
+    sourceLeague: resolveCommonAssetValue(
+      assets.map((asset) => asset.sourceLeague),
+    ),
+  };
+}
+
+function resolveCommonAssetValue<TValue extends string>(
+  values: TValue[],
+): TValue | null {
+  const firstValue = values[0];
+  if (!firstValue) {
+    return null;
+  }
+
+  return values.every((value) => value === firstValue) ? firstValue : null;
 }
 
 function createTimelineClips(assets: EditorMediaAsset[]): EditorTimelineClip[] {

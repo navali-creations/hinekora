@@ -17,8 +17,14 @@ import {
 import type { EditorSliceActionContext } from "./Editor.slice.context";
 import type { EditorSlice } from "./Editor.slice.types";
 import {
+  areEditorMediaAssetPageQueriesEqual,
+  createEditorProjectWithHistoryMetadata,
+  createEditorRecentlyClippedSince,
   findTimelineClip,
   findTimelineClipAt,
+  getEditorProjectHistoryLabels,
+  getEditorProjectHistorySnapshots,
+  getEditorProjectHistorySubtitles,
   normalizeEditorProjectTimeline,
   refreshProjectAssets,
   refreshWorkspaceAssets,
@@ -29,15 +35,25 @@ type EditorWorkspaceActions = Pick<
   | "createProject"
   | "deleteAllProjects"
   | "deleteProject"
+  | "fitTimelineToEdit"
   | "hydrate"
+  | "hydrateMediaAssets"
   | "loadMoreProjects"
   | "openProject"
   | "refreshMedia"
+  | "refreshMediaRecentlyClippedSince"
+  | "resetMediaPagination"
   | "saveProject"
   | "selectAsset"
   | "selectTimelineClip"
+  | "setMediaFilter"
+  | "setMediaPageIndex"
+  | "setMediaRailTab"
+  | "setSavedEditPageIndex"
   | "setPlaybackSeconds"
+  | "setPreviewHasAudio"
   | "setPreviewPlaying"
+  | "setPreviewVolume"
   | "setZoom"
 >;
 
@@ -47,6 +63,8 @@ function createEditorWorkspaceActions({
   setProject,
   updateProject,
 }: EditorSliceActionContext): EditorWorkspaceActions {
+  let mediaAssetRequestId = 0;
+
   return {
     createProject: async (input) => {
       set((state) => {
@@ -58,6 +76,11 @@ function createEditorWorkspaceActions({
       try {
         const project = await window.electron.editor.createProject(input);
         setProject(project, { resetHistory: true, resetViewState: true });
+        set((state) => {
+          state.editor.mediaPageIndex = 0;
+          state.editor.mediaRailTab = "all";
+          state.editor.savedEditPageIndex = 0;
+        });
         trackEvent("editor-project-created");
       } catch (error) {
         set((state) => {
@@ -81,22 +104,15 @@ function createEditorWorkspaceActions({
           shouldStartWithEmptyTimeline: true,
         });
         set((state) => {
-          state.editor.error = null;
-          state.editor.exportState = initialExportState;
-          state.editor.historyFuture = [];
-          state.editor.historyFutureLabels = [];
-          state.editor.historyPast = [];
-          state.editor.historyPastLabels = [];
-          state.editor.historyTransactionLabel = null;
-          state.editor.historyTransactionProject = null;
-          state.editor.hoveredTimelineGap = null;
-          state.editor.isLoading = false;
-          state.editor.isPreviewPlaying = false;
+          resetEditorLoadedProjectState(state.editor, project);
+          state.editor.mediaPageIndex = 0;
+          state.editor.mediaRailTab = "all";
           state.editor.playbackSeconds = 0;
           state.editor.project = project;
           state.editor.projectLimit = editorProjectPageSize;
           state.editor.selectedAssetKey = null;
           state.editor.selectedClipId = null;
+          state.editor.savedEditPageIndex = 0;
           state.editor.workspace = {
             ...workspace,
             project,
@@ -125,22 +141,15 @@ function createEditorWorkspaceActions({
           shouldStartWithEmptyTimeline: true,
         });
         set((state) => {
-          state.editor.error = null;
-          state.editor.exportState = initialExportState;
-          state.editor.historyFuture = [];
-          state.editor.historyFutureLabels = [];
-          state.editor.historyPast = [];
-          state.editor.historyPastLabels = [];
-          state.editor.historyTransactionLabel = null;
-          state.editor.historyTransactionProject = null;
-          state.editor.hoveredTimelineGap = null;
-          state.editor.isLoading = false;
-          state.editor.isPreviewPlaying = false;
+          resetEditorLoadedProjectState(state.editor, project);
+          state.editor.mediaPageIndex = 0;
+          state.editor.mediaRailTab = "all";
           state.editor.playbackSeconds = 0;
           state.editor.project = project;
           state.editor.projectLimit = editorProjectPageSize;
           state.editor.selectedAssetKey = null;
           state.editor.selectedClipId = null;
+          state.editor.savedEditPageIndex = 0;
           state.editor.workspace = {
             ...workspace,
             project,
@@ -172,17 +181,12 @@ function createEditorWorkspaceActions({
           shouldStartWithEmptyTimeline: !source,
         });
         set((state) => {
-          state.editor.error = null;
-          state.editor.exportState = initialExportState;
-          state.editor.historyFuture = [];
-          state.editor.historyFutureLabels = [];
-          state.editor.historyPast = [];
-          state.editor.historyPastLabels = [];
-          state.editor.historyTransactionLabel = null;
-          state.editor.historyTransactionProject = null;
-          state.editor.hoveredTimelineGap = null;
-          state.editor.isLoading = false;
-          state.editor.isPreviewPlaying = false;
+          resetEditorLoadedProjectState(state.editor, project);
+          if (!source) {
+            state.editor.mediaPageIndex = 0;
+            state.editor.mediaRailTab = "all";
+            state.editor.savedEditPageIndex = 0;
+          }
           state.editor.playbackSeconds = 0;
           state.editor.project = project;
           state.editor.selectedAssetKey = project.selectedAssetKey;
@@ -193,11 +197,60 @@ function createEditorWorkspaceActions({
           };
         });
         trackEvent("editor-hydrated");
+        return true;
       } catch (error) {
         set((state) => {
           state.editor.error =
             error instanceof Error ? error.message : "Editor failed";
           state.editor.isLoading = false;
+        });
+        return false;
+      }
+    },
+    hydrateMediaAssets: async (query) => {
+      mediaAssetRequestId += 1;
+      const requestId = mediaAssetRequestId;
+      set((state) => {
+        state.editor.error = null;
+        state.editor.mediaAssetPendingQuery = query;
+      });
+
+      try {
+        const mediaAssetPage =
+          await window.electron.editor.listMediaAssets(query);
+        set((state) => {
+          if (
+            requestId !== mediaAssetRequestId ||
+            state.editor.mediaAssetPendingQuery === null ||
+            !areEditorMediaAssetPageQueriesEqual(
+              state.editor.mediaAssetPendingQuery,
+              query,
+            )
+          ) {
+            return;
+          }
+
+          state.editor.error = null;
+          state.editor.mediaAssetPendingQuery = null;
+          state.editor.mediaAssetPage = mediaAssetPage;
+          state.editor.mediaAssetQuery = query;
+        });
+      } catch (error) {
+        set((state) => {
+          if (
+            requestId !== mediaAssetRequestId ||
+            state.editor.mediaAssetPendingQuery === null ||
+            !areEditorMediaAssetPageQueriesEqual(
+              state.editor.mediaAssetPendingQuery,
+              query,
+            )
+          ) {
+            return;
+          }
+
+          state.editor.mediaAssetPendingQuery = null;
+          state.editor.error =
+            error instanceof Error ? error.message : "Editor failed";
         });
       }
     },
@@ -254,17 +307,7 @@ function createEditorWorkspaceActions({
           shouldStartWithEmptyTimeline: false,
         });
         set((state) => {
-          state.editor.error = null;
-          state.editor.exportState = initialExportState;
-          state.editor.historyFuture = [];
-          state.editor.historyFutureLabels = [];
-          state.editor.historyPast = [];
-          state.editor.historyPastLabels = [];
-          state.editor.historyTransactionLabel = null;
-          state.editor.historyTransactionProject = null;
-          state.editor.hoveredTimelineGap = null;
-          state.editor.isLoading = false;
-          state.editor.isPreviewPlaying = false;
+          resetEditorLoadedProjectState(state.editor, project);
           state.editor.playbackSeconds = 0;
           state.editor.project = project;
           state.editor.selectedAssetKey = project.selectedAssetKey;
@@ -275,12 +318,14 @@ function createEditorWorkspaceActions({
           };
         });
         trackEvent("editor-project-opened");
+        return true;
       } catch (error) {
         set((state) => {
           state.editor.error =
             error instanceof Error ? error.message : "Editor failed";
           state.editor.isLoading = false;
         });
+        return false;
       }
     },
     refreshMedia: async () => {
@@ -325,6 +370,28 @@ function createEditorWorkspaceActions({
         });
       }
     },
+    refreshMediaRecentlyClippedSince: () => {
+      const recentlyClippedSince = createEditorRecentlyClippedSince();
+
+      set((state) => {
+        state.editor.mediaRecentlyClippedSince = recentlyClippedSince;
+      });
+
+      return recentlyClippedSince;
+    },
+    resetMediaPagination: () => {
+      set((state) => {
+        state.editor.mediaPageIndex = 0;
+        state.editor.savedEditPageIndex = 0;
+      });
+    },
+    fitTimelineToEdit: () => {
+      set((state) => {
+        state.editor.isTimelineFitToEdit = true;
+        state.editor.zoom = editorMinZoom;
+      });
+      trackEvent("editor-timeline-fit-to-edit");
+    },
     selectAsset: (assetKey) => {
       set((state) => {
         state.editor.selectedAssetKey = assetKey;
@@ -346,8 +413,52 @@ function createEditorWorkspaceActions({
         { recordHistory: false },
       );
     },
+    setMediaFilter: (filter) => {
+      set((state) => {
+        state.editor.mediaFilter = filter;
+        state.editor.mediaPageIndex = 0;
+        state.editor.savedEditPageIndex = 0;
+      });
+    },
+    setMediaPageIndex: (pageIndex) => {
+      set((state) => {
+        if (state.editor.mediaAssetPendingQuery !== null) {
+          return;
+        }
+
+        state.editor.mediaPageIndex = Math.max(0, pageIndex);
+      });
+    },
+    setMediaRailTab: (tab) => {
+      set((state) => {
+        if (tab === "recently-clipped") {
+          state.editor.mediaRecentlyClippedSince =
+            createEditorRecentlyClippedSince();
+        }
+        state.editor.mediaRailTab = tab;
+        state.editor.mediaPageIndex = 0;
+        state.editor.savedEditPageIndex = 0;
+      });
+    },
+    setSavedEditPageIndex: (pageIndex) => {
+      set((state) => {
+        if (get().savedEdits?.libraryPendingQuery) {
+          return;
+        }
+
+        state.editor.savedEditPageIndex = Math.max(0, pageIndex);
+      });
+    },
     saveProject: async (project) => {
-      const normalizedProject = normalizeEditorProjectTimeline(project);
+      const currentEditor = get().editor;
+      const projectWithHistory = createEditorProjectWithHistoryMetadata(
+        project,
+        currentEditor.historyPastLabels,
+        currentEditor.historyPastSubtitles,
+        currentEditor.historyPast,
+      );
+      const normalizedProject =
+        normalizeEditorProjectTimeline(projectWithHistory);
       const savedProject = await window.electron.editor.saveProject({
         project: normalizedProject,
       });
@@ -378,8 +489,19 @@ function createEditorWorkspaceActions({
         state.editor.isPreviewPlaying = isPlaying;
       });
     },
+    setPreviewHasAudio: (hasAudio) => {
+      set((state) => {
+        state.editor.previewHasAudio = hasAudio;
+      });
+    },
+    setPreviewVolume: (volume) => {
+      set((state) => {
+        state.editor.previewVolume = Math.min(Math.max(volume, 0), 1);
+      });
+    },
     setZoom: (zoom) => {
       set((state) => {
+        state.editor.isTimelineFitToEdit = false;
         state.editor.zoom = clampEditorTimelineZoom({
           maxZoom: editorMaxZoom,
           minZoom: editorMinZoom,
@@ -410,6 +532,27 @@ function createHydratedEditorProject(input: {
       clips: [],
     })),
   };
+}
+
+function resetEditorLoadedProjectState(
+  editor: EditorSlice["editor"],
+  project: EditorProject,
+): void {
+  editor.error = null;
+  editor.exportState = initialExportState;
+  editor.historyFuture = [];
+  editor.historyFutureLabels = [];
+  editor.historyFutureSubtitles = [];
+  editor.historyPast = getEditorProjectHistorySnapshots(project);
+  editor.historyPastLabels = getEditorProjectHistoryLabels(project);
+  editor.historyPastSubtitles = getEditorProjectHistorySubtitles(project);
+  editor.historyTransactionLabel = null;
+  editor.historyTransactionSubtitle = null;
+  editor.historyTransactionProject = null;
+  editor.hoveredTimelineGap = null;
+  editor.isLoading = false;
+  editor.isPreviewPlaying = false;
+  editor.isTimelineFitToEdit = false;
 }
 
 function resolveEditorProjectSelection(project: EditorProject): EditorProject {

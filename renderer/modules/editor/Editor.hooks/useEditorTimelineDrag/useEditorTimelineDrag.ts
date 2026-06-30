@@ -2,7 +2,10 @@ import { type PointerEvent, useEffect, useRef, useState } from "react";
 
 import { useEditorShallow } from "~/renderer/store";
 
-import { resolveTimelineSecondsFromClientX } from "../../Editor.utils/Editor.utils";
+import {
+  createEditorTrimHistoryLabel,
+  resolveTimelineSecondsFromClientX,
+} from "../../Editor.utils/Editor.utils";
 import {
   resolveClipDragPreview,
   type TimelineClipDragPreview,
@@ -189,9 +192,14 @@ function useEditorTimelineDrag({
         return;
       }
 
+      const trimmedClipName =
+        timelineClips.find((clip) => clip.id === clipId)?.name ?? null;
       const timelineSeconds = resolveTimelineSeconds(event.clientX);
       event.preventDefault();
-      beginHistoryTransaction("Trim");
+      beginHistoryTransaction(
+        createEditorTrimHistoryLabel(edge),
+        trimmedClipName,
+      );
       selectTimelineClip(clipId);
       setActiveTimelineMarkerKind("trim");
       setActiveTimelineMarkerSeconds(timelineSeconds);

@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import { FiTrash2 } from "react-icons/fi";
 
 import { useEditorShallow } from "~/renderer/store";
@@ -23,12 +24,15 @@ function EditorTimelineGap({
   railPaddingPixels,
   visibleDurationSeconds,
 }: EditorTimelineGapProps) {
-  const { removeTimelineGap, setHoveredTimelineGap } = useEditorShallow(
-    (editor) => ({
-      removeTimelineGap: editor.removeTimelineGap,
-      setHoveredTimelineGap: editor.setHoveredTimelineGap,
-    }),
-  );
+  const {
+    areTimelineGapsHighlighted,
+    removeTimelineGap,
+    setHoveredTimelineGap,
+  } = useEditorShallow((editor) => ({
+    areTimelineGapsHighlighted: editor.areTimelineGapsHighlighted,
+    removeTimelineGap: editor.removeTimelineGap,
+    setHoveredTimelineGap: editor.setHoveredTimelineGap,
+  }));
   const startPercent = calculateTimelinePercent(
     gap.startSeconds,
     visibleDurationSeconds,
@@ -61,7 +65,12 @@ function EditorTimelineGap({
 
   return (
     <div
-      className="group absolute top-0 bottom-0 z-10 rounded-sm border border-base-content/25 bg-[repeating-linear-gradient(135deg,rgba(255,255,255,0.14)_0,rgba(255,255,255,0.14)_1px,transparent_1px,transparent_9px)] opacity-70 transition hover:border-base-content/45 hover:bg-base-content/10 hover:opacity-100"
+      className={clsx(
+        "group absolute top-0 bottom-0 z-10 rounded-sm border bg-[repeating-linear-gradient(135deg,rgba(255,255,255,0.14)_0,rgba(255,255,255,0.14)_1px,transparent_1px,transparent_9px)] transition hover:border-base-content/45 hover:bg-base-content/10 hover:opacity-100",
+        areTimelineGapsHighlighted
+          ? "border-base-content/45 bg-base-content/10 opacity-100"
+          : "border-base-content/25 opacity-70",
+      )}
       data-timeline-gap-zone="true"
       style={{
         left: formatEditorTimelineRailLeft(startPercent, railPaddingPixels),

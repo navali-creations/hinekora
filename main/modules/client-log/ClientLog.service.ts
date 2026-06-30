@@ -50,6 +50,7 @@ class ClientLogService extends EventEmitter {
 
   private status: ClientLogStatus = {
     activeGame: "poe1",
+    activeGameFocused: null,
     path: null,
     watching: false,
     lastError: null,
@@ -178,6 +179,7 @@ class ClientLogService extends EventEmitter {
       this.stopWatchFile();
       this.status = {
         activeGame: input.game,
+        activeGameFocused: null,
         path: null,
         watching: false,
         lastError: null,
@@ -247,6 +249,7 @@ class ClientLogService extends EventEmitter {
     this.stopWatchFile();
     this.status = {
       activeGame: game,
+      activeGameFocused: null,
       path: filePath,
       watching: true,
       lastError: null,
@@ -544,6 +547,14 @@ class ClientLogService extends EventEmitter {
   }
 
   private setPoeFocusActive(active: boolean): void {
+    if (this.status.activeGameFocused !== active) {
+      this.status = {
+        ...this.status,
+        activeGameFocused: active,
+      };
+      this.publishStatus();
+    }
+
     OverlayWindowsService.getInstance().setPoeFocusActive(active);
   }
 

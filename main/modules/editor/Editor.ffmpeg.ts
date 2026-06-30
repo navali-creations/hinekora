@@ -27,6 +27,7 @@ const editorLogScope = "editor";
 const currentDir = __dirname;
 
 async function renderEditorExportWithFfmpeg(input: {
+  muteAudio?: boolean;
   onProgress?: (progress: number) => void;
   outputPath: string;
   resolution: EditorExportResolution;
@@ -49,12 +50,13 @@ async function renderEditorExportWithFfmpeg(input: {
 
   const renderSegments = await createRenderSegments(
     input.segments,
-    ffprobePath,
+    input.muteAudio ? null : ffprobePath,
   );
   const filterScriptPath = await createExportFilterScript(
     input.resolution,
     renderSegments,
     input.outputPath,
+    input.muteAudio,
   );
   logInfo(editorLogScope, "Editor ffmpeg render prepared", {
     audioClipSegmentCount: renderSegments.filter(
@@ -275,6 +277,7 @@ async function createExportFilterScript(
   resolution: EditorExportResolution,
   segments: EditorExportRenderSegment[],
   outputPath: string,
+  muteAudio = false,
 ): Promise<string> {
   const scriptPath = join(
     dirname(outputPath),
@@ -284,6 +287,7 @@ async function createExportFilterScript(
   await writeFile(
     scriptPath,
     createEditorExportFilterScript({
+      muteAudio,
       resolution,
       segments,
     }),

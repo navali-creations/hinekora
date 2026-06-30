@@ -2,7 +2,7 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import clsx from "clsx";
 import { HiViewGrid } from "react-icons/hi";
 import { IoIosRecording } from "react-icons/io";
-import { MdMovieEdit } from "react-icons/md";
+import { MdMovieEdit, MdVideoLibrary } from "react-icons/md";
 import { PiFilmSlate, PiVideo } from "react-icons/pi";
 
 const navItems = [
@@ -11,6 +11,7 @@ const navItems = [
   { to: "/recordings", label: "Recordings", icon: IoIosRecording },
   { to: "/crop-overlay", label: "Aura Manager", icon: HiViewGrid },
   { to: "/editor", label: "Editor", icon: MdMovieEdit },
+  { to: "/saved-edits", label: "Saved Edits", icon: MdVideoLibrary },
 ] as const;
 
 function SidebarNav() {

@@ -337,10 +337,10 @@ describe("RecorderControlsOverlayPage", () => {
     );
   });
 
-  it("starts add-aura mode from the grid-add button", async () => {
+  it("starts add-aura mode from the default aura button", async () => {
     await renderOverlay();
 
-    getButton(container, "Add aura").click();
+    getButton(container, "Add default aura").click();
     await flushPromises();
 
     expect(electronMocks.setAuraLocked).toHaveBeenCalledWith(false);
@@ -354,10 +354,10 @@ describe("RecorderControlsOverlayPage", () => {
     });
   });
 
-  it("starts arched add-aura mode from the moon button", async () => {
+  it("starts arched add-aura mode from the arc aura button", async () => {
     await renderOverlay();
 
-    getButton(container, "Add arched aura").click();
+    getButton(container, "Add arc aura").click();
     await flushPromises();
 
     expect(electronMocks.setAuraLocked).toHaveBeenCalledWith(false);
@@ -443,7 +443,7 @@ describe("RecorderControlsOverlayPage", () => {
     expect(getButton(container, "Enable Rewind").disabled).toBe(true);
     expect(getButton(container, "Save last 60 seconds").disabled).toBe(true);
     expect(getButton(container, "Edit auras").disabled).toBe(true);
-    expect(getButton(container, "Add aura").disabled).toBe(true);
+    expect(getButton(container, "Add default aura").disabled).toBe(true);
 
     const select = getProfileSelect(container);
     select.value = "profile-2";

@@ -645,6 +645,7 @@ describe("ClientLogService", () => {
     const text = [
       "2026/05/26 02:21:56 124375531 54eea165 [INFO Client 49752] [WINDOW] Gained focus",
       "2026/05/26 02:21:56 124375843 54ee9e2f [INFO Client 49752] [WINDOW] Lost focus",
+      "2026/05/26 02:21:57 124375844 54ee9e2f [INFO Client 49752] [WINDOW] Lost focus",
     ].join("\n");
     const completeText = `${text}\n`;
     writeFileSync(path, completeText);
@@ -656,6 +657,7 @@ describe("ClientLogService", () => {
 
     expect(setPoeFocusActive).toHaveBeenNthCalledWith(1, true);
     expect(setPoeFocusActive).toHaveBeenNthCalledWith(2, false);
+    expect(setPoeFocusActive).toHaveBeenNthCalledWith(3, false);
     expect(info).toHaveBeenCalledWith(
       expect.stringContaining("INFO [client-log] Active game focus gained"),
       expect.objectContaining({

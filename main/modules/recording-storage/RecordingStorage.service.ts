@@ -28,7 +28,7 @@ import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 import { readMp4DurationSeconds } from "~/main/utils/media-metadata";
 import { isPathInsideOrEqual } from "~/main/utils/storage-files";
 
-import { GameIdSchema } from "~/types";
+import { type GameId, GameIdSchema } from "~/types";
 import { RecordingStorageChannel } from "./RecordingStorage.channels";
 import type {
   RecordingStorageBatchFileActionResult,
@@ -229,23 +229,46 @@ class RecordingStorageService {
     };
   }
 
-  listRecentEditorRecordingDetails(limit: number): RunRecordingDetail[] {
+  listEditorRecordingDetailPage(input: {
+    createdAfter?: string;
+    excludeIds?: string[];
+    game?: GameId;
+    includeIds?: string[];
+    league?: string;
+    pageIndex: number;
+    pageSize: number;
+  }): { items: RunRecordingDetail[]; totalCount: number } {
     const settings = SettingsStoreService.getInstance().get();
     const root = this.resolveStorageRoot(settings.recordingStoragePath);
     this.syncRecordingLibrary(root, settings);
+    const filter = {
+      ...(input.createdAfter ? { createdAfter: input.createdAfter } : {}),
+      ...(input.excludeIds && input.excludeIds.length > 0
+        ? { excludeIds: input.excludeIds }
+        : {}),
+      ...(input.game ? { game: input.game } : {}),
+      ...(input.includeIds && input.includeIds.length > 0
+        ? { includeIds: input.includeIds }
+        : {}),
+      ...(input.league ? { league: input.league } : {}),
+    };
     const page = this.repository.listLibraryPage({
-      pageIndex: 0,
-      pageSize: limit,
+      filter,
+      pageIndex: input.pageIndex,
+      pageSize: input.pageSize,
       sortBy: "createdAt",
       sortDirection: "desc",
     });
 
-    return page.items.map((recording) => ({
-      mediaUrl: this.resolveRecordingActionPath(recording.path)
-        ? createRunRecordingMediaUrl(recording.id)
-        : null,
-      recording,
-    }));
+    return {
+      items: page.items.map((recording) => ({
+        mediaUrl: this.resolveRecordingActionPath(recording.path)
+          ? createRunRecordingMediaUrl(recording.id)
+          : null,
+        recording,
+      })),
+      totalCount: page.totalCount,
+    };
   }
 
   getRecordingMediaPath(id: string): string | null {
@@ -793,7 +816,10 @@ class RecordingStorageService {
   }
 
   private createFallbackRecordingId(path: string): string {
-    return `file-${createHash("sha256").update(resolve(path)).digest("hex").slice(0, 32)}`;
+    return `file-${createHash("sha256")
+      .update(resolve(path))
+      .digest("hex")
+      .slice(0, 32)}`;
   }
 
   private getExistingClipPaths(): Set<string> {

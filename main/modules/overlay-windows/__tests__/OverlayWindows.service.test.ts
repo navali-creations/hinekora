@@ -247,6 +247,7 @@ describe("OverlayWindowsService", () => {
     const recordingControlsOverlay = internals.recordingControlsOverlay as {
       getWindow(): Electron.BrowserWindow | null;
       getMode(): RecorderOverlayMode;
+      isRequested(): boolean;
       hide(): void;
       isVisible(): boolean;
       setMode(mode: RecorderOverlayMode): RecorderOverlayMode;
@@ -273,6 +274,7 @@ describe("OverlayWindowsService", () => {
     );
     vi.spyOn(recordingControlsOverlay, "toggle").mockResolvedValue(undefined);
     vi.spyOn(recordingControlsOverlay, "isVisible").mockReturnValue(true);
+    vi.spyOn(recordingControlsOverlay, "isRequested").mockReturnValue(true);
     vi.spyOn(recordingControlsOverlay, "getWindow").mockReturnValue(
       recorderWindow as unknown as Electron.BrowserWindow,
     );
@@ -297,6 +299,7 @@ describe("OverlayWindowsService", () => {
     service.hideRecorderOverlay();
     await expect(service.toggleRecorderOverlay()).resolves.toBeUndefined();
     expect(service.isRecorderOverlayVisible()).toBe(true);
+    expect(service.isRecorderOverlayRequested()).toBe(true);
     expect(service.getRecorderOverlayMode()).toBe("expanded");
     expect(service.setRecorderOverlayMode("minimized")).toBe("minimized");
     service.setGameRunningActive(true);
@@ -730,6 +733,7 @@ describe("OverlayWindowsService", () => {
       .spyOn(service, "toggleRecorderOverlay")
       .mockResolvedValue(undefined);
     vi.spyOn(service, "isRecorderOverlayVisible").mockReturnValue(true);
+    vi.spyOn(service, "isRecorderOverlayRequested").mockReturnValue(true);
     const getRecorderOverlayMode = vi
       .spyOn(service, "getRecorderOverlayMode")
       .mockReturnValue("expanded");
@@ -761,6 +765,9 @@ describe("OverlayWindowsService", () => {
     await handlers.get(OverlayWindowsChannel.ToggleRecorder)?.({});
     expect(
       await handlers.get(OverlayWindowsChannel.IsRecorderVisible)?.({}),
+    ).toBe(true);
+    expect(
+      await handlers.get(OverlayWindowsChannel.IsRecorderRequested)?.({}),
     ).toBe(true);
     expect(
       await handlers.get(OverlayWindowsChannel.GetRecorderMode)?.({}),

@@ -64,21 +64,23 @@ describe("RecordingStorageRepository", () => {
       mtimeMs: 20,
       sizeBytes: 10,
     });
-    repository.upsertRunRecording({
+    const large = repository.upsertRunRecording({
       path: "recordings/large.mkv",
       sourceGame: "poe2",
       sourceLeague: "Hardcore",
       startedAt: "2026-06-12T11:00:00.000Z",
       stoppedAt: "2026-06-12T11:05:00.000Z",
+      createdAt: "2026-06-12T11:00:00.000Z",
       mtimeMs: 10,
       sizeBytes: 30,
     });
-    repository.upsertRunRecording({
+    const otherGame = repository.upsertRunRecording({
       path: "recordings/other-game.mkv",
       sourceGame: "poe1",
       sourceLeague: "Standard",
       startedAt: "2026-06-12T12:00:00.000Z",
       stoppedAt: "2026-06-12T12:05:00.000Z",
+      createdAt: "2026-06-12T12:00:00.000Z",
       mtimeMs: 30,
       sizeBytes: 50,
     });
@@ -104,6 +106,21 @@ describe("RecordingStorageRepository", () => {
       "Hardcore",
       "Standard",
     ]);
+    expect(
+      repository
+        .listLibraryPage({
+          filter: {
+            createdAfter: "2026-06-12T11:30:00.000Z",
+            excludeIds: [large.id],
+            includeIds: [large.id, otherGame.id],
+          },
+          pageIndex: 0,
+          pageSize: 10,
+          sortBy: "createdAt",
+          sortDirection: "desc",
+        })
+        .items.map((recording) => recording.id),
+    ).toEqual([otherGame.id]);
     expect(repository.listStorageUsage()).toEqual(
       expect.arrayContaining([
         {

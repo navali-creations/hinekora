@@ -1,34 +1,34 @@
-import { type PointerEvent, useRef, useState, type WheelEvent } from "react";
+import clsx from "clsx";
+import { useRef } from "react";
 
 import { useEditorShallow } from "~/renderer/store";
 
 import { useEditorTimelineDrag } from "../../Editor.hooks/useEditorTimelineDrag/useEditorTimelineDrag";
 import { useEditorTimelinePlaybackScroll } from "../../Editor.hooks/useEditorTimelinePlaybackScroll/useEditorTimelinePlaybackScroll";
-import { calculateTimelinePercent } from "../../Editor.utils/Editor.utils";
-import { EditorPlaybackControls } from "../EditorPlaybackControls/EditorPlaybackControls";
 import { EditorTimelineClipDragPreview } from "../EditorTimelineClipDragPreview/EditorTimelineClipDragPreview";
+import { EditorTimelineControlsRow } from "../EditorTimelineControlsRow/EditorTimelineControlsRow";
 import { EditorTimelineGap } from "../EditorTimelineGap/EditorTimelineGap";
 import { EditorTimelineHoverMarker } from "../EditorTimelineHoverMarker/EditorTimelineHoverMarker";
 import { EditorTimelinePlayhead } from "../EditorTimelinePlayhead/EditorTimelinePlayhead";
 import { EditorTimelineRuler } from "../EditorTimelineRuler/EditorTimelineRuler";
-import { EditorTimelineTools } from "../EditorTimelineTools/EditorTimelineTools";
 import { EditorTimelineVideoTrack } from "../EditorTimelineVideoTrack/EditorTimelineVideoTrack";
-import { EditorTimelineZoomControls } from "../EditorTimelineZoomControls/EditorTimelineZoomControls";
 import {
+  editorTimelinePlaybackFollowPaddingPixels,
+  editorTimelineRailPaddingPixels,
   formatEditorTimelineRailLeft,
-  resolveEditorTimelineHoverSeconds,
+  resolveEditorTimelineDragPreviewState,
   resolveEditorTimelineModel,
-  resolveEditorTimelineWheelZoom,
+  resolveEditorTimelineUseCompactTrimHandles,
 } from "./EditorTimeline.utils";
-
-const timelineRailPaddingPixels = 24;
-const timelinePlaybackFollowPaddingPixels = 96;
+import { useEditorTimelineGridWidth } from "./useEditorTimelineGridWidth";
+import { useEditorTimelineInteraction } from "./useEditorTimelineInteraction/useEditorTimelineInteraction";
 
 function EditorTimeline() {
   const timelineScrollRef = useRef<HTMLDivElement>(null);
-  const [hoverSeconds, setHoverSeconds] = useState<number | null>(null);
   const {
     isPreviewPlaying,
+    isProcessing,
+    isTimelineFitToEdit,
     playbackSeconds,
     project,
     selectedClipId,
@@ -36,6 +36,10 @@ function EditorTimeline() {
     zoom,
   } = useEditorShallow((editor) => ({
     isPreviewPlaying: editor.isPreviewPlaying,
+    isProcessing:
+      editor.clipboardState.status === "copying" ||
+      editor.exportState.status === "exporting",
+    isTimelineFitToEdit: editor.isTimelineFitToEdit,
     playbackSeconds: editor.playbackSeconds,
     project: editor.project,
     selectedClipId: editor.selectedClipId,
@@ -52,6 +56,7 @@ function EditorTimeline() {
     videoTracks,
     visibleDurationSeconds,
   } = resolveEditorTimelineModel({
+    isTimelineFitToEdit,
     project,
     selectedClipId,
     zoom,
@@ -65,67 +70,52 @@ function EditorTimeline() {
     handleTimelinePointerMove,
     timelineGridRef,
   } = useEditorTimelineDrag({
-    railPaddingPixels: timelineRailPaddingPixels,
+    railPaddingPixels: editorTimelineRailPaddingPixels,
     visibleDurationSeconds,
   });
-  const dragPreviewClip = clipDragPreview
-    ? (videoTracks
-        .flatMap((track) => track.clips)
-        .find((clip) => clip.id === clipDragPreview.clipId) ?? null)
-    : null;
-  const dragPreviewSnapLeft =
-    clipDragPreview?.snapSeconds === null ||
-    clipDragPreview?.snapSeconds === undefined
-      ? null
-      : calculateTimelinePercent(
-          clipDragPreview.snapSeconds,
-          visibleDurationSeconds,
-        );
+  const timelineGridWidthPixels = useEditorTimelineGridWidth(timelineGridRef);
+  const timelineRailWidthPixels = Math.max(
+    0,
+    timelineGridWidthPixels - editorTimelineRailPaddingPixels * 2,
+  );
+  const useCompactTrimHandles = resolveEditorTimelineUseCompactTrimHandles({
+    railPaddingPixels: editorTimelineRailPaddingPixels,
+    timelineGridWidthPixels,
+    videoTracks,
+    visibleDurationSeconds,
+  });
+  const { dragPreviewClip, dragPreviewSnapLeft } =
+    resolveEditorTimelineDragPreviewState({
+      clipDragPreview,
+      videoTracks,
+      visibleDurationSeconds,
+    });
 
   useEditorTimelinePlaybackScroll({
     isPreviewPlaying,
-    paddingPixels: timelinePlaybackFollowPaddingPixels,
+    paddingPixels: editorTimelinePlaybackFollowPaddingPixels,
     playbackSeconds,
-    railPaddingPixels: timelineRailPaddingPixels,
+    railPaddingPixels: editorTimelineRailPaddingPixels,
     scrollContainerRef: timelineScrollRef,
     timelineGridRef,
     visibleDurationSeconds,
   });
-
-  const resolveHoverSeconds = (event: PointerEvent<HTMLDivElement>) => {
-    return resolveEditorTimelineHoverSeconds({
-      clientX: event.clientX,
-      railPaddingPixels: timelineRailPaddingPixels,
-      target: event.target,
-      timelineGrid: timelineGridRef.current,
-      visibleDurationSeconds,
-    });
-  };
-
-  const handleTimelineWheel = (event: WheelEvent<HTMLDivElement>) => {
-    if (!event.ctrlKey && !event.metaKey) {
-      return;
-    }
-
-    event.preventDefault();
-    const nextZoom = resolveEditorTimelineWheelZoom({
-      deltaY: event.deltaY,
-      zoom,
-    });
-
-    if (nextZoom !== null) {
-      setZoom(nextZoom);
-    }
-  };
-
-  const handleTimelineMove = (event: PointerEvent<HTMLDivElement>) => {
-    handleTimelinePointerMove(event);
-    setHoverSeconds(resolveHoverSeconds(event));
-  };
-
-  const handleTimelineLeave = () => {
-    setHoverSeconds(null);
-  };
+  const {
+    handleTimelineLeave,
+    handleTimelineMove,
+    handleTimelinePointerDownGuarded,
+    handleTimelineWheel,
+    hoverSeconds,
+  } = useEditorTimelineInteraction({
+    handleTimelinePointerDown,
+    handleTimelinePointerMove,
+    isProcessing,
+    isTimelineFitToEdit,
+    setZoom,
+    timelineGridRef,
+    visibleDurationSeconds,
+    zoom,
+  });
 
   const markerSeconds =
     activeTimelineMarkerKind === "playhead"
@@ -137,11 +127,7 @@ function EditorTimeline() {
       className="col-span-full flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-200"
       data-onboarding="editor-timeline"
     >
-      <div className="grid h-12 grid-cols-[1fr_auto_1fr] items-center border-base-content/10 border-b px-3">
-        <EditorTimelineTools />
-        <EditorPlaybackControls />
-        <EditorTimelineZoomControls />
-      </div>
+      <EditorTimelineControlsRow />
 
       <div
         className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-3"
@@ -150,20 +136,24 @@ function EditorTimeline() {
         onWheel={handleTimelineWheel}
       >
         <div
-          className="relative grid h-full min-w-full touch-none select-none grid-cols-[minmax(0,1fr)] grid-rows-[22px_42px] auto-rows-[72px] overflow-hidden rounded-md border border-base-content/10 bg-base-300"
+          aria-disabled={isProcessing}
+          className={clsx(
+            "relative grid h-full min-w-full touch-none select-none grid-cols-[minmax(0,1fr)] grid-rows-[22px_42px] auto-rows-[72px] overflow-hidden rounded-md border border-base-content/10 bg-base-300 transition-opacity",
+            isProcessing && "pointer-events-none opacity-60",
+          )}
           data-timeline-grid="true"
           ref={timelineGridRef}
           style={{ width: `${timelineWidthPercent}%` }}
           onPointerCancel={handleTimelinePointerEnd}
           onPointerLeave={handleTimelineLeave}
-          onPointerDown={handleTimelinePointerDown}
+          onPointerDown={handleTimelinePointerDownGuarded}
           onPointerMove={handleTimelineMove}
           onPointerUp={handleTimelinePointerEnd}
         >
           <EditorTimelineRuler
             markers={markers}
             minorMarkers={minorMarkers}
-            railPaddingPixels={timelineRailPaddingPixels}
+            railPaddingPixels={editorTimelineRailPaddingPixels}
             selectedClipRulerLeft={selectedClipRulerLeft}
             selectedClipRulerWidth={selectedClipRulerWidth}
             visibleDurationSeconds={visibleDurationSeconds}
@@ -177,7 +167,7 @@ function EditorTimeline() {
             <EditorTimelineGap
               gap={gap}
               key={gap.id}
-              railPaddingPixels={timelineRailPaddingPixels}
+              railPaddingPixels={editorTimelineRailPaddingPixels}
               visibleDurationSeconds={visibleDurationSeconds}
             />
           ))}
@@ -186,8 +176,10 @@ function EditorTimeline() {
             <EditorTimelineVideoTrack
               dragPreviewClipId={clipDragPreview?.clipId ?? null}
               key={track.id}
-              railPaddingPixels={timelineRailPaddingPixels}
+              railPaddingPixels={editorTimelineRailPaddingPixels}
+              timelineRailWidthPixels={timelineRailWidthPixels}
               track={track}
+              useCompactTrimHandles={useCompactTrimHandles}
               visibleDurationSeconds={visibleDurationSeconds}
             />
           ))}
@@ -197,7 +189,7 @@ function EditorTimeline() {
               style={{
                 left: formatEditorTimelineRailLeft(
                   dragPreviewSnapLeft,
-                  timelineRailPaddingPixels,
+                  editorTimelineRailPaddingPixels,
                 ),
               }}
             />
@@ -206,19 +198,19 @@ function EditorTimeline() {
             <EditorTimelineClipDragPreview
               clip={dragPreviewClip}
               heightPixels={clipDragPreview.heightPixels}
-              railPaddingPixels={timelineRailPaddingPixels}
+              railPaddingPixels={editorTimelineRailPaddingPixels}
               startSeconds={clipDragPreview.startSeconds}
               topPixels={clipDragPreview.topPixels}
               visibleDurationSeconds={visibleDurationSeconds}
             />
           )}
           <EditorTimelinePlayhead
-            railPaddingPixels={timelineRailPaddingPixels}
+            railPaddingPixels={editorTimelineRailPaddingPixels}
             visibleDurationSeconds={visibleDurationSeconds}
           />
           <EditorTimelineHoverMarker
             hoverSeconds={markerSeconds}
-            railPaddingPixels={timelineRailPaddingPixels}
+            railPaddingPixels={editorTimelineRailPaddingPixels}
             visibleDurationSeconds={visibleDurationSeconds}
           />
         </div>

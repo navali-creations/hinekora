@@ -36,7 +36,9 @@ function restoreVideoFrameCallbackProperty(
     return;
   }
 
-  delete (HTMLVideoElement.prototype as Record<string, unknown>)[propertyName];
+  delete (HTMLVideoElement.prototype as unknown as Record<string, unknown>)[
+    propertyName
+  ];
 }
 
 function TestAuraVideoCanvasFrame({

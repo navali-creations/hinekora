@@ -394,6 +394,25 @@ describe("probeEditorAudioStream", () => {
       expect(args).toContain("-crf");
       expect(args).toContain("21");
       expect(progress).toHaveBeenCalledWith(1);
+
+      await renderEditorExportWithFfmpeg({
+        muteAudio: true,
+        outputPath: join(directory, "muted-output.mp4"),
+        resolution: "1080p",
+        segments: [
+          {
+            durationSeconds: 1,
+            inSeconds: 0,
+            kind: "clip",
+            outSeconds: 1,
+            source: {
+              path: join(directory, "source.mp4"),
+            },
+            startSeconds: 0,
+          },
+        ],
+      });
+      expect(spawn).toHaveBeenCalledTimes(2);
     } finally {
       if (previousFfmpegPath === undefined) {
         delete process.env.HINEKORA_FFMPEG_PATH;

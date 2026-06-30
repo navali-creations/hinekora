@@ -13,6 +13,7 @@ import { PoeProcessAPI } from "~/main/modules/poe-process/PoeProcess.api";
 import { ProfilesAPI } from "~/main/modules/profiles/Profiles.api";
 import { RecordingStorageAPI } from "~/main/modules/recording-storage/RecordingStorage.api";
 import { ReplayClipsAPI } from "~/main/modules/replay-clips/ReplayClips.api";
+import { SavedEditsAPI } from "~/main/modules/saved-edits/SavedEdits.api";
 import { SettingsStoreAPI } from "~/main/modules/settings-store/SettingsStore.api";
 import { StateTransferAPI } from "~/main/modules/state-transfer/StateTransfer.api";
 import { StorageAPI } from "~/main/modules/storage/Storage.api";
@@ -32,6 +33,7 @@ const fullApi = {
   profiles: ProfilesAPI,
   recordingStorage: RecordingStorageAPI,
   replayClips: ReplayClipsAPI,
+  savedEdits: SavedEditsAPI,
   settings: SettingsStoreAPI,
   storage: StorageAPI,
   stateTransfer: StateTransferAPI,

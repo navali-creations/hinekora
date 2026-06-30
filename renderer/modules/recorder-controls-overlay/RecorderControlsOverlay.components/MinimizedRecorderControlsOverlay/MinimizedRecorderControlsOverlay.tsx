@@ -33,8 +33,10 @@ function MinimizedRecorderControlsOverlay({
     recordingButtonTitle,
   } = useRecorderOverlayControls();
   return (
-    <main className={`${styles.overlay} ${styles.minimized}`}>
-      <div className={styles.minimizedControls}>
+    <main
+      className={`${styles.overlay} box-border flex h-screen w-screen items-center overflow-hidden px-1.5 py-[0.3125rem]`}
+    >
+      <div className="flex w-full min-w-0 items-center gap-[0.3125rem]">
         <button
           className={`${styles.iconButton} btn btn-primary btn-square`}
           type="button"
@@ -64,7 +66,7 @@ function MinimizedRecorderControlsOverlay({
           </button>
         )}
         <RecorderOverlayTimer />
-        <div className={styles.windowControls}>
+        <div className="ml-auto flex items-center gap-1">
           <button
             type="button"
             className={`${styles.windowButton} btn btn-ghost btn-square`}

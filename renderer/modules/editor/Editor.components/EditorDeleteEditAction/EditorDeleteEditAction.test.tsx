@@ -6,6 +6,7 @@ import {
   createEditorTestAsset,
   createEditorTestProject,
 } from "../../Editor.slice/Editor.slice.test-utils";
+import { editorShortcutEventNames } from "../../Editor.utils/EditorShortcuts.utils";
 import {
   getEditorConfirmationDialog,
   getEditorDialogButton,
@@ -126,5 +127,25 @@ describe("EditorDeleteEditAction", () => {
     await renderDeleteAction();
 
     expect(getDeleteButton().disabled).toBe(true);
+  });
+
+  it("shows the delete edit shortcut", async () => {
+    await renderDeleteAction();
+
+    expect(container.textContent).toContain("Delete edit");
+    expect(container.textContent).toContain("Ctrl");
+    expect(container.textContent).toContain("D");
+  });
+
+  it("opens the delete confirmation from the editor shortcut event", async () => {
+    await renderDeleteAction();
+
+    await act(async () => {
+      window.dispatchEvent(
+        new Event(editorShortcutEventNames.openDeleteEditDialog),
+      );
+    });
+
+    expect(getEditorConfirmationDialog().open).toBe(true);
   });
 });

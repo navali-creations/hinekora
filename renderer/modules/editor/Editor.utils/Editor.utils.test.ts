@@ -13,6 +13,7 @@ import {
 import {
   calculateEditorTimelineDuration,
   calculateExpandableTimelineDuration,
+  calculateFittedTimelineDuration,
   calculateTimelineContentScale,
   calculateTimelineDuration,
   calculateTimelineMarkers,
@@ -395,7 +396,7 @@ describe("Editor utils", () => {
       ],
     });
 
-    expect(calculateEditorTimelineDuration(trimmedProject)).toBe(54.95);
+    expect(calculateEditorTimelineDuration(trimmedProject)).toBe(30);
     expect(
       calculateExpandableTimelineDuration({
         projectDurationSeconds: 26,
@@ -416,6 +417,16 @@ describe("Editor utils", () => {
         projectDurationSeconds: 0,
       }),
     ).toBe(30);
+    expect(
+      calculateFittedTimelineDuration({
+        projectDurationSeconds: 26,
+      }),
+    ).toBe(26);
+    expect(
+      calculateFittedTimelineDuration({
+        projectDurationSeconds: 5,
+      }),
+    ).toBe(5);
     expect(
       calculateTimelineContentScale({
         visibleDurationSeconds: 60,

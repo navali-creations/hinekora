@@ -1,4 +1,4 @@
-import type { EditorProject } from "~/main/modules/editor";
+import type { EditorProject, EditorTimelineTrack } from "~/main/modules/editor";
 
 import {
   editorMaxZoom,
@@ -8,6 +8,7 @@ import {
 import {
   calculateEditorTimelineDuration,
   calculateExpandableTimelineDuration,
+  calculateFittedTimelineDuration,
   calculateTimelineContentScale,
   calculateTimelineGaps,
   calculateTimelineMarkers,
@@ -38,10 +39,34 @@ interface ResolveEditorTimelineFollowScrollInput {
 }
 
 interface ResolveEditorTimelineModelInput {
+  isTimelineFitToEdit: boolean;
   project: EditorProject | null;
   selectedClipId: string | null;
   zoom: number;
 }
+
+interface ResolveEditorTimelineTrimHandleModeInput {
+  railPaddingPixels: number;
+  timelineGridWidthPixels: number;
+  videoTracks: Pick<EditorTimelineTrack, "clips">[];
+  visibleDurationSeconds: number;
+}
+
+interface ResolveEditorTimelineDragPreviewStateInput {
+  clipDragPreview: {
+    clipId: string;
+    snapSeconds?: number | null;
+  } | null;
+  videoTracks: Pick<EditorTimelineTrack, "clips">[];
+  visibleDurationSeconds: number;
+}
+
+const editorTimelinePlaybackFollowPaddingPixels = 96;
+const editorTimelineRailPaddingPixels = 24;
+const fullTrimHandleWidthPixels = 12;
+const thumbnailFrameWidthPixels = 56;
+const minimumFullTrimHandleClipWidthPixels =
+  fullTrimHandleWidthPixels * 2 + thumbnailFrameWidthPixels;
 
 function resolveEditorTimelineHoverSeconds({
   clientX,
@@ -88,6 +113,7 @@ function resolveEditorTimelineHoverSeconds({
 }
 
 function resolveEditorTimelineModel({
+  isTimelineFitToEdit,
   project,
   selectedClipId,
   zoom,
@@ -99,9 +125,13 @@ function resolveEditorTimelineModel({
       .flatMap((track) => track.clips)
       .find((clip) => clip.id === selectedClipId) ?? null;
   const timelineDurationSeconds = calculateEditorTimelineDuration(project);
-  const visibleDurationSeconds = calculateExpandableTimelineDuration({
-    projectDurationSeconds: timelineDurationSeconds,
-  });
+  const visibleDurationSeconds = isTimelineFitToEdit
+    ? calculateFittedTimelineDuration({
+        projectDurationSeconds: timelineDurationSeconds,
+      })
+    : calculateExpandableTimelineDuration({
+        projectDurationSeconds: timelineDurationSeconds,
+      });
   const timelineContentScale = calculateTimelineContentScale({
     visibleDurationSeconds,
     zoom,
@@ -127,7 +157,7 @@ function resolveEditorTimelineModel({
     visibleDurationSeconds,
   );
   const gaps = project
-    ? calculateTimelineGaps(videoTracks, project.durationSeconds).filter(
+    ? calculateTimelineGaps(videoTracks, timelineDurationSeconds).filter(
         (gap) => gap.startSeconds < visibleDurationSeconds,
       )
     : [];
@@ -167,12 +197,73 @@ function resolveTrimEdgeHoverSeconds(trimHandle: HTMLElement): number | null {
     : clipStartSeconds + clipDurationSeconds;
 }
 
+function resolveEditorTimelineUseCompactTrimHandles({
+  railPaddingPixels,
+  timelineGridWidthPixels,
+  videoTracks,
+  visibleDurationSeconds,
+}: ResolveEditorTimelineTrimHandleModeInput): boolean {
+  const timelineRailWidthPixels =
+    timelineGridWidthPixels - railPaddingPixels * 2;
+  if (visibleDurationSeconds <= 0) {
+    return false;
+  }
+  if (timelineRailWidthPixels <= 0) {
+    return videoTracks.some((track) =>
+      track.clips.some((clip) => clip.durationSeconds > 0),
+    );
+  }
+
+  return videoTracks.some((track) =>
+    track.clips.some((clip) => {
+      if (clip.durationSeconds <= 0) {
+        return false;
+      }
+
+      const clipWidthPixels =
+        (clip.durationSeconds / visibleDurationSeconds) *
+        timelineRailWidthPixels;
+
+      return clipWidthPixels < minimumFullTrimHandleClipWidthPixels;
+    }),
+  );
+}
+
+function resolveEditorTimelineDragPreviewState({
+  clipDragPreview,
+  videoTracks,
+  visibleDurationSeconds,
+}: ResolveEditorTimelineDragPreviewStateInput) {
+  const dragPreviewClip = clipDragPreview
+    ? (videoTracks
+        .flatMap((track) => track.clips)
+        .find((clip) => clip.id === clipDragPreview.clipId) ?? null)
+    : null;
+  const dragPreviewSnapLeft =
+    clipDragPreview?.snapSeconds === null ||
+    clipDragPreview?.snapSeconds === undefined
+      ? null
+      : calculateTimelinePercent(
+          clipDragPreview.snapSeconds,
+          visibleDurationSeconds,
+        );
+
+  return {
+    dragPreviewClip,
+    dragPreviewSnapLeft,
+  };
+}
+
 function resolveEditorTimelineWheelZoom(input: {
   deltaY: number;
+  isTimelineFitToEdit: boolean;
   zoom: number;
 }): number | null {
   if (input.deltaY === 0) {
     return null;
+  }
+  if (input.deltaY > 0 && input.isTimelineFitToEdit) {
+    return editorMinZoom;
   }
 
   const nextZoom = resolveNextEditorTimelineZoom({
@@ -261,11 +352,15 @@ function formatEditorTimelineRailWidth(
 }
 
 export {
+  editorTimelinePlaybackFollowPaddingPixels,
+  editorTimelineRailPaddingPixels,
   formatEditorTimelineRailLeft,
   formatEditorTimelineRailWidth,
+  resolveEditorTimelineDragPreviewState,
   resolveEditorTimelineFollowScroll,
   resolveEditorTimelineHoverSeconds,
   resolveEditorTimelineModel,
+  resolveEditorTimelineUseCompactTrimHandles,
   resolveEditorTimelineWheelZoom,
   resolveTrimEdgeHoverSeconds,
 };

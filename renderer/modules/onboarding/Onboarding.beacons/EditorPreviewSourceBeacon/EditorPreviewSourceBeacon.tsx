@@ -7,7 +7,7 @@ function EditorPreviewSourceBeacon(props: PopoverComponentProps) {
   return (
     <Popover
       title="Preview source"
-      subtitle="Check the selected clip or timeline segment before exporting."
+      subtitle="Check the selected clip or timeline segment before saving."
       {...props}
     >
       <div className="space-y-3">

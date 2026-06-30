@@ -23,9 +23,13 @@ function createEditorTimelineClipActions({
 }: EditorSliceActionContext): EditorTimelineClipActions {
   return {
     addAssetToTimelineAt: (assetKey, timelineSeconds) => {
-      const asset = get().editor.workspace?.assets.find(
-        (item) => item.assetKey === assetKey,
-      );
+      const editor = get().editor;
+      const asset =
+        editor.mediaAssetPage?.items.find(
+          (item) => item.assetKey === assetKey,
+        ) ??
+        editor.workspace?.assets.find((item) => item.assetKey === assetKey) ??
+        editor.project?.assets.find((item) => item.assetKey === assetKey);
       if (!asset?.exists || asset.status !== "ready" || !asset.mediaUrl) {
         return;
       }

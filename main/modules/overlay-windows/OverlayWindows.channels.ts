@@ -3,6 +3,7 @@ enum OverlayWindowsChannel {
   HideRecorder = "overlay-windows:hide-recorder",
   ToggleRecorder = "overlay-windows:toggle-recorder",
   IsRecorderVisible = "overlay-windows:is-recorder-visible",
+  IsRecorderRequested = "overlay-windows:is-recorder-requested",
   RecorderVisibilityChanged = "overlay-windows:recorder-visibility-changed",
   GetRecorderMode = "overlay-windows:get-recorder-mode",
   SetRecorderMode = "overlay-windows:set-recorder-mode",

@@ -13,15 +13,19 @@ interface EditorSliceActionContext {
     project: EditorProject,
     options?: {
       historyLabel?: string;
+      historySubtitle?: string | null;
       recordHistory?: boolean;
       resetHistory?: boolean;
       resetViewState?: boolean;
-      syncProjectList?: boolean;
     },
   ) => void;
   updateProject: (
     updater: (project: EditorProject) => EditorProject,
-    options?: { historyLabel?: string; recordHistory?: boolean },
+    options?: {
+      historyLabel?: string;
+      historySubtitle?: string | null;
+      recordHistory?: boolean;
+    },
   ) => void;
 }
 

@@ -8,15 +8,16 @@ import {
 } from "./EditorTimelineZoomControls.utils";
 
 function EditorTimelineZoomControls() {
-  const { project, selectedClipId, setZoom, zoom } = useEditorShallow(
-    (editor) => ({
+  const { isTimelineFitToEdit, project, selectedClipId, setZoom, zoom } =
+    useEditorShallow((editor) => ({
+      isTimelineFitToEdit: editor.isTimelineFitToEdit,
       project: editor.project,
       selectedClipId: editor.selectedClipId,
       setZoom: editor.setZoom,
       zoom: editor.zoom,
-    }),
-  );
+    }));
   const zoomControlState = resolveEditorTimelineZoomControlState({
+    isTimelineFitToEdit,
     project,
     selectedClipId,
     zoom,

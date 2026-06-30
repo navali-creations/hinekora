@@ -6,9 +6,15 @@ import {
   createEditorTestTimelineClip,
 } from "./Editor.slice.test-utils";
 import {
+  areEditorMediaAssetPageQueriesEqual,
+  canUseEditorMediaAssetPage,
   createEditorCopyToClipboardInput,
   createEditorExportInput,
+  createEditorProjectWithHistoryMetadata,
   findTimelineClipAt,
+  getEditorProjectHistoryLabels,
+  getEditorProjectHistorySnapshots,
+  getEditorProjectHistorySubtitles,
   normalizeEditorProjectTimeline,
   refreshProjectAssets,
   resolveAvailableTimelineStart,
@@ -28,6 +34,7 @@ describe("Editor slice utilities", () => {
     const project = {
       ...createEditorTestProject(asset),
       activeClipId: firstClip.id,
+      isAudioMuted: true,
       tracks: [
         {
           ...createEditorTestProject(asset).tracks[0]!,
@@ -49,10 +56,12 @@ describe("Editor slice utilities", () => {
         expect.objectContaining({ startSeconds: 5 }),
       ],
       overwriteSource: { id: asset.id, kind: asset.kind },
+      muteAudio: true,
     });
     expect(createEditorCopyToClipboardInput(project)).toMatchObject({
       clips: expect.any(Array),
       fileName: expect.any(String),
+      muteAudio: true,
     });
   });
 
@@ -142,6 +151,179 @@ describe("Editor slice utilities", () => {
       { id: "timeline-late", startSeconds: 10 },
     ]);
     expect(normalizedProject.durationSeconds).toBe(15);
+  });
+
+  it("creates compact editor project history metadata", () => {
+    const project = createEditorTestProject();
+    const previousProject = createEditorTestProject(undefined, {
+      history: { editCount: 1, labels: ["Nested"] },
+      id: "previous-project",
+    }) as ReturnType<typeof createEditorTestProject> & {
+      timelineScrollLeft: number;
+      zoom: number;
+    };
+    previousProject.timelineScrollLeft = 240;
+    previousProject.zoom = 2;
+    const projectWithHistory = createEditorProjectWithHistoryMetadata(
+      project,
+      ["  ", "Split", "Mute audio"],
+      ["  ", "asset-1.mp4", null],
+      [previousProject],
+    );
+
+    expect(projectWithHistory).toMatchObject({
+      history: {
+        editCount: 2,
+        labels: ["Split", "Mute audio"],
+        subtitles: ["asset-1.mp4", null],
+        snapshots: [
+          expect.objectContaining({
+            id: "previous-project",
+          }),
+        ],
+      },
+    });
+    expect(projectWithHistory.history?.snapshots?.[0]).not.toHaveProperty(
+      "history",
+    );
+    expect(projectWithHistory.history?.snapshots?.[0]).not.toHaveProperty(
+      "timelineScrollLeft",
+    );
+    expect(projectWithHistory.history?.snapshots?.[0]).not.toHaveProperty(
+      "zoom",
+    );
+    expect(getEditorProjectHistoryLabels(projectWithHistory)).toEqual([
+      "Split",
+      "Mute audio",
+    ]);
+    expect(getEditorProjectHistorySubtitles(projectWithHistory)).toEqual([
+      "asset-1.mp4",
+      null,
+    ]);
+    expect(getEditorProjectHistorySnapshots(projectWithHistory)).toEqual([
+      expect.objectContaining({
+        id: "previous-project",
+      }),
+    ]);
+    const projectWithOrphanSnapshot = createEditorProjectWithHistoryMetadata(
+      project,
+      ["Split"],
+      [],
+      [previousProject, createEditorTestProject(undefined, { id: "orphan" })],
+    );
+    expect(projectWithOrphanSnapshot.history).toMatchObject({
+      editCount: 1,
+      labels: ["Split"],
+      snapshots: [expect.objectContaining({ id: "previous-project" })],
+    });
+    expect(projectWithOrphanSnapshot.history?.snapshots).toHaveLength(1);
+    expect(
+      createEditorProjectWithHistoryMetadata(project, ["Split"], [], []),
+    ).toEqual({
+      ...project,
+      history: {
+        editCount: 1,
+        labels: ["Split"],
+      },
+    });
+    expect(createEditorProjectWithHistoryMetadata(project, [])).toBe(project);
+  });
+
+  it("compares media asset page queries for rail paging", () => {
+    const firstPageQuery = {
+      category: "death-clip" as const,
+      game: "poe2" as const,
+      league: "Standard",
+      pageIndex: 0,
+      pageSize: 5,
+    };
+    const secondPageQuery = {
+      ...firstPageQuery,
+      pageIndex: 1,
+    };
+
+    expect(
+      areEditorMediaAssetPageQueriesEqual(firstPageQuery, {
+        ...firstPageQuery,
+      }),
+    ).toBe(true);
+    expect(
+      areEditorMediaAssetPageQueriesEqual(firstPageQuery, {
+        ...firstPageQuery,
+        excludeAssetKeys: ["clip:used"],
+      }),
+    ).toBe(false);
+    expect(
+      areEditorMediaAssetPageQueriesEqual(firstPageQuery, {
+        ...firstPageQuery,
+        createdAfter: "2026-06-28T11:00:00.000Z",
+      }),
+    ).toBe(false);
+    expect(
+      areEditorMediaAssetPageQueriesEqual(firstPageQuery, {
+        ...firstPageQuery,
+        league: "Runes of Aldur",
+      }),
+    ).toBe(false);
+    expect(canUseEditorMediaAssetPage(secondPageQuery, firstPageQuery)).toBe(
+      false,
+    );
+    expect(
+      areEditorMediaAssetPageQueriesEqual(
+        {
+          category: "death-clip",
+          game: "poe2",
+        },
+        {
+          category: "death-clip",
+          game: "poe2",
+          pageIndex: 0,
+          pageSize: 5,
+        },
+      ),
+    ).toBe(true);
+    expect(
+      areEditorMediaAssetPageQueriesEqual(
+        {
+          category: "death-clip",
+          game: "poe2",
+          pageIndex: 0,
+          pageSize: 5,
+        },
+        {
+          category: "death-clip",
+          game: "poe2",
+        },
+      ),
+    ).toBe(true);
+    expect(
+      canUseEditorMediaAssetPage(
+        {
+          category: "death-clip",
+          game: "poe2",
+        },
+        {
+          category: "death-clip",
+          game: "poe2",
+          pageIndex: 0,
+          pageSize: 5,
+        },
+      ),
+    ).toBe(true);
+    expect(
+      canUseEditorMediaAssetPage(
+        {
+          category: "death-clip",
+          game: "poe2",
+          pageIndex: 0,
+          pageSize: 5,
+        },
+        {
+          category: "death-clip",
+          game: "poe2",
+        },
+      ),
+    ).toBe(true);
   });
 
   it("covers editor slice utility edge cases", () => {

@@ -25,6 +25,7 @@ let root: Root;
 
 function configureEditorState(
   input: {
+    isTimelineFitToEdit?: boolean;
     project?: EditorProject | null;
     selectedClipId?: string | null;
     zoom?: number;
@@ -36,6 +37,7 @@ function configureEditorState(
   const project = "project" in input ? input.project : defaultProject;
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
+      isTimelineFitToEdit: input.isTimelineFitToEdit ?? false,
       project,
       selectedClipId:
         "selectedClipId" in input
@@ -132,10 +134,11 @@ describe("EditorTimelineZoomControls", () => {
     );
   });
 
-  it("keeps zoom in available from the fit view", async () => {
+  it("allows zooming out from the fit view at minimum zoom", async () => {
     const asset = createEditorTestAsset({ durationSeconds: 10 });
     const project = createEditorTestProject(asset);
     configureEditorState({
+      isTimelineFitToEdit: true,
       project,
       selectedClipId: project.activeClipId,
       zoom: 1,
@@ -150,10 +153,19 @@ describe("EditorTimelineZoomControls", () => {
       'button[aria-label="Zoom in timeline"]',
     );
 
-    expect(zoomOut?.disabled).toBe(true);
+    expect(zoomOut?.disabled).toBe(false);
     expect(zoomIn?.disabled).toBe(false);
+    expect(zoomOut?.closest("[data-tip]")?.getAttribute("data-tip")).toBe(
+      "Zoom out timeline",
+    );
     expect(zoomIn?.closest("[data-tip]")?.getAttribute("data-tip")).toBe(
       "Zoom in timeline",
     );
+
+    await act(async () => {
+      zoomOut?.click();
+    });
+
+    expect(storeMocks.setZoom).toHaveBeenCalledWith(1);
   });
 });

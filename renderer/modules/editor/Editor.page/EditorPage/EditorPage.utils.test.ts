@@ -6,14 +6,15 @@ import {
   createExportTitle,
   isEditorDeleteShortcut,
   isEditorShortcutEditableTarget,
+  isEditorShortcutSuppressedTarget,
   shouldHydrateEditorProject,
 } from "./EditorPage.utils";
 
 describe("EditorPage utils", () => {
   it("creates export titles for each status", () => {
     expect(createExportTitle("ready")).toBe("Your video is ready");
-    expect(createExportTitle("failed")).toBe("Export failed");
-    expect(createExportTitle("exporting")).toBe("Exporting video");
+    expect(createExportTitle("failed")).toBe("Save failed");
+    expect(createExportTitle("exporting")).toBe("Saving video");
   });
 
   it("creates the ready export subtitle from the export result", () => {
@@ -44,7 +45,7 @@ describe("EditorPage utils", () => {
         result: null,
         status: "failed",
       }),
-    ).toBe("Export failed");
+    ).toBe("Save failed");
   });
 
   it("hydrates when the requested source is not already on the timeline", () => {
@@ -110,5 +111,18 @@ describe("EditorPage utils", () => {
     expect(isEditorShortcutEditableTarget(button)).toBe(false);
     expect(isEditorShortcutEditableTarget(input)).toBe(true);
     expect(isEditorShortcutEditableTarget(editable)).toBe(true);
+    expect(isEditorShortcutSuppressedTarget(input)).toBe(true);
+  });
+
+  it("suppresses editor shortcuts inside open dialogs", () => {
+    const dialog = document.createElement("dialog");
+    const button = document.createElement("button");
+    dialog.setAttribute("open", "");
+    dialog.append(button);
+    document.body.append(dialog);
+
+    expect(isEditorShortcutSuppressedTarget(button)).toBe(true);
+
+    dialog.remove();
   });
 });

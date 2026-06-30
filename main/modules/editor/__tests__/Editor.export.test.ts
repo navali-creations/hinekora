@@ -167,6 +167,26 @@ describe("Editor export helpers", () => {
     ).toContain("scale=1920:1080");
   });
 
+  it("uses silent audio for muted exports", () => {
+    const script = createEditorExportFilterScript({
+      muteAudio: true,
+      resolution: "1080p",
+      segments: [
+        {
+          ...createClip({ durationSeconds: 1, outSeconds: 1 }),
+          hasAudio: true,
+          inputIndex: 0,
+          kind: "clip",
+        },
+      ],
+    });
+
+    expect(script).not.toContain("[0:a:0]atrim");
+    expect(script).toContain(
+      "anullsrc=channel_layout=stereo:sample_rate=48000,atrim=duration=1.000",
+    );
+  });
+
   it("rejects invalid timeline render shapes", () => {
     expect(
       validateEditorExportTimeline({

@@ -171,28 +171,36 @@ describe("ReplayClipsService file actions", () => {
     expect(service.getClip("missing")).toBeNull();
   });
 
-  it("lists recent replay details for the editor media rail", () => {
+  it("lists paged replay details for the editor media rail", () => {
     const path = join(root, "2026-06-12_10-30-00-death-10s.mp4");
     writeFileSync(path, "clip-data");
-    repository.upsert(
-      createReplayClip({
-        id: "clip-1",
-        kind: "death",
-        originalObsPath: path,
-        processedClipPath: path,
-      }),
-    );
-    repository.upsert(
-      createReplayClip({
-        id: "missing-media",
-        kind: "death",
-        originalObsPath: join(root, "missing.mp4"),
-        processedClipPath: null,
-      }),
-    );
+    const presentClip = createReplayClip({
+      id: "clip-1",
+      kind: "death",
+      originalObsPath: path,
+      processedClipPath: path,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      createdAt: "2026-06-12T10:00:00.000Z",
+    });
+    repository.upsert(presentClip);
+    const missingMediaClip = createReplayClip({
+      id: "missing-media",
+      kind: "death",
+      originalObsPath: join(root, "missing.mp4"),
+      processedClipPath: null,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      createdAt: "2026-06-12T11:00:00.000Z",
+    });
+    repository.upsert(missingMediaClip);
 
     expect(
-      service.listRecentEditorReplayDetails({ kind: "death", limit: 10 }),
+      service.listEditorReplayDetailPage({
+        kind: "death",
+        pageIndex: 0,
+        pageSize: 10,
+      }).items,
     ).toEqual(
       expect.arrayContaining([
         {
@@ -207,6 +215,27 @@ describe("ReplayClipsService file actions", () => {
         },
       ]),
     );
+    expect(
+      service.listEditorReplayDetailPage({
+        game: "poe2",
+        kind: "death",
+        league: "Standard",
+        pageIndex: 0,
+        pageSize: 10,
+      }).items,
+    ).toHaveLength(2);
+    expect(
+      service
+        .listEditorReplayDetailPage({
+          createdAfter: "2026-06-12T10:30:00.000Z",
+          excludeIds: [presentClip.id],
+          includeIds: [presentClip.id, missingMediaClip.id],
+          kind: "death",
+          pageIndex: 0,
+          pageSize: 10,
+        })
+        .items.map((detail) => detail.clip.id),
+    ).toEqual([missingMediaClip.id]);
   });
 
   it("delegates clip library filtering to the repository", () => {

@@ -37,10 +37,14 @@ function CaptureModeTabs() {
   };
 
   return (
-    <div className={styles.modeTabs} role="tablist" aria-label="Recording mode">
+    <div
+      className={`${styles.modeTabs} flex shrink-0 items-center overflow-hidden`}
+      role="tablist"
+      aria-label="Recording mode"
+    >
       <button
         aria-selected={captureMode === "session"}
-        className={styles.modeTab}
+        className={`${styles.modeTab} h-6 cursor-pointer border-0 bg-transparent px-2 text-[0.625rem] font-semibold leading-none disabled:cursor-not-allowed disabled:opacity-[0.45]`}
         disabled={isRewindActive}
         role="tab"
         type="button"
@@ -50,7 +54,7 @@ function CaptureModeTabs() {
       </button>
       <button
         aria-selected={captureMode === "rewind"}
-        className={styles.modeTab}
+        className={`${styles.modeTab} h-6 cursor-pointer border-0 bg-transparent px-2 text-[0.625rem] font-semibold leading-none disabled:cursor-not-allowed disabled:opacity-[0.45]`}
         disabled={isRecordingActive}
         role="tab"
         type="button"

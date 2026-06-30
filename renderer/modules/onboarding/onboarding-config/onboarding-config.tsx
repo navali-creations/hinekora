@@ -95,19 +95,19 @@ const beaconVisualConfigById = {
     },
     popover: {
       component: CaptureSourceBeacon as ComponentType<unknown>,
-      anchorPoint: AnchorPoint.BottomLeft,
-      offset: { y: 10 },
+      anchorPoint: AnchorPoint.RightCenter,
+      offset: { x: 20 },
     },
   },
   "capture-settings": {
     trigger: {
-      anchorPoint: AnchorPoint.LeftCenter,
-      offset: { x: -10 },
+      anchorPoint: AnchorPoint.TopLeft,
+      offset: { x: 8, y: 8 },
     },
     popover: {
       component: CaptureSettingsBeacon as ComponentType<unknown>,
-      anchorPoint: AnchorPoint.TopRight,
-      offset: { x: 10, y: -16 },
+      anchorPoint: AnchorPoint.TopCenter,
+      offset: { y: 10 },
     },
   },
   "aura-profile-select": {
@@ -117,7 +117,7 @@ const beaconVisualConfigById = {
     },
     popover: {
       component: AuraProfileBeacon as ComponentType<unknown>,
-      anchorPoint: AnchorPoint.BottomRight,
+      anchorPoint: AnchorPoint.BottomCenter,
       offset: { y: 10 },
     },
   },
@@ -156,23 +156,23 @@ const beaconVisualConfigById = {
   },
   "editor-my-media": {
     trigger: {
-      anchorPoint: AnchorPoint.RightCenter,
-      offset: { x: 10 },
+      anchorPoint: AnchorPoint.TopCenter,
+      offset: { y: -5 },
     },
     popover: {
       component: EditorMyMediaBeacon as ComponentType<unknown>,
       anchorPoint: AnchorPoint.BottomLeft,
-      offset: { x: 10 },
+      offset: { y: 10 },
     },
   },
   "editor-preview-source": {
     trigger: {
-      anchorPoint: AnchorPoint.TopCenter,
-      offset: { y: 5 },
+      anchorPoint: AnchorPoint.RightCenter,
+      offset: { x: -20 },
     },
     popover: {
       component: EditorPreviewSourceBeacon as ComponentType<unknown>,
-      anchorPoint: AnchorPoint.BottomLeft,
+      anchorPoint: AnchorPoint.BottomRight,
       offset: { y: 10 },
     },
   },

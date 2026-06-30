@@ -63,6 +63,10 @@ function trimTimelineClipEdge(input: {
   return trimTimelineClipEnd(input);
 }
 
+function createEditorTrimHistoryLabel(edge: TimelineTrimEdge): string {
+  return edge === "start" ? "Trim start" : "Trim end";
+}
+
 function trimTimelineClipStart(input: {
   assetDurationSeconds: number;
   clip: EditorTimelineClip;
@@ -230,6 +234,7 @@ function clampSeconds(value: number, min: number, max: number): number {
 export type { TimelineTrimEdge };
 export {
   clampTrimRange,
+  createEditorTrimHistoryLabel,
   minimumTimelineClipDurationSeconds,
   resolveTimelineClipSourceRange,
   trimTimelineClipEdge,

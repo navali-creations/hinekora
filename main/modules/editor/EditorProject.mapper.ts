@@ -1,8 +1,6 @@
-import type {
-  EditorProject,
-  EditorProjectSummary,
-  EditorTimelineClip,
-} from "./Editor.dto";
+import { EditorChannel } from "./Editor.channels";
+import type { EditorProject, EditorProjectSummary } from "./Editor.dto";
+import { validateEditorProject } from "./Editor.validation";
 
 interface EditorProjectRow {
   clip_count: number;
@@ -15,19 +13,39 @@ interface EditorProjectRow {
 }
 
 function mapEditorProjectRow(row: EditorProjectRow): EditorProject {
-  const data = JSON.parse(row.project_json) as unknown;
-  if (!isEditorProject(data)) {
-    throw new Error("Editor project data is invalid");
-  }
+  const project = parseEditorProjectJson(row.project_json);
 
   return {
-    ...data,
+    ...project,
     createdAt: row.created_at,
     durationSeconds: row.duration_seconds,
     id: row.id,
     title: row.title,
     updatedAt: row.updated_at,
   };
+}
+
+function parseEditorProjectJson(projectJson: string): EditorProject {
+  try {
+    const value = JSON.parse(projectJson) as unknown;
+    const project = validateEditorProject(value, EditorChannel.SaveProject);
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      (value as Partial<EditorProject>).sourceGame === null &&
+      (value as Partial<EditorProject>).sourceLeague === null
+    ) {
+      return {
+        ...project,
+        sourceGame: null,
+        sourceLeague: null,
+      };
+    }
+
+    return project;
+  } catch {
+    throw new Error("Editor project data is invalid");
+  }
 }
 
 function mapEditorProjectSummaryRow(
@@ -60,33 +78,6 @@ function countEditorProjectClips(project: EditorProject): number {
   return project.tracks.reduce(
     (clipCount, track) => clipCount + track.clips.length,
     0,
-  );
-}
-
-function isEditorProject(value: unknown): value is EditorProject {
-  if (typeof value !== "object" || value === null) {
-    return false;
-  }
-
-  const project = value as Partial<EditorProject>;
-  return (
-    typeof project.id === "string" &&
-    typeof project.title === "string" &&
-    typeof project.createdAt === "string" &&
-    typeof project.updatedAt === "string" &&
-    typeof project.durationSeconds === "number" &&
-    Array.isArray(project.assets) &&
-    Array.isArray(project.tracks) &&
-    (typeof project.activeClipId === "string" ||
-      project.activeClipId === null) &&
-    (typeof project.selectedAssetKey === "string" ||
-      project.selectedAssetKey === null) &&
-    project.tracks.every((track) => Array.isArray(track.clips)) &&
-    project.tracks.every((track) =>
-      track.clips.every(
-        (clip: EditorTimelineClip) => typeof clip.id === "string",
-      ),
-    )
   );
 }
 

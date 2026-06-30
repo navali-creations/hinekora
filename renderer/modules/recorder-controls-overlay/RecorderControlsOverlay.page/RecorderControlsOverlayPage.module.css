@@ -1,51 +1,13 @@
 .overlay {
-  box-sizing: border-box;
-  overflow: hidden;
-  width: 100vw;
-  height: 100vh;
   border: var(--border) solid
     color-mix(in oklch, var(--color-primary) 34%, var(--color-neutral));
   border-radius: var(--radius-box);
-  padding: 0.375rem 0.5rem;
   background: color-mix(in oklch, var(--color-neutral) 88%, transparent);
   backdrop-filter: blur(10px);
   -webkit-app-region: drag;
 }
 
-.expanded {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-  padding: 0.375rem 0.5rem 0.5rem;
-}
-
-.minimized {
-  display: flex;
-  align-items: center;
-  padding: 0.3125rem 0.375rem;
-}
-
-.header,
-.modeTabs,
-.primaryControls,
-.auraControls,
-.windowControls,
-.minimizedControls {
-  display: flex;
-  align-items: center;
-}
-
-.header,
-.minimizedControls {
-  width: 100%;
-}
-
-.header {
-  gap: 0.25rem;
-}
-
 .modeTabs {
-  overflow: hidden;
   border: var(--border) solid
     color-mix(in oklch, var(--color-primary) 24%, transparent);
   border-radius: var(--radius-field);
@@ -54,15 +16,7 @@
 }
 
 .modeTab {
-  height: 26px;
-  border: 0;
-  padding: 0 0.625rem;
-  background: transparent;
   color: color-mix(in oklch, var(--color-base-content) 62%, transparent);
-  font-size: 0.6875rem;
-  font-weight: 600;
-  line-height: 1;
-  cursor: pointer;
 }
 
 .modeTab[aria-selected="true"] {
@@ -70,27 +24,30 @@
   color: var(--color-base-content);
 }
 
-.modeTab:disabled {
-  cursor: not-allowed;
-  opacity: 0.45;
+.auraActionList {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, 3rem);
+  justify-items: start;
+  column-gap: 0.1875rem;
 }
 
-.primaryControls,
-.auraControls,
-.minimizedControls {
-  gap: 0.375rem;
-  min-width: 0;
+.auraActionHeader {
+  color: color-mix(in oklch, var(--color-base-content) 82%, transparent);
 }
 
-.windowControls {
-  gap: 0.25rem;
-  margin-left: auto;
+.auraActionButton {
+  width: 2.875rem;
+  min-width: 2.875rem;
+  height: 2.875rem;
+  min-height: 2.875rem;
+  -webkit-app-region: no-drag;
 }
 
 .iconButton {
-  width: 30px;
-  height: 30px;
-  min-height: 30px;
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
   padding: 0;
   -webkit-app-region: no-drag;
 }
@@ -105,47 +62,21 @@
 }
 
 .timer {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 58px;
-  height: 26px;
   border: var(--border) solid
     color-mix(in oklch, var(--color-primary) 24%, transparent);
   border-radius: var(--radius-field);
-  padding: 0 0.5rem;
   background: color-mix(in oklch, var(--color-base-100) 12%, transparent);
   color: var(--color-base-content);
-  font-family: var(
-    --font-mono,
-    ui-monospace,
-    SFMono-Regular,
-    Consolas,
-    "Liberation Mono",
-    monospace
-  );
-  font-size: 0.75rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
 }
 
 .profileSelect {
-  flex: 1;
-  width: auto;
-  min-width: 0;
-  height: 30px;
-  min-height: 30px;
-  padding-inline-start: 0.5rem;
-  padding-inline-end: 1.5rem;
-  font-size: 0.75rem;
-  font-weight: 500;
   -webkit-app-region: no-drag;
 }
 
 .divider {
-  width: 1px;
-  height: 20px;
-  margin: 0 0.125rem;
   background: color-mix(in oklch, var(--color-primary) 34%, transparent);
+}
+
+.horizontalDivider {
+  background: color-mix(in oklch, var(--color-primary) 30%, transparent);
 }

@@ -84,7 +84,12 @@ function configureEditorState() {
 async function renderActionsMenu() {
   await act(async () => {
     root.render(
-      <EditorActionsMenu isHistoryVisible={false} onToggleHistory={vi.fn()} />,
+      <EditorActionsMenu
+        isHistoryVisible={false}
+        isShortcutsVisible={false}
+        onToggleHistory={vi.fn()}
+        onToggleShortcuts={vi.fn()}
+      />,
     );
   });
 }
@@ -120,7 +125,7 @@ describe("EditorActionsMenu save integration", () => {
     const details = container.querySelector("details");
     details?.setAttribute("open", "");
     const saveButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent?.trim() === "Save",
+      (button) => button.textContent?.trim().startsWith("Save"),
     );
 
     await act(async () => {

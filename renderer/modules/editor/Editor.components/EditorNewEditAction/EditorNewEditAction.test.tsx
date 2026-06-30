@@ -29,6 +29,19 @@ async function renderNewEditAction(): Promise<HTMLButtonElement> {
   return button;
 }
 
+async function renderNewEditMenuAction(): Promise<HTMLButtonElement> {
+  await act(async () => {
+    root.render(<EditorNewEditAction variant="menu" />);
+  });
+
+  const button = container.querySelector<HTMLButtonElement>("button");
+  if (!button) {
+    throw new Error("Expected new edit button to render");
+  }
+
+  return button;
+}
+
 describe("EditorNewEditAction", () => {
   beforeEach(() => {
     container = document.createElement("div");
@@ -55,5 +68,13 @@ describe("EditorNewEditAction", () => {
     });
 
     expect(storeMocks.createProject).toHaveBeenCalledWith({ assetKeys: [] });
+  });
+
+  it("shows the new edit shortcut in the menu row", async () => {
+    await renderNewEditMenuAction();
+
+    expect(container.textContent).toContain("New edit");
+    expect(container.textContent).toContain("Ctrl");
+    expect(container.textContent).toContain("N");
   });
 });

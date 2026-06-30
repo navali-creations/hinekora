@@ -11,21 +11,14 @@ import { RecordingsPanel } from "~/renderer/modules/recording-storage/RecordingS
 import { useRecordingStorageShallow } from "~/renderer/store";
 
 function RecordingsPage() {
-  const {
-    clearSelectedRecordings,
-    deleteSelectedRecordings,
-    recordingLeagues,
-    refreshRecordings,
-    selectedRecordingCount,
-  } = useRecordingStorageShallow((recordingStorage) => ({
-    clearSelectedRecordings: recordingStorage.clearSelectedRecordings,
-    deleteSelectedRecordings: recordingStorage.deleteSelectedRecordings,
-    recordingLeagues: recordingStorage.recordingLeagues,
-    refreshRecordings: recordingStorage.refreshRecordings,
-    selectedRecordingCount: Object.values(
-      recordingStorage.selectedRecordingIds,
-    ).filter(Boolean).length,
-  }));
+  const { deleteSelectedRecordings, recordingLeagues, selectedRecordingCount } =
+    useRecordingStorageShallow((recordingStorage) => ({
+      deleteSelectedRecordings: recordingStorage.deleteSelectedRecordings,
+      recordingLeagues: recordingStorage.recordingLeagues,
+      selectedRecordingCount: Object.values(
+        recordingStorage.selectedRecordingIds,
+      ).filter(Boolean).length,
+    }));
   const { scope, setLeague } = useMediaLibraryScope();
   const scopedLeagueOptions = useMemo(
     () =>
@@ -36,11 +29,6 @@ function RecordingsPage() {
       ),
     [recordingLeagues, scope.game, scope.league],
   );
-
-  const handleRefreshRecordings = () => {
-    clearSelectedRecordings();
-    void refreshRecordings();
-  };
 
   const handleDeleteSelected = () => {
     void deleteSelectedRecordings();
@@ -68,7 +56,6 @@ function RecordingsPage() {
               ) : null
             }
             onLeagueChange={setLeague}
-            onRefresh={handleRefreshRecordings}
           />
         }
       />

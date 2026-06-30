@@ -42,7 +42,7 @@ function createEditorExportActions({
 
       set((state) => {
         state.editor.exportState.error =
-          result.error ?? "Could not copy export to clipboard";
+          result.error ?? "Could not copy saved video to clipboard";
       });
 
       return result;
@@ -197,7 +197,7 @@ function createEditorExportActions({
           }
 
           state.editor.exportState = {
-            error: error instanceof Error ? error.message : "Export failed",
+            error: error instanceof Error ? error.message : "Save failed",
             fileName: exportInput.fileName,
             progress: 0,
             requestId: null,
@@ -224,7 +224,7 @@ function createEditorExportActions({
 
       set((state) => {
         state.editor.exportState.error =
-          result.error ?? "Exported file is not available";
+          result.error ?? "Saved video is not available";
       });
     },
   };

@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SavedEditsRouteImport } from './routes/saved-edits'
 import { Route as RecordingsRouteImport } from './routes/recordings'
 import { Route as EditorRouteImport } from './routes/editor'
 import { Route as CropOverlayRouteImport } from './routes/crop-overlay'
@@ -29,6 +30,11 @@ const SetupRoute = SetupRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SavedEditsRoute = SavedEditsRouteImport.update({
+  id: '/saved-edits',
+  path: '/saved-edits',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecordingsRoute = RecordingsRouteImport.update({
@@ -85,6 +91,7 @@ export interface FileRoutesByFullPath {
   '/crop-overlay': typeof CropOverlayRoute
   '/editor': typeof EditorRoute
   '/recordings': typeof RecordingsRoute
+  '/saved-edits': typeof SavedEditsRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/clip/$clipId': typeof ClipClipIdRoute
@@ -98,6 +105,7 @@ export interface FileRoutesByTo {
   '/crop-overlay': typeof CropOverlayRoute
   '/editor': typeof EditorRoute
   '/recordings': typeof RecordingsRoute
+  '/saved-edits': typeof SavedEditsRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/clip/$clipId': typeof ClipClipIdRoute
@@ -112,6 +120,7 @@ export interface FileRoutesById {
   '/crop-overlay': typeof CropOverlayRoute
   '/editor': typeof EditorRoute
   '/recordings': typeof RecordingsRoute
+  '/saved-edits': typeof SavedEditsRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/clip/$clipId': typeof ClipClipIdRoute
@@ -127,6 +136,7 @@ export interface FileRouteTypes {
     | '/crop-overlay'
     | '/editor'
     | '/recordings'
+    | '/saved-edits'
     | '/settings'
     | '/setup'
     | '/clip/$clipId'
@@ -140,6 +150,7 @@ export interface FileRouteTypes {
     | '/crop-overlay'
     | '/editor'
     | '/recordings'
+    | '/saved-edits'
     | '/settings'
     | '/setup'
     | '/clip/$clipId'
@@ -153,6 +164,7 @@ export interface FileRouteTypes {
     | '/crop-overlay'
     | '/editor'
     | '/recordings'
+    | '/saved-edits'
     | '/settings'
     | '/setup'
     | '/clip/$clipId'
@@ -167,6 +179,7 @@ export interface RootRouteChildren {
   CropOverlayRoute: typeof CropOverlayRoute
   EditorRoute: typeof EditorRoute
   RecordingsRoute: typeof RecordingsRoute
+  SavedEditsRoute: typeof SavedEditsRoute
   SettingsRoute: typeof SettingsRoute
   SetupRoute: typeof SetupRoute
   ClipClipIdRoute: typeof ClipClipIdRoute
@@ -187,6 +200,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/saved-edits': {
+      id: '/saved-edits'
+      path: '/saved-edits'
+      fullPath: '/saved-edits'
+      preLoaderRoute: typeof SavedEditsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recordings': {
@@ -263,6 +283,7 @@ const rootRouteChildren: RootRouteChildren = {
   CropOverlayRoute: CropOverlayRoute,
   EditorRoute: EditorRoute,
   RecordingsRoute: RecordingsRoute,
+  SavedEditsRoute: SavedEditsRoute,
   SettingsRoute: SettingsRoute,
   SetupRoute: SetupRoute,
   ClipClipIdRoute: ClipClipIdRoute,

@@ -23,6 +23,7 @@ function createEditorApiMock() {
     deleteProject: vi.fn(),
     exportProject: vi.fn(),
     getWorkspace: vi.fn(),
+    listMediaAssets: vi.fn(),
     onExportProgress: vi.fn(),
     revealExport: vi.fn(),
     saveProject: vi.fn(),
@@ -142,14 +143,18 @@ function createEditorTestProject(
     durationSeconds,
     outSeconds: durationSeconds,
   });
+  const assets = overrides.assets ?? [asset];
+  const firstAsset = assets[0] ?? asset;
 
   return {
     activeClipId: clip.id,
-    assets: [asset],
+    assets,
     createdAt: "2026-06-18T00:00:00.000Z",
     durationSeconds,
     id: "project-1",
     selectedAssetKey: asset.assetKey,
+    sourceGame: firstAsset.sourceGame,
+    sourceLeague: firstAsset.sourceLeague,
     title: `${asset.name} edit`,
     tracks: [
       {

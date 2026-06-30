@@ -7,7 +7,7 @@ function EditorMoreOptionsBeacon(props: PopoverComponentProps) {
   return (
     <Popover
       title="More options"
-      subtitle="Save, copy, reset, inspect history, or delete this edit."
+      subtitle="Save, copy, inspect history, view shortcuts, or delete this edit."
       {...props}
     >
       <div className="space-y-3">
@@ -18,19 +18,23 @@ function EditorMoreOptionsBeacon(props: PopoverComponentProps) {
           <ul className="space-y-2 text-base-content/80 text-sm">
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
-              <span>Save exports the current timeline to an MP4 file.</span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="mt-0.5 text-accent">•</span>
               <span>
-                Copy to clipboard renders the current edit and places the video
-                file on the Windows clipboard.
+                Save video opens the save mode and resolution options.
               </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
-                History opens the undo stack so you can inspect recent changes.
+                Copy to clipboard renders the current edit and places the video
+                file on the Windows clipboard. A Processing pill appears while
+                it runs.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
+                History and Shortcuts open the side rail without changing the
+                timeline.
               </span>
             </li>
           </ul>

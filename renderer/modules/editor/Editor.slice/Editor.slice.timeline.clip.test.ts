@@ -45,6 +45,46 @@ describe("Editor timeline clip slice", () => {
     expect(store.getState().editor.project?.tracks[1]).toBe(secondTrack);
   });
 
+  it("drops paged media rail assets that are not in the workspace cache", () => {
+    const store = createTestStore();
+    const originalAsset = createEditorTestAsset();
+    const droppedAsset = createEditorTestAsset({
+      assetKey: "clip:paged-asset",
+      id: "paged-asset",
+      mediaUrl: "hinekora-media://replay-clip/paged-asset",
+      name: "paged-asset.mp4",
+    });
+    const project = createEditorTestProject(originalAsset);
+    loadEditorProject(store, project, [originalAsset], {
+      mediaAssetPage: {
+        items: [droppedAsset],
+        pageCount: 1,
+        pageIndex: 0,
+        pageSize: 5,
+        totalCount: 1,
+      },
+      mediaAssetQuery: {
+        category: "death-clip",
+        game: "poe2",
+        pageIndex: 0,
+        pageSize: 5,
+      },
+    });
+
+    store.getState().editor.addAssetToTimelineAt(droppedAsset.assetKey, 10);
+
+    expect(store.getState().editor.project?.assets).toEqual([
+      originalAsset,
+      droppedAsset,
+    ]);
+    expect(
+      store
+        .getState()
+        .editor.project?.tracks.flatMap((track) => track.clips)
+        .some((clip) => clip.assetKey === droppedAsset.assetKey),
+    ).toBe(true);
+  });
+
   it("ignores dropped assets that are unavailable or have no video track", () => {
     const store = createTestStore();
     const asset = createEditorTestAsset();
@@ -102,6 +142,22 @@ describe("Editor timeline clip slice", () => {
     expect(
       store.getState().editor.project?.tracks[0]?.clips[0]?.startSeconds,
     ).toBe(0);
+  });
+
+  it("renames an untitled empty timeline from the first dropped asset", () => {
+    const store = createTestStore();
+    const asset = createEditorTestAsset({ name: "boss-kill.mp4" });
+    const project = {
+      ...createEditorTestProject(asset),
+      durationSeconds: 0,
+      title: "Untitled edit",
+      tracks: [{ ...createEditorTestProject(asset).tracks[0]!, clips: [] }],
+    };
+    loadEditorProject(store, project, [asset]);
+
+    store.getState().editor.addAssetToTimelineAt(asset.assetKey, 0);
+
+    expect(store.getState().editor.project?.title).toBe("boss-kill.mp4 edit");
   });
 
   it("keeps dropped clips sorted when adding into an earlier gap", () => {

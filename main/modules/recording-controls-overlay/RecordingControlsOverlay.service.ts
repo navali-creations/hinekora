@@ -26,7 +26,7 @@ const RECORDER_OVERLAY_BOUNDS: Record<
   RecorderOverlayMode,
   Pick<Electron.Rectangle, "width" | "height">
 > = {
-  expanded: { width: 360, height: 86 },
+  expanded: { width: 216, height: 200 },
   minimized: { width: 236, height: 42 },
 };
 const RECORDER_OVERLAY_RIGHT_MARGIN = 20;

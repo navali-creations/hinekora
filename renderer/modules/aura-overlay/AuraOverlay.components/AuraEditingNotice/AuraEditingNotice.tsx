@@ -1,4 +1,6 @@
-import { FiLock, FiMoon, FiMousePointer, FiPlusSquare } from "react-icons/fi";
+import { FiLock } from "react-icons/fi";
+import { PiBezierCurve, PiSelection } from "react-icons/pi";
+import { TbRouteSquare2 } from "react-icons/tb";
 
 import { useAuraOverlayShallow } from "~/renderer/store";
 
@@ -41,7 +43,7 @@ function AuraEditingNotice({
             type="button"
             onClick={onAddAura}
           >
-            <FiPlusSquare size={14} />
+            <PiSelection size={14} />
             <span>
               {addingAuraShape === "rect" ? "Selecting..." : "Add new aura"}
             </span>
@@ -52,7 +54,7 @@ function AuraEditingNotice({
             type="button"
             onClick={onAddArchedAura}
           >
-            <FiMoon size={14} />
+            <PiBezierCurve className="rotate-90" size={14} />
             <span>
               {addingAuraShape === "arc" ? "Selecting..." : "Add arched aura"}
             </span>
@@ -63,7 +65,7 @@ function AuraEditingNotice({
             type="button"
             onClick={onAddPointerAura}
           >
-            <FiMousePointer size={14} />
+            <TbRouteSquare2 size={14} />
             <span>
               {addingAuraShape === "points"
                 ? "Selecting..."

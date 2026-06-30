@@ -3,6 +3,7 @@ import { trackEvent } from "~/renderer/modules/umami";
 import { editorHistoryLimit } from "./Editor.slice.constants";
 import type { EditorSliceActionContext } from "./Editor.slice.context";
 import type { EditorSlice } from "./Editor.slice.types";
+import { createEditorProjectHistorySnapshot } from "./Editor.slice.utils";
 
 type EditorHistoryActions = Pick<
   EditorSlice["editor"],
@@ -18,7 +19,7 @@ function createEditorHistoryActions({
   setProject,
 }: EditorSliceActionContext): EditorHistoryActions {
   return {
-    beginHistoryTransaction: (label = "Edit") => {
+    beginHistoryTransaction: (label = "Edit", subtitle = null) => {
       const project = get().editor.project;
       if (!project || get().editor.historyTransactionProject) {
         return;
@@ -26,6 +27,7 @@ function createEditorHistoryActions({
 
       set((state) => {
         state.editor.historyTransactionLabel = label;
+        state.editor.historyTransactionSubtitle = subtitle;
         state.editor.historyTransactionProject = project;
       });
     },
@@ -33,9 +35,11 @@ function createEditorHistoryActions({
       const transactionProject = get().editor.historyTransactionProject;
       const project = get().editor.project;
       const transactionLabel = get().editor.historyTransactionLabel ?? "Edit";
+      const transactionSubtitle = get().editor.historyTransactionSubtitle;
       if (!transactionProject || !project || transactionProject === project) {
         set((state) => {
           state.editor.historyTransactionLabel = null;
+          state.editor.historyTransactionSubtitle = null;
           state.editor.historyTransactionProject = null;
         });
         return;
@@ -44,15 +48,21 @@ function createEditorHistoryActions({
       set((state) => {
         state.editor.historyFuture = [];
         state.editor.historyFutureLabels = [];
+        state.editor.historyFutureSubtitles = [];
         state.editor.historyPast = [
           ...state.editor.historyPast,
-          transactionProject,
+          createEditorProjectHistorySnapshot(transactionProject),
         ].slice(-editorHistoryLimit);
         state.editor.historyPastLabels = [
           ...state.editor.historyPastLabels,
           transactionLabel,
         ].slice(-editorHistoryLimit);
+        state.editor.historyPastSubtitles = [
+          ...state.editor.historyPastSubtitles,
+          transactionSubtitle,
+        ].slice(-editorHistoryLimit);
         state.editor.historyTransactionLabel = null;
+        state.editor.historyTransactionSubtitle = null;
         state.editor.historyTransactionProject = null;
       });
       trackEvent("editor-history-transaction-committed", {
@@ -63,6 +73,7 @@ function createEditorHistoryActions({
       const project = get().editor.project;
       const nextProject = get().editor.historyFuture[0];
       const nextLabel = get().editor.historyFutureLabels[0] ?? "Edit";
+      const nextSubtitle = get().editor.historyFutureSubtitles[0] ?? null;
       if (!project || !nextProject) {
         return;
       }
@@ -71,14 +82,21 @@ function createEditorHistoryActions({
         state.editor.historyFuture = state.editor.historyFuture.slice(1);
         state.editor.historyFutureLabels =
           state.editor.historyFutureLabels.slice(1);
-        state.editor.historyPast = [...state.editor.historyPast, project].slice(
-          -editorHistoryLimit,
-        );
+        state.editor.historyFutureSubtitles =
+          state.editor.historyFutureSubtitles.slice(1);
+        state.editor.historyPast = [...state.editor.historyPast, project]
+          .slice(-editorHistoryLimit)
+          .map(createEditorProjectHistorySnapshot);
         state.editor.historyPastLabels = [
           ...state.editor.historyPastLabels,
           nextLabel,
         ].slice(-editorHistoryLimit);
+        state.editor.historyPastSubtitles = [
+          ...state.editor.historyPastSubtitles,
+          nextSubtitle,
+        ].slice(-editorHistoryLimit);
         state.editor.historyTransactionLabel = null;
+        state.editor.historyTransactionSubtitle = null;
         state.editor.historyTransactionProject = null;
       });
       setProject(nextProject, { recordHistory: false });
@@ -95,25 +113,33 @@ function createEditorHistoryActions({
       const project = get().editor.project;
       const previousProject = get().editor.historyPast.at(-1);
       const previousLabel = get().editor.historyPastLabels.at(-1) ?? "Edit";
+      const previousSubtitle = get().editor.historyPastSubtitles.at(-1) ?? null;
       if (!project || !previousProject) {
         return;
       }
 
       set((state) => {
         state.editor.historyFuture = [
-          project,
+          createEditorProjectHistorySnapshot(project),
           ...state.editor.historyFuture,
         ].slice(0, editorHistoryLimit);
         state.editor.historyFutureLabels = [
           previousLabel,
           ...state.editor.historyFutureLabels,
         ].slice(0, editorHistoryLimit);
+        state.editor.historyFutureSubtitles = [
+          previousSubtitle,
+          ...state.editor.historyFutureSubtitles,
+        ].slice(0, editorHistoryLimit);
         state.editor.historyPast = state.editor.historyPast.slice(0, -1);
         state.editor.historyPastLabels = state.editor.historyPastLabels.slice(
           0,
           -1,
         );
+        state.editor.historyPastSubtitles =
+          state.editor.historyPastSubtitles.slice(0, -1);
         state.editor.historyTransactionLabel = null;
+        state.editor.historyTransactionSubtitle = null;
         state.editor.historyTransactionProject = null;
       });
       setProject(previousProject, { recordHistory: false });

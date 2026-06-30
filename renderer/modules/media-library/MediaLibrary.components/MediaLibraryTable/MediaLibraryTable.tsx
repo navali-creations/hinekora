@@ -50,7 +50,9 @@ function MediaLibraryTable<TData>({
           "flex w-full cursor-pointer items-center gap-1",
           [
             "actions",
+            "clipCount",
             "durationSeconds",
+            "historyEditCount",
             "sizeBytes",
             "targetDurationSeconds",
           ].includes(header.column.id) && "justify-end",
