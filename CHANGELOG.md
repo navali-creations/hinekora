@@ -1,3 +1,64 @@
+## 0.5.0
+
+### Minor Changes
+
+- [`8396ca9`](https://github.com/navali-creations/hinekora/commit/8396ca9f83a0dc2665e7e06372ee1717308d3ecc) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Group play death clip filtering.
+
+  Hinekora can now use an optional character name to keep death clips focused on your own deaths when playing in a party.
+
+  - **Dashboard:** Shows a dismissible group play reminder with a shortcut to Game Settings when character names are missing.
+  - **Game Settings:** Adds separate Path of Exile 1 and Path of Exile 2 character fields, with help text explaining they are mainly for group play.
+  - **Death clips:** When a character name is set, teammate death lines in Client.txt are ignored, and character-name-only updates are not tracked by usage analytics.
+
+- [`bbc3833`](https://github.com/navali-creations/hinekora/commit/bbc383392b48b9ab2a5806b9f1a7dd819f91d46f) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Pointer aura selection.
+
+  Hinekora can now create aura overlays from connected points, making it possible to track narrow or angled UI elements that do not fit a rectangular or arched selection.
+
+  - **Aura Manager and recording overlay:** Added an “Add pointer aura” flow for selecting up to six connected points on the screen.
+  - **Aura editing:** Pointer auras can be resized, mirrored, rotated, thickened, and spaced from the properties panel.
+  - **Selection polish:** Pointer and arched selections now show clearer guides and boundaries while choosing or editing aura regions.
+
+### Patch Changes
+
+- [`6402304`](https://github.com/navali-creations/hinekora/commit/64023044df6fb754d3752c5e65e4925b83ebec62) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Clarify aura editing controls.
+
+  Aura editing and grid selection now keep the main exit shortcut visible while moving detailed guidance into the overlay controls panel, so it is clearer how to leave editing mode and what each aura selection type does.
+
+  - **Aura overlay:** Shows a persistent Esc hint while aura editing is unlocked and keeps disabled actions visually consistent while selecting a new aura.
+  - **Grid selector:** Shows the same Esc hint while choosing a region and keeps the helper panel focused on selection controls.
+  - **Controls help:** Adds clearer in-overlay reference panels for aura editing and grid selection without covering selected aura controls.
+
+- [`6402304`](https://github.com/navali-creations/hinekora/commit/64023044df6fb754d3752c5e65e4925b83ebec62) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Update Attributions page links.
+
+  Attribution credits now stay aligned with the README.
+
+  - **Attributions:** Shows the README credit list in the app.
+
+- [`6402304`](https://github.com/navali-creations/hinekora/commit/64023044df6fb754d3752c5e65e4925b83ebec62) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Make editor exports and clipboard copies more reliable.
+
+  Editor exports and copied clips now use the installed app's bundled media tools correctly, and recordings use the actual MP4 length when building the editor timeline.
+
+  - **Editor:** Save and Copy to clipboard should no longer fail because the bundled media tool could not be launched from the installed app.
+  - **Recording library:** Recordings with fractional-second lengths now keep their precise duration instead of being rounded to the nearest second.
+
+- [`bbc3833`](https://github.com/navali-creations/hinekora/commit/bbc383392b48b9ab2a5806b9f1a7dd819f91d46f) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Make custom aura shapes smoother and safer.
+
+  Pointer and arched auras now handle narrow selections and saved crop data more reliably, especially when editing or dragging overlays.
+
+  - **Aura performance:** Pointer auras and straightened arched auras use bounded video sampling so small shapes stay responsive.
+
 ## 0.4.1
 
 ### Patch Changes
