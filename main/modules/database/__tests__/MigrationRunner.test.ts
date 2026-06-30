@@ -6,6 +6,8 @@ import { type Migration, MigrationRunner, migrations } from "../migrations";
 import { migration_20260618_000000_replay_clip_kind } from "../migrations/20260618_000000_replay_clip_kind";
 import { migration_20260620_000000_media_library_performance } from "../migrations/20260620_000000_media_library_performance";
 import { migration_20260628_000000_editor_project_saved_edit_metadata } from "../migrations/20260628_000000_editor_project_saved_edit_metadata";
+import { migration_20260630_000000_settings_cleanup } from "../migrations/20260630_000000_settings_cleanup";
+import { migration_20260630_010000_recording_storage_path_migrations } from "../migrations/20260630_010000_recording_storage_path_migrations";
 
 let database: DatabaseSync | null = null;
 
@@ -73,6 +75,19 @@ function columnNames(db: DatabaseSync, table: string): string[] {
     .map((row) => (row as { name: string }).name);
 }
 
+function readSettings(db: DatabaseSync): Record<string, unknown> {
+  const rows = db
+    .prepare("SELECT key, value_json FROM settings")
+    .all() as Array<{
+    key: string;
+    value_json: string;
+  }>;
+
+  return Object.fromEntries(
+    rows.map((row) => [row.key, JSON.parse(row.value_json)]),
+  );
+}
+
 function createTableMigration(id: string): Migration {
   return {
     id,
@@ -116,6 +131,7 @@ describe("MigrationRunner", () => {
     expect(tableExists(db, "settings")).toBe(true);
     expect(tableExists(db, "replay_clips")).toBe(true);
     expect(tableExists(db, "run_recordings")).toBe(true);
+    expect(tableExists(db, "recording_storage_path_migrations")).toBe(true);
     expect(tableExists(db, "editor_projects")).toBe(true);
     expect(tableExists(db, "editor_project_source_leagues")).toBe(true);
     expect(columnNames(db, "replay_clips")).toContain("source_league");
@@ -149,6 +165,9 @@ describe("MigrationRunner", () => {
       true,
     );
     expect(indexExists(db, "idx_run_recordings_cleanup")).toBe(true);
+    expect(
+      indexExists(db, "idx_recording_storage_path_migrations_status"),
+    ).toBe(true);
     expect(indexExists(db, "idx_editor_projects_updated_at")).toBe(true);
     expect(columnNames(db, "editor_projects")).toEqual(
       expect.arrayContaining([
@@ -528,6 +547,176 @@ describe("MigrationRunner", () => {
     ]);
   });
 
+  it("cleans obsolete settings and preserves explicit split overlay settings", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-06-30T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    const insertSetting = db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    );
+    insertSetting.run(
+      "recordingHideOverlaysFromCapture",
+      JSON.stringify(false),
+      updatedAt,
+    );
+    insertSetting.run(
+      "recordingHideOverlaysFromRecording",
+      JSON.stringify(true),
+      updatedAt,
+    );
+    insertSetting.run(
+      "recordingHideOverlaysFromRewind",
+      JSON.stringify(true),
+      updatedAt,
+    );
+    insertSetting.run("deathClipSeconds", JSON.stringify(120), updatedAt);
+    insertSetting.run("activeGame", JSON.stringify("poe2"), updatedAt);
+    insertSetting.run(
+      "obsoleteSetting",
+      JSON.stringify("remove me"),
+      updatedAt,
+    );
+
+    migration_20260630_000000_settings_cleanup.up(db);
+    migration_20260630_000000_settings_cleanup.up(db);
+
+    expect(readSettings(db)).toMatchObject({
+      activeGame: "poe2",
+      deathClipSeconds: 60,
+      recordingHideOverlaysFromRecording: true,
+      recordingHideOverlaysFromRewind: true,
+    });
+    expect(readSettings(db)).not.toHaveProperty(
+      "recordingHideOverlaysFromCapture",
+    );
+    expect(readSettings(db)).not.toHaveProperty("obsoleteSetting");
+  });
+
+  it("backfills both split overlay settings from the obsolete combined setting", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-06-30T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    ).run("recordingHideOverlaysFromCapture", JSON.stringify(true), updatedAt);
+
+    migration_20260630_000000_settings_cleanup.up(db);
+
+    expect(readSettings(db)).toMatchObject({
+      recordingHideOverlaysFromRecording: true,
+      recordingHideOverlaysFromRewind: true,
+    });
+  });
+
+  it("resets malformed and invalid current settings while pruning obsolete settings", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-06-30T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    const insertSetting = db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    );
+    insertSetting.run("recordingHideOverlaysFromCapture", "{bad", updatedAt);
+    insertSetting.run("deathClipSeconds", "{bad", updatedAt);
+    insertSetting.run("recordingHideOverlaysFromRecording", "{bad", updatedAt);
+    insertSetting.run("activeGame", JSON.stringify("poe3"), updatedAt);
+    insertSetting.run("recordingMaxStorageGb", JSON.stringify(25), updatedAt);
+
+    migration_20260630_000000_settings_cleanup.up(db);
+
+    expect(readSettings(db)).toEqual({
+      activeGame: "poe1",
+      deathClipSeconds: 10,
+      recordingHideOverlaysFromRecording: true,
+      recordingMaxStorageGb: 25,
+    });
+  });
+
+  it("creates the recording storage path migration journal idempotently", () => {
+    const db = createDatabase();
+
+    migration_20260630_010000_recording_storage_path_migrations.up(db);
+    migration_20260630_010000_recording_storage_path_migrations.up(db);
+
+    expect(tableExists(db, "recording_storage_path_migrations")).toBe(true);
+    expect(
+      indexExists(db, "idx_recording_storage_path_migrations_status"),
+    ).toBe(true);
+    expect(() =>
+      db
+        .prepare(
+          `
+          INSERT INTO recording_storage_path_migrations (
+            from_path,
+            to_path,
+            status,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?)
+        `,
+        )
+        .run(
+          "recordings/Manual Clips/manual.mp4",
+          "recordings/Manual Replays/manual.mp4",
+          "failed",
+          "2026-06-30T00:00:00.000Z",
+          "2026-06-30T00:00:00.000Z",
+        ),
+    ).toThrow();
+
+    migration_20260630_010000_recording_storage_path_migrations.down(db);
+
+    expect(tableExists(db, "recording_storage_path_migrations")).toBe(false);
+  });
+
+  it("creates the recording storage path migration journal after settings cleanup was already applied", () => {
+    const db = createDatabase();
+    const runner = new MigrationRunner(db);
+
+    db.prepare(
+      "INSERT INTO migrations (id, description, applied_at) VALUES (?, ?, ?)",
+    ).run(
+      migration_20260630_000000_settings_cleanup.id,
+      migration_20260630_000000_settings_cleanup.description,
+      "2026-06-30T00:00:00.000Z",
+    );
+
+    runner.runMigrations([
+      migration_20260630_000000_settings_cleanup,
+      migration_20260630_010000_recording_storage_path_migrations,
+    ]);
+
+    expect(tableExists(db, "recording_storage_path_migrations")).toBe(true);
+    expect(runner.getAppliedMigrationIds()).toEqual([
+      migration_20260630_000000_settings_cleanup.id,
+      migration_20260630_010000_recording_storage_path_migrations.id,
+    ]);
+  });
+
   it("rolls back Hinekora migrations in reverse order", () => {
     const db = createDatabase();
     const runner = new MigrationRunner(db);
@@ -541,6 +730,7 @@ describe("MigrationRunner", () => {
     expect(runner.getAppliedMigrationIds()).toEqual([]);
     expect(tableExists(db, "editor_projects")).toBe(false);
     expect(tableExists(db, "run_recordings")).toBe(false);
+    expect(tableExists(db, "recording_storage_path_migrations")).toBe(false);
     expect(tableExists(db, "profiles")).toBe(false);
   });
 

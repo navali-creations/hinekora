@@ -10,7 +10,7 @@ import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { RecordingStorageRepository } from "~/main/modules/recording-storage/RecordingStorage.repository";
 import {
   type RecordingStorageMediaKind,
-  resolveRecordingStorageMediaDirectory,
+  resolveRecordingStorageMediaDirectories,
   resolveRecordingStorageRoot,
 } from "~/main/modules/recording-storage/RecordingStorage.utils";
 import { ReplayClipsRepository } from "~/main/modules/replay-clips/ReplayClips.repository";
@@ -29,7 +29,11 @@ import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 import { maskPath } from "~/main/utils/mask-path";
 import { isPathInsideOrEqual } from "~/main/utils/storage-files";
 
-import type { GameId, RecordingQuality } from "~/types";
+import {
+  type GameId,
+  type RecordingQuality,
+  rewindBufferSeconds,
+} from "~/types";
 import { StorageChannel } from "./Storage.channels";
 import type {
   DeleteGameLeagueDataResult,
@@ -59,7 +63,6 @@ import {
 const STORAGE_LOG_SCOPE = "storage";
 const LOW_DISK_SPACE_THRESHOLD_BYTES = 1024 ** 3;
 const STORAGE_PATH_ANCHORS = ["Hinekora Recordings", "Hinekora"];
-const REWIND_BUFFER_SECONDS = 60;
 const FALLBACK_REWIND_BUFFER_RESOLUTION = { width: 1920, height: 1080 };
 const REWIND_BUFFER_BASE_BITRATES: Record<RecordingQuality, number> = {
   low: 4_000_000,
@@ -113,18 +116,20 @@ class StorageService {
     const clipFiles = this.collectClipFiles(storageRoot);
     const clipPathSet = new Set(clipFiles.map((file) => file.path));
     const mediaFiles = collectRecordingFiles(storageRoot);
-    const manualClipFiles = mediaFiles.filter((file) =>
-      this.isMediaFileInDirectory(file.path, storageRoot, "manualClips"),
+    const manualReplayFiles = mediaFiles.filter((file) =>
+      this.isMediaFileInDirectory(file.path, storageRoot, "manualReplays"),
     );
-    const manualClipPathSet = new Set(manualClipFiles.map((file) => file.path));
+    const manualReplayPathSet = new Set(
+      manualReplayFiles.map((file) => file.path),
+    );
     const deathClipFiles = mediaFiles.filter(
       (file) =>
-        !manualClipPathSet.has(file.path) &&
+        !manualReplayPathSet.has(file.path) &&
         (this.isMediaFileInDirectory(file.path, storageRoot, "deathClips") ||
           clipPathSet.has(file.path)),
     );
     const clipMediaPathSet = new Set(
-      [...manualClipFiles, ...deathClipFiles].map((file) => file.path),
+      [...manualReplayFiles, ...deathClipFiles].map((file) => file.path),
     );
     const fullRecordingFiles = mediaFiles.filter(
       (file) => !clipMediaPathSet.has(file.path),
@@ -156,7 +161,7 @@ class StorageService {
       databaseSizeBytes,
       deathClips: deathClipFiles,
       fullRecordings: fullRecordingFiles,
-      manualClips: manualClipFiles,
+      manualReplays: manualReplayFiles,
       rewindBufferEstimateBytes,
       temporaryFiles,
     });
@@ -409,7 +414,7 @@ class StorageService {
     databaseSizeBytes: number;
     deathClips: StorageFile[];
     fullRecordings: StorageFile[];
-    manualClips: StorageFile[];
+    manualReplays: StorageFile[];
     rewindBufferEstimateBytes: number;
     temporaryFiles: StorageFile[];
   }): StorageBreakdownItem[] {
@@ -427,10 +432,10 @@ class StorageService {
         sizeBytes: sumFileSizes(input.deathClips),
       },
       {
-        category: "manual-clips",
-        label: "Manual clips",
-        fileCount: input.manualClips.length,
-        sizeBytes: sumFileSizes(input.manualClips),
+        category: "manual-replays",
+        label: "Manual replays",
+        fileCount: input.manualReplays.length,
+        sizeBytes: sumFileSizes(input.manualReplays),
       },
       {
         category: "app-installation",
@@ -539,13 +544,14 @@ class StorageService {
       fpsFactor *
       pixelFactor;
 
-    return Math.round((bitrate * REWIND_BUFFER_SECONDS) / 8);
+    return Math.round((bitrate * rewindBufferSeconds) / 8);
   }
 
   private ensureStorageRoot(root: string): void {
     try {
       mkdirSync(root, { recursive: true });
     } catch {}
+    RecordingStorageService.getInstance().migrateLegacyMediaDirectories(root);
   }
 
   private resolveStorageRoot(): string {
@@ -573,9 +579,8 @@ class StorageService {
     storageRoot: string,
     kind: RecordingStorageMediaKind,
   ): boolean {
-    return isPathInsideOrEqual(
-      resolveRecordingStorageMediaDirectory(storageRoot, kind),
-      path,
+    return resolveRecordingStorageMediaDirectories(storageRoot, kind).some(
+      (directory) => isPathInsideOrEqual(directory, path),
     );
   }
 

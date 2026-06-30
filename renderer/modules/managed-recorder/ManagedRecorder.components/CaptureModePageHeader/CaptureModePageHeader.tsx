@@ -16,6 +16,7 @@ import {
   useSettingsShallow,
 } from "~/renderer/store";
 
+import { maxRewindSaveSeconds, rewindBufferSeconds } from "~/types";
 import {
   type CaptureMode,
   createCapturePrimaryDisabledReason,
@@ -83,7 +84,7 @@ function CaptureModePageHeader({
     : "Rewind selected.";
   const alertCopy = isSelectedSession
     ? "Records everything from start to stop. Death clips and manual replays are off in this mode, but you can cut clips from the saved recording later."
-    : "Keeps only the last 60 seconds ready for death clips or manual replays. It does not save a full recording, so it uses much less disk space.";
+    : `Keeps a ${rewindBufferSeconds} second buffer ready for death clips or manual replays. Saved rewinds use your configured duration, up to ${maxRewindSaveSeconds} seconds.`;
   const isAlertDismissed =
     settingsValue?.captureModeInfoAlertDismissed === true;
 

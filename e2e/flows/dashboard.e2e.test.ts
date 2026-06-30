@@ -326,13 +326,24 @@ test("covers recorder mode, capture settings, and audio settings interactions", 
   await setupDashboardE2E(page);
 
   await expect(
+    page.getByRole("heading", { exact: true, name: "Settings" }),
+  ).toBeVisible();
+  await expect(
     page.getByRole("heading", { name: "Capture Settings" }),
   ).toBeVisible();
   await expect(
-    page.getByRole("heading", { name: "Audio Settings" }),
+    page.getByText("Settings are saved locally; set them once."),
   ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Audio Settings" }),
+  ).toBeHidden();
 
-  await page.getByRole("tab", { name: "Session Recording" }).click();
+  const captureModeTabs = page.getByRole("tablist", { name: "Capture mode" });
+  const recordingSettingsTabs = page.getByRole("tablist", {
+    name: "Recording settings",
+  });
+
+  await captureModeTabs.getByRole("tab", { name: "Session Recording" }).click();
   await expect
     .poll(async () => {
       const calls = await getDashboardE2ECalls(page);
@@ -359,7 +370,7 @@ test("covers recorder mode, capture settings, and audio settings interactions", 
     })
     .toBe(1);
 
-  await page.getByRole("tab", { name: "Rewind" }).click();
+  await captureModeTabs.getByRole("tab", { name: "Rewind" }).click();
   await page.getByRole("button", { exact: true, name: "Start" }).click();
   await expect
     .poll(async () => {
@@ -390,9 +401,27 @@ test("covers recorder mode, capture settings, and audio settings interactions", 
   await page
     .getByRole("combobox", { name: /^Clip quality/ })
     .selectOption("low");
-  await page
-    .getByLabel("Hide Hinekora overlays from recordings and rewind")
-    .check();
+  await recordingSettingsTabs.getByRole("tab", { name: "Recording" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Recording Settings" }),
+  ).toBeVisible();
+  await expect(
+    page.getByLabel("Hide Hinekora overlays from recording"),
+  ).toBeChecked();
+  await page.getByLabel("Hide Hinekora overlays from recording").uncheck();
+  await recordingSettingsTabs.getByRole("tab", { name: "Rewind" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Rewind Settings" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "45" }).click();
+  await expect(
+    page.getByLabel("Hide Hinekora overlays from rewind"),
+  ).toBeChecked();
+  await page.getByLabel("Hide Hinekora overlays from rewind").uncheck();
+  await recordingSettingsTabs.getByRole("tab", { name: "Audio" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Audio Settings" }),
+  ).toBeVisible();
   await page
     .getByRole("combobox", { name: /^Audio input/ })
     .selectOption("device:0");
@@ -414,7 +443,9 @@ test("covers recorder mode, capture settings, and audio settings interactions", 
         expect.objectContaining({ recordingEncoder: "hardware_h265" }),
         expect.objectContaining({ recordingRunQuality: "ultra" }),
         expect.objectContaining({ recordingClipQuality: "low" }),
-        expect.objectContaining({ recordingHideOverlaysFromCapture: true }),
+        expect.objectContaining({ deathClipSeconds: 45 }),
+        expect.objectContaining({ recordingHideOverlaysFromRecording: false }),
+        expect.objectContaining({ recordingHideOverlaysFromRewind: false }),
         expect.objectContaining({ recordingAudioInputDeviceId: "{mic-1}" }),
         expect.objectContaining({
           recordingAudioOutputDeviceId: "{speakers-1}",

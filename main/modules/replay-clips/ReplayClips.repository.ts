@@ -1,7 +1,10 @@
+import { dirname, relative, resolve } from "node:path";
+
 import { type SelectQueryBuilder, sql } from "kysely";
 
 import type { DatabaseService } from "~/main/modules/database";
 import type { DatabaseSchema } from "~/main/modules/database/Database.types";
+import type { RecordingStoragePathMigration } from "~/main/modules/recording-storage/RecordingStorage.utils";
 
 import { type GameId, type ReplayClip, ReplayClipSchema } from "~/types";
 import type {
@@ -314,6 +317,43 @@ class ReplayClipsRepository {
     );
   }
 
+  rebaseStoragePaths(migrations: RecordingStoragePathMigration[]): number {
+    if (migrations.length === 0) {
+      return 0;
+    }
+
+    let updatedRows = 0;
+    const updatedAt = new Date().toISOString();
+    const rebaseStoragePath = createStoragePathRebaser(migrations);
+    this.database.transaction(() => {
+      const updateStoragePathsStatement = this.database.db.prepare(`
+        UPDATE replay_clips
+        SET original_obs_path = ?, processed_clip_path = ?, updated_at = ?
+        WHERE id = ?
+      `);
+      for (const clip of this.listStoragePaths()) {
+        const originalObsPath = rebaseStoragePath(clip.originalObsPath);
+        const processedClipPath = rebaseStoragePath(clip.processedClipPath);
+        if (
+          originalObsPath === clip.originalObsPath &&
+          processedClipPath === clip.processedClipPath
+        ) {
+          continue;
+        }
+
+        updateStoragePathsStatement.run(
+          originalObsPath,
+          processedClipPath,
+          updatedAt,
+          clip.id,
+        );
+        updatedRows += 1;
+      }
+    });
+
+    return updatedRows;
+  }
+
   delete(id: string): void {
     this.database.runQuery(
       this.database.kysely.deleteFrom("replay_clips").where("id", "=", id),
@@ -382,3 +422,36 @@ class ReplayClipsRepository {
 }
 
 export { ReplayClipsRepository };
+
+function createStoragePathRebaser(
+  migrations: RecordingStoragePathMigration[],
+): (path: string | null) => string | null {
+  const targetBySourcePath = new Map<string, string>();
+  for (const migration of migrations) {
+    const sourcePath = resolve(migration.from);
+    if (!targetBySourcePath.has(sourcePath)) {
+      targetBySourcePath.set(sourcePath, resolve(migration.to));
+    }
+  }
+
+  return (path) => {
+    if (path === null) {
+      return null;
+    }
+
+    const resolvedPath = resolve(path);
+    let sourcePath = resolvedPath;
+    while (true) {
+      const targetPath = targetBySourcePath.get(sourcePath);
+      if (targetPath) {
+        return resolve(targetPath, relative(sourcePath, resolvedPath));
+      }
+
+      const parentPath = dirname(sourcePath);
+      if (parentPath === sourcePath) {
+        return path;
+      }
+      sourcePath = parentPath;
+    }
+  };
+}

@@ -31,7 +31,7 @@ function createTestStore() {
 describe("ReplayClips slice", () => {
   const list = vi.fn();
   const listLibrary = vi.fn();
-  const saveManual = vi.fn();
+  const saveManualReplay = vi.fn();
   const open = vi.fn();
   const reveal = vi.fn();
   const deleteClip = vi.fn();
@@ -45,7 +45,7 @@ describe("ReplayClips slice", () => {
     statusChangedListener = null;
     list.mockResolvedValue([]);
     listLibrary.mockResolvedValue(createLibraryPage());
-    saveManual.mockResolvedValue(null);
+    saveManualReplay.mockResolvedValue(null);
     open.mockResolvedValue({ ok: true, error: null });
     reveal.mockResolvedValue({ ok: true, error: null });
     deleteClip.mockResolvedValue({ ok: true, error: null });
@@ -68,7 +68,7 @@ describe("ReplayClips slice", () => {
         replayClips: {
           list,
           listLibrary,
-          saveManual,
+          saveManualReplay,
           open,
           reveal,
           delete: deleteClip,
@@ -114,11 +114,13 @@ describe("ReplayClips slice", () => {
     expect(listLibrary).toHaveBeenLastCalledWith({ game: "poe2" });
   });
 
-  it("saves manual clips and keeps the previous active clip when none is returned", async () => {
+  it("saves manual replays and keeps the previous active clip when none is returned", async () => {
     const activeClip = createReplayClip({ id: "active-clip" });
     const savedClip = createReplayClip({ id: "saved-clip" });
     list.mockResolvedValue([activeClip, savedClip]);
-    saveManual.mockResolvedValueOnce(savedClip).mockResolvedValueOnce(null);
+    saveManualReplay
+      .mockResolvedValueOnce(savedClip)
+      .mockResolvedValueOnce(null);
     const store = createTestStore();
     store.setState((state) => ({
       replayClips: {
@@ -127,10 +129,10 @@ describe("ReplayClips slice", () => {
       },
     }));
 
-    await store.getState().replayClips.saveManual();
+    await store.getState().replayClips.saveManualReplay();
     expect(store.getState().replayClips.activeClip).toBe(savedClip);
 
-    await store.getState().replayClips.saveManual();
+    await store.getState().replayClips.saveManualReplay();
     expect(store.getState().replayClips.activeClip).toBe(savedClip);
   });
 

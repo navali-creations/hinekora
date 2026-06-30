@@ -15,6 +15,7 @@ describe("SettingsStoreRepository", () => {
       groupPlayDeathAlertDismissed: false,
       onboardingDismissedBeacons: [],
       poe1CharacterName: "",
+      recorderSettingsInfoAlertDismissed: false,
     });
 
     repository.setMany({
@@ -25,6 +26,7 @@ describe("SettingsStoreRepository", () => {
       onboardingDismissedBeacons: ["game-selector"],
       poe1CharacterName: "Ailucannon",
       poe2CharacterName: "Ailumonk",
+      recorderSettingsInfoAlertDismissed: true,
     });
 
     expect(repository.get()).toMatchObject({
@@ -35,6 +37,7 @@ describe("SettingsStoreRepository", () => {
       onboardingDismissedBeacons: ["game-selector"],
       poe1CharacterName: "Ailucannon",
       poe2CharacterName: "Ailumonk",
+      recorderSettingsInfoAlertDismissed: true,
     });
 
     repository.replace({

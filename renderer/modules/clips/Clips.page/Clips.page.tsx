@@ -61,7 +61,7 @@ function ClipsPage() {
     setClipKind("death");
   };
 
-  const handleManualClipsTab = () => {
+  const handleManualReplaysTab = () => {
     clearSelectedClips();
     setClipKind("manual");
   };
@@ -101,7 +101,7 @@ function ClipsPage() {
                   )}
                   role="tab"
                   type="button"
-                  onClick={handleManualClipsTab}
+                  onClick={handleManualReplaysTab}
                 >
                   Manual Replays
                 </button>

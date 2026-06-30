@@ -251,4 +251,45 @@ describe("RecordingStorageRepository", () => {
 
     database.close();
   });
+
+  it("tracks pending and completed storage path migrations", () => {
+    const database = new DatabaseService(":memory:");
+    const repository = new RecordingStorageRepository(database);
+    const legacyPath = "recordings/Manual Clips/manual.mp4";
+    const canonicalPath = "recordings/Manual Replays/manual.mp4";
+    const renamedPath = "recordings/Manual Replays/manual (2).mp4";
+
+    repository.savePendingStoragePathMigrations([
+      {
+        from: legacyPath,
+        to: canonicalPath,
+      },
+    ]);
+    repository.savePendingStoragePathMigrations([
+      {
+        from: legacyPath,
+        to: renamedPath,
+      },
+    ]);
+
+    expect(repository.listPendingStoragePathMigrations()).toEqual([
+      {
+        from: resolve(legacyPath),
+        to: resolve(renamedPath),
+      },
+    ]);
+
+    repository.markStoragePathMigrationsCompleted([]);
+    expect(repository.listPendingStoragePathMigrations()).toHaveLength(1);
+
+    repository.markStoragePathMigrationsCompleted([
+      {
+        from: legacyPath,
+        to: renamedPath,
+      },
+    ]);
+    expect(repository.listPendingStoragePathMigrations()).toEqual([]);
+
+    database.close();
+  });
 });

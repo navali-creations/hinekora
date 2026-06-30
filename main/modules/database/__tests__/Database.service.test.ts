@@ -114,6 +114,20 @@ describe("DatabaseService", () => {
     database.close();
   });
 
+  it("runs nested transactions on the active transaction", () => {
+    const database = new DatabaseService(":memory:");
+
+    const row = database.transaction(() =>
+      database.transaction(() =>
+        database.queryOne(CompiledQuery.raw("SELECT 2 AS value")),
+      ),
+    );
+
+    expect(row).toEqual({ value: 2 });
+
+    database.close();
+  });
+
   it("rejects disk backup for in-memory databases", () => {
     const database = new DatabaseService(":memory:");
 

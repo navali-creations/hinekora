@@ -2,6 +2,7 @@ import type { GameId } from "~/types";
 
 type TimestampColumn = string;
 type NullableTextColumn = string | null;
+type RecordingStoragePathMigrationStatus = "completed" | "pending";
 
 interface MigrationTable {
   id: string;
@@ -21,6 +22,14 @@ interface ProfileTable {
 interface SettingTable {
   key: string;
   value_json: string;
+  updated_at: TimestampColumn;
+}
+
+interface RecordingStoragePathMigrationTable {
+  from_path: string;
+  to_path: string;
+  status: RecordingStoragePathMigrationStatus;
+  created_at: TimestampColumn;
   updated_at: TimestampColumn;
 }
 
@@ -82,6 +91,7 @@ export interface DatabaseSchema {
   editor_projects: EditorProjectTable;
   migrations: MigrationTable;
   profiles: ProfileTable;
+  recording_storage_path_migrations: RecordingStoragePathMigrationTable;
   settings: SettingTable;
   replay_clips: ReplayClipTable;
   run_recordings: RunRecordingTable;

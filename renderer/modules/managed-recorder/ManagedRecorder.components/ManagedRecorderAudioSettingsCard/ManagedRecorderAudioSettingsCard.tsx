@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import {
   type ChangeEvent,
   useCallback,
@@ -6,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { FiInfo, FiRefreshCw } from "react-icons/fi";
+import { FiRefreshCw } from "react-icons/fi";
 
 import type { ManagedRecorderAudioDevices } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
 import {
@@ -14,11 +15,14 @@ import {
   useSettingsShallow,
 } from "~/renderer/store";
 
+import { ManagedRecorderAudioDeviceErrorState } from "../ManagedRecorderAudioDeviceErrorState/ManagedRecorderAudioDeviceErrorState";
+import { ManagedRecorderAudioDeviceLoadingState } from "../ManagedRecorderAudioDeviceLoadingState/ManagedRecorderAudioDeviceLoadingState";
+import { ManagedRecorderAudioDeviceSelects } from "../ManagedRecorderAudioDeviceSelects/ManagedRecorderAudioDeviceSelects";
 import {
   createAudioDeviceOptions,
   resolveAudioDeviceValue,
-  resolveAudioOptionTitle,
   resolveAudioOptionValue,
+  waitForAudioDeviceLoadPaint,
 } from "./ManagedRecorderAudioSettingsCard.utils";
 
 const emptyAudioDevices: ManagedRecorderAudioDevices = {
@@ -27,18 +31,13 @@ const emptyAudioDevices: ManagedRecorderAudioDevices = {
 };
 type AudioDeviceLoadStatus = "idle" | "loading" | "loaded" | "failed";
 
-const audioFieldHelp = {
-  input:
-    "Captures microphone or line-in audio when an input device is selected.",
-  output: "Captures desktop playback audio when an output device is selected.",
-} as const;
-
 function ManagedRecorderAudioSettingsCard() {
   const [audioDevices, setAudioDevices] =
     useState<ManagedRecorderAudioDevices>(emptyAudioDevices);
   const [audioDeviceLoadStatus, setAudioDeviceLoadStatus] =
     useState<AudioDeviceLoadStatus>("idle");
   const isMountedRef = useRef(true);
+  const audioDeviceLoadRequestIdRef = useRef(0);
   const { settingsValue, updateSettings } = useSettingsShallow((settings) => ({
     settingsValue: settings.value,
     updateSettings: settings.update,
@@ -51,6 +50,12 @@ function ManagedRecorderAudioSettingsCard() {
     status?.isStartingRecording === true ||
     status?.isStoppingRecording === true;
   const isLoadingAudioDevices = audioDeviceLoadStatus === "loading";
+  const hasLoadedAudioDevices =
+    audioDevices.input.length > 0 || audioDevices.output.length > 0;
+  const showAudioDeviceLoadingState =
+    isLoadingAudioDevices && !hasLoadedAudioDevices;
+  const showAudioDeviceErrorState =
+    audioDeviceLoadStatus === "failed" && !hasLoadedAudioDevices;
   const audioDevicesRefreshTitle =
     audioDeviceLoadStatus === "failed"
       ? "Audio device refresh failed. Try again."
@@ -90,17 +95,33 @@ function ManagedRecorderAudioSettingsCard() {
 
   const loadAudioDevices = useCallback(
     async (forceRefresh = false): Promise<void> => {
+      const requestId = audioDeviceLoadRequestIdRef.current + 1;
+      audioDeviceLoadRequestIdRef.current = requestId;
       setAudioDeviceLoadStatus("loading");
+      await waitForAudioDeviceLoadPaint();
+      if (
+        !isMountedRef.current ||
+        audioDeviceLoadRequestIdRef.current !== requestId
+      ) {
+        return undefined;
+      }
+
       try {
         const devices = await window.electron.managedRecorder.listAudioDevices({
           forceRefresh,
         });
-        if (isMountedRef.current) {
+        if (
+          isMountedRef.current &&
+          audioDeviceLoadRequestIdRef.current === requestId
+        ) {
           setAudioDevices(devices);
           setAudioDeviceLoadStatus("loaded");
         }
       } catch {
-        if (isMountedRef.current) {
+        if (
+          isMountedRef.current &&
+          audioDeviceLoadRequestIdRef.current === requestId
+        ) {
           setAudioDeviceLoadStatus("failed");
         }
       }
@@ -140,7 +161,7 @@ function ManagedRecorderAudioSettingsCard() {
   };
 
   return (
-    <section className="grid gap-3 rounded-lg border border-base-content/10 bg-neutral p-3 shadow-lg">
+    <div className="grid gap-3">
       <div className="flex items-start justify-between gap-3">
         <h2 className="m-0 font-bold text-primary text-sm">Audio Settings</h2>
         <button
@@ -151,79 +172,30 @@ function ManagedRecorderAudioSettingsCard() {
           type="button"
           onClick={handleAudioDevicesRefresh}
         >
-          <FiRefreshCw className="h-3.5 w-3.5" />
+          <FiRefreshCw
+            className={clsx("h-3.5 w-3.5", {
+              "animate-spin": isLoadingAudioDevices,
+            })}
+          />
         </button>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-2">
-        <label className="grid gap-1.5 text-primary text-[0.8125rem]">
-          <span className="inline-flex items-center gap-1">
-            Audio input
-            <span
-              aria-label={audioFieldHelp.input}
-              className="tooltip tooltip-bottom inline-flex cursor-help text-base-content/45 transition-colors hover:text-base-content/70"
-              data-tip={audioFieldHelp.input}
-              role="img"
-              tabIndex={0}
-            >
-              <FiInfo className="h-3.5 w-3.5" />
-            </span>
-          </span>
-          <select
-            className="select select-bordered select-sm w-full min-w-0 truncate pr-8"
-            disabled={isRecording || isBusy}
-            title={resolveAudioOptionTitle(audioInputOptions, audioInputValue)}
-            value={audioInputValue}
-            onChange={handleAudioInputChange}
-          >
-            {audioInputOptions.map((option, index) => (
-              <option
-                key={`${option.value}:${index}`}
-                title={option.title}
-                value={option.value}
-              >
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-
-        <label className="grid gap-1.5 text-primary text-[0.8125rem]">
-          <span className="inline-flex items-center gap-1">
-            Audio output
-            <span
-              aria-label={audioFieldHelp.output}
-              className="tooltip tooltip-bottom inline-flex cursor-help text-base-content/45 transition-colors hover:text-base-content/70"
-              data-tip={audioFieldHelp.output}
-              role="img"
-              tabIndex={0}
-            >
-              <FiInfo className="h-3.5 w-3.5" />
-            </span>
-          </span>
-          <select
-            className="select select-bordered select-sm w-full min-w-0 truncate pr-8"
-            disabled={isRecording || isBusy}
-            title={resolveAudioOptionTitle(
-              audioOutputOptions,
-              audioOutputValue,
-            )}
-            value={audioOutputValue}
-            onChange={handleAudioOutputChange}
-          >
-            {audioOutputOptions.map((option, index) => (
-              <option
-                key={`${option.value}:${index}`}
-                title={option.title}
-                value={option.value}
-              >
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-    </section>
+      {showAudioDeviceLoadingState && (
+        <ManagedRecorderAudioDeviceLoadingState />
+      )}
+      {showAudioDeviceErrorState && <ManagedRecorderAudioDeviceErrorState />}
+      {!showAudioDeviceLoadingState && !showAudioDeviceErrorState && (
+        <ManagedRecorderAudioDeviceSelects
+          audioInputOptions={audioInputOptions}
+          audioInputValue={audioInputValue}
+          audioOutputOptions={audioOutputOptions}
+          audioOutputValue={audioOutputValue}
+          disabled={isRecording || isBusy}
+          onAudioInputChange={handleAudioInputChange}
+          onAudioOutputChange={handleAudioOutputChange}
+        />
+      )}
+    </div>
   );
 }
 

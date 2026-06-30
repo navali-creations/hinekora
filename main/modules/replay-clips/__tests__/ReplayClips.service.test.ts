@@ -1156,7 +1156,7 @@ describe("ReplayClipsService file actions", () => {
       durationSeconds: null,
       mediaUrl: "hinekora-media://replay-clip/clip-1",
     });
-    vi.spyOn(ipcService, "saveManualClip").mockResolvedValue(clip);
+    vi.spyOn(ipcService, "saveManualReplay").mockResolvedValue(clip);
     vi.spyOn(ipcService, "openClip").mockResolvedValue({
       ok: true,
       error: null,
@@ -1218,7 +1218,9 @@ describe("ReplayClipsService file actions", () => {
         },
       ),
     ).toEqual(expect.objectContaining({ items: [clip] }));
-    expect(await handlers.get(ReplayClipsChannel.SaveManual)?.({})).toBe(clip);
+    expect(await handlers.get(ReplayClipsChannel.SaveManualReplay)?.({})).toBe(
+      clip,
+    );
     expect(await handlers.get(ReplayClipsChannel.Open)?.({}, "clip-1")).toEqual(
       {
         ok: true,
@@ -1374,7 +1376,7 @@ describe("ReplayClipsService file actions", () => {
 });
 
 describe("ReplayClipsService death-event workflow", () => {
-  it("saves manual clips using current settings", async () => {
+  it("saves manual replays using current settings", async () => {
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
       get: () => ({
         ...createDefaultSettings(),
@@ -1387,7 +1389,7 @@ describe("ReplayClipsService death-event workflow", () => {
       .spyOn(service, "handleDeathEvent")
       .mockResolvedValue(clip);
 
-    await expect(service.saveManualClip()).resolves.toBe(clip);
+    await expect(service.saveManualReplay()).resolves.toBe(clip);
     expect(handleDeathEvent).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: "manual",

@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  defaultRewindSaveSeconds,
+  maxRewindSaveSeconds,
+  minRewindSaveSeconds,
+} from "./recording";
+
 export const GameIdSchema = z.enum(["poe1", "poe2"]);
 export type GameId = z.infer<typeof GameIdSchema>;
 
@@ -382,7 +388,8 @@ export const AppSettingsSchema = z.object({
     .max(512)
     .nullable()
     .default(null),
-  recordingHideOverlaysFromCapture: z.boolean().default(false),
+  recordingHideOverlaysFromRecording: z.boolean().default(true),
+  recordingHideOverlaysFromRewind: z.boolean().default(true),
   recordingMaxStorageGb: z.number().int().min(0).max(100_000).default(50),
   poe1ClientTxtPath: z.string().max(2_048).nullable().default(null),
   poe2ClientTxtPath: z.string().max(2_048).nullable().default(null),
@@ -390,12 +397,18 @@ export const AppSettingsSchema = z.object({
   poe2CharacterName: z.string().max(80).default(""),
   captureModeInfoAlertDismissed: z.boolean().default(false),
   groupPlayDeathAlertDismissed: z.boolean().default(false),
+  recorderSettingsInfoAlertDismissed: z.boolean().default(false),
   activeGame: GameIdSchema.default("poe1"),
   activeLeague: z.string().min(1).max(80).default("Standard"),
   poe1SelectedLeague: z.string().min(1).max(80).default("Standard"),
   poe2SelectedLeague: z.string().min(1).max(80).default("Standard"),
   editorAutoPruneProjects: z.boolean().default(false),
-  deathClipSeconds: z.number().int().min(1).max(120).default(10),
+  deathClipSeconds: z
+    .number()
+    .int()
+    .min(minRewindSaveSeconds)
+    .max(maxRewindSaveSeconds)
+    .default(defaultRewindSaveSeconds),
   telemetryCrashReporting: z.boolean().default(false),
   telemetryUsageAnalytics: z.boolean().default(false),
   lastSeenAppVersion: z.string().min(1).max(64).nullable().default(null),
@@ -405,6 +418,10 @@ export const AppSettingsSchema = z.object({
     .default([]),
 });
 export type AppSettings = z.infer<typeof AppSettingsSchema>;
+export type AppSettingsKey = keyof AppSettings;
+export const appSettingsKeys = Object.freeze(
+  Object.keys(AppSettingsSchema.shape),
+) as readonly AppSettingsKey[];
 
 export const ManagedRecorderStatusSchema = z.object({
   available: z.boolean(),

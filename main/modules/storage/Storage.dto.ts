@@ -3,7 +3,7 @@ import type { GameId } from "~/types";
 export interface StorageBreakdownItem {
   category:
     | "death-clips"
-    | "manual-clips"
+    | "manual-replays"
     | "full-recordings"
     | "app-installation"
     | "rewind-buffer"

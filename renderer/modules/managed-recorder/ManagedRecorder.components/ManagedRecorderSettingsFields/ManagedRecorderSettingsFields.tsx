@@ -14,7 +14,6 @@ import {
   RecordingEncoderOptions,
   type RecordingQuality,
 } from "~/types";
-import { ManagedRecorderOverlayCaptureToggle } from "../ManagedRecorderOverlayCaptureToggle/ManagedRecorderOverlayCaptureToggle";
 
 const recordingResolutionOptions = [
   { value: "native", label: "Native source" },
@@ -241,8 +240,6 @@ function ManagedRecorderSettingsFields() {
           </select>
         </label>
       </div>
-
-      <ManagedRecorderOverlayCaptureToggle />
     </>
   );
 }

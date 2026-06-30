@@ -34,6 +34,7 @@ import {
   logInfo,
   logWarn,
 } from "./utils/app-log";
+import { scheduleRecordingStorageInitialization } from "./utils/recording-storage-startup";
 import { handleSquirrelStartupEvent } from "./utils/squirrel-startup";
 
 function registerPrivilegedProtocols(): void {
@@ -136,8 +137,8 @@ async function bootstrap(): Promise<void> {
   ManagedRecorderService.getInstance();
   logInfo("startup", "Managed recorder initialized");
 
-  RecordingStorageService.getInstance();
-  logInfo("startup", "Recording storage initialized");
+  const recordingStorage = RecordingStorageService.getInstance();
+  logInfo("startup", "Recording storage service initialized");
 
   StorageService.getInstance();
   logInfo("startup", "Storage initialized");
@@ -165,6 +166,8 @@ async function bootstrap(): Promise<void> {
 
   await MainWindowService.getInstance().createMainWindow();
   logInfo("startup", "Main window created");
+
+  scheduleRecordingStorageInitialization(recordingStorage);
 
   logInfo("startup", "Aura overlay request initialized", {
     requested: overlayWindows.requestPersistentAuraOverlay(),

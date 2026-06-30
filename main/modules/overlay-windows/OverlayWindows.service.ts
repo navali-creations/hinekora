@@ -2,7 +2,15 @@ import { AuraManagerOverlaysService } from "~/main/modules/aura-manager-overlays
 import { DeathClipsOverlayService } from "~/main/modules/death-clips-overlay";
 import { GridLinesOverlayService } from "~/main/modules/grid-lines-overlay";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
-import { ManualClipsOverlayService } from "~/main/modules/manual-clips-overlay";
+import {
+  type ManagedRecorderChangeSnapshot,
+  ManagedRecorderService,
+} from "~/main/modules/managed-recorder";
+import type {
+  ManagedRecorderCaptureMode,
+  ManagedRecorderStatus,
+} from "~/main/modules/managed-recorder/ManagedRecorder.dto";
+import { ManualReplaysOverlayService } from "~/main/modules/manual-replays-overlay";
 import { ProfilesService } from "~/main/modules/profiles";
 import { RecordingControlsOverlayService } from "~/main/modules/recording-controls-overlay";
 import { SettingsStoreService } from "~/main/modules/settings-store";
@@ -15,7 +23,7 @@ import {
 } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 
-import type { Profile, ReplayClip } from "~/types";
+import type { AppSettings, Profile, ReplayClip } from "~/types";
 import { GameOverlayCoordinator } from "./GameOverlayCoordinator";
 import { OverlayWindowsChannel } from "./OverlayWindows.channels";
 import type {
@@ -31,6 +39,27 @@ const ACTIVE_GAME_FOCUS_HANDOFF_ID = "active-game-focus-handoff";
 const ACTIVE_GAME_FOCUS_HANDOFF_GRACE_MS = 2_500;
 const RECORDER_SUPPRESSION_AURA_OVERLAY = "aura-overlay";
 const RECORDER_SUPPRESSION_CROP_SELECTOR = "crop-selector";
+
+function resolveOverlayCaptureProtectionEnabled(
+  settings: Pick<
+    AppSettings,
+    "recordingHideOverlaysFromRecording" | "recordingHideOverlaysFromRewind"
+  >,
+  recorderState: {
+    captureMode: ManagedRecorderCaptureMode;
+    status: Pick<ManagedRecorderStatus, "bufferActive" | "runRecordingActive">;
+  },
+): boolean {
+  const activeCaptureMode = recorderState.status.runRecordingActive
+    ? "session"
+    : recorderState.status.bufferActive
+      ? "rewind"
+      : recorderState.captureMode;
+
+  return activeCaptureMode === "session"
+    ? settings.recordingHideOverlaysFromRecording === true
+    : settings.recordingHideOverlaysFromRewind === true;
+}
 
 type ActiveGameFocusRestoreReason =
   | "aura-locked"
@@ -49,8 +78,24 @@ class OverlayWindowsService {
   private static instance: OverlayWindowsService | null = null;
 
   private overlayCaptureProtectionEnabled = false;
+  private overlayCaptureProtectionSettings: Pick<
+    AppSettings,
+    "recordingHideOverlaysFromRecording" | "recordingHideOverlaysFromRewind"
+  > = {
+    recordingHideOverlaysFromRecording: true,
+    recordingHideOverlaysFromRewind: true,
+  };
+  private recorderCaptureMode: ManagedRecorderCaptureMode = "rewind";
+  private recorderStatus: Pick<
+    ManagedRecorderStatus,
+    "bufferActive" | "runRecordingActive"
+  > = {
+    bufferActive: false,
+    runRecordingActive: false,
+  };
   private readonly getOverlayCaptureProtectionEnabled = () =>
     this.overlayCaptureProtectionEnabled;
+  private managedRecorderChangeUnsubscribe: (() => void) | null = null;
   private settingsChangeUnsubscribe: (() => void) | null = null;
   private readonly coordinator = new GameOverlayCoordinator();
   private readonly recorderOverlaySuppressionIds = new Set<string>();
@@ -65,7 +110,7 @@ class OverlayWindowsService {
     () => this.recordingControlsOverlay.createAnchorBounds(),
     this.getOverlayCaptureProtectionEnabled,
   );
-  private readonly manualClipsOverlay = new ManualClipsOverlayService(
+  private readonly manualReplaysOverlay = new ManualReplaysOverlayService(
     this.deathClipsOverlay,
   );
   private readonly gridLinesOverlay = new GridLinesOverlayService(
@@ -96,14 +141,23 @@ class OverlayWindowsService {
 
   constructor() {
     const settingsStore = SettingsStoreService.getInstance();
-    this.setOverlayCaptureProtectionEnabled(
-      settingsStore.get().recordingHideOverlaysFromCapture === true,
-    );
-    this.settingsChangeUnsubscribe = settingsStore.onDidChange((settings) => {
-      this.setOverlayCaptureProtectionEnabled(
-        settings.recordingHideOverlaysFromCapture === true,
-      );
+    const managedRecorder = ManagedRecorderService.getInstance();
+    this.overlayCaptureProtectionSettings = settingsStore.get();
+    this.updateManagedRecorderSnapshot({
+      captureMode: managedRecorder.getCaptureMode(),
+      status: managedRecorder.getStatus(),
     });
+    this.applyOverlayCaptureProtection();
+    this.settingsChangeUnsubscribe = settingsStore.onDidChange((settings) => {
+      this.overlayCaptureProtectionSettings = settings;
+      this.applyOverlayCaptureProtection();
+    });
+    this.managedRecorderChangeUnsubscribe = managedRecorder.onDidChange(
+      (snapshot) => {
+        this.updateManagedRecorderSnapshot(snapshot);
+        this.applyOverlayCaptureProtection();
+      },
+    );
     this.setupHandlers();
   }
 
@@ -169,8 +223,8 @@ class OverlayWindowsService {
     return this.deathClipsOverlay.showClip(clip);
   }
 
-  showManualClipPreviewOverlay(clip: ReplayClip): Promise<void> {
-    return this.manualClipsOverlay.showClip(clip);
+  showManualReplayPreviewOverlay(clip: ReplayClip): Promise<void> {
+    return this.manualReplaysOverlay.showClip(clip);
   }
 
   hideClipPreviewOverlay(): void {
@@ -217,6 +271,8 @@ class OverlayWindowsService {
   destroyAll(): void {
     this.settingsChangeUnsubscribe?.();
     this.settingsChangeUnsubscribe = null;
+    this.managedRecorderChangeUnsubscribe?.();
+    this.managedRecorderChangeUnsubscribe = null;
     this.endActiveGameFocusHandoff("destroy");
     this.recordingControlsOverlay.destroy();
     this.deathClipsOverlay.destroy();
@@ -420,6 +476,28 @@ class OverlayWindowsService {
     this.deathClipsOverlay.setContentProtectionEnabled(enabled);
     this.gridLinesOverlay.setContentProtectionEnabled(enabled);
     this.auraManagerOverlays.setContentProtectionEnabled(enabled);
+  }
+
+  private updateManagedRecorderSnapshot(
+    snapshot: ManagedRecorderChangeSnapshot,
+  ): void {
+    this.recorderCaptureMode = snapshot.captureMode;
+    this.recorderStatus = {
+      bufferActive: snapshot.status.bufferActive,
+      runRecordingActive: snapshot.status.runRecordingActive,
+    };
+  }
+
+  private applyOverlayCaptureProtection(): void {
+    this.setOverlayCaptureProtectionEnabled(
+      resolveOverlayCaptureProtectionEnabled(
+        this.overlayCaptureProtectionSettings,
+        {
+          captureMode: this.recorderCaptureMode,
+          status: this.recorderStatus,
+        },
+      ),
+    );
   }
 
   private isRecorderOverlaySuppressed(): boolean {

@@ -21,7 +21,7 @@ function MinimizedRecorderControlsOverlay({
   onExpand,
 }: MinimizedRecorderControlsOverlayProps) {
   const {
-    canSaveManualClip,
+    canSaveManualReplay,
     canToggleRecording,
     handleSave,
     handleToggleRecording,
@@ -29,7 +29,7 @@ function MinimizedRecorderControlsOverlay({
     isSessionMode,
     isStartingRecording,
     isStoppingRecording,
-    manualClipTitle,
+    manualReplayTitle,
     recordingButtonTitle,
   } = useRecorderOverlayControls();
   return (
@@ -57,10 +57,10 @@ function MinimizedRecorderControlsOverlay({
           <button
             className={`${styles.iconButton} btn btn-primary btn-square`}
             type="button"
-            disabled={!canSaveManualClip}
+            disabled={!canSaveManualReplay}
             onClick={handleSave}
-            title={manualClipTitle}
-            aria-label={manualClipTitle}
+            title={manualReplayTitle}
+            aria-label={manualReplayTitle}
           >
             <PiFilmSlate size={19} />
           </button>

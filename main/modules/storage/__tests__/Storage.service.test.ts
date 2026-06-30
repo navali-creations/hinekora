@@ -126,17 +126,17 @@ describe("StorageService", () => {
   it("reports disk usage and game league usage from managed media", () => {
     const deathClipDirectory = join(storageRoot, "Death Clips");
     const fullRecordingDirectory = join(storageRoot, "Full Recordings");
-    const manualClipDirectory = join(storageRoot, "Manual Clips");
+    const manualReplayDirectory = join(storageRoot, "Manual Replays");
     mkdirSync(deathClipDirectory);
     mkdirSync(fullRecordingDirectory);
-    mkdirSync(manualClipDirectory);
+    mkdirSync(manualReplayDirectory);
     const clipPath = join(deathClipDirectory, "death.mp4");
     const recordingPath = join(fullRecordingDirectory, "recording.mp4");
-    const manualClipPath = join(manualClipDirectory, "manual.mp4");
+    const manualReplayPath = join(manualReplayDirectory, "manual.mp4");
     const temporaryPath = join(storageRoot, "recording.tmp");
     writeFileSync(clipPath, "clip");
     writeFileSync(recordingPath, "recording");
-    writeFileSync(manualClipPath, "manual");
+    writeFileSync(manualReplayPath, "manual");
     writeFileSync(temporaryPath, "temporary");
     replayClipsRepository.upsert(
       createReplayClip({
@@ -149,7 +149,7 @@ describe("StorageService", () => {
     replayClipsRepository.upsert(
       createReplayClip({
         id: "manual-clip",
-        processedClipPath: manualClipPath,
+        processedClipPath: manualReplayPath,
         sizeBytes: 6,
         sourceGame: "poe1",
         sourceLeague: "Keepers",
@@ -168,7 +168,7 @@ describe("StorageService", () => {
       expect.objectContaining({
         appInstallationSizeBytes: 7,
         mediaSizeBytes: 19,
-        rewindBufferEstimateBytes: 60_000_000,
+        rewindBufferEstimateBytes: 90_000_000,
         temporarySizeBytes: 9,
         diskTotalBytes: expect.any(Number),
         diskFreeBytes: expect.any(Number),
@@ -177,7 +177,7 @@ describe("StorageService", () => {
             category: "rewind-buffer",
             estimated: true,
             fileCount: 1,
-            sizeBytes: 60_000_000,
+            sizeBytes: 90_000_000,
           }),
           expect.objectContaining({
             category: "app-installation",
@@ -195,7 +195,8 @@ describe("StorageService", () => {
             sizeBytes: 9,
           }),
           expect.objectContaining({
-            category: "manual-clips",
+            category: "manual-replays",
+            label: "Manual replays",
             fileCount: 1,
             sizeBytes: 6,
           }),
@@ -221,6 +222,46 @@ describe("StorageService", () => {
         estimatedSizeBytes: 19,
       }),
     ]);
+  });
+
+  it("rebases replay clip rows before reporting migrated manual replay storage", () => {
+    const legacyDirectory = join(storageRoot, "Manual Clips");
+    const canonicalDirectory = join(storageRoot, "Manual Replays");
+    const legacyPath = join(legacyDirectory, "manual.mp4");
+    const canonicalPath = join(canonicalDirectory, "manual.mp4");
+    mkdirSync(legacyDirectory);
+    writeFileSync(legacyPath, "manual");
+    replayClipsRepository.upsert(
+      createReplayClip({
+        id: "manual",
+        kind: "manual",
+        originalObsPath: legacyPath,
+        processedClipPath: legacyPath,
+        sizeBytes: 6,
+      }),
+    );
+    const service = new StorageService();
+
+    expect(service.getInfo()).toEqual(
+      expect.objectContaining({
+        mediaSizeBytes: 6,
+        breakdown: expect.arrayContaining([
+          expect.objectContaining({
+            category: "manual-replays",
+            fileCount: 1,
+            sizeBytes: 6,
+          }),
+        ]),
+      }),
+    );
+    expect(existsSync(legacyDirectory)).toBe(false);
+    expect(existsSync(canonicalPath)).toBe(true);
+    expect(replayClipsRepository.get("manual")).toEqual(
+      expect.objectContaining({
+        originalObsPath: resolve(canonicalPath),
+        processedClipPath: resolve(canonicalPath),
+      }),
+    );
   });
 
   it("uses the packaged executable directory for app installation size", () => {
@@ -260,13 +301,13 @@ describe("StorageService", () => {
   it("counts filesystem-only full recordings in the active game league", () => {
     const deathClipDirectory = join(storageRoot, "Death Clips");
     const fullRecordingDirectory = join(storageRoot, "Full Recordings");
-    const manualClipDirectory = join(storageRoot, "Manual Clips");
+    const manualReplayDirectory = join(storageRoot, "Manual Replays");
     mkdirSync(deathClipDirectory);
     mkdirSync(fullRecordingDirectory);
-    mkdirSync(manualClipDirectory);
+    mkdirSync(manualReplayDirectory);
     writeFileSync(join(deathClipDirectory, "orphan-death.mp4"), "death");
     writeFileSync(join(fullRecordingDirectory, "orphan-run.mp4"), "run");
-    writeFileSync(join(manualClipDirectory, "orphan-manual.mp4"), "manual");
+    writeFileSync(join(manualReplayDirectory, "orphan-manual.mp4"), "manual");
     const service = new StorageService();
 
     expect(service.getInfo().breakdown).toEqual(

@@ -231,8 +231,8 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
           state.replayClips.error = null;
         });
       },
-      saveManual: async () => {
-        const clip = await window.electron.replayClips.saveManual();
+      saveManualReplay: async () => {
+        const clip = await window.electron.replayClips.saveManualReplay();
         await refreshReplayClipState({
           activeClip: clip ?? get().replayClips.activeClip,
         });

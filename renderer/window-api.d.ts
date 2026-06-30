@@ -269,7 +269,7 @@ declare global {
         listLibrary: (
           query?: ReplayClipLibraryQuery,
         ) => Promise<ReplayClipLibraryPage>;
-        saveManual: () => Promise<ReplayClip | null>;
+        saveManualReplay: () => Promise<ReplayClip | null>;
         open: (id: string) => Promise<ReplayClipFileActionResult>;
         reveal: (id: string) => Promise<ReplayClipFileActionResult>;
         copy: (id: string) => Promise<ReplayClipFileActionResult>;

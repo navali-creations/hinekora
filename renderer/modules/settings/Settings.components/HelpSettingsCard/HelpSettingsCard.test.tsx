@@ -186,4 +186,66 @@ describe("HelpSettingsCard", () => {
       },
     );
   });
+
+  it("restores the recorder settings info alert from help settings", async () => {
+    storeMocks.settingsValue = {
+      ...createDefaultSettings(),
+      recorderSettingsInfoAlertDismissed: true,
+    };
+
+    await renderHelpSettings();
+    const showAgainButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>("button"),
+    ).find(
+      (button) =>
+        button.textContent?.includes("Show Again") && !button.disabled,
+    );
+
+    expect(container.textContent).toContain("Recorder settings info alert");
+
+    await act(async () => {
+      showAgainButton?.click();
+    });
+
+    expect(storeMocks.updateSettings).toHaveBeenCalledWith({
+      recorderSettingsInfoAlertDismissed: false,
+    });
+    expect(analyticsMocks.trackEvent).toHaveBeenCalledWith(
+      "dismissible-alert-restored",
+      {
+        alertId: "recorder-settings-info",
+      },
+    );
+  });
+
+  it("restores the capture mode info alert from help settings", async () => {
+    storeMocks.settingsValue = {
+      ...createDefaultSettings(),
+      captureModeInfoAlertDismissed: true,
+    };
+
+    await renderHelpSettings();
+    const showAgainButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>("button"),
+    ).find(
+      (button) =>
+        button.textContent?.includes("Show Again") && !button.disabled,
+    );
+
+    expect(container.textContent).toContain("Capture mode info alert");
+
+    await act(async () => {
+      showAgainButton?.click();
+    });
+
+    expect(storeMocks.updateSettings).toHaveBeenCalledWith({
+      captureModeInfoAlertDismissed: false,
+    });
+    expect(analyticsMocks.trackEvent).toHaveBeenCalledWith(
+      "dismissible-alert-restored",
+      {
+        alertId: "capture-mode-info",
+      },
+    );
+  });
 });

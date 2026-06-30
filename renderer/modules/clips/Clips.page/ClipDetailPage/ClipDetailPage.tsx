@@ -89,7 +89,8 @@ function ClipDetailPage({ clipId }: ClipDetailPageProps) {
   const clip = state.detail?.clip ?? null;
   const clipPath = clip?.processedClipPath ?? clip?.originalObsPath;
   const title = clipPath ? getPathFileName(clipPath) : "Clip";
-  const clipKindLabel = clip?.kind === "manual" ? "Manual clip" : "Death clip";
+  const clipKindLabel =
+    clip?.kind === "manual" ? "Manual replay" : "Death clip";
   const canUseFileActions = Boolean(clip && state.detail?.mediaUrl);
   const editAction = clip ? (
     <Link

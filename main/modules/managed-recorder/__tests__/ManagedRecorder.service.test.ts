@@ -19,10 +19,12 @@ import {
   vi,
 } from "vitest";
 
+import { DatabaseService } from "~/main/modules/database";
 import { ProfilesService } from "~/main/modules/profiles";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
+import * as AppLog from "~/main/utils/app-log";
 import { isAsarVirtualPath } from "~/main/utils/asar-path";
 
 import {
@@ -102,6 +104,8 @@ let directory: string;
 let send: Mock<(channel: string, payload: unknown) => void>;
 
 beforeEach(() => {
+  DatabaseService.resetForTests();
+  RecordingStorageService.resetForTests();
   directory = mkdtempSync(join(tmpdir(), "hinekora-managed-recorder-"));
   send = vi.fn<(channel: string, payload: unknown) => void>();
   electronMocks.getAllDisplays.mockReturnValue([]);
@@ -160,6 +164,8 @@ afterEach(() => {
   noobsMocks.importNoobsModule.mockReset();
   pollerMocks.detectPoeProcessState.mockReset();
   vi.restoreAllMocks();
+  RecordingStorageService.resetForTests();
+  DatabaseService.resetForTests();
   delete process.env.HINEKORA_NOOBS_PATH;
   rmSync(directory, { force: true, recursive: true });
 });
@@ -221,6 +227,55 @@ describe("ManagedRecorderService", () => {
       outputDirectory: directory,
       fps: 60,
     });
+  });
+
+  it("notifies main-process observers when recorder state changes", () => {
+    const service = createService();
+    const listener = vi.fn();
+
+    const unsubscribe = service.onDidChange(listener);
+    service.setCaptureMode("session");
+
+    expect(listener).toHaveBeenCalledWith({
+      captureMode: "session",
+      status: expect.objectContaining({
+        bufferActive: false,
+        runRecordingActive: false,
+      }),
+    });
+
+    unsubscribe();
+    service.setCaptureMode("rewind");
+
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs recorder observer failures without interrupting publication", () => {
+    const service = createService();
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+    const failingListener = vi.fn(() => {
+      throw new Error("observer failed");
+    });
+    const succeedingListener = vi.fn();
+
+    service.onDidChange(failingListener);
+    service.onDidChange(succeedingListener);
+    service.setCaptureMode("session");
+
+    expect(succeedingListener).toHaveBeenCalledWith({
+      captureMode: "session",
+      status: expect.objectContaining({
+        bufferActive: false,
+        runRecordingActive: false,
+      }),
+    });
+    expect(logWarn).toHaveBeenCalledWith(
+      "managed-recorder",
+      "Recorder change listener failed",
+      {
+        error: "observer failed",
+      },
+    );
   });
 
   it("refreshes status with native output labels and default storage paths", () => {
@@ -659,6 +714,40 @@ describe("ManagedRecorderService", () => {
       input: [],
       output: [],
     });
+  });
+
+  it("throttles repeated empty audio device probes until explicit refresh", async () => {
+    const service = createService();
+    const internals = service as unknown as {
+      ensureNoobsRuntimeInitialized(): Promise<string>;
+      noobs: Partial<ReturnType<typeof createNoobsApi>>;
+      waitForAudioDeviceProbeRetry(): Promise<void>;
+    };
+    internals.noobs = {};
+    internals.ensureNoobsRuntimeInitialized = vi
+      .fn()
+      .mockResolvedValue(join(directory, "runtime"));
+    internals.waitForAudioDeviceProbeRetry = vi
+      .fn()
+      .mockResolvedValue(undefined);
+
+    await expect(service.listAudioDevices()).resolves.toEqual({
+      input: [],
+      output: [],
+    });
+    await expect(service.listAudioDevices()).resolves.toEqual({
+      input: [],
+      output: [],
+    });
+    expect(internals.ensureNoobsRuntimeInitialized).toHaveBeenCalledTimes(1);
+
+    await expect(
+      service.listAudioDevices({ forceRefresh: true }),
+    ).resolves.toEqual({
+      input: [],
+      output: [],
+    });
+    expect(internals.ensureNoobsRuntimeInitialized).toHaveBeenCalledTimes(2);
   });
 
   it("does not delete audio probes when source creation fails", async () => {
@@ -1532,7 +1621,7 @@ describe("ManagedRecorderService", () => {
 
   it("moves manual replay saves after conversion without reconfiguring active output", async () => {
     const activeDirectory = join(directory, "Death Clips");
-    const manualDirectory = join(directory, "Manual Clips");
+    const manualDirectory = join(directory, "Manual Replays");
     const savedPath = join(activeDirectory, "manual-replay.mp4");
     const service = createService();
     const noobs = createNoobsApi();
@@ -1866,7 +1955,7 @@ describe("ManagedRecorderService", () => {
         join(directory, "Death Clips"),
       );
       expect(service.resolveOutputDirectoryForReplayKind("manual")).toBe(
-        join(directory, "Manual Clips"),
+        join(directory, "Manual Replays"),
       );
       electronMocks.isPackaged = true;
       expect(service.resolveNoobsRuntimePath()).toBe(unpackedRuntimePath);
@@ -2789,7 +2878,7 @@ describe("ManagedRecorderService", () => {
       recordingStartedAt: "not-a-date",
     };
 
-    expect(internals.getActiveRecordingDurationSeconds()).toBe(60);
+    expect(internals.getActiveRecordingDurationSeconds()).toBe(90);
   });
 
   it("handles defensive recorder fallbacks without changing active recording state", async () => {
@@ -2853,7 +2942,7 @@ describe("ManagedRecorderService", () => {
       bufferActive: true,
       recording: true,
     });
-    expect(internals.getActiveRecordingDurationSeconds()).toBe(60);
+    expect(internals.getActiveRecordingDurationSeconds()).toBe(90);
 
     internals.cleanupRecordingStorage([null, join(directory, "clip.mp4")]);
     expect(cleanup).toHaveBeenCalledWith({

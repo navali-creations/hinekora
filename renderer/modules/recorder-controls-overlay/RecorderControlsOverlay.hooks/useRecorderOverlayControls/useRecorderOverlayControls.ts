@@ -1,7 +1,10 @@
 import {
   useManagedRecorderShallow,
   useReplayClipsShallow,
+  useSettingsShallow,
 } from "~/renderer/store";
+
+import { clampRewindSaveSeconds, defaultRewindSaveSeconds } from "~/types";
 
 function useRecorderOverlayControls() {
   const {
@@ -19,10 +22,15 @@ function useRecorderOverlayControls() {
     stopBuffer: managedRecorder.stopBuffer,
     stopRunRecording: managedRecorder.stopRunRecording,
   }));
-  const { clip, saveManualClip } = useReplayClipsShallow((replayClips) => ({
+  const { clip, saveManualReplay } = useReplayClipsShallow((replayClips) => ({
     clip: replayClips.activeClip,
-    saveManualClip: replayClips.saveManual,
+    saveManualReplay: replayClips.saveManualReplay,
   }));
+  const rewindSaveSeconds = useSettingsShallow((settings) =>
+    clampRewindSaveSeconds(
+      settings.value?.deathClipSeconds ?? defaultRewindSaveSeconds,
+    ),
+  );
   const isProcessing =
     clip?.status === "death_detected" ||
     clip?.status === "saving_replay" ||
@@ -47,8 +55,8 @@ function useRecorderOverlayControls() {
     : isBufferActive
       ? "Disable Rewind"
       : "Enable Rewind";
-  const manualClipTitle = "Save last 60 seconds";
-  const canSaveManualClip =
+  const manualReplayTitle = `Save last ${rewindSaveSeconds} seconds`;
+  const canSaveManualReplay =
     !isSessionMode &&
     gameRunning &&
     isBufferActive &&
@@ -73,10 +81,10 @@ function useRecorderOverlayControls() {
 
     handleStart();
   };
-  const handleSave = () => void saveManualClip();
+  const handleSave = () => void saveManualReplay();
 
   return {
-    canSaveManualClip,
+    canSaveManualReplay,
     canToggleRecording,
     gameRunning,
     handleSave,
@@ -86,7 +94,7 @@ function useRecorderOverlayControls() {
     isSessionMode,
     isStartingRecording,
     isStoppingRecording,
-    manualClipTitle,
+    manualReplayTitle,
     recordingButtonTitle,
   };
 }

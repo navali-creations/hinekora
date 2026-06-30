@@ -51,7 +51,11 @@ import {
 } from "./RecordingStorage.files";
 import { RecordingStorageRepository } from "./RecordingStorage.repository";
 import {
+  applyRecordingStoragePathMigrations,
   isManagedRecordingFilePath,
+  planLegacyRecordingStorageMediaDirectoryMigrations,
+  type RecordingStoragePathMigration,
+  resolveRecordingStorageMediaDirectories,
   resolveRecordingStorageMediaDirectory,
   resolveRecordingStorageRoot,
 } from "./RecordingStorage.utils";
@@ -107,6 +111,7 @@ class RecordingStorageService {
   private readonly durationProbeFailureLoggedPaths = new Set<string>();
   private readonly durationVerifiedFileStateByPath = new Map<string, string>();
   private recordingLibrarySyncCache: RecordingLibrarySyncCache | null = null;
+  private readonly database: DatabaseService;
   private readonly replayClipsRepository: ReplayClipsRepository;
   private readonly repository: RecordingStorageRepository;
 
@@ -124,6 +129,7 @@ class RecordingStorageService {
 
   constructor() {
     const database = DatabaseService.getInstance();
+    this.database = database;
     this.replayClipsRepository = new ReplayClipsRepository(database);
     this.repository = new RecordingStorageRepository(database);
     this.setupHandlers();
@@ -163,6 +169,12 @@ class RecordingStorageService {
     };
   }
 
+  initializeStorageRoot(): void {
+    const settings = SettingsStoreService.getInstance().get();
+    const root = this.resolveStorageRoot(settings.recordingStoragePath);
+    this.ensureStorageRoot(root);
+  }
+
   listRecordings(): RunRecordingItem[] {
     const settings = SettingsStoreService.getInstance().get();
     const root = this.resolveStorageRoot(settings.recordingStoragePath);
@@ -175,6 +187,36 @@ class RecordingStorageService {
     const settings = SettingsStoreService.getInstance().get();
     const root = this.resolveStorageRoot(settings.recordingStoragePath);
     this.syncRecordingLibrary(root, settings);
+  }
+
+  migrateLegacyMediaDirectories(root: string): void {
+    const pendingMigrations =
+      this.repository.listPendingStoragePathMigrations();
+    const appliedPendingMigrations =
+      applyRecordingStoragePathMigrations(pendingMigrations);
+    let updatedRows = this.completeStoragePathMigrations(
+      appliedPendingMigrations,
+    );
+
+    const pendingMigrationSources = new Set(
+      pendingMigrations.map((migration) => resolve(migration.from)),
+    );
+    const plannedMigrations =
+      planLegacyRecordingStorageMediaDirectoryMigrations(root).filter(
+        (migration) => !pendingMigrationSources.has(resolve(migration.from)),
+      );
+    this.repository.savePendingStoragePathMigrations(plannedMigrations);
+    const appliedPlannedMigrations =
+      applyRecordingStoragePathMigrations(plannedMigrations);
+    updatedRows += this.completeStoragePathMigrations(appliedPlannedMigrations);
+
+    if (
+      pendingMigrations.length > 0 ||
+      plannedMigrations.length > 0 ||
+      updatedRows > 0
+    ) {
+      this.invalidateRecordingLibrarySyncCache();
+    }
   }
 
   listRecordingLibrary(
@@ -839,6 +881,23 @@ class RecordingStorageService {
     try {
       mkdirSync(root, { recursive: true });
     } catch {}
+    this.migrateLegacyMediaDirectories(root);
+  }
+
+  private completeStoragePathMigrations(
+    migrations: RecordingStoragePathMigration[],
+  ): number {
+    if (migrations.length === 0) {
+      return 0;
+    }
+
+    let updatedRows = 0;
+    this.database.transaction(() => {
+      updatedRows = this.replayClipsRepository.rebaseStoragePaths(migrations);
+      this.repository.markStoragePathMigrationsCompleted(migrations);
+    });
+
+    return updatedRows;
   }
 
   private resolveStorageRoot(configuredPath: string | null): string {
@@ -996,9 +1055,8 @@ class RecordingStorageService {
         resolveRecordingStorageMediaDirectory(root, "deathClips"),
         resolvedPath,
       ) &&
-      !isPathInsideOrEqual(
-        resolveRecordingStorageMediaDirectory(root, "manualClips"),
-        resolvedPath,
+      !resolveRecordingStorageMediaDirectories(root, "manualReplays").some(
+        (directory) => isPathInsideOrEqual(directory, resolvedPath),
       )
     );
   }

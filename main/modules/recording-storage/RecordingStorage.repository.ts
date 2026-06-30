@@ -14,6 +14,7 @@ import type {
   RunRecordingLibrarySortKey,
   RunRecordingMetadata,
 } from "./RecordingStorage.dto";
+import type { RecordingStoragePathMigration } from "./RecordingStorage.utils";
 
 interface RunRecordingRow {
   id: string;
@@ -85,6 +86,11 @@ interface RunRecordingSyncItem {
   mtimeMs: number;
   path: string;
   sizeBytes: number;
+}
+
+interface RecordingStoragePathMigrationRow {
+  from_path: string;
+  to_path: string;
 }
 
 type RunRecordingFilterQuery = SelectQueryBuilder<
@@ -204,6 +210,73 @@ class RecordingStorageRepository {
       path: row.path,
       sizeBytes: row.exists_on_disk === 1 ? row.size_bytes : 0,
     }));
+  }
+
+  listPendingStoragePathMigrations(): RecordingStoragePathMigration[] {
+    const rows = this.database.queryAll(
+      this.database.kysely
+        .selectFrom("recording_storage_path_migrations")
+        .select(["from_path", "to_path"])
+        .where("status", "=", "pending")
+        .orderBy("created_at", "asc"),
+    ) as RecordingStoragePathMigrationRow[];
+
+    return rows.map((row) => ({
+      from: row.from_path,
+      to: row.to_path,
+    }));
+  }
+
+  savePendingStoragePathMigrations(
+    migrations: RecordingStoragePathMigration[],
+  ): void {
+    if (migrations.length === 0) {
+      return;
+    }
+
+    const now = new Date().toISOString();
+    this.database.runQuery(
+      this.database.kysely
+        .insertInto("recording_storage_path_migrations")
+        .values(
+          migrations.map((migration) => ({
+            from_path: resolve(migration.from),
+            to_path: resolve(migration.to),
+            status: "pending",
+            created_at: now,
+            updated_at: now,
+          })),
+        )
+        .onConflict((conflict) =>
+          conflict.column("from_path").doUpdateSet({
+            to_path: (eb) => eb.ref("excluded.to_path"),
+            status: "pending",
+            updated_at: now,
+          }),
+        ),
+    );
+  }
+
+  markStoragePathMigrationsCompleted(
+    migrations: RecordingStoragePathMigration[],
+  ): void {
+    if (migrations.length === 0) {
+      return;
+    }
+
+    this.database.runQuery(
+      this.database.kysely
+        .updateTable("recording_storage_path_migrations")
+        .set({
+          status: "completed",
+          updated_at: new Date().toISOString(),
+        })
+        .where(
+          "from_path",
+          "in",
+          migrations.map((migration) => resolve(migration.from)),
+        ),
+    );
   }
 
   listLibraryPage(

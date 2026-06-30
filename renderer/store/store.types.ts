@@ -152,7 +152,7 @@ export interface ReplayClipsSlice {
     hydrate: () => Promise<void>;
     hydrateLibrary: (query: ReplayClipLibraryQuery) => Promise<void>;
     refreshLibrary: () => Promise<void>;
-    saveManual: () => Promise<void>;
+    saveManualReplay: () => Promise<void>;
     openClip: (id: string) => Promise<void>;
     revealClip: (id: string) => Promise<void>;
     deleteClip: (id: string) => Promise<void>;

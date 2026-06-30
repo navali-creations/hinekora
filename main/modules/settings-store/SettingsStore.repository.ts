@@ -29,24 +29,7 @@ class SettingsStoreRepository {
     const now = new Date().toISOString();
 
     this.database.transaction(() => {
-      for (const [key, value] of Object.entries(values)) {
-        const valueJson = JSON.stringify(value);
-        this.database.runQuery(
-          this.database.kysely
-            .insertInto("settings")
-            .values({
-              key,
-              value_json: valueJson,
-              updated_at: now,
-            })
-            .onConflict((conflict) =>
-              conflict.column("key").doUpdateSet({
-                value_json: valueJson,
-                updated_at: now,
-              }),
-            ),
-        );
-      }
+      this.upsertMany(values, now);
     });
 
     return this.get();
@@ -55,10 +38,31 @@ class SettingsStoreRepository {
   replace(settings: AppSettings): AppSettings {
     this.database.transaction(() => {
       this.database.runQuery(this.database.kysely.deleteFrom("settings"));
-      this.setMany(settings);
+      this.upsertMany(settings, new Date().toISOString());
     });
 
     return this.get();
+  }
+
+  private upsertMany(values: Partial<AppSettings>, now: string): void {
+    for (const [key, value] of Object.entries(values)) {
+      const valueJson = JSON.stringify(value);
+      this.database.runQuery(
+        this.database.kysely
+          .insertInto("settings")
+          .values({
+            key,
+            value_json: valueJson,
+            updated_at: now,
+          })
+          .onConflict((conflict) =>
+            conflict.column("key").doUpdateSet({
+              value_json: valueJson,
+              updated_at: now,
+            }),
+          ),
+      );
+    }
   }
 }
 

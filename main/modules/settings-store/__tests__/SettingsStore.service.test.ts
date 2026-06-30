@@ -44,6 +44,7 @@ describe("SettingsStoreService", () => {
           onboardingDismissedBeacons: ["game-selector"],
           poe1CharacterName: "Ailucannon",
           poe2CharacterName: "Ailumonk",
+          recorderSettingsInfoAlertDismissed: true,
         }),
       ).toMatchObject({
         activeGame: "poe2",
@@ -53,8 +54,9 @@ describe("SettingsStoreService", () => {
         onboardingDismissedBeacons: ["game-selector"],
         poe1CharacterName: "Ailucannon",
         poe2CharacterName: "Ailumonk",
+        recorderSettingsInfoAlertDismissed: true,
       });
-      expect(() => service.update({ deathClipSeconds: 999 })).toThrow();
+      expect(() => service.update({ deathClipSeconds: 61 })).toThrow();
     } finally {
       database.close();
     }

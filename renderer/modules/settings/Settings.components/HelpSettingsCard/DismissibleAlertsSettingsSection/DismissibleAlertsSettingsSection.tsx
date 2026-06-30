@@ -1,36 +1,38 @@
-import { useCallback } from "react";
-import { FiRotateCcw } from "react-icons/fi";
+import {
+  DismissibleAlertRestoreRow,
+  type DismissibleAlertSettingKey,
+} from "./DismissibleAlertRestoreRow/DismissibleAlertRestoreRow";
 
-import { trackEvent } from "~/renderer/modules/umami";
-import { useSettingsShallow } from "~/renderer/store";
+const dismissibleAlertRows: ReadonlyArray<{
+  alertId: string;
+  description: string;
+  settingKey: DismissibleAlertSettingKey;
+  title: string;
+}> = [
+  {
+    alertId: "group-play-death",
+    description:
+      "Reminds group players to add a character name so teammate deaths do not trigger death clips.",
+    settingKey: "groupPlayDeathAlertDismissed",
+    title: "Group play death clip alert",
+  },
+  {
+    alertId: "capture-mode-info",
+    description:
+      "Explains the selected Recording or Rewind mode on the dashboard.",
+    settingKey: "captureModeInfoAlertDismissed",
+    title: "Capture mode info alert",
+  },
+  {
+    alertId: "recorder-settings-info",
+    description:
+      "Reminds you that dashboard recorder settings are saved locally.",
+    settingKey: "recorderSettingsInfoAlertDismissed",
+    title: "Recorder settings info alert",
+  },
+];
 
 function DismissibleAlertsSettingsSection() {
-  const { settingsValue, updateSettings } = useSettingsShallow((settings) => ({
-    settingsValue: settings.value,
-    updateSettings: settings.update,
-  }));
-  const groupPlayDeathAlertDismissed =
-    settingsValue?.groupPlayDeathAlertDismissed ?? false;
-  const captureModeInfoAlertDismissed =
-    settingsValue?.captureModeInfoAlertDismissed ?? false;
-
-  const handleRestoreGroupPlayDeathAlert = useCallback(() => {
-    void updateSettings({
-      groupPlayDeathAlertDismissed: false,
-    });
-    trackEvent("dismissible-alert-restored", {
-      alertId: "group-play-death",
-    });
-  }, [updateSettings]);
-  const handleRestoreCaptureModeInfoAlert = useCallback(() => {
-    void updateSettings({
-      captureModeInfoAlertDismissed: false,
-    });
-    trackEvent("dismissible-alert-restored", {
-      alertId: "capture-mode-info",
-    });
-  }, [updateSettings]);
-
   return (
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-4">
@@ -42,52 +44,9 @@ function DismissibleAlertsSettingsSection() {
         </div>
       </div>
 
-      <div className="flex items-start justify-between gap-4 border-base-content/10 border-t pt-4">
-        <div>
-          <h3 className="font-semibold text-sm">Group play death clip alert</h3>
-          <p className="mt-1 text-base-content/60 text-sm">
-            Reminds group players to add a character name so teammate deaths do
-            not trigger death clips.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="badge badge-outline badge-sm">
-            {groupPlayDeathAlertDismissed ? "Dismissed" : "Visible"}
-          </span>
-          <button
-            className="btn btn-outline btn-sm"
-            disabled={!groupPlayDeathAlertDismissed}
-            type="button"
-            onClick={handleRestoreGroupPlayDeathAlert}
-          >
-            <FiRotateCcw />
-            Show Again
-          </button>
-        </div>
-      </div>
-
-      <div className="flex items-start justify-between gap-4 border-base-content/10 border-t pt-4">
-        <div>
-          <h3 className="font-semibold text-sm">Capture mode info alert</h3>
-          <p className="mt-1 text-base-content/60 text-sm">
-            Explains the selected Recording or Rewind mode on the dashboard.
-          </p>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <span className="badge badge-outline badge-sm">
-            {captureModeInfoAlertDismissed ? "Dismissed" : "Visible"}
-          </span>
-          <button
-            className="btn btn-outline btn-sm"
-            disabled={!captureModeInfoAlertDismissed}
-            type="button"
-            onClick={handleRestoreCaptureModeInfoAlert}
-          >
-            <FiRotateCcw />
-            Show Again
-          </button>
-        </div>
-      </div>
+      {dismissibleAlertRows.map((row) => (
+        <DismissibleAlertRestoreRow key={row.settingKey} {...row} />
+      ))}
     </div>
   );
 }

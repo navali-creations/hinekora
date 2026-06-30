@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 
+import { clampRewindSaveSeconds } from "./recording";
 import {
   AppSettingsSchema,
   AuraPlacementScaleSettings,
   AuraPointPlacementSettings,
+  appSettingsKeys,
   CapturePreviewSourceSchema,
   createCoordinateReferenceDimensions,
   createDefaultSettings,
@@ -32,7 +34,8 @@ describe("shared schemas", () => {
       recordingRunQuality: "moderate",
       recordingAudioInputDeviceId: null,
       recordingAudioOutputDeviceId: null,
-      recordingHideOverlaysFromCapture: false,
+      recordingHideOverlaysFromRecording: true,
+      recordingHideOverlaysFromRewind: true,
       recordingMaxStorageGb: 50,
       poe1ClientTxtPath: null,
       poe2ClientTxtPath: null,
@@ -40,6 +43,7 @@ describe("shared schemas", () => {
       poe2CharacterName: "",
       captureModeInfoAlertDismissed: false,
       groupPlayDeathAlertDismissed: false,
+      recorderSettingsInfoAlertDismissed: false,
       activeGame: "poe1",
       activeLeague: "Standard",
       poe1SelectedLeague: "Standard",
@@ -53,8 +57,29 @@ describe("shared schemas", () => {
     });
   });
 
+  it("tracks app settings keys from the schema", () => {
+    expect(new Set(appSettingsKeys)).toEqual(
+      new Set(Object.keys(createDefaultSettings())),
+    );
+    expect(appSettingsKeys).toContain("recordingHideOverlaysFromRecording");
+    expect(appSettingsKeys).not.toContain("recordingHideOverlaysFromCapture");
+  });
+
   it("rejects empty active leagues", () => {
     expect(() => AppSettingsSchema.parse({ activeLeague: "" })).toThrow();
+  });
+
+  it("limits rewind save duration to 60 seconds", () => {
+    expect(AppSettingsSchema.parse({ deathClipSeconds: 60 })).toMatchObject({
+      deathClipSeconds: 60,
+    });
+    expect(() => AppSettingsSchema.parse({ deathClipSeconds: 61 })).toThrow();
+  });
+
+  it("clamps rewind save durations for runtime settings", () => {
+    expect(clampRewindSaveSeconds(0)).toBe(1);
+    expect(clampRewindSaveSeconds(10.6)).toBe(11);
+    expect(clampRewindSaveSeconds(90)).toBe(60);
   });
 
   it("accepts and normalizes legacy recording encoder values", () => {

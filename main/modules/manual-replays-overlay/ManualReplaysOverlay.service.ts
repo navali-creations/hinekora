@@ -2,7 +2,7 @@ import type { DeathClipsOverlayService } from "~/main/modules/death-clips-overla
 
 import type { ReplayClip } from "~/types";
 
-class ManualClipsOverlayService {
+class ManualReplaysOverlayService {
   constructor(private readonly deathClipsOverlay: DeathClipsOverlayService) {}
 
   showClip(clip: ReplayClip): Promise<void> {
@@ -14,4 +14,4 @@ class ManualClipsOverlayService {
   }
 }
 
-export { ManualClipsOverlayService };
+export { ManualReplaysOverlayService };

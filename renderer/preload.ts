@@ -75,7 +75,7 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
       },
       replayClips: {
         list: ReplayClipsAPI.list,
-        saveManual: ReplayClipsAPI.saveManual,
+        saveManualReplay: ReplayClipsAPI.saveManualReplay,
         onStatusChanged: ReplayClipsAPI.onStatusChanged,
       },
     };

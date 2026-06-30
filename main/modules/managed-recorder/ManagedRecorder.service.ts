@@ -31,7 +31,13 @@ import {
 } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 
-import type { CaptureTarget, GameId, ManagedRecorderStatus } from "~/types";
+import {
+  type CaptureTarget,
+  type GameId,
+  type ManagedRecorderStatus,
+  maxRewindSaveSeconds,
+  rewindBufferSeconds,
+} from "~/types";
 import { ManagedRecorderChannel } from "./ManagedRecorder.channels";
 import { resolveNativeDisplayResolution } from "./ManagedRecorder.display";
 import type {
@@ -104,7 +110,7 @@ const RECORDING_FILE_POLL_MS = 1_000;
 const RECORDING_FILE_STABLE_MS = 1_000;
 const REPLAY_CONVERSION_STOP_DELAY_MS = 250;
 const AUDIO_DEVICE_PROBE_RETRY_MS = 250;
-const MANAGED_REPLAY_BUFFER_LIMIT_SECONDS = 60;
+const AUDIO_DEVICE_PROBE_EMPTY_COOLDOWN_MS = 3_000;
 const NATIVE_RECORDING_RESOLUTION = "native";
 const WINDOWS_PATH_DELIMITER = ";";
 const FALLBACK_RECORDING_RESOLUTION: ManagedRecorderResolution = {
@@ -124,6 +130,15 @@ interface BufferedReplaySaveOptions {
   restartBufferAfterSave: boolean;
 }
 
+interface ManagedRecorderChangeSnapshot {
+  captureMode: ManagedRecorderCaptureMode;
+  status: ManagedRecorderStatus;
+}
+
+type ManagedRecorderChangeListener = (
+  snapshot: ManagedRecorderChangeSnapshot,
+) => void;
+
 interface RecordingSession {
   directory: string;
   existingRecordingPaths: Set<string>;
@@ -137,6 +152,7 @@ interface EnsureNoobsRuntimeInitializedOptions {
 class ManagedRecorderService {
   private static instance: ManagedRecorderService | null = null;
 
+  private readonly changeListeners = new Set<ManagedRecorderChangeListener>();
   private noobs: NoobsApi | null = null;
   private noobsRuntimeInitialized = false;
   private status: ManagedRecorderStatus = {
@@ -187,6 +203,7 @@ class ManagedRecorderService {
   private audioDeviceListRequest: Promise<ManagedRecorderAudioDevices> | null =
     null;
   private audioDevicesCache: ManagedRecorderAudioDevices | null = null;
+  private audioDeviceProbeCooldownUntilMs = 0;
   private gameRunningRefreshRequest: Promise<boolean> | null = null;
   private offlineStopRequest: Promise<void> | null = null;
 
@@ -213,11 +230,26 @@ class ManagedRecorderService {
     return this.captureMode;
   }
 
+  onDidChange(listener: ManagedRecorderChangeListener): () => void {
+    this.changeListeners.add(listener);
+
+    return () => {
+      this.changeListeners.delete(listener);
+    };
+  }
+
   async listAudioDevices(
     options: ManagedRecorderListAudioDevicesOptions = {},
   ): Promise<ManagedRecorderAudioDevices> {
     if (this.audioDeviceListRequest) {
       return this.audioDeviceListRequest;
+    }
+
+    if (
+      options.forceRefresh !== true &&
+      this.audioDeviceProbeCooldownUntilMs > Date.now()
+    ) {
+      return this.audioDevicesCache ?? { input: [], output: [] };
     }
 
     if (options.forceRefresh !== true && this.audioDevicesCache) {
@@ -238,6 +270,10 @@ class ManagedRecorderService {
       const devices = await this.resolveAudioDevicesFromSources();
       if (devices.output.length > 0) {
         this.audioDevicesCache = devices;
+        this.audioDeviceProbeCooldownUntilMs = 0;
+      } else {
+        this.audioDeviceProbeCooldownUntilMs =
+          Date.now() + AUDIO_DEVICE_PROBE_EMPTY_COOLDOWN_MS;
       }
 
       return devices;
@@ -246,6 +282,8 @@ class ManagedRecorderService {
       logWarn(MANAGED_RECORDER_LOG_SCOPE, "Failed to list audio devices", {
         error: message,
       });
+      this.audioDeviceProbeCooldownUntilMs =
+        Date.now() + AUDIO_DEVICE_PROBE_EMPTY_COOLDOWN_MS;
 
       return this.audioDevicesCache ?? { input: [], output: [] };
     }
@@ -1414,7 +1452,7 @@ class ManagedRecorderService {
     const recordingStartedAt = this.status.recordingStartedAt;
     const requestedSeconds = Math.max(
       1,
-      Math.min(MANAGED_REPLAY_BUFFER_LIMIT_SECONDS, Math.round(seconds)),
+      Math.min(maxRewindSaveSeconds, Math.round(seconds)),
     );
     const waitMs = this.resolveReplaySaveWaitMs(requestedSeconds);
     const saveStartedAtMs = Date.now();
@@ -1747,12 +1785,12 @@ class ManagedRecorderService {
 
   private getActiveRecordingDurationSeconds(): number {
     if (!this.status.recordingStartedAt) {
-      return MANAGED_REPLAY_BUFFER_LIMIT_SECONDS;
+      return rewindBufferSeconds;
     }
 
     const startedAtMs = new Date(this.status.recordingStartedAt).getTime();
     if (!Number.isFinite(startedAtMs)) {
-      return MANAGED_REPLAY_BUFFER_LIMIT_SECONDS;
+      return rewindBufferSeconds;
     }
 
     return Math.ceil((Date.now() - startedAtMs) / 1_000);
@@ -1849,12 +1887,13 @@ class ManagedRecorderService {
   private resolveOutputDirectoryForReplayKind(kind: ManagedReplayKind): string {
     return resolveRecordingStorageMediaDirectory(
       this.resolveOutputDirectory(),
-      kind === "manual" ? "manualClips" : "deathClips",
+      kind === "manual" ? "manualReplays" : "deathClips",
     );
   }
 
   private ensureOutputDirectories(root: string): void {
     mkdirSync(root, { recursive: true });
+    RecordingStorageService.getInstance().migrateLegacyMediaDirectories(root);
     for (const directoryName of Object.values(
       RECORDING_STORAGE_DIRECTORY_NAMES,
     )) {
@@ -2070,13 +2109,34 @@ class ManagedRecorderService {
 
   private publishStatus(): void {
     publishManagedRecorderStatus(this.status);
+    this.notifyChangeListeners();
   }
 
   private publishCaptureMode(): void {
     publishManagedRecorderCaptureMode(this.captureMode);
+    this.notifyChangeListeners();
+  }
+
+  private notifyChangeListeners(): void {
+    const snapshot: ManagedRecorderChangeSnapshot = {
+      captureMode: this.captureMode,
+      status: { ...this.status },
+    };
+
+    for (const listener of this.changeListeners) {
+      try {
+        listener(snapshot);
+      } catch (error) {
+        // Main-process observers must not break recorder status publication.
+        logWarn(MANAGED_RECORDER_LOG_SCOPE, "Recorder change listener failed", {
+          error: safeErrorMessage(error),
+        });
+      }
+    }
   }
 }
 
+export type { ManagedRecorderChangeSnapshot };
 export { describeNoobsRuntimeLocation, ManagedRecorderService };
 
 function describeNoobsRuntimeLocation(path: string): string {

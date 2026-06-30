@@ -224,7 +224,7 @@ class ReplayClipsService {
     );
   }
 
-  async saveManualClip(): Promise<ReplayClip | null> {
+  async saveManualReplay(): Promise<ReplayClip | null> {
     const settings = SettingsStoreService.getInstance().get();
     return this.handleDeathEvent({
       kind: "manual",
@@ -634,9 +634,9 @@ class ReplayClipsService {
       },
     );
     registerGuardedIpcHandler(
-      ReplayClipsChannel.SaveManual,
+      ReplayClipsChannel.SaveManualReplay,
       [WindowName.Main, WindowName.RecorderOverlay],
-      () => this.saveManualClip(),
+      () => this.saveManualReplay(),
     );
     registerGuardedIpcHandler(
       ReplayClipsChannel.Open,

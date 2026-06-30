@@ -116,6 +116,212 @@ describe("RecordingStorageService", () => {
     expect(service.getUsage().databaseSizeBytes).toBeGreaterThan(0);
   });
 
+  it("rebases replay clip rows when legacy manual clip folders migrate", () => {
+    const legacyDirectory = join(root, "Manual Clips");
+    const canonicalDirectory = join(root, "Manual Replays");
+    const legacyPath = join(legacyDirectory, "manual.mp4");
+    const canonicalPath = join(canonicalDirectory, "manual.mp4");
+    mkdirSync(legacyDirectory);
+    writeFileSync(legacyPath, "manual");
+    replayClipsRepository.upsert(
+      createReplayClip({
+        id: "manual",
+        kind: "manual",
+        originalObsPath: legacyPath,
+        processedClipPath: legacyPath,
+        sizeBytes: 6,
+      }),
+    );
+
+    expect(service.getUsage()).toEqual(
+      expect.objectContaining({
+        clipsSizeBytes: 6,
+      }),
+    );
+
+    expect(existsSync(legacyDirectory)).toBe(false);
+    expect(existsSync(canonicalPath)).toBe(true);
+    expect(replayClipsRepository.get("manual")).toEqual(
+      expect.objectContaining({
+        originalObsPath: resolve(canonicalPath),
+        processedClipPath: resolve(canonicalPath),
+      }),
+    );
+  });
+
+  it("initializes the storage root and migrates legacy manual replay folders", () => {
+    const legacyDirectory = join(root, "Manual Clips");
+    const canonicalDirectory = join(root, "Manual Replays");
+    const legacyPath = join(legacyDirectory, "manual.mp4");
+    const canonicalPath = join(canonicalDirectory, "manual.mp4");
+    mkdirSync(legacyDirectory);
+    writeFileSync(legacyPath, "manual");
+    replayClipsRepository.upsert(
+      createReplayClip({
+        id: "manual",
+        kind: "manual",
+        originalObsPath: legacyPath,
+        processedClipPath: null,
+      }),
+    );
+
+    service.initializeStorageRoot();
+
+    expect(existsSync(legacyDirectory)).toBe(false);
+    expect(existsSync(canonicalPath)).toBe(true);
+    expect(replayClipsRepository.get("manual")).toEqual(
+      expect.objectContaining({
+        originalObsPath: resolve(canonicalPath),
+        processedClipPath: null,
+      }),
+    );
+  });
+
+  it("recovers pending manual replay migrations after files were already moved", () => {
+    const legacyDirectory = join(root, "Manual Clips");
+    const canonicalDirectory = join(root, "Manual Replays");
+    const legacyPath = join(legacyDirectory, "manual.mp4");
+    const canonicalPath = join(canonicalDirectory, "manual.mp4");
+    mkdirSync(canonicalDirectory);
+    writeFileSync(canonicalPath, "manual");
+    repository.savePendingStoragePathMigrations([
+      {
+        from: legacyDirectory,
+        to: canonicalDirectory,
+      },
+    ]);
+    replayClipsRepository.upsert(
+      createReplayClip({
+        id: "manual",
+        kind: "manual",
+        originalObsPath: legacyPath,
+        processedClipPath: legacyPath,
+      }),
+    );
+
+    service.initializeStorageRoot();
+
+    expect(replayClipsRepository.get("manual")).toEqual(
+      expect.objectContaining({
+        originalObsPath: resolve(canonicalPath),
+        processedClipPath: resolve(canonicalPath),
+      }),
+    );
+    expect(
+      database.db
+        .prepare(
+          `
+            SELECT status
+            FROM recording_storage_path_migrations
+            WHERE from_path = ?
+          `,
+        )
+        .get(resolve(legacyDirectory)),
+    ).toEqual({ status: "completed" });
+  });
+
+  it("keeps pending manual replay migrations when source and target are both missing", () => {
+    const legacyDirectory = join(root, "Manual Clips");
+    const canonicalDirectory = join(root, "Manual Replays");
+    const legacyPath = join(legacyDirectory, "manual.mp4");
+    const canonicalPath = join(canonicalDirectory, "manual.mp4");
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+    repository.savePendingStoragePathMigrations([
+      {
+        from: legacyPath,
+        to: canonicalPath,
+      },
+    ]);
+    replayClipsRepository.upsert(
+      createReplayClip({
+        id: "manual",
+        kind: "manual",
+        originalObsPath: legacyPath,
+        processedClipPath: legacyPath,
+      }),
+    );
+
+    service.initializeStorageRoot();
+
+    expect(replayClipsRepository.get("manual")).toEqual(
+      expect.objectContaining({
+        originalObsPath: resolve(legacyPath),
+        processedClipPath: resolve(legacyPath),
+      }),
+    );
+    expect(
+      database.db
+        .prepare(
+          `
+            SELECT status
+            FROM recording_storage_path_migrations
+            WHERE from_path = ?
+          `,
+        )
+        .get(resolve(legacyPath)),
+    ).toEqual({ status: "pending" });
+    expect(logWarn).toHaveBeenCalledWith(
+      "recording-storage",
+      "Legacy recording media directory migration source and target are missing",
+      expect.objectContaining({
+        errorCode: "Error",
+      }),
+    );
+  });
+
+  it("keeps failed pending manual replay migrations pending without rebasing rows", () => {
+    const legacyDirectory = join(root, "Manual Clips");
+    const canonicalDirectory = join(root, "Manual Replays");
+    const legacyPath = join(legacyDirectory, "manual.mp4");
+    const canonicalPath = join(canonicalDirectory, "manual.mp4");
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+    mkdirSync(legacyDirectory);
+    mkdirSync(canonicalDirectory);
+    writeFileSync(legacyPath, "legacy");
+    writeFileSync(canonicalPath, "canonical");
+    repository.savePendingStoragePathMigrations([
+      {
+        from: legacyPath,
+        to: canonicalPath,
+      },
+    ]);
+    replayClipsRepository.upsert(
+      createReplayClip({
+        id: "manual",
+        kind: "manual",
+        originalObsPath: legacyPath,
+        processedClipPath: legacyPath,
+      }),
+    );
+
+    service.initializeStorageRoot();
+
+    expect(replayClipsRepository.get("manual")).toEqual(
+      expect.objectContaining({
+        originalObsPath: resolve(legacyPath),
+        processedClipPath: resolve(legacyPath),
+      }),
+    );
+    expect(
+      database.db
+        .prepare(
+          `
+            SELECT status
+            FROM recording_storage_path_migrations
+            WHERE from_path = ?
+          `,
+        )
+        .get(resolve(legacyPath)),
+    ).toEqual({ status: "pending" });
+    expect(logWarn).toHaveBeenCalledWith(
+      "recording-storage",
+      "Legacy recording media directory migration failed",
+      expect.objectContaining({
+        errorCode: "Error",
+      }),
+    );
+  });
+
   it("lists filesystem recordings and missing metadata rows", () => {
     const filePath = join(root, "2026-06-12_10-30-00.mp4");
     const missingPath = join(root, "2026-06-12_11-00-00.mp4");

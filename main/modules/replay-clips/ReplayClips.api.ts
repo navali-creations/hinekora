@@ -26,8 +26,8 @@ const ReplayClipsAPI = {
     unwrapIpcResult(
       await ipcRenderer.invoke(ReplayClipsChannel.ListLibrary, query),
     ),
-  saveManual: (): Promise<ReplayClip | null> =>
-    ipcRenderer.invoke(ReplayClipsChannel.SaveManual),
+  saveManualReplay: (): Promise<ReplayClip | null> =>
+    ipcRenderer.invoke(ReplayClipsChannel.SaveManualReplay),
   open: (id: string): Promise<ReplayClipFileActionResult> =>
     ipcRenderer.invoke(ReplayClipsChannel.Open, id),
   reveal: (id: string): Promise<ReplayClipFileActionResult> =>

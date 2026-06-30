@@ -1,3 +1,5 @@
+import { join, resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import { createReplayClip } from "~/main/test/factories/replayClip";
@@ -15,14 +17,14 @@ describe("ReplayClipsRepository", () => {
       sourceGame: "poe2",
       sourceLeague: "Standard",
     });
-    const manualClip = createReplayClip({
+    const manualReplay = createReplayClip({
       id: "manual-clip",
       kind: "manual",
       sourceGame: "poe2",
       sourceLeague: "Standard",
     });
     repository.upsert(deathClip);
-    repository.upsert(manualClip);
+    repository.upsert(manualReplay);
     repository.upsert(
       createReplayClip({
         id: "other-game",
@@ -38,11 +40,11 @@ describe("ReplayClipsRepository", () => {
         kind: "manual",
         league: "Standard",
       }),
-    ).toEqual([expect.objectContaining({ id: manualClip.id })]);
+    ).toEqual([expect.objectContaining({ id: manualReplay.id })]);
     expect(repository.listAll({ league: "Standard" })).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: deathClip.id }),
-        expect.objectContaining({ id: manualClip.id }),
+        expect.objectContaining({ id: manualReplay.id }),
         expect.objectContaining({ id: "other-game" }),
       ]),
     );
@@ -174,6 +176,166 @@ describe("ReplayClipsRepository", () => {
 
     repository.delete(clip.id);
     expect(repository.get(clip.id)).toBeNull();
+
+    database.close();
+  });
+
+  it("rebases persisted storage paths after media directory migration", () => {
+    const database = new DatabaseService(":memory:");
+    const repository = new ReplayClipsRepository(database);
+    const legacyDirectory = join("C:", "Recordings", "Manual Clips");
+    const canonicalDirectory = join("C:", "Recordings", "Manual Replays");
+    const legacyPath = join(legacyDirectory, "manual.mp4");
+    const movedPath = join(canonicalDirectory, "manual.mp4");
+    const unrelatedPath = join("C:", "Recordings", "Death Clips", "death.mp4");
+    repository.upsert(
+      createReplayClip({
+        id: "manual",
+        originalObsPath: legacyPath,
+        processedClipPath: legacyPath,
+      }),
+    );
+    repository.upsert(
+      createReplayClip({
+        id: "death",
+        originalObsPath: unrelatedPath,
+        processedClipPath: unrelatedPath,
+      }),
+    );
+
+    expect(
+      repository.rebaseStoragePaths([
+        {
+          from: legacyDirectory,
+          to: canonicalDirectory,
+        },
+      ]),
+    ).toBe(1);
+
+    expect(repository.get("manual")).toEqual(
+      expect.objectContaining({
+        originalObsPath: resolve(movedPath),
+        processedClipPath: resolve(movedPath),
+      }),
+    );
+    expect(repository.get("death")).toEqual(
+      expect.objectContaining({
+        originalObsPath: unrelatedPath,
+        processedClipPath: unrelatedPath,
+      }),
+    );
+
+    database.close();
+  });
+
+  it("rebases exact storage roots and preserves null storage paths", () => {
+    const database = new DatabaseService(":memory:");
+    const repository = new ReplayClipsRepository(database);
+    const legacyDirectory = join("C:", "Recordings", "Manual Clips");
+    const canonicalDirectory = join("C:", "Recordings", "Manual Replays");
+    repository.upsert(
+      createReplayClip({
+        id: "manual-root",
+        originalObsPath: legacyDirectory,
+        processedClipPath: null,
+      }),
+    );
+
+    expect(repository.rebaseStoragePaths([])).toBe(0);
+    expect(
+      repository.rebaseStoragePaths([
+        {
+          from: legacyDirectory,
+          to: canonicalDirectory,
+        },
+      ]),
+    ).toBe(1);
+
+    expect(repository.get("manual-root")).toEqual(
+      expect.objectContaining({
+        originalObsPath: resolve(canonicalDirectory),
+        processedClipPath: null,
+      }),
+    );
+
+    database.close();
+  });
+
+  it("uses the nearest storage path migration when migrations overlap", () => {
+    const database = new DatabaseService(":memory:");
+    const repository = new ReplayClipsRepository(database);
+    const legacyDirectory = join("C:", "Recordings", "Manual Clips");
+    const legacyNestedDirectory = join(legacyDirectory, "nested");
+    const canonicalDirectory = join("C:", "Recordings", "Manual Replays");
+    const canonicalNestedDirectory = join(canonicalDirectory, "nested (2)");
+    const legacyPath = join(legacyNestedDirectory, "manual.mp4");
+    repository.upsert(
+      createReplayClip({
+        id: "manual-nested",
+        originalObsPath: legacyPath,
+        processedClipPath: null,
+      }),
+    );
+
+    expect(
+      repository.rebaseStoragePaths([
+        {
+          from: legacyDirectory,
+          to: canonicalDirectory,
+        },
+        {
+          from: legacyNestedDirectory,
+          to: canonicalNestedDirectory,
+        },
+      ]),
+    ).toBe(1);
+
+    expect(repository.get("manual-nested")).toEqual(
+      expect.objectContaining({
+        originalObsPath: resolve(join(canonicalNestedDirectory, "manual.mp4")),
+      }),
+    );
+
+    database.close();
+  });
+
+  it("uses the first storage path migration when duplicate sources are provided", () => {
+    const database = new DatabaseService(":memory:");
+    const repository = new ReplayClipsRepository(database);
+    const legacyDirectory = join("C:", "Recordings", "Manual Clips");
+    const canonicalDirectory = join("C:", "Recordings", "Manual Replays");
+    const duplicateCanonicalDirectory = join(
+      "C:",
+      "Recordings",
+      "Manual Replays Duplicate",
+    );
+    const legacyPath = join(legacyDirectory, "manual.mp4");
+    repository.upsert(
+      createReplayClip({
+        id: "manual-duplicate-source",
+        originalObsPath: legacyPath,
+        processedClipPath: null,
+      }),
+    );
+
+    expect(
+      repository.rebaseStoragePaths([
+        {
+          from: legacyDirectory,
+          to: canonicalDirectory,
+        },
+        {
+          from: legacyDirectory,
+          to: duplicateCanonicalDirectory,
+        },
+      ]),
+    ).toBe(1);
+
+    expect(repository.get("manual-duplicate-source")).toEqual(
+      expect.objectContaining({
+        originalObsPath: resolve(join(canonicalDirectory, "manual.mp4")),
+      }),
+    );
 
     database.close();
   });

@@ -60,6 +60,17 @@ const settingsStoreMocks = vi.hoisted(() => ({
   onDidChange: vi.fn(),
 }));
 
+const managedRecorderMocks = vi.hoisted(() => ({
+  captureMode: "rewind" as "session" | "rewind",
+  getCaptureMode: vi.fn(),
+  getStatus: vi.fn(),
+  onDidChange: vi.fn(),
+  status: {
+    bufferActive: false,
+    runRecordingActive: false,
+  },
+}));
+
 vi.mock("electron", () => ({
   app: {
     get isPackaged() {
@@ -82,6 +93,16 @@ vi.mock("~/main/modules/settings-store", () => ({
     getInstance: () => ({
       get: settingsStoreMocks.get,
       onDidChange: settingsStoreMocks.onDidChange,
+    }),
+  },
+}));
+
+vi.mock("~/main/modules/managed-recorder", () => ({
+  ManagedRecorderService: {
+    getInstance: () => ({
+      getCaptureMode: managedRecorderMocks.getCaptureMode,
+      getStatus: managedRecorderMocks.getStatus,
+      onDidChange: managedRecorderMocks.onDidChange,
     }),
   },
 }));
@@ -164,7 +185,7 @@ function getInternals(service: OverlayWindowsService) {
     coordinator: GameOverlayCoordinator;
     deathClipsOverlay: Record<string, unknown>;
     gridLinesOverlay: Record<string, unknown>;
-    manualClipsOverlay: Record<string, unknown>;
+    manualReplaysOverlay: Record<string, unknown>;
     recordingControlsOverlay: Record<string, unknown>;
     auraManagerOverlays: Record<string, unknown>;
   };
@@ -194,10 +215,26 @@ beforeEach(() => {
   settingsStoreMocks.get.mockReset();
   settingsStoreMocks.get.mockReturnValue({
     activeGame: "poe2",
-    recordingHideOverlaysFromCapture: false,
+    recordingHideOverlaysFromRecording: true,
+    recordingHideOverlaysFromRewind: true,
   });
   settingsStoreMocks.onDidChange.mockReset();
   settingsStoreMocks.onDidChange.mockReturnValue(vi.fn());
+  managedRecorderMocks.captureMode = "rewind";
+  managedRecorderMocks.status = {
+    bufferActive: false,
+    runRecordingActive: false,
+  };
+  managedRecorderMocks.getCaptureMode.mockReset();
+  managedRecorderMocks.getCaptureMode.mockImplementation(
+    () => managedRecorderMocks.captureMode,
+  );
+  managedRecorderMocks.getStatus.mockReset();
+  managedRecorderMocks.getStatus.mockImplementation(
+    () => managedRecorderMocks.status,
+  );
+  managedRecorderMocks.onDidChange.mockReset();
+  managedRecorderMocks.onDidChange.mockReturnValue(vi.fn());
   electronMocks.getAllWindows.mockReturnValue([]);
   mockDisplay();
   vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
@@ -258,7 +295,7 @@ describe("OverlayWindowsService", () => {
       hide(): boolean;
       showClip(clip: ReplayClip): Promise<void>;
     };
-    const manualClipsOverlay = internals.manualClipsOverlay as {
+    const manualReplaysOverlay = internals.manualReplaysOverlay as {
       showClip(clip: ReplayClip): Promise<void>;
     };
     const auraManagerOverlays = internals.auraManagerOverlays as {
@@ -282,7 +319,7 @@ describe("OverlayWindowsService", () => {
     vi.spyOn(recordingControlsOverlay, "setMode").mockReturnValue("minimized");
     vi.spyOn(deathClipsOverlay, "showClip").mockResolvedValue(undefined);
     vi.spyOn(deathClipsOverlay, "hide").mockReturnValue(true);
-    vi.spyOn(manualClipsOverlay, "showClip").mockResolvedValue(undefined);
+    vi.spyOn(manualReplaysOverlay, "showClip").mockResolvedValue(undefined);
     vi.spyOn(auraManagerOverlays, "setGameRunningActive").mockImplementation(
       () => undefined,
     );
@@ -309,7 +346,7 @@ describe("OverlayWindowsService", () => {
       service.showDeathClipPreviewOverlay(clip),
     ).resolves.toBeUndefined();
     await expect(
-      service.showManualClipPreviewOverlay(clip),
+      service.showManualReplayPreviewOverlay(clip),
     ).resolves.toBeUndefined();
     await expect(service.showAuraOverlay("profile-1")).resolves.toBeUndefined();
     await expect(
@@ -334,7 +371,7 @@ describe("OverlayWindowsService", () => {
     expect(setPoeFocusActive).toHaveBeenCalledWith(true);
     expect(deathClipsOverlay.showClip).toHaveBeenCalledWith(clip);
     expect(deathClipsOverlay.showClip).toHaveBeenCalledTimes(2);
-    expect(manualClipsOverlay.showClip).toHaveBeenCalledWith(clip);
+    expect(manualReplaysOverlay.showClip).toHaveBeenCalledWith(clip);
     expect(auraManagerOverlays.show).toHaveBeenCalledWith("profile-1", {
       startAddingAura: true,
     });
@@ -343,14 +380,28 @@ describe("OverlayWindowsService", () => {
 
   it("applies the overlay capture protection setting to open overlay windows", async () => {
     let handleSettingsChange:
-      | ((settings: { recordingHideOverlaysFromCapture: boolean }) => void)
+      | ((settings: {
+          recordingHideOverlaysFromRecording: boolean;
+          recordingHideOverlaysFromRewind: boolean;
+        }) => void)
+      | null = null;
+    let handleRecorderChange:
+      | ((snapshot: {
+          captureMode: "session" | "rewind";
+          status: { bufferActive: boolean; runRecordingActive: boolean };
+        }) => void)
       | null = null;
     settingsStoreMocks.get.mockReturnValue({
       activeGame: "poe2",
-      recordingHideOverlaysFromCapture: false,
+      recordingHideOverlaysFromRecording: false,
+      recordingHideOverlaysFromRewind: false,
     });
     settingsStoreMocks.onDidChange.mockImplementation((listener) => {
       handleSettingsChange = listener;
+      return vi.fn();
+    });
+    managedRecorderMocks.onDidChange.mockImplementation((listener) => {
+      handleRecorderChange = listener;
       return vi.fn();
     });
     const recorderWindow = createFakeWindow();
@@ -372,18 +423,90 @@ describe("OverlayWindowsService", () => {
     });
 
     expect(handleSettingsChange).not.toBeNull();
+    expect(handleRecorderChange).not.toBeNull();
     const notifySettingsChange = handleSettingsChange as unknown as (settings: {
-      recordingHideOverlaysFromCapture: boolean;
+      recordingHideOverlaysFromRecording: boolean;
+      recordingHideOverlaysFromRewind: boolean;
+    }) => void;
+    const notifyRecorderChange = handleRecorderChange as unknown as (snapshot: {
+      captureMode: "session" | "rewind";
+      status: { bufferActive: boolean; runRecordingActive: boolean };
     }) => void;
 
-    notifySettingsChange({ recordingHideOverlaysFromCapture: true });
+    notifySettingsChange({
+      recordingHideOverlaysFromRecording: true,
+      recordingHideOverlaysFromRewind: false,
+    });
 
-    expect(recorderWindow.setContentProtection).toHaveBeenCalledWith(true);
-    expect(clipPreviewWindow.setContentProtection).toHaveBeenCalledWith(true);
-    expect(cropSelectorWindow.setContentProtection).toHaveBeenCalledWith(true);
-    expect(auraWindow.setContentProtection).toHaveBeenCalledWith(true);
+    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
+      false,
+    );
+    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
+      false,
+    );
+    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(false);
 
-    notifySettingsChange({ recordingHideOverlaysFromCapture: false });
+    notifySettingsChange({
+      recordingHideOverlaysFromRecording: false,
+      recordingHideOverlaysFromRewind: true,
+    });
+
+    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
+      true,
+    );
+    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
+      true,
+    );
+    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+
+    notifyRecorderChange({
+      captureMode: "rewind",
+      status: { bufferActive: false, runRecordingActive: true },
+    });
+
+    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
+      false,
+    );
+    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
+      false,
+    );
+    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+
+    notifySettingsChange({
+      recordingHideOverlaysFromRecording: true,
+      recordingHideOverlaysFromRewind: false,
+    });
+
+    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
+      true,
+    );
+    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
+      true,
+    );
+    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+
+    notifyRecorderChange({
+      captureMode: "rewind",
+      status: { bufferActive: true, runRecordingActive: false },
+    });
+
+    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
+      false,
+    );
+    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
+      false,
+    );
+    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+
+    notifySettingsChange({
+      recordingHideOverlaysFromRecording: false,
+      recordingHideOverlaysFromRewind: false,
+    });
 
     expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(false);
     expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(

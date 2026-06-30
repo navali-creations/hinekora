@@ -37,6 +37,15 @@ let root: Root;
 let listAudioDevices: Mock<
   (options?: { forceRefresh?: boolean }) => Promise<ManagedRecorderAudioDevices>
 >;
+const resolvedAudioDevices: ManagedRecorderAudioDevices = {
+  input: [{ id: "{mic-device}", label: "Microphone" }],
+  output: [
+    {
+      id: "{display-device}",
+      label: "External Display Audio Device",
+    },
+  ],
+};
 
 function createStatus(
   overrides: Partial<ManagedRecorderStatus> = {},
@@ -67,7 +76,7 @@ function createStatus(
 }
 
 async function renderCard(
-  options: { strictMode?: boolean } = {},
+  options: { flushAudioLoad?: boolean; strictMode?: boolean } = {},
 ): Promise<void> {
   const element = options.strictMode ? (
     <StrictMode>
@@ -79,6 +88,18 @@ async function renderCard(
 
   await act(async () => {
     root.render(element);
+    await Promise.resolve();
+  });
+
+  if (options.flushAudioLoad !== false) {
+    await flushAudioDeviceLoad();
+  }
+}
+
+async function flushAudioDeviceLoad(): Promise<void> {
+  await act(async () => {
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
+    await Promise.resolve();
     await Promise.resolve();
   });
 }
@@ -112,15 +133,7 @@ describe("ManagedRecorderAudioSettingsCard", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
-    listAudioDevices = vi.fn().mockResolvedValue({
-      input: [{ id: "{mic-device}", label: "Microphone" }],
-      output: [
-        {
-          id: "{display-device}",
-          label: "External Display Audio Device",
-        },
-      ],
-    });
+    listAudioDevices = vi.fn().mockResolvedValue(resolvedAudioDevices);
     Object.defineProperty(window, "electron", {
       configurable: true,
       value: {
@@ -164,8 +177,45 @@ describe("ManagedRecorderAudioSettingsCard", () => {
       getRefreshButton().click();
       await Promise.resolve();
     });
+    await flushAudioDeviceLoad();
 
     expect(listAudioDevices).toHaveBeenCalledWith({ forceRefresh: true });
+  });
+
+  it("shows a loading state before probing audio devices", async () => {
+    vi.useFakeTimers();
+    try {
+      let resolveAudioDevices!: (devices: ManagedRecorderAudioDevices) => void;
+      listAudioDevices.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveAudioDevices = resolve;
+          }),
+      );
+
+      await renderCard({ flushAudioLoad: false });
+
+      expect(container.textContent).toContain("Loading audio devices");
+      expect(listAudioDevices).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(listAudioDevices).toHaveBeenCalledWith({ forceRefresh: false });
+
+      await act(async () => {
+        resolveAudioDevices(resolvedAudioDevices);
+        await Promise.resolve();
+      });
+
+      const [, outputSelect] = getSelects();
+      expect(outputSelect.textContent).toContain("External Display...");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps loaded audio devices visible when refresh fails", async () => {
@@ -176,9 +226,24 @@ describe("ManagedRecorderAudioSettingsCard", () => {
       getRefreshButton().click();
       await Promise.resolve();
     });
+    await flushAudioDeviceLoad();
 
     const [, outputSelect] = getSelects();
     expect(outputSelect.textContent).toContain("External Display...");
+    expect(getRefreshButton().title).toBe(
+      "Audio device refresh failed. Try again.",
+    );
+  });
+
+  it("shows an error state when the first audio device probe fails", async () => {
+    listAudioDevices.mockRejectedValueOnce(new Error("probe failed"));
+
+    await renderCard();
+
+    expect(container.textContent).toContain(
+      "Audio devices could not be loaded. Try refreshing.",
+    );
+    expect(container.querySelectorAll("select")).toHaveLength(0);
     expect(getRefreshButton().title).toBe(
       "Audio device refresh failed. Try again.",
     );

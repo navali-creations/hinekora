@@ -7,10 +7,12 @@ import type {
   ManagedRecorderSlice,
   ProfilesSlice,
   ReplayClipsSlice,
+  SettingsSlice,
 } from "~/renderer/store/store.types";
 
 import {
   createDefaultProfile,
+  createDefaultSettings,
   type ManagedRecorderStatus,
   type Profile,
 } from "~/types";
@@ -20,6 +22,7 @@ const storeMocks = vi.hoisted(() => ({
   useManagedRecorderShallow: vi.fn(),
   useProfilesShallow: vi.fn(),
   useReplayClipsShallow: vi.fn(),
+  useSettingsShallow: vi.fn(),
 }));
 
 const electronMocks = vi.hoisted(() => ({
@@ -39,6 +42,7 @@ vi.mock("~/renderer/store", () => ({
   useManagedRecorderShallow: storeMocks.useManagedRecorderShallow,
   useProfilesShallow: storeMocks.useProfilesShallow,
   useReplayClipsShallow: storeMocks.useReplayClipsShallow,
+  useSettingsShallow: storeMocks.useSettingsShallow,
 }));
 
 vi.mock("~/renderer/modules/umami", () => ({
@@ -132,6 +136,7 @@ describe("RecorderControlsOverlayPage", () => {
   let managedRecorderState: ManagedRecorderSlice["managedRecorder"];
   let profilesState: ProfilesSlice["profiles"];
   let replayClipsState: ReplayClipsSlice["replayClips"];
+  let settingsState: SettingsSlice["settings"];
   let root: Root | null = null;
   let container: HTMLDivElement;
   let modeChangedListener: ((mode: RecorderOverlayMode) => void) | null = null;
@@ -204,10 +209,18 @@ describe("RecorderControlsOverlayPage", () => {
       openClip: vi.fn().mockResolvedValue(undefined),
       refreshLibrary: vi.fn().mockResolvedValue(undefined),
       revealClip: vi.fn().mockResolvedValue(undefined),
-      saveManual: vi.fn().mockResolvedValue(undefined),
+      saveManualReplay: vi.fn().mockResolvedValue(undefined),
       selectedClipIds: {},
       setSelectedClipIds: vi.fn(),
       startListening: vi.fn(() => vi.fn()),
+    };
+    settingsState = {
+      hydrate: vi.fn().mockResolvedValue(undefined),
+      update: vi.fn().mockResolvedValue(undefined),
+      value: {
+        ...createDefaultSettings(),
+        deathClipSeconds: 60,
+      },
     };
 
     storeMocks.useManagedRecorderShallow.mockImplementation(
@@ -221,6 +234,10 @@ describe("RecorderControlsOverlayPage", () => {
     storeMocks.useReplayClipsShallow.mockImplementation(
       <T,>(selector: (state: ReplayClipsSlice["replayClips"]) => T) =>
         selector(replayClipsState),
+    );
+    storeMocks.useSettingsShallow.mockImplementation(
+      <T,>(selector: (state: SettingsSlice["settings"]) => T) =>
+        selector(settingsState),
     );
     Object.defineProperty(window, "electron", {
       configurable: true,
@@ -246,7 +263,7 @@ describe("RecorderControlsOverlayPage", () => {
     document.body.replaceChildren();
   });
 
-  it("routes rewind actions to the replay buffer and manual clip APIs", async () => {
+  it("routes rewind actions to the replay buffer and manual replay APIs", async () => {
     await renderOverlay();
 
     getButton(container, "Enable Rewind").click();
@@ -262,8 +279,26 @@ describe("RecorderControlsOverlayPage", () => {
     getButton(container, "Save last 60 seconds").click();
     getButton(container, "Disable Rewind").click();
 
-    expect(replayClipsState.saveManual).toHaveBeenCalledTimes(1);
+    expect(replayClipsState.saveManualReplay).toHaveBeenCalledTimes(1);
     expect(managedRecorderState.stopBuffer).toHaveBeenCalledTimes(1);
+  });
+
+  it("labels manual replay saves with the configured rewind duration", async () => {
+    settingsState.value = {
+      ...createDefaultSettings(),
+      deathClipSeconds: 45,
+    };
+    managedRecorderState.status = createStatus({
+      bufferActive: true,
+      recording: true,
+    });
+
+    await renderOverlay();
+
+    expect(getButton(container, "Save last 45 seconds")).toBeInstanceOf(
+      HTMLButtonElement,
+    );
+    expect(queryButton(container, "Save last 60 seconds")).toBeNull();
   });
 
   it("switches capture modes from overlay tabs and locks conflicting active modes", async () => {
@@ -289,7 +324,7 @@ describe("RecorderControlsOverlayPage", () => {
     expect(managedRecorderState.setCaptureMode).toHaveBeenCalledTimes(1);
   });
 
-  it("routes session actions to full recording APIs and hides manual clips", async () => {
+  it("routes session actions to full recording APIs and hides manual replays", async () => {
     managedRecorderState.captureMode = "session";
     await renderOverlay();
 
@@ -310,7 +345,7 @@ describe("RecorderControlsOverlayPage", () => {
 
     getButton(container, "Stop & save recording").click();
     expect(managedRecorderState.stopRunRecording).toHaveBeenCalledTimes(1);
-    expect(replayClipsState.saveManual).not.toHaveBeenCalled();
+    expect(replayClipsState.saveManualReplay).not.toHaveBeenCalled();
   });
 
   it("switches aura profiles and opens aura edit mode from the grid button", async () => {
@@ -371,7 +406,7 @@ describe("RecorderControlsOverlayPage", () => {
     });
   });
 
-  it("minimizes to compact controls with recording, manual clip, and expand actions", async () => {
+  it("minimizes to compact controls with recording, manual replay, and expand actions", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-22T12:00:00.000Z"));
     managedRecorderState.status = createStatus({
@@ -396,7 +431,7 @@ describe("RecorderControlsOverlayPage", () => {
     ).toEqual(["Disable Rewind", "Save last 60 seconds"]);
 
     getButton(container, "Save last 60 seconds").click();
-    expect(replayClipsState.saveManual).toHaveBeenCalledTimes(1);
+    expect(replayClipsState.saveManualReplay).toHaveBeenCalledTimes(1);
     getButton(container, "Disable Rewind").click();
     expect(managedRecorderState.stopBuffer).toHaveBeenCalledTimes(1);
 
@@ -411,7 +446,7 @@ describe("RecorderControlsOverlayPage", () => {
     );
   });
 
-  it("keeps minimized recording controls available without the manual clip action in recording mode", async () => {
+  it("keeps minimized recording controls available without the manual replay action in recording mode", async () => {
     electronMocks.getRecorderMode.mockResolvedValue("minimized");
     managedRecorderState.captureMode = "session";
     await renderOverlay();
@@ -436,7 +471,7 @@ describe("RecorderControlsOverlayPage", () => {
     );
   });
 
-  it("disables recording, manual clip, and add-aura actions when the game is not running", async () => {
+  it("disables recording, manual replay, and add-aura actions when the game is not running", async () => {
     managedRecorderState.status = createStatus({ gameRunning: false });
     await renderOverlay();
 

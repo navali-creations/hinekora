@@ -99,6 +99,12 @@ function resolveAudioOptionTitle(
   );
 }
 
+function waitForAudioDeviceLoadPaint(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
+}
+
 export type { AudioDeviceOption };
 export {
   audioDisabledValue,
@@ -107,4 +113,5 @@ export {
   resolveAudioDeviceValue,
   resolveAudioOptionTitle,
   resolveAudioOptionValue,
+  waitForAudioDeviceLoadPaint,
 };
