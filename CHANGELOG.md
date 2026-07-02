@@ -1,3 +1,69 @@
+## 0.6.0
+
+### Minor Changes
+
+- [`1ce1576`](https://github.com/navali-creations/hinekora/commit/1ce1576fd45a221cbfdba67a1e327a7e4caf358d) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Capture profiles and automatic recording startup.
+
+  Hinekora can now remember separate capture setups and automatically continue recording or rewind once the selected Path of Exile game is available, making it easier to relaunch the app without rebuilding the same recording setup every time.
+
+  - **Capture profiles:** Save and switch between recording, rewind, capture, audio, game, and live preview source choices without mixing them with aura profiles.
+  - **Profile locking:** Lock a capture profile to protect its saved setup, then unlock it when you intentionally want dashboard setting changes to update that profile.
+  - **Automatic capture:** Let session recording or rewind start automatically when the selected game is already running, or wait and continue once the game launches.
+  - **Profile management:** Manage capture profiles and aura profiles in separate Settings columns, with game-specific profile switching from the dashboard.
+  - **Onboarding:** Updates the capture setup guidance to explain capture profiles, source selection, recording modes, and automatic capture behavior.
+
+- [`3bc4b6d`](https://github.com/navali-creations/hinekora/commit/3bc4b6deb6c5c79bea636924ea19d2d7a42646f7) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Saved edits, refreshed aura visuals, recorder overlay controls, and editor workflow improvements.
+
+  Hinekora now has a dedicated Saved Edits library, refreshed aura icons, clearer recorder overlay controls, and a more predictable editor timeline, making it easier to reopen edits, manage source media, discover editor controls, and keep timeline navigation readable while working with many clips.
+
+  - **Saved Edits:** Adds a saved edit page with sorting, paging, league filters, delete and reveal actions, while keeping source recordings and clips intact.
+  - **Editor media rail:** Shows saved edits alongside source media, keeps filtering and pagination responsive, and includes edits that use clips from multiple games or leagues in each matching filter.
+  - **Editor save flow:** Renames editor Export labels to Save so the editor language matches the saved-edit workflow.
+  - **Timeline editing:** Adds a fit timeline control, keeps a short visual tail after the edit, and switches trim handles consistently when clips become too narrow.
+  - **Editor toolbar:** Moves undo and redo into the timeline toolbar, adds editor shortcuts, and adds an editor help modal for reviewing available controls.
+  - **History:** Keeps the latest 50 meaningful edit steps, labels trim start and trim end actions more clearly, and shows clip names where useful.
+  - **Aura icons:** Refreshes aura icons across the app for a clearer and more consistent visual language.
+  - **Recording overlay:** Refreshes the expanded and minimized overlay layouts, adds clearer aura controls for edit, default, arc, and pointer auras, and keeps the timer and window controls compact.
+  - **Replay wording:** Renames Manual Clips to Manual Replays across the app.
+  - **Dashboard and app bar:** Makes the existing recording and rewind dashboard guidance dismissible, lets recording/rewind and group play banners be re-enabled from the Settings help panel, and changes the app bar More Options button into a Help menu.
+
+- [`3dbc156`](https://github.com/navali-creations/hinekora/commit/3dbc156ad042e0427e10b3fe0bf61757f68f2545) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Custom rewind duration and clearer recording settings.
+
+  Hinekora now keeps a longer rewind buffer and lets death clips and manual replays save a custom amount of recent gameplay, while the dashboard settings are split into focused Recording, Rewind, Capture, and Audio tabs.
+
+  - **Rewind settings:** Choose a preset or custom duration up to 60 seconds for death clips and manual replays.
+  - **Recording settings:** Control overlay hiding separately for full-session recordings and rewind clips.
+  - **Audio settings:** Loads audio devices with a visible loading and refresh state so opening the Audio tab feels smoother.
+  - **Local settings:** Adds a dismissible reminder that recorder settings are saved locally, with a Help settings control to show it again.
+  - **Manual Replays:** Moves existing Manual Clips storage into Manual Replays and keeps saved replay paths aligned when possible.
+
+### Patch Changes
+
+- [`868c7b1`](https://github.com/navali-creations/hinekora/commit/868c7b1795e48559e2e42155c7e9c20bcdb86706) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Make editor loading, trimming, and project saves steadier.
+
+  The editor now avoids repeated media loads while opening edits, keeps the timeline ruler stable during trim adjustments, and saves timeline changes after the edit is committed instead of during every drag movement.
+
+  - **Editor loading:** Opening the editor or a saved edit waits for the route and local settings before refreshing My Media, reducing duplicate media loads.
+  - **Timeline trimming:** The time ruler no longer shrinks under the cursor while trimming the end of the last clip.
+  - **Project saves:** Timeline edits, undo/redo, and project renames are saved in a safer order so local edits are not overwritten by stale save responses.
+
+- [`031708b`](https://github.com/navali-creations/hinekora/commit/031708bd2337e800ab407ea5943a8d1a968226e0) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Make aura overlays feel smoother.
+
+  Thanks to the recent aura calculation improvements, custom aura overlays can now move to 60 FPS capture and redraw pacing, so arched and pointer auras should feel less choppy during gameplay.
+
+  - **Aura overlay:** Uses 60 FPS capture for smoother live overlay updates.
+  - **Custom aura shapes:** Arched and pointer aura sampling now redraws at the intended pace without unnecessary fallback work.
+
 ## 0.5.0
 
 ### Minor Changes
