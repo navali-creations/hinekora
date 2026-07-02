@@ -37,6 +37,13 @@ function StartRecordingBeacon(props: PopoverComponentProps) {
                 ready.
               </span>
             </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
+                If a capture profile enables automatic start, Hinekora starts
+                the selected mode when the game is running.
+              </span>
+            </li>
           </ul>
         </div>
 
@@ -67,7 +74,8 @@ function StartRecordingBeacon(props: PopoverComponentProps) {
           <FiInfo size={20} />
           <span>
             If Start is disabled, check that the selected game is running and a
-            capture source is available.
+            capture source is available. Automatic start follows the same
+            readiness checks.
           </span>
         </div>
       </div>

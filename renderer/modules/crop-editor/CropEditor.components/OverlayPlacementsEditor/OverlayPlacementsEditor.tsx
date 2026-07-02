@@ -8,7 +8,11 @@ import {
   placementNumberFields,
   resolveActiveAuraCropRegionId,
 } from "~/renderer/modules/crop-editor/CropEditor.utils/CropEditor.utils";
-import { useCropEditorShallow, useProfilesShallow } from "~/renderer/store";
+import {
+  useCropEditorShallow,
+  useProfilesShallow,
+  useSettingsSelector,
+} from "~/renderer/store";
 
 import { AuraPlacementScaleSettings } from "~/types";
 
@@ -30,7 +34,14 @@ function OverlayPlacementsEditor() {
   const selectedAuraCropRegionId = useCropEditorShallow(
     (cropEditor) => cropEditor.selectedAuraCropRegionId,
   );
-  const profile = getSelectedProfile(profileItems, selectedProfileId);
+  const activeGame = useSettingsSelector(
+    (settings) => settings.value?.activeGame ?? "poe1",
+  );
+  const profile = getSelectedProfile(
+    profileItems,
+    selectedProfileId,
+    activeGame,
+  );
   const activeAuraCropRegionId = resolveActiveAuraCropRegionId(
     profile,
     selectedAuraCropRegionId,

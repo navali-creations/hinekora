@@ -1,18 +1,17 @@
-import type { ChangeEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  FiEye as Eye,
-  FiEyeOff as EyeOff,
-  FiRefreshCw as RefreshCw,
-} from "react-icons/fi";
 
+import { useCapturePreviewSourcePersistence } from "~/renderer/modules/capture-preview/CapturePreview.hooks/useCapturePreviewSourcePersistence/useCapturePreviewSourcePersistence";
+import { useCapturePreviewVideoElement } from "~/renderer/modules/capture-preview/CapturePreview.hooks/useCapturePreviewVideoElement/useCapturePreviewVideoElement";
 import { useDesktopCaptureStream } from "~/renderer/modules/capture-preview/CapturePreview.hooks/useDesktopCaptureStream/useDesktopCaptureStream";
-import { useCapturePreviewShallow, useProfilesShallow } from "~/renderer/store";
+import { isCapturePreviewSourceAvailable } from "~/renderer/modules/capture-preview/CapturePreview.utils/CapturePreview.utils";
+import { useCapturePreviewShallow } from "~/renderer/store";
 
+import { CaptureAutoStartSourceWarning } from "../CaptureAutoStartSourceWarning/CaptureAutoStartSourceWarning";
+import { CapturePreviewSourceControls } from "../CapturePreviewSourceControls/CapturePreviewSourceControls";
+import { CapturePreviewViewport } from "../CapturePreviewViewport/CapturePreviewViewport";
 import {
-  createCaptureTargetFromPreviewSource,
+  canPreviewCaptureSource,
   createDesktopPreviewConstraints,
-  isSameCaptureTarget,
 } from "./CapturePreviewPanel.utils";
 
 function CapturePreviewPanel() {
@@ -22,7 +21,6 @@ function CapturePreviewPanel() {
     isLoading,
     refresh,
     select,
-    selectedThumbnailDataUrl,
     selectedThumbnailState,
     selectedSourceId,
     sources,
@@ -32,12 +30,6 @@ function CapturePreviewPanel() {
     isLoading: capturePreview.isLoading,
     refresh: capturePreview.refresh,
     select: capturePreview.select,
-    selectedThumbnailDataUrl:
-      capturePreview.selectedSourceId !== null
-        ? (capturePreview.thumbnailsBySourceId[
-            capturePreview.selectedSourceId
-          ] ?? null)
-        : null,
     selectedThumbnailState:
       capturePreview.selectedSourceId !== null
         ? capturePreview.thumbnailsBySourceId[capturePreview.selectedSourceId]
@@ -45,14 +37,6 @@ function CapturePreviewPanel() {
     selectedSourceId: capturePreview.selectedSourceId,
     sources: capturePreview.sources,
   }));
-  const { profileItems, selectedProfileId, updateProfile } = useProfilesShallow(
-    (profiles) => ({
-      profileItems: profiles.items,
-      selectedProfileId: profiles.selectedProfileId,
-      updateProfile: profiles.update,
-    }),
-  );
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   const hasRequestedInitialRefreshRef = useRef(false);
   const [previewSourceId, setPreviewSourceId] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -62,11 +46,11 @@ function CapturePreviewPanel() {
     [selectedSourceId, sources],
   );
 
-  const selectedProfile = useMemo(
-    () =>
-      profileItems.find((profile) => profile.id === selectedProfileId) ?? null,
-    [profileItems, selectedProfileId],
-  );
+  const {
+    persistCaptureTarget,
+    selectedSourceMatchesProfileTarget,
+    selectedSourceProfile,
+  } = useCapturePreviewSourcePersistence(selectedSource);
   const {
     stream,
     error: streamError,
@@ -76,6 +60,11 @@ function CapturePreviewPanel() {
     sourceId: previewSourceId,
     enabled: previewSourceId !== null,
     createConstraints: createDesktopPreviewConstraints,
+  });
+  const { clearPreviewVideo, videoRef } = useCapturePreviewVideoElement({
+    onPlaybackError: setPreviewError,
+    stopPreviewStream,
+    stream,
   });
   const isPreviewing = stream !== null || isStarting;
 
@@ -92,42 +81,18 @@ function CapturePreviewPanel() {
     void refresh();
   }, [isLoading, refresh, sources.length]);
 
-  const clearPreviewVideo = useCallback(() => {
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-  }, []);
-
   const stopPreview = useCallback(() => {
     stopPreviewStream();
     setPreviewSourceId(null);
     clearPreviewVideo();
   }, [clearPreviewVideo, stopPreviewStream]);
 
-  const persistCaptureTarget = useCallback(
-    (source: NonNullable<typeof selectedSource>) => {
-      if (!selectedProfile) {
-        return;
-      }
-
-      const captureTarget = createCaptureTargetFromPreviewSource(source);
-      if (isSameCaptureTarget(selectedProfile.captureTarget, captureTarget)) {
-        return;
-      }
-
-      void updateProfile({
-        id: selectedProfile.id,
-        captureTarget,
-      });
-    },
-    [selectedProfile, updateProfile],
-  );
-
-  const handleSourceChange = (event: ChangeEvent<HTMLSelectElement>) => {
+  const handleSourceChange = (
+    sourceId: string,
+    source: NonNullable<typeof selectedSource> | null,
+  ) => {
     stopPreview();
-    const sourceId = event.target.value;
     select(sourceId);
-    const source = sources.find((item) => item.id === sourceId) ?? null;
     if (source) {
       persistCaptureTarget(source);
     }
@@ -139,8 +104,8 @@ function CapturePreviewPanel() {
   };
 
   const handleStartPreview = async () => {
-    if (!selectedSource) {
-      setPreviewError("Select a screen or window first");
+    if (!canPreviewCaptureSource(selectedSource)) {
+      setPreviewError("Select an available screen or window first");
       return;
     }
 
@@ -158,41 +123,27 @@ function CapturePreviewPanel() {
     void handleStartPreview();
   };
 
-  useEffect(
-    () => () => {
-      stopPreviewStream();
-      clearPreviewVideo();
-    },
-    [clearPreviewVideo, stopPreviewStream],
-  );
-
   useEffect(() => {
-    if (!videoRef.current) {
+    if (!selectedSource || !selectedSourceProfile) {
       return;
     }
 
-    if (!stream) {
-      videoRef.current.srcObject = null;
-      return;
-    }
-
-    videoRef.current.srcObject = stream;
-    void videoRef.current.play().catch(() => {
-      setPreviewError("Unable to start preview playback");
-    });
-  }, [stream]);
-
-  useEffect(() => {
-    if (!selectedSource) {
+    if (!selectedSourceMatchesProfileTarget) {
       return;
     }
 
     persistCaptureTarget(selectedSource);
-  }, [persistCaptureTarget, selectedSource]);
+  }, [
+    persistCaptureTarget,
+    selectedSource,
+    selectedSourceMatchesProfileTarget,
+    selectedSourceProfile,
+  ]);
 
   useEffect(() => {
     if (
       !selectedSource ||
+      !isCapturePreviewSourceAvailable(selectedSource) ||
       isPreviewing ||
       selectedThumbnailState !== undefined
     ) {
@@ -208,78 +159,17 @@ function CapturePreviewPanel() {
         <h2 className="m-0 font-bold text-primary text-sm">Live Preview</h2>
       </div>
 
-      <div className="relative grid min-h-[252px] min-w-[18px] place-items-center overflow-hidden rounded-lg border border-base-content/10 bg-gradient-to-br from-base-300 to-base-200">
-        <video
-          aria-label="Capture preview"
-          className="absolute inset-0 h-full w-full object-contain"
-          muted
-          playsInline
-          ref={videoRef}
-        />
-        {!isPreviewing && selectedThumbnailDataUrl && (
-          <img
-            alt=""
-            className="absolute inset-0 h-full w-full object-contain opacity-45 saturate-[0.85]"
-            src={selectedThumbnailDataUrl}
-          />
-        )}
-        {!isPreviewing && (
-          <div className="relative z-[1] inline-flex items-center gap-2 rounded-md border border-primary/30 bg-secondary/70 px-3 py-2 text-primary">
-            <Eye size={22} />
-            <span>
-              {selectedSource ? "Preview stopped" : "No capture source"}
-            </span>
-          </div>
-        )}
-      </div>
+      <CapturePreviewViewport isPreviewing={isPreviewing} videoRef={videoRef} />
 
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-        <label
-          className="grid gap-1.5 text-primary text-[0.8125rem]"
-          data-onboarding="capture-source"
-        >
-          Source
-          <select
-            className="select select-bordered select-sm w-full"
-            disabled={isLoading}
-            value={selectedSourceId ?? ""}
-            onChange={handleSourceChange}
-          >
-            {sources.map((source) => (
-              <option key={source.id} value={source.id}>
-                {source.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            className="btn btn-primary btn-sm"
-            type="button"
-            disabled={
-              !selectedSource && !isPreviewing && previewSourceId === null
-            }
-            onClick={handleTogglePreview}
-          >
-            {isPreviewing || previewSourceId !== null ? (
-              <EyeOff size={16} />
-            ) : (
-              <Eye size={16} />
-            )}
-            {isPreviewing || previewSourceId !== null
-              ? "Stop Preview"
-              : "Show Preview"}
-          </button>
-          <button
-            className="btn btn-primary btn-sm"
-            type="button"
-            onClick={handleRefresh}
-          >
-            <RefreshCw size={16} />
-            Refresh
-          </button>
-        </div>
-      </div>
+      <CapturePreviewSourceControls
+        isPreviewing={isPreviewing}
+        previewSourceId={previewSourceId}
+        onRefresh={handleRefresh}
+        onSourceChange={handleSourceChange}
+        onTogglePreview={handleTogglePreview}
+      />
+
+      <CaptureAutoStartSourceWarning />
 
       {(captureError || previewError || streamError) && (
         <p className="m-0 text-error text-[0.8125rem]">

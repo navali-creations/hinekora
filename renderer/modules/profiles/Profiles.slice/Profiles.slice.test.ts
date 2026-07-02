@@ -3,8 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BoundStore } from "~/renderer/store/store.types";
 import { createBoundStoreForTests } from "~/renderer/test/createBoundStoreForTests";
 
-import type { Profile } from "~/types";
+import { type AppSettings, createDefaultSettings, type Profile } from "~/types";
 import { createProfilesSlice } from "./Profiles.slice";
+
+const updateSettings = vi.fn();
 
 function createProfile(overrides: Partial<Profile> = {}): Profile {
   return {
@@ -28,6 +30,20 @@ function createTestStore() {
   );
 }
 
+function createTestStoreWithSettings(settingsValue: AppSettings) {
+  return createBoundStoreForTests(
+    (set, get, api) =>
+      ({
+        ...(createProfilesSlice(set, get, api) as unknown as BoundStore),
+        settings: {
+          value: settingsValue,
+          hydrate: vi.fn(),
+          update: updateSettings,
+        },
+      }) as unknown as BoundStore,
+  );
+}
+
 describe("Profiles slice", () => {
   const createdProfile = createProfile({ id: "created", name: "Created" });
   const profiles = [createProfile(), createProfile({ id: "profile-2" })];
@@ -43,6 +59,7 @@ describe("Profiles slice", () => {
     createProfileApi.mockResolvedValue(createdProfile);
     listProfiles.mockResolvedValue(profiles);
     updateProfile.mockResolvedValue(profiles[1]);
+    updateSettings.mockResolvedValue(undefined);
 
     Object.defineProperty(window, "electron", {
       configurable: true,
@@ -74,6 +91,84 @@ describe("Profiles slice", () => {
     });
   });
 
+  it("hydrates the persisted selected profile from settings", async () => {
+    const store = createTestStoreWithSettings({
+      ...createDefaultSettings(),
+      selectedProfileId: "profile-2",
+    });
+
+    await store.getState().profiles.hydrate();
+
+    expect(store.getState().profiles.selectedProfileId).toBe("profile-2");
+    expect(updateSettings).not.toHaveBeenCalled();
+  });
+
+  it("persists the fallback profile when the persisted selected profile is missing", async () => {
+    const store = createTestStoreWithSettings({
+      ...createDefaultSettings(),
+      selectedProfileId: "missing",
+    });
+
+    await store.getState().profiles.hydrate();
+
+    expect(store.getState().profiles.selectedProfileId).toBe("profile-1");
+    expect(updateSettings).toHaveBeenCalledWith({
+      selectedProfileId: "profile-1",
+    });
+  });
+
+  it("persists selected profile changes into settings", () => {
+    const store = createTestStoreWithSettings({
+      ...createDefaultSettings(),
+      selectedProfileId: "profile-1",
+    });
+
+    store.getState().profiles.select("profile-2");
+
+    expect(updateSettings).toHaveBeenCalledWith({
+      selectedProfileId: "profile-2",
+    });
+  });
+
+  it("rolls back selected profile changes when settings persistence fails", async () => {
+    updateSettings.mockRejectedValueOnce(new Error("write failed"));
+    const store = createTestStoreWithSettings({
+      ...createDefaultSettings(),
+      selectedProfileId: "profile-1",
+    });
+    await store.getState().profiles.hydrate();
+
+    store.getState().profiles.select("profile-2");
+    expect(store.getState().profiles.selectedProfileId).toBe("profile-2");
+
+    await vi.waitFor(() => {
+      expect(store.getState().profiles.error).toBe("write failed");
+    });
+    expect(store.getState().profiles.selectedProfileId).toBe("profile-1");
+  });
+
+  it("does not roll back a newer selected profile after an older persistence failure", async () => {
+    updateSettings
+      .mockRejectedValueOnce(new Error("write failed"))
+      .mockResolvedValueOnce(undefined);
+    const store = createTestStoreWithSettings({
+      ...createDefaultSettings(),
+      selectedProfileId: "profile-1",
+    });
+    await store.getState().profiles.hydrate();
+
+    store.getState().profiles.select("profile-2");
+    store.getState().profiles.select("profile-1");
+
+    await vi.waitFor(() => {
+      expect(updateSettings).toHaveBeenCalledTimes(2);
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(store.getState().profiles.selectedProfileId).toBe("profile-1");
+    expect(store.getState().profiles.error).toBeNull();
+  });
+
   it("falls back to the first profile and stores hydrate errors", async () => {
     const store = createTestStore();
     store.getState().profiles.select("missing");
@@ -95,11 +190,14 @@ describe("Profiles slice", () => {
   });
 
   it("creates and updates profiles", async () => {
-    const store = createTestStore();
+    const store = createTestStoreWithSettings({
+      ...createDefaultSettings(),
+      activeGame: "poe2",
+    });
 
     await store.getState().profiles.create("Mapper");
     expect(createProfileApi).toHaveBeenCalledWith({
-      game: "poe1",
+      game: "poe2",
       name: "Mapper",
     });
     expect(store.getState().profiles.selectedProfileId).toBe("created");
@@ -112,6 +210,21 @@ describe("Profiles slice", () => {
       name: "Renamed",
     });
     expect(store.getState().profiles.selectedProfileId).toBe("profile-2");
+  });
+
+  it("persists the selected profile after profile updates", async () => {
+    const store = createTestStoreWithSettings({
+      ...createDefaultSettings(),
+      selectedProfileId: "profile-1",
+    });
+
+    await store
+      .getState()
+      .profiles.update({ id: "profile-2", name: "Renamed" });
+
+    expect(updateSettings).toHaveBeenCalledWith({
+      selectedProfileId: "profile-2",
+    });
   });
 
   it("listens for profile changes and cleans up", () => {
@@ -133,5 +246,24 @@ describe("Profiles slice", () => {
 
     stopListening();
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it("persists the fallback profile after profile change events remove the selected profile", () => {
+    const store = createTestStoreWithSettings({
+      ...createDefaultSettings(),
+      selectedProfileId: "profile-2",
+    });
+    const stopListening = store.getState().profiles.startListening();
+
+    store.getState().profiles.select("profile-2");
+    updateSettings.mockClear();
+    changedListener?.([profiles[0]!]);
+
+    expect(store.getState().profiles.selectedProfileId).toBe("profile-1");
+    expect(updateSettings).toHaveBeenCalledWith({
+      selectedProfileId: "profile-1",
+    });
+
+    stopListening();
   });
 });

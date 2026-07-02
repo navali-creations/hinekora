@@ -30,6 +30,8 @@ import type {
   AppSettings,
   AppSetupStep,
   CapturePreviewSource,
+  CaptureProfile,
+  CaptureProfileUpdateInput,
   ClientLogStatus,
   GameId,
   ManagedRecorderStatus,
@@ -74,7 +76,28 @@ export interface ProfilesSlice {
     hydrate: () => Promise<void>;
     create: (name: string) => Promise<void>;
     update: (input: ProfileUpdateInput) => Promise<void>;
+    delete: (id: string) => Promise<void>;
     select: (id: string) => void;
+    startListening: () => () => void;
+  };
+}
+
+export interface CaptureProfilesSlice {
+  captureProfiles: {
+    items: CaptureProfile[];
+    isLoading: boolean;
+    error: string | null;
+    selectedProfileId: string | null;
+    isProfileUnlocked: boolean;
+    hydrate: () => Promise<void>;
+    create: (name: string) => Promise<void>;
+    update: (input: CaptureProfileUpdateInput) => Promise<void>;
+    delete: (id: string) => Promise<void>;
+    select: (id: string) => void;
+    selectWithPreviewSource: (id: string) => void;
+    selectForGame: (game: GameId) => Promise<void>;
+    setProfileUnlocked: (isUnlocked: boolean) => void;
+    toggleProfileLock: () => void;
     startListening: () => () => void;
   };
 }
@@ -125,7 +148,10 @@ export interface ClientLogSlice {
     hydrate: () => Promise<void>;
     savePath: (path?: string) => Promise<void>;
     saveGamePath: (game: "poe1" | "poe2", path: string) => Promise<void>;
-    setActiveGame: (game: "poe1" | "poe2") => Promise<void>;
+    setActiveGame: (
+      game: "poe1" | "poe2",
+      options?: { hydrateSettings?: boolean },
+    ) => Promise<void>;
     startListening: () => () => void;
   };
 }
@@ -199,6 +225,7 @@ export type BoundStore = AppMenuSlice &
   AuraOverlaySlice &
   AppSetupSlice &
   ProfilesSlice &
+  CaptureProfilesSlice &
   CropEditorSlice &
   OnboardingSlice &
   EditorSlice &

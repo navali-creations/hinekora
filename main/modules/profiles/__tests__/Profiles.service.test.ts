@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
+import {
+  clearIpcWindowRolesForTests,
+  registerIpcWindowRole,
+} from "~/main/utils/ipc-window-roles";
 
 import { DatabaseService } from "../../database";
 import { ProfilesChannel } from "../Profiles.channels";
@@ -19,16 +24,32 @@ vi.mock("electron", () => ({
 describe("ProfilesService", () => {
   afterEach(() => {
     electronMocks.getAllWindows.mockReset();
+    clearIpcWindowRolesForTests();
     DatabaseService.resetForTests();
     vi.restoreAllMocks();
   });
 
-  it("creates a default profile once and publishes changes", () => {
-    const send = vi.fn();
+  it("creates default profiles for both games once and publishes changes", () => {
+    const mainSend = vi.fn();
+    const auraSend = vi.fn();
+    const recorderSend = vi.fn();
+    const unscopedSend = vi.fn();
+    const destroyedSend = vi.fn();
+    const mainWebContents = { id: 1, send: mainSend };
+    const auraWebContents = { id: 2, send: auraSend };
+    const recorderWebContents = { id: 3, send: recorderSend };
+    const unscopedWebContents = { id: 4, send: unscopedSend };
+    const destroyedWebContents = { id: 5, send: destroyedSend };
     DatabaseService.getInstance(":memory:");
+    registerIpcWindowRole(mainWebContents, WindowName.Main);
+    registerIpcWindowRole(auraWebContents, WindowName.AuraOverlay);
+    registerIpcWindowRole(recorderWebContents, WindowName.RecorderOverlay);
     electronMocks.getAllWindows.mockReturnValue([
-      { isDestroyed: () => false, webContents: { send } },
-      { isDestroyed: () => true, webContents: { send: vi.fn() } },
+      { isDestroyed: () => false, webContents: mainWebContents },
+      { isDestroyed: () => false, webContents: auraWebContents },
+      { isDestroyed: () => false, webContents: recorderWebContents },
+      { isDestroyed: () => false, webContents: unscopedWebContents },
+      { isDestroyed: () => true, webContents: destroyedWebContents },
     ]);
     const service = new ProfilesService();
 
@@ -40,11 +61,77 @@ describe("ProfilesService", () => {
       game: "poe1",
     });
     expect(existing.id).toBe(created.id);
-    expect(service.list()).toHaveLength(1);
-    expect(send).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith(ProfilesChannel.Changed, [
-      expect.objectContaining({ id: created.id }),
+    expect(service.list()).toHaveLength(2);
+    expect(service.list()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ game: "poe1", name: "Default PoE Profile" }),
+        expect.objectContaining({
+          game: "poe2",
+          name: "Default PoE 2 Profile",
+        }),
+      ]),
+    );
+    expect(mainSend).toHaveBeenCalledTimes(2);
+    expect(auraSend).toHaveBeenCalledTimes(2);
+    expect(recorderSend).toHaveBeenCalledTimes(2);
+    expect(unscopedSend).not.toHaveBeenCalled();
+    expect(destroyedSend).not.toHaveBeenCalled();
+    expect(mainSend).toHaveBeenLastCalledWith(
+      ProfilesChannel.Changed,
+      expect.arrayContaining([
+        expect.objectContaining({ game: "poe1" }),
+        expect.objectContaining({ game: "poe2" }),
+      ]),
+    );
+  });
+
+  it("notifies main-process profile observers", () => {
+    DatabaseService.getInstance(":memory:");
+    electronMocks.getAllWindows.mockReturnValue([]);
+    const service = new ProfilesService();
+    const listener = vi.fn();
+    const unsubscribe = service.onDidChange(listener);
+
+    const created = service.create({ name: "Mapper", game: "poe2" });
+    unsubscribe();
+    service.update({ id: created.id, name: "Ignored" });
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).toHaveBeenCalledWith([
+      expect.objectContaining({ id: created.id, name: "Mapper" }),
     ]);
+  });
+
+  it("continues notifying profile observers when one listener throws", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const mainSend = vi.fn();
+    const mainWebContents = { id: 1, send: mainSend };
+    DatabaseService.getInstance(":memory:");
+    registerIpcWindowRole(mainWebContents, WindowName.Main);
+    electronMocks.getAllWindows.mockReturnValue([
+      { isDestroyed: () => false, webContents: mainWebContents },
+    ]);
+    const service = new ProfilesService();
+    const throwingListener = vi.fn(() => {
+      throw new Error("listener failed");
+    });
+    const survivingListener = vi.fn();
+    service.onDidChange(throwingListener);
+    service.onDidChange(survivingListener);
+
+    service.create({ name: "Mapper", game: "poe1" });
+
+    expect(survivingListener).toHaveBeenCalledWith([
+      expect.objectContaining({ name: "Mapper" }),
+    ]);
+    expect(mainSend).toHaveBeenCalledWith(
+      ProfilesChannel.Changed,
+      expect.any(Array),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Profile listener failed"),
+      { error: "listener failed" },
+    );
   });
 
   it("creates and reuses the singleton instance", () => {
@@ -64,9 +151,11 @@ describe("ProfilesService", () => {
 
   it("updates, upserts, replaces, and deletes profiles", () => {
     const send = vi.fn();
+    const webContents = { id: 1, send };
     DatabaseService.getInstance(":memory:");
+    registerIpcWindowRole(webContents, WindowName.Main);
     electronMocks.getAllWindows.mockReturnValue([
-      { isDestroyed: () => false, webContents: { send } },
+      { isDestroyed: () => false, webContents },
     ]);
     const service = new ProfilesService();
     const profile = service.create({ name: "Mapper", game: "poe2" });

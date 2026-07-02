@@ -13,7 +13,7 @@ interface TabsBoxTabsProps<T extends string> {
   items: readonly TabsBoxItem<T>[];
   value: T;
   onChange: (value: T) => void;
-  size?: "sm" | "md";
+  size?: "xs" | "sm" | "md";
 }
 
 function TabsBoxTabs<T extends string>({

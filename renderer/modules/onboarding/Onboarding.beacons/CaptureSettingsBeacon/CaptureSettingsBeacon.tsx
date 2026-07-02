@@ -20,7 +20,8 @@ function CaptureSettingsBeacon(props: PopoverComponentProps) {
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
-                Recording keeps overlays out of full-session recordings.
+                Recording controls whether overlays are hidden from full-session
+                recordings.
               </span>
             </li>
             <li className="flex items-start gap-2">
@@ -63,14 +64,14 @@ function CaptureSettingsBeacon(props: PopoverComponentProps) {
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
-                Settings are locked while a recording action is running.
+                Settings are saved locally and copied into an unlocked capture
+                profile.
               </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
-                Stop recording before changing encoder, FPS, quality, or output
-                size.
+                Profile locking is disabled while recording or rewind is active.
               </span>
             </li>
           </ul>
@@ -79,8 +80,8 @@ function CaptureSettingsBeacon(props: PopoverComponentProps) {
         <div className="alert border border-info bg-secondary text-info">
           <FiInfo size={20} />
           <span>
-            Capture protection also hides Hinekora overlays from screenshots and
-            external capture tools while it is enabled.
+            The blue settings notice can be dismissed and restored from the Help
+            settings panel.
           </span>
         </div>
       </div>

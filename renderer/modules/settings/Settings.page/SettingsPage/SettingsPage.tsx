@@ -8,6 +8,7 @@ import {
   type TabsBoxItem,
   TabsBoxTabs,
 } from "~/renderer/components/TabsBoxTabs/TabsBoxTabs";
+import { CaptureProfilesPanel } from "~/renderer/modules/capture-profiles/CaptureProfiles.components/CaptureProfilesPanel/CaptureProfilesPanel";
 import { ProfilesPanel } from "~/renderer/modules/profiles/Profiles.components/ProfilesPanel/ProfilesPanel";
 
 import { AppSettingsCard } from "../../Settings.components/AppSettingsCard/AppSettingsCard";
@@ -122,7 +123,10 @@ function SettingsPage({
               {activeCategory === "Help" && <HelpSettingsCard />}
               {activeCategory === "Profiles" && (
                 <>
-                  <ProfilesPanel />
+                  <div className="col-span-12 grid gap-3 lg:grid-cols-2">
+                    <CaptureProfilesPanel />
+                    <ProfilesPanel />
+                  </div>
                   <ProfileTransferSettingsCard />
                 </>
               )}

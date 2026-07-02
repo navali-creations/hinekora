@@ -1,5 +1,10 @@
 import type { PoeProcessState } from "~/main/modules/poe-process/PoeProcess.dto";
-import { resolveCapturePreviewSourceId } from "~/renderer/modules/capture-preview/CapturePreview.utils/CapturePreview.utils";
+import {
+  createCapturePreviewSourcesWithGameFallback,
+  isCapturePreviewSourceAvailable,
+  resolveCapturePreviewSourceId,
+} from "~/renderer/modules/capture-preview/CapturePreview.utils/CapturePreview.utils";
+import { resolveActiveGameCaptureProfile } from "~/renderer/modules/capture-profiles/CaptureProfiles.utils/CaptureProfiles.utils";
 import { trackEvent } from "~/renderer/modules/umami";
 import type {
   BoundStoreStateCreator,
@@ -10,6 +15,7 @@ import type { CapturePreviewSource, GameId } from "~/types";
 
 const MAX_CAPTURE_PREVIEW_THUMBNAILS = 16;
 const CAPTURE_SOURCE_REFRESH_RETRY_DELAY_MS = 2_500;
+const CAPTURE_SOURCE_REFRESH_MAX_RETRIES = 8;
 
 function pruneCapturePreviewThumbnails(
   thumbnailsBySourceId: Record<string, string | null | undefined>,
@@ -56,7 +62,7 @@ function isCaptureSourceForGame(
     return false;
   }
 
-  return source.game === game;
+  return source.game === game && isCapturePreviewSourceAvailable(source);
 }
 
 export const createCapturePreviewSlice: BoundStoreStateCreator<
@@ -82,19 +88,8 @@ export const createCapturePreviewSlice: BoundStoreStateCreator<
         window.clearTimeout(retryTimer);
         retryTimer = null;
       };
-      const refreshAfterRequest = async (version: number) => {
-        await get().capturePreview.refresh({ force: true });
-        if (version !== requestVersion) {
-          return;
-        }
-
-        const store = get();
-        if (
-          !shouldRetryCaptureSourceRefresh(
-            store.poeProcess.state,
-            store.capturePreview.sources,
-          )
-        ) {
+      const scheduleRetry = (version: number, retriesRemaining: number) => {
+        if (retriesRemaining <= 0) {
           return;
         }
 
@@ -111,8 +106,42 @@ export const createCapturePreviewSlice: BoundStoreStateCreator<
             return;
           }
 
-          void get().capturePreview.refresh({ force: true });
+          void get()
+            .capturePreview.refresh({ force: true })
+            .then(() => {
+              if (version !== requestVersion) {
+                return;
+              }
+
+              const refreshedStore = get();
+              if (
+                shouldRetryCaptureSourceRefresh(
+                  refreshedStore.poeProcess.state,
+                  refreshedStore.capturePreview.sources,
+                )
+              ) {
+                scheduleRetry(version, retriesRemaining - 1);
+              }
+            });
         }, CAPTURE_SOURCE_REFRESH_RETRY_DELAY_MS);
+      };
+      const refreshAfterRequest = async (version: number) => {
+        await get().capturePreview.refresh({ force: true });
+        if (version !== requestVersion) {
+          return;
+        }
+
+        const store = get();
+        if (
+          !shouldRetryCaptureSourceRefresh(
+            store.poeProcess.state,
+            store.capturePreview.sources,
+          )
+        ) {
+          return;
+        }
+
+        scheduleRetry(version, CAPTURE_SOURCE_REFRESH_MAX_RETRIES);
       };
       const unsubscribe = window.electron.capturePreview.onRefreshRequested(
         () => {
@@ -135,18 +164,23 @@ export const createCapturePreviewSlice: BoundStoreStateCreator<
       });
 
       try {
-        const sources = await window.electron.capturePreview.listSources(
+        const liveSources = await window.electron.capturePreview.listSources(
           options.force === true,
         );
-        const profiles = get().profiles;
-        const selectedProfile =
-          profiles.items.find(
-            (profile) => profile.id === profiles.selectedProfileId,
-          ) ?? null;
+        const profiles = get().captureProfiles;
+        const activeGame = get().settings.value?.activeGame ?? "poe1";
+        const sources =
+          createCapturePreviewSourcesWithGameFallback(liveSources);
+        const selectedProfile = resolveActiveGameCaptureProfile(
+          profiles.items,
+          profiles.selectedProfileId,
+          activeGame,
+        );
         const selectedSourceId = resolveCapturePreviewSourceId(
           selectedProfile?.captureTarget ?? null,
           sources,
           get().capturePreview.selectedSourceId,
+          activeGame,
         );
 
         set((state) => {

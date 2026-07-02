@@ -28,6 +28,7 @@ const storeMocks = vi.hoisted(() => ({
   updateProfile: vi.fn(),
   useCapturePreviewShallow: vi.fn(),
   useProfilesShallow: vi.fn(),
+  useSettingsSelector: vi.fn(),
 }));
 
 const electronMocks = vi.hoisted(() => ({
@@ -43,6 +44,7 @@ vi.mock("~/renderer/store", () => ({
   useAuraOverlayShallow: storeMocks.useAuraOverlayShallow,
   useCapturePreviewShallow: storeMocks.useCapturePreviewShallow,
   useProfilesShallow: storeMocks.useProfilesShallow,
+  useSettingsSelector: storeMocks.useSettingsSelector,
 }));
 
 vi.mock(
@@ -162,6 +164,9 @@ describe("AuraOverlayPage", () => {
         selectedSourceId: "screen:1",
         sources: [{ id: "screen:1", width: 1920, height: 1080 }],
       }),
+    );
+    storeMocks.useSettingsSelector.mockImplementation((selector) =>
+      selector({ value: { activeGame: "poe1" } }),
     );
     storeMocks.useAuraOverlayShallow.mockImplementation((selector) =>
       selector({

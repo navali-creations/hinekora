@@ -60,9 +60,11 @@ export const createClientLogSlice: BoundStoreStateCreator<ClientLogSlice> = (
       );
       trackEvent("client-log-path-saved", { game });
     },
-    setActiveGame: async (game) => {
+    setActiveGame: async (game, options = {}) => {
       const status = await window.electron.clientLog.setActiveGame({ game });
-      await get().settings.hydrate();
+      if (options.hydrateSettings !== false) {
+        await get().settings.hydrate();
+      }
       set((state) => {
         state.clientLog.status = status;
         state.clientLog.pendingPath = status.path ?? "";

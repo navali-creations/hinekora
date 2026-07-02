@@ -2,6 +2,7 @@ import clsx from "clsx";
 import type { MouseEvent } from "react";
 import { useState } from "react";
 
+import { CaptureProfileLockToggle } from "~/renderer/modules/capture-profiles/CaptureProfiles.components/CaptureProfileLockToggle/CaptureProfileLockToggle";
 import { ManagedRecorderAudioSettingsCard } from "~/renderer/modules/managed-recorder/ManagedRecorder.components/ManagedRecorderAudioSettingsCard/ManagedRecorderAudioSettingsCard";
 import { ManagedRecorderRecordingSettingsFields } from "~/renderer/modules/managed-recorder/ManagedRecorder.components/ManagedRecorderRecordingSettingsFields/ManagedRecorderRecordingSettingsFields";
 import { ManagedRecorderRewindSettingsFields } from "~/renderer/modules/managed-recorder/ManagedRecorder.components/ManagedRecorderRewindSettingsFields/ManagedRecorderRewindSettingsFields";
@@ -15,6 +16,14 @@ const recorderSettingsTabs = [
   { id: "audio", label: "Audio" },
 ] as const;
 type RecorderSettingsTab = (typeof recorderSettingsTabs)[number]["id"];
+
+function getRecorderSettingsTabId(tab: RecorderSettingsTab): string {
+  return `recorder-settings-tab-${tab}`;
+}
+
+function getRecorderSettingsPanelId(tab: RecorderSettingsTab): string {
+  return `recorder-settings-panel-${tab}`;
+}
 
 function ManagedRecorderPanel() {
   const [selectedTab, setSelectedTab] =
@@ -38,6 +47,7 @@ function ManagedRecorderPanel() {
         <div className="grid gap-3">
           <div className="flex items-start justify-between gap-3">
             <h2 className="m-0 font-bold text-primary text-sm">Settings</h2>
+            <CaptureProfileLockToggle size="xs" variant="chip" />
           </div>
 
           <ManagedRecorderSettingsInfoAlert />
@@ -52,6 +62,7 @@ function ManagedRecorderPanel() {
 
               return (
                 <button
+                  aria-controls={getRecorderSettingsPanelId(tab.id)}
                   aria-selected={isSelected}
                   className={clsx(
                     "tab min-w-0 whitespace-nowrap rounded-md font-semibold",
@@ -63,6 +74,7 @@ function ManagedRecorderPanel() {
                     },
                   )}
                   data-tab={tab.id}
+                  id={getRecorderSettingsTabId(tab.id)}
                   key={tab.id}
                   role="tab"
                   type="button"
@@ -75,31 +87,38 @@ function ManagedRecorderPanel() {
           </div>
         </div>
 
-        {selectedTab === "recording" && (
-          <>
-            <h3 className="m-0 font-bold text-primary text-sm">
-              Recording Settings
-            </h3>
-            <ManagedRecorderRecordingSettingsFields />
-          </>
-        )}
-        {selectedTab === "rewind" && (
-          <>
-            <h3 className="m-0 font-bold text-primary text-sm">
-              Rewind Settings
-            </h3>
-            <ManagedRecorderRewindSettingsFields />
-          </>
-        )}
-        {selectedTab === "capture" && (
-          <>
-            <h3 className="m-0 font-bold text-primary text-sm">
-              Capture Settings
-            </h3>
-            <ManagedRecorderSettingsFields />
-          </>
-        )}
-        {selectedTab === "audio" && <ManagedRecorderAudioSettingsCard />}
+        <div
+          aria-labelledby={getRecorderSettingsTabId(selectedTab)}
+          className="grid gap-3"
+          id={getRecorderSettingsPanelId(selectedTab)}
+          role="tabpanel"
+        >
+          {selectedTab === "recording" && (
+            <>
+              <h3 className="m-0 font-bold text-primary text-sm">
+                Recording Settings
+              </h3>
+              <ManagedRecorderRecordingSettingsFields />
+            </>
+          )}
+          {selectedTab === "rewind" && (
+            <>
+              <h3 className="m-0 font-bold text-primary text-sm">
+                Rewind Settings
+              </h3>
+              <ManagedRecorderRewindSettingsFields />
+            </>
+          )}
+          {selectedTab === "capture" && (
+            <>
+              <h3 className="m-0 font-bold text-primary text-sm">
+                Capture Settings
+              </h3>
+              <ManagedRecorderSettingsFields />
+            </>
+          )}
+          {selectedTab === "audio" && <ManagedRecorderAudioSettingsCard />}
+        </div>
       </section>
     </div>
   );

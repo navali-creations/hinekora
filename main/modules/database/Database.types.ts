@@ -19,6 +19,15 @@ interface ProfileTable {
   updated_at: TimestampColumn;
 }
 
+interface CaptureProfileTable {
+  id: string;
+  name: string;
+  game: GameId;
+  data_json: string;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+}
+
 interface SettingTable {
   key: string;
   value_json: string;
@@ -87,6 +96,7 @@ interface EditorProjectSourceLeagueTable {
 }
 
 export interface DatabaseSchema {
+  capture_profiles: CaptureProfileTable;
   editor_project_source_leagues: EditorProjectSourceLeagueTable;
   editor_projects: EditorProjectTable;
   migrations: MigrationTable;

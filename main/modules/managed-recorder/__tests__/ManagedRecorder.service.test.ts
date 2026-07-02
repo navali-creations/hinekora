@@ -19,8 +19,8 @@ import {
   vi,
 } from "vitest";
 
+import { CaptureProfilesService } from "~/main/modules/capture-profiles";
 import { DatabaseService } from "~/main/modules/database";
-import { ProfilesService } from "~/main/modules/profiles";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
@@ -28,7 +28,9 @@ import * as AppLog from "~/main/utils/app-log";
 import { isAsarVirtualPath } from "~/main/utils/asar-path";
 
 import {
-  createDefaultProfile,
+  type AppSettings,
+  type CaptureProfile,
+  createDefaultCaptureProfile,
   createDefaultSettings,
   type ManagedRecorderStatus,
 } from "~/types";
@@ -138,10 +140,10 @@ beforeEach(() => {
       recordingEncoder: "hardware_h264",
     }),
   } as unknown as SettingsStoreService);
-  vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+  vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
     list: () => [
       {
-        ...createDefaultProfile({ name: "Default", game: "poe1" }),
+        ...createDefaultCaptureProfile({ name: "Default", game: "poe1" }),
         captureTarget: {
           kind: "display",
           id: "primary",
@@ -151,7 +153,7 @@ beforeEach(() => {
         },
       },
     ],
-  } as unknown as ProfilesService);
+  } as unknown as CaptureProfilesService);
 });
 
 afterEach(() => {
@@ -317,6 +319,102 @@ describe("ManagedRecorderService", () => {
     };
     await expect(service.startRunRecording()).resolves.toMatchObject({
       error: "Stop the replay buffer before starting full run recording",
+    });
+  });
+
+  it("serializes concurrent buffer and run recording start requests", async () => {
+    const service = createService();
+    const noobs = createNoobsApi();
+    const internals = service as unknown as {
+      initialize(): Promise<void>;
+      noobs: ReturnType<typeof createNoobsApi>;
+    };
+    internals.noobs = noobs;
+    internals.initialize = vi.fn().mockResolvedValue(undefined);
+
+    await Promise.all([service.startBuffer(), service.startRunRecording()]);
+
+    expect(noobs.StartBuffer).toHaveBeenCalledTimes(1);
+    expect(noobs.StartRecording).not.toHaveBeenCalled();
+    expect(service.getStatus()).toMatchObject({
+      bufferActive: true,
+      recording: true,
+      runRecordingActive: false,
+    });
+  });
+
+  it("reports a blocked start while another recording mode is starting", async () => {
+    const service = createService();
+    const noobs = createNoobsApi();
+    const internals = service as unknown as {
+      initialize(): Promise<void>;
+      noobs: ReturnType<typeof createNoobsApi>;
+    };
+    internals.noobs = noobs;
+    internals.initialize = vi.fn().mockResolvedValue(undefined);
+
+    const [, runStatus] = await Promise.all([
+      service.startBuffer(),
+      service.startRunRecording(),
+    ]);
+
+    expect(runStatus.error).toBe("Replay buffer is already starting");
+  });
+
+  it("resolves recording start block messages for stopping and stale starting states", () => {
+    const service = createService();
+    const internals = service as unknown as {
+      finishRecordingStart(mode: "buffer" | "run"): void;
+      resolveRecordingStartBlockedMessage(mode: "buffer" | "run"): string;
+      startingRecordingMode: "buffer" | "run" | null;
+      status: ManagedRecorderStatus;
+    };
+    internals.status = {
+      ...service.getStatus(),
+      isStoppingRecording: true,
+    };
+
+    expect(internals.resolveRecordingStartBlockedMessage("buffer")).toBe(
+      "Wait for the current recording to stop before starting another recording",
+    );
+
+    internals.status = {
+      ...service.getStatus(),
+      isStoppingRecording: false,
+    };
+    internals.startingRecordingMode = "run";
+    expect(internals.resolveRecordingStartBlockedMessage("buffer")).toBe(
+      "Full run recording is already starting",
+    );
+
+    internals.startingRecordingMode = "buffer";
+    expect(internals.resolveRecordingStartBlockedMessage("buffer")).toBe(
+      "Recording is already starting",
+    );
+
+    internals.startingRecordingMode = "run";
+    internals.finishRecordingStart("buffer");
+    expect(internals.startingRecordingMode).toBe("run");
+  });
+
+  it("serializes concurrent run recording and buffer start requests", async () => {
+    const service = createService();
+    const noobs = createNoobsApi();
+    const internals = service as unknown as {
+      initialize(): Promise<void>;
+      noobs: ReturnType<typeof createNoobsApi>;
+    };
+    internals.noobs = noobs;
+    internals.initialize = vi.fn().mockResolvedValue(undefined);
+
+    await Promise.all([service.startRunRecording(), service.startBuffer()]);
+
+    expect(noobs.StartRecording).toHaveBeenCalledTimes(1);
+    expect(noobs.StartBuffer).not.toHaveBeenCalled();
+    expect(service.getStatus()).toMatchObject({
+      bufferActive: false,
+      recording: true,
+      runRecordingActive: true,
     });
   });
 
@@ -1145,7 +1243,7 @@ describe("ManagedRecorderService", () => {
     );
   });
 
-  it("ignores transient direct lookup misses while the process monitor says the game is running", async () => {
+  it("clears stale game-running state when the forced direct lookup misses", async () => {
     pollerMocks.detectPoeProcessState.mockResolvedValue({
       isRunning: false,
       processName: "",
@@ -1161,8 +1259,60 @@ describe("ManagedRecorderService", () => {
 
     await expect(
       service.refreshGameRunningStatus({ forceRefresh: true }),
-    ).resolves.toBe(true);
-    expect(service.getStatus()).toMatchObject({ gameRunning: true });
+    ).resolves.toBe(false);
+    expect(service.getStatus()).toMatchObject({ gameRunning: false });
+  });
+
+  it("does not carry a running state across active game changes", async () => {
+    pollerMocks.detectPoeProcessState.mockResolvedValue({
+      game: "poe1",
+      isRunning: true,
+      processName: "PathOfExileSteam.exe",
+    });
+    let settings: AppSettings = {
+      ...createDefaultSettings(),
+      activeGame: "poe1",
+      recordingAutoStartMode: "recording",
+      recordingStoragePath: directory,
+    };
+    const settingsChangeListeners: Array<(settings: AppSettings) => void> = [];
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+      onDidChange: (listener: (settings: AppSettings) => void) => {
+        settingsChangeListeners.push(listener);
+
+        return vi.fn();
+      },
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const internals = service as unknown as {
+      status: ManagedRecorderStatus;
+    };
+    internals.status = {
+      ...service.getStatus(),
+      gameRunning: true,
+    };
+    const startRunRecording = vi
+      .spyOn(service, "startRunRecording")
+      .mockResolvedValue(internals.status);
+
+    settings = {
+      ...settings,
+      activeGame: "poe2",
+    };
+    expect(settingsChangeListeners).toHaveLength(1);
+    settingsChangeListeners[0]!(settings);
+
+    await vi.waitFor(() => {
+      expect(pollerMocks.detectPoeProcessState).toHaveBeenCalledWith(
+        null,
+        "poe2",
+      );
+    });
+    await vi.waitFor(() => {
+      expect(service.getStatus()).toMatchObject({ gameRunning: false });
+    });
+    expect(startRunRecording).not.toHaveBeenCalled();
   });
 
   it("reuses an in-flight game-running refresh", async () => {
@@ -1187,6 +1337,38 @@ describe("ManagedRecorderService", () => {
     await expect(second).resolves.toBe(false);
   });
 
+  it("starts a fresh forced game-running refresh and ignores the stale earlier result", async () => {
+    const resolvers: Array<
+      (state: { isRunning: boolean; processName: string }) => void
+    > = [];
+    pollerMocks.detectPoeProcessState.mockImplementation(
+      () =>
+        new Promise<{ isRunning: boolean; processName: string }>((resolve) => {
+          resolvers.push(resolve);
+        }),
+    );
+    const service = createService();
+
+    const staleRefresh = service.refreshGameRunningStatus({
+      forceRefresh: false,
+    });
+    const forcedRefresh = service.refreshGameRunningStatus({
+      forceRefresh: true,
+    });
+
+    expect(pollerMocks.detectPoeProcessState).toHaveBeenCalledTimes(2);
+    resolvers[1]!({
+      isRunning: true,
+      processName: "PathOfExileSteam.exe",
+    });
+    await expect(forcedRefresh).resolves.toBe(true);
+    expect(service.getStatus()).toMatchObject({ gameRunning: true });
+
+    resolvers[0]!({ isRunning: false, processName: "" });
+    await expect(staleRefresh).resolves.toBe(true);
+    expect(service.getStatus()).toMatchObject({ gameRunning: true });
+  });
+
   it("updates game-running state directly from the process monitor", async () => {
     const service = createService();
     const internals = service as unknown as {
@@ -1204,6 +1386,643 @@ describe("ManagedRecorderService", () => {
       error: null,
       gameRunning: true,
     });
+  });
+
+  it("starts the configured rewind buffer on app startup", async () => {
+    const settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "rewind",
+      recordingStoragePath: directory,
+    };
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const status = service.getStatus();
+    const startBuffer = vi
+      .spyOn(service, "startBuffer")
+      .mockResolvedValue(status);
+
+    service.initializeAutoStart();
+
+    await vi.waitFor(() => {
+      expect(startBuffer).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("waits for the process monitor instead of starting on app startup when the game is missing", async () => {
+    pollerMocks.detectPoeProcessState.mockResolvedValue({
+      isRunning: false,
+      processName: "",
+    });
+    const settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "rewind",
+      recordingStoragePath: directory,
+    };
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const internals = service as unknown as {
+      status: ManagedRecorderStatus;
+    };
+    const startBuffer = vi
+      .spyOn(service, "startBuffer")
+      .mockResolvedValue(internals.status);
+
+    service.initializeAutoStart();
+    await vi.waitFor(() => {
+      expect(pollerMocks.detectPoeProcessState).toHaveBeenCalled();
+    });
+
+    expect(startBuffer).not.toHaveBeenCalled();
+    expect(internals.status.gameRunning).toBe(false);
+    expect(internals.status.error).not.toBe("Path of Exile 1 is not running");
+  });
+
+  it("starts the configured full recording when the active game appears", async () => {
+    const settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "recording",
+      recordingStoragePath: directory,
+    };
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const startRunRecording = vi
+      .spyOn(service, "startRunRecording")
+      .mockResolvedValue(service.getStatus());
+    const internals = service as unknown as {
+      status: ManagedRecorderStatus;
+    };
+    internals.status = {
+      ...service.getStatus(),
+      gameRunning: false,
+    };
+
+    await expect(service.setGameRunningState(true)).resolves.toBe(true);
+    await expect(service.setGameRunningState(true)).resolves.toBe(true);
+
+    expect(startRunRecording).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries automatic startup when the selected window is not available yet", async () => {
+    vi.useFakeTimers();
+    const settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "rewind",
+      recordingStoragePath: directory,
+      selectedCaptureProfileId: "profile-1",
+    };
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+    } as unknown as SettingsStoreService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      list: () => [
+        {
+          ...createDefaultCaptureProfile({ name: "PoE 1", game: "poe1" }),
+          id: "profile-1",
+          captureTarget: {
+            kind: "window",
+            id: "window:poe:previous",
+            label: "Path of Exile",
+            game: "poe1",
+          },
+        },
+      ],
+    } as unknown as CaptureProfilesService);
+    const service = createService();
+    const noobs = createNoobsApi();
+    const internals = service as unknown as {
+      ensureNoobsRuntimeInitialized(): Promise<string>;
+      noobs: ReturnType<typeof createNoobsApi>;
+    };
+    internals.noobs = noobs;
+    internals.ensureNoobsRuntimeInitialized = vi
+      .fn()
+      .mockResolvedValue(join(directory, "runtime"));
+    noobs.GetSourceProperties.mockReturnValueOnce([
+      { name: "window", items: [] },
+    ]);
+    noobs.GetSourceProperties.mockReturnValue([
+      {
+        name: "window",
+        items: [{ name: "Path of Exile", value: "window:poe:live" }],
+      },
+    ]);
+
+    await service.setGameRunningState(true);
+    expect(service.getStatus()).toMatchObject({
+      error: "Selected capture window is not available yet",
+      recording: false,
+    });
+    expect(noobs.DeleteSource).toHaveBeenCalledWith("source-1");
+    expect(noobs.StartBuffer).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(2_500);
+
+    await vi.waitFor(() => {
+      expect(noobs.StartBuffer).toHaveBeenCalledTimes(1);
+    });
+    expect(service.getStatus()).toMatchObject({
+      error: null,
+      recording: true,
+    });
+  });
+
+  it("logs automatic startup failures during initialization", async () => {
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+    const service = createService();
+    const internals = service as unknown as {
+      attemptConfiguredAutoStartWhenGameRunning(): Promise<ManagedRecorderStatus | null>;
+    };
+    internals.attemptConfiguredAutoStartWhenGameRunning = vi
+      .fn()
+      .mockRejectedValue(new Error("startup failed"));
+
+    service.initializeAutoStart();
+
+    await vi.waitFor(() => {
+      expect(logWarn).toHaveBeenCalledWith(
+        "managed-recorder",
+        "Automatic recorder startup failed",
+        { error: "startup failed" },
+      );
+    });
+  });
+
+  it("short-circuits automatic startup when disabled, offline, or already active", async () => {
+    let settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "off",
+      recordingStoragePath: directory,
+    };
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const internals = service as unknown as {
+      attemptConfiguredAutoStart(
+        reason: "game-running" | "settings-changed" | "startup",
+      ): Promise<ManagedRecorderStatus | null>;
+      attemptConfiguredAutoStartWhenGameRunning(
+        reason: "game-running" | "settings-changed" | "startup",
+      ): Promise<ManagedRecorderStatus | null>;
+      status: ManagedRecorderStatus;
+    };
+
+    await expect(
+      internals.attemptConfiguredAutoStartWhenGameRunning("startup"),
+    ).resolves.toBeNull();
+
+    settings = {
+      ...settings,
+      recordingAutoStartMode: "rewind",
+    };
+    internals.status = {
+      ...service.getStatus(),
+      gameRunning: false,
+    };
+    await expect(
+      internals.attemptConfiguredAutoStart("startup"),
+    ).resolves.toBeNull();
+
+    internals.status = {
+      ...service.getStatus(),
+      gameRunning: true,
+      recording: true,
+    };
+    await expect(internals.attemptConfiguredAutoStart("startup")).resolves.toBe(
+      internals.status,
+    );
+    await expect(
+      internals.attemptConfiguredAutoStartWhenGameRunning("startup"),
+    ).resolves.toBe(internals.status);
+  });
+
+  it("logs automatic startup recheck failures after an in-flight start", async () => {
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+    const settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "rewind",
+      recordingStoragePath: directory,
+    };
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const internals = service as unknown as {
+      attemptConfiguredAutoStart(
+        reason: "game-running" | "settings-changed" | "startup",
+      ): Promise<ManagedRecorderStatus | null>;
+      attemptConfiguredAutoStartWhenGameRunning(): Promise<ManagedRecorderStatus | null>;
+      autoStartRequestNeedsRecheck: boolean;
+      status: ManagedRecorderStatus;
+    };
+    internals.status = {
+      ...service.getStatus(),
+      gameRunning: true,
+    };
+    let resolveStart!: (status: ManagedRecorderStatus) => void;
+    vi.spyOn(service, "startBuffer").mockImplementation(
+      () =>
+        new Promise<ManagedRecorderStatus>((resolve) => {
+          resolveStart = resolve;
+        }),
+    );
+
+    const startRequest = internals.attemptConfiguredAutoStart("startup");
+    await vi.waitFor(() => {
+      expect(service.startBuffer).toHaveBeenCalledTimes(1);
+    });
+
+    internals.autoStartRequestNeedsRecheck = true;
+    internals.attemptConfiguredAutoStartWhenGameRunning = vi
+      .fn()
+      .mockRejectedValue(new Error("recheck failed"));
+    resolveStart(internals.status);
+    await startRequest;
+
+    await vi.waitFor(() => {
+      expect(logWarn).toHaveBeenCalledWith(
+        "managed-recorder",
+        "Automatic recorder startup recheck failed",
+        { error: "recheck failed" },
+      );
+    });
+  });
+
+  it("schedules, skips, clears, and logs automatic startup retries", async () => {
+    vi.useFakeTimers();
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+    const service = createService();
+    const internals = service as unknown as {
+      attemptConfiguredAutoStartWhenGameRunning(): Promise<ManagedRecorderStatus | null>;
+      autoStartRetryTimer: NodeJS.Timeout | null;
+      clearAutoStartRetry(): void;
+      scheduleAutoStartRetry(
+        reason: "game-running" | "settings-changed" | "startup",
+      ): void;
+      status: ManagedRecorderStatus;
+    };
+    internals.status = {
+      ...service.getStatus(),
+      gameRunning: false,
+    };
+
+    internals.scheduleAutoStartRetry("startup");
+    expect(internals.autoStartRetryTimer).toBeNull();
+
+    internals.status = {
+      ...service.getStatus(),
+      gameRunning: true,
+    };
+    internals.attemptConfiguredAutoStartWhenGameRunning = vi
+      .fn()
+      .mockRejectedValue(new Error("retry failed"));
+    internals.scheduleAutoStartRetry("startup");
+    const timer = internals.autoStartRetryTimer;
+    expect(timer).not.toBeNull();
+
+    internals.scheduleAutoStartRetry("startup");
+    expect(internals.autoStartRetryTimer).toBe(timer);
+
+    internals.clearAutoStartRetry();
+    expect(internals.autoStartRetryTimer).toBeNull();
+    internals.scheduleAutoStartRetry("startup");
+
+    await vi.advanceTimersByTimeAsync(2_500);
+
+    await vi.waitFor(() => {
+      expect(logWarn).toHaveBeenCalledWith(
+        "managed-recorder",
+        "Automatic recorder startup retry failed",
+        { error: "retry failed" },
+      );
+    });
+    expect(internals.autoStartRetryTimer).toBeNull();
+  });
+
+  it("starts the configured recorder mode when automatic startup is enabled", async () => {
+    let settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "off",
+      recordingStoragePath: directory,
+    };
+    const settingsChangeListeners: Array<(settings: AppSettings) => void> = [];
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+      onDidChange: (listener: (settings: AppSettings) => void) => {
+        settingsChangeListeners.push(listener);
+
+        return vi.fn();
+      },
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const internals = service as unknown as {
+      status: ManagedRecorderStatus;
+    };
+    const startBuffer = vi
+      .spyOn(service, "startBuffer")
+      .mockResolvedValue(internals.status);
+    settings = {
+      ...settings,
+      recordingAutoStartMode: "rewind",
+    };
+
+    expect(settingsChangeListeners).toHaveLength(1);
+    settingsChangeListeners[0]!(settings);
+
+    await vi.waitFor(() => {
+      expect(startBuffer).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("clears pending automatic startup work when settings disable startup", () => {
+    vi.useFakeTimers();
+    let settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "rewind",
+      recordingStoragePath: directory,
+    };
+    const settingsChangeListeners: Array<(settings: AppSettings) => void> = [];
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+      onDidChange: (listener: (settings: AppSettings) => void) => {
+        settingsChangeListeners.push(listener);
+
+        return vi.fn();
+      },
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const internals = service as unknown as {
+      autoStartRequest: Promise<ManagedRecorderStatus | null> | null;
+      autoStartRequestNeedsRecheck: boolean;
+      autoStartRetryTimer: NodeJS.Timeout | null;
+      scheduleAutoStartRetry(
+        reason: "game-running" | "settings-changed" | "startup",
+      ): void;
+      status: ManagedRecorderStatus;
+    };
+    internals.status = {
+      ...service.getStatus(),
+      gameRunning: true,
+    };
+    internals.scheduleAutoStartRetry("settings-changed");
+    expect(internals.autoStartRetryTimer).not.toBeNull();
+    internals.autoStartRequest = Promise.resolve(service.getStatus());
+
+    settings = {
+      ...settings,
+      recordingAutoStartMode: "off",
+    };
+    expect(settingsChangeListeners).toHaveLength(1);
+    settingsChangeListeners[0]!(settings);
+
+    expect(internals.autoStartRequestNeedsRecheck).toBe(true);
+    expect(internals.autoStartRetryTimer).toBeNull();
+  });
+
+  it("ignores unchanged automatic startup configuration and clears changed disabled configuration", () => {
+    vi.useFakeTimers();
+    const settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "off",
+      recordingStoragePath: directory,
+    };
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const internals = service as unknown as {
+      attemptConfiguredAutoStartWhenGameRunning(): Promise<ManagedRecorderStatus | null>;
+      autoStartRequest: Promise<ManagedRecorderStatus | null> | null;
+      autoStartRequestNeedsRecheck: boolean;
+      autoStartRetryTimer: NodeJS.Timeout | null;
+      createAutoStartConfigurationKey(): string;
+      handleAutoStartConfigurationChange(
+        reason: "game-running" | "settings-changed" | "startup",
+      ): void;
+      previousAutoStartConfigurationKey: string;
+      scheduleAutoStartRetry(
+        reason: "game-running" | "settings-changed" | "startup",
+      ): void;
+      status: ManagedRecorderStatus;
+    };
+    internals.attemptConfiguredAutoStartWhenGameRunning = vi.fn();
+    internals.previousAutoStartConfigurationKey =
+      internals.createAutoStartConfigurationKey();
+
+    internals.handleAutoStartConfigurationChange("settings-changed");
+
+    expect(
+      internals.attemptConfiguredAutoStartWhenGameRunning,
+    ).not.toHaveBeenCalled();
+
+    internals.status = {
+      ...service.getStatus(),
+      gameRunning: true,
+    };
+    internals.scheduleAutoStartRetry("settings-changed");
+    internals.autoStartRequest = Promise.resolve(service.getStatus());
+    internals.previousAutoStartConfigurationKey = "stale";
+
+    internals.handleAutoStartConfigurationChange("settings-changed");
+
+    expect(internals.autoStartRequestNeedsRecheck).toBe(true);
+    expect(internals.autoStartRetryTimer).toBeNull();
+  });
+
+  it("logs automatic startup failures after configuration changes", async () => {
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+    const settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "rewind",
+      recordingStoragePath: directory,
+      selectedCaptureProfileId: "profile-1",
+    };
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const internals = service as unknown as {
+      attemptConfiguredAutoStartWhenGameRunning(): Promise<ManagedRecorderStatus | null>;
+      handleAutoStartConfigurationChange(
+        reason: "game-running" | "settings-changed" | "startup",
+      ): void;
+      previousAutoStartConfigurationKey: string;
+    };
+    internals.attemptConfiguredAutoStartWhenGameRunning = vi
+      .fn()
+      .mockRejectedValue(new Error("config failed"));
+    internals.previousAutoStartConfigurationKey = "stale";
+
+    internals.handleAutoStartConfigurationChange("settings-changed");
+
+    await vi.waitFor(() => {
+      expect(logWarn).toHaveBeenCalledWith(
+        "managed-recorder",
+        "Automatic recorder startup failed",
+        { error: "config failed" },
+      );
+    });
+  });
+
+  it("rechecks automatic startup after settings change during an in-flight start", async () => {
+    let settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "rewind",
+      recordingStoragePath: directory,
+      selectedCaptureProfileId: "profile-1",
+    };
+    const settingsChangeListeners: Array<(settings: AppSettings) => void> = [];
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+      onDidChange: (listener: (settings: AppSettings) => void) => {
+        settingsChangeListeners.push(listener);
+
+        return vi.fn();
+      },
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const internals = service as unknown as {
+      autoStartRequestNeedsRecheck: boolean;
+      status: ManagedRecorderStatus;
+    };
+    let resolveFirstStart!: (status: ManagedRecorderStatus) => void;
+    const startBuffer = vi
+      .spyOn(service, "startBuffer")
+      .mockImplementationOnce(
+        () =>
+          new Promise<ManagedRecorderStatus>((resolve) => {
+            resolveFirstStart = resolve;
+          }),
+      )
+      .mockImplementationOnce(async () => internals.status);
+
+    const firstStart = service.setGameRunningState(true);
+    await vi.waitFor(() => {
+      expect(startBuffer).toHaveBeenCalledTimes(1);
+    });
+
+    settings = {
+      ...settings,
+      selectedCaptureProfileId: "profile-2",
+    };
+    expect(settingsChangeListeners).toHaveLength(1);
+    settingsChangeListeners[0]!(settings);
+    await vi.waitFor(() => {
+      expect(internals.autoStartRequestNeedsRecheck).toBe(true);
+    });
+
+    resolveFirstStart(internals.status);
+    await firstStart;
+
+    await vi.waitFor(() => {
+      expect(startBuffer).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("re-evaluates automatic startup when the selected profile target changes", async () => {
+    const settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "rewind",
+      recordingStoragePath: directory,
+      selectedCaptureProfileId: "profile-1",
+    };
+    const profileChangeListeners: Array<() => void> = [];
+    let profiles: CaptureProfile[] = [
+      {
+        ...createDefaultCaptureProfile({ name: "PoE 1", game: "poe1" }),
+        id: "profile-1",
+        captureTarget: {
+          kind: "display" as const,
+          id: "primary",
+          label: "Primary display",
+        },
+      },
+    ];
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+      onDidChange: vi.fn(),
+    } as unknown as SettingsStoreService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      list: () => profiles,
+      onDidChange: (listener: () => void) => {
+        profileChangeListeners.push(listener);
+
+        return vi.fn();
+      },
+    } as unknown as CaptureProfilesService);
+    const service = createService();
+    const internals = service as unknown as {
+      status: ManagedRecorderStatus;
+    };
+    const startBuffer = vi
+      .spyOn(service, "startBuffer")
+      .mockResolvedValue(internals.status);
+    profiles = [
+      {
+        ...profiles[0]!,
+        captureTarget: {
+          kind: "window" as const,
+          id: "window:poe:pending",
+          label: "Path of Exile 1",
+          game: "poe1" as const,
+        },
+      },
+    ];
+
+    expect(profileChangeListeners).toHaveLength(1);
+    profileChangeListeners[0]!();
+
+    await vi.waitFor(() => {
+      expect(startBuffer).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("waits for the process monitor when automatic startup is enabled while the game is missing", async () => {
+    pollerMocks.detectPoeProcessState.mockResolvedValue({
+      isRunning: false,
+      processName: "",
+    });
+    let settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingAutoStartMode: "off",
+      recordingStoragePath: directory,
+    };
+    const settingsChangeListeners: Array<(settings: AppSettings) => void> = [];
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+      onDidChange: (listener: (settings: AppSettings) => void) => {
+        settingsChangeListeners.push(listener);
+
+        return vi.fn();
+      },
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const internals = service as unknown as {
+      status: ManagedRecorderStatus;
+    };
+    const startBuffer = vi
+      .spyOn(service, "startBuffer")
+      .mockResolvedValue(internals.status);
+    settings = {
+      ...settings,
+      recordingAutoStartMode: "rewind",
+    };
+
+    expect(settingsChangeListeners).toHaveLength(1);
+    settingsChangeListeners[0]!(settings);
+    await vi.waitFor(() => {
+      expect(pollerMocks.detectPoeProcessState).toHaveBeenCalled();
+    });
+
+    expect(startBuffer).not.toHaveBeenCalled();
+    expect(internals.status.gameRunning).toBe(false);
+    expect(internals.status.error).not.toBe("Path of Exile 1 is not running");
   });
 
   it("reuses an active offline-stop request and logs stop failures", async () => {
@@ -2585,12 +3404,17 @@ describe("ManagedRecorderService", () => {
       status: ManagedRecorderStatus;
     };
     internals.noobs = noobs;
-    noobs.GetSourceProperties.mockReturnValue([]);
+    noobs.GetSourceProperties.mockReturnValue([
+      {
+        name: "window",
+        items: [{ name: "Path of Exile", value: "window:poe:live" }],
+      },
+    ]);
     noobs.GetSourcePos.mockReturnValue({ x: 0, y: 0, width: 0, height: 0 });
-    vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
       list: () => [
         {
-          ...createDefaultProfile({ name: "Window", game: "poe1" }),
+          ...createDefaultCaptureProfile({ name: "Window", game: "poe1" }),
           captureTarget: {
             kind: "window",
             id: "window:poe:1",
@@ -2598,7 +3422,7 @@ describe("ManagedRecorderService", () => {
           },
         },
       ],
-    } as unknown as ProfilesService);
+    } as unknown as CaptureProfilesService);
 
     internals.configureCaptureSource();
     expect(noobs.CreateSource).toHaveBeenCalledWith(
@@ -2613,14 +3437,25 @@ describe("ManagedRecorderService", () => {
         { method: 7 },
         { kind: "window", id: "window:poe:1", label: "Path of Exile" },
       ),
-    ).toMatchObject({ method: 7, window: "window:poe:1" });
+    ).toMatchObject({ method: 7, window: "window:poe:live" });
     expect(
       internals.createWindowSourceSettings(
         "source-1",
         {},
         { kind: "window", id: "window:poe:1", label: "Path of Exile" },
       ),
-    ).toMatchObject({ method: 0, window: "window:poe:1" });
+    ).toMatchObject({ method: 0, window: "window:poe:live" });
+
+    noobs.GetSourceProperties.mockReturnValueOnce([
+      { name: "window", items: [] },
+    ]);
+    expect(() =>
+      internals.createWindowSourceSettings(
+        "source-1",
+        {},
+        { kind: "window", id: "window:poe:1", label: "Path of Exile" },
+      ),
+    ).toThrow("Selected capture window is not available yet");
 
     internals.captureSourceName = "source-1";
     internals.captureSourceResolution = { width: 1280, height: 720 };
@@ -2642,6 +3477,206 @@ describe("ManagedRecorderService", () => {
       "source-1",
       expect.objectContaining({ scaleX: 1, scaleY: 1 }),
     );
+  });
+
+  it("resolves capture target from the persisted selected profile when it matches the active game", () => {
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        activeGame: "poe2",
+        selectedCaptureProfileId: "profile-2",
+      }),
+    } as unknown as SettingsStoreService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      list: () => [
+        {
+          ...createDefaultCaptureProfile({ name: "PoE 1", game: "poe1" }),
+          id: "profile-1",
+          captureTarget: {
+            kind: "display",
+            id: "display-1",
+            label: "Display 1",
+          },
+        },
+        {
+          ...createDefaultCaptureProfile({ name: "PoE 2", game: "poe2" }),
+          id: "profile-2",
+          captureTarget: {
+            kind: "window",
+            id: "window:poe2:1",
+            label: "Path of Exile 2",
+            game: "poe2",
+          },
+        },
+      ],
+    } as unknown as CaptureProfilesService);
+    const service = createService();
+    const internals = service as unknown as {
+      resolveCaptureTarget(): unknown;
+    };
+
+    expect(internals.resolveCaptureTarget()).toEqual({
+      kind: "window",
+      id: "window:poe2:1",
+      label: "Path of Exile 2",
+      game: "poe2",
+    });
+  });
+
+  it("uses the persisted selected profile even when active game is stale", () => {
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        activeGame: "poe1",
+        selectedCaptureProfileId: "profile-2",
+      }),
+    } as unknown as SettingsStoreService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      list: () => [
+        {
+          ...createDefaultCaptureProfile({ name: "PoE 1", game: "poe1" }),
+          id: "profile-1",
+          captureTarget: {
+            kind: "display",
+            id: "display-1",
+            label: "Display 1",
+          },
+        },
+        {
+          ...createDefaultCaptureProfile({ name: "PoE 2", game: "poe2" }),
+          id: "profile-2",
+          captureTarget: {
+            kind: "window",
+            id: "window:poe2:1",
+            label: "Path of Exile 2",
+            game: "poe2",
+          },
+        },
+      ],
+    } as unknown as CaptureProfilesService);
+    const service = createService();
+    const internals = service as unknown as {
+      resolveCaptureTarget(): unknown;
+    };
+
+    expect(internals.resolveCaptureTarget()).toEqual({
+      kind: "window",
+      id: "window:poe2:1",
+      label: "Path of Exile 2",
+      game: "poe2",
+    });
+  });
+
+  it("uses the primary display when the active game has no selected or matching profile", () => {
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        activeGame: "poe2",
+        selectedCaptureProfileId: null,
+      }),
+    } as unknown as SettingsStoreService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      list: () => [
+        {
+          ...createDefaultCaptureProfile({ name: "PoE 1", game: "poe1" }),
+          id: "profile-1",
+          captureTarget: {
+            kind: "window",
+            id: "window:poe1:1",
+            label: "Path of Exile",
+            game: "poe1",
+          },
+        },
+      ],
+    } as unknown as CaptureProfilesService);
+    const service = createService();
+    const internals = service as unknown as {
+      resolveCaptureTarget(): unknown;
+    };
+
+    expect(internals.resolveCaptureTarget()).toEqual({
+      kind: "display",
+      id: "primary",
+      label: "Primary display",
+    });
+  });
+
+  it("ignores active-game profile window targets that point at another game", () => {
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        activeGame: "poe1",
+        selectedCaptureProfileId: "profile-1",
+      }),
+    } as unknown as SettingsStoreService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      list: () => [
+        {
+          ...createDefaultCaptureProfile({ name: "PoE 1", game: "poe1" }),
+          id: "profile-1",
+          captureTarget: {
+            kind: "window",
+            id: "window:poe2:1",
+            label: "Path of Exile 2",
+            game: "poe2",
+          },
+        },
+      ],
+    } as unknown as CaptureProfilesService);
+    const service = createService();
+    const internals = service as unknown as {
+      resolveCaptureTarget(): unknown;
+    };
+
+    expect(internals.resolveCaptureTarget()).toEqual({
+      kind: "display",
+      id: "primary",
+      label: "Primary display",
+    });
+  });
+
+  it("does not start recording when the selected window is unavailable", async () => {
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        activeGame: "poe1",
+        recordingStoragePath: directory,
+        selectedCaptureProfileId: "profile-1",
+      }),
+    } as unknown as SettingsStoreService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      list: () => [
+        {
+          ...createDefaultCaptureProfile({ name: "PoE 1", game: "poe1" }),
+          id: "profile-1",
+          captureTarget: {
+            kind: "window",
+            id: "window:poe:missing",
+            label: "Path of Exile",
+            game: "poe1",
+          },
+        },
+      ],
+    } as unknown as CaptureProfilesService);
+    const service = createService();
+    const noobs = createNoobsApi();
+    const internals = service as unknown as {
+      ensureNoobsRuntimeInitialized(): Promise<string>;
+      noobs: ReturnType<typeof createNoobsApi>;
+    };
+    internals.noobs = noobs;
+    internals.ensureNoobsRuntimeInitialized = vi
+      .fn()
+      .mockResolvedValue(join(directory, "runtime"));
+    noobs.GetSourceProperties.mockReturnValue([{ name: "window", items: [] }]);
+
+    await expect(service.startBuffer()).resolves.toMatchObject({
+      error: "Selected capture window is not available yet",
+      recording: false,
+    });
+    expect(noobs.SetSourceSettings).not.toHaveBeenCalled();
+    expect(noobs.StartBuffer).not.toHaveBeenCalled();
+    expect(noobs.DeleteSource).toHaveBeenCalledWith("source-1");
   });
 
   it("returns null when recording file metadata cannot be read", async () => {
@@ -2698,10 +3733,10 @@ describe("ManagedRecorderService", () => {
 
   it("resolves native recording size through Electron displays", () => {
     const service = createService();
-    vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
       list: () => [
         {
-          ...createDefaultProfile({ name: "Display", game: "poe1" }),
+          ...createDefaultCaptureProfile({ name: "Display", game: "poe1" }),
           captureTarget: {
             kind: "display",
             id: "1",
@@ -2709,7 +3744,7 @@ describe("ManagedRecorderService", () => {
           },
         },
       ],
-    } as unknown as ProfilesService);
+    } as unknown as CaptureProfilesService);
     electronMocks.getAllDisplays.mockReturnValue([
       {
         id: 1,
@@ -2731,10 +3766,10 @@ describe("ManagedRecorderService", () => {
       height: 1080,
     });
 
-    vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
       list: () => [
         {
-          ...createDefaultProfile({ name: "Primary", game: "poe1" }),
+          ...createDefaultCaptureProfile({ name: "Primary", game: "poe1" }),
           captureTarget: {
             kind: "display",
             id: "primary",
@@ -2742,7 +3777,7 @@ describe("ManagedRecorderService", () => {
           },
         },
       ],
-    } as unknown as ProfilesService);
+    } as unknown as CaptureProfilesService);
     electronMocks.getAllDisplays.mockReturnValue([]);
 
     expect(internals.resolveRecordingResolution("native")).toEqual({
@@ -2751,10 +3786,10 @@ describe("ManagedRecorderService", () => {
     });
     expect(electronMocks.getPrimaryDisplay).toHaveBeenCalled();
 
-    vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
       list: () => [
         {
-          ...createDefaultProfile({ name: "Window", game: "poe1" }),
+          ...createDefaultCaptureProfile({ name: "Window", game: "poe1" }),
           captureTarget: {
             kind: "window",
             id: "window:missing:0",
@@ -2762,7 +3797,7 @@ describe("ManagedRecorderService", () => {
           },
         },
       ],
-    } as unknown as ProfilesService);
+    } as unknown as CaptureProfilesService);
     electronMocks.getAllDisplays.mockReturnValue([]);
     internals.captureSourceResolution = { width: 1024, height: 768 };
     expect(internals.resolveRecordingResolution("native")).toEqual({
@@ -2889,9 +3924,9 @@ describe("ManagedRecorderService", () => {
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
       cleanup,
     } as unknown as RecordingStorageService);
-    vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
       list: () => [],
-    } as unknown as ProfilesService);
+    } as unknown as CaptureProfilesService);
     const internals = service as unknown as {
       cleanupRecordingStorage(protectedPaths: Array<string | null>): void;
       getActiveRecordingDurationSeconds(): number;

@@ -49,6 +49,10 @@ export const useProfilesShallow = <T>(
   selector: (profiles: BoundStore["profiles"]) => T,
 ) => useBoundStore(useShallow((state) => selector(state.profiles)));
 
+export const useCaptureProfilesShallow = <T>(
+  selector: (captureProfiles: BoundStore["captureProfiles"]) => T,
+) => useBoundStore(useShallow((state) => selector(state.captureProfiles)));
+
 export const useCropEditorSelector = <T>(
   selector: (cropEditor: BoundStore["cropEditor"]) => T,
 ) => useBoundStore((state) => selector(state.cropEditor));

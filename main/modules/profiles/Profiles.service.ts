@@ -2,12 +2,17 @@ import { BrowserWindow } from "electron";
 
 import { DatabaseService } from "~/main/modules/database";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
+import { logWarn } from "~/main/utils/app-log";
 import {
   assertObject,
   assertString,
   handleValidationError,
+  safeErrorMessage,
 } from "~/main/utils/ipc-validation";
-import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
+import {
+  getIpcWindowRole,
+  registerGuardedIpcHandler,
+} from "~/main/utils/ipc-window-roles";
 
 import {
   type Profile,
@@ -19,9 +24,17 @@ import {
 import { ProfilesChannel } from "./Profiles.channels";
 import { ProfilesRepository } from "./Profiles.repository";
 
+const profileChangeWindowRoles = new Set([
+  WindowName.Main,
+  WindowName.AuraOverlay,
+  WindowName.RecorderOverlay,
+]);
+const PROFILES_SCOPE = "profiles";
+
 class ProfilesService {
   private static instance: ProfilesService | null = null;
 
+  private readonly changeListeners = new Set<(profiles: Profile[]) => void>();
   private readonly repository: ProfilesRepository;
 
   static getInstance(): ProfilesService {
@@ -41,16 +54,34 @@ class ProfilesService {
     return this.repository.list();
   }
 
+  onDidChange(listener: (profiles: Profile[]) => void): () => void {
+    this.changeListeners.add(listener);
+
+    return () => {
+      this.changeListeners.delete(listener);
+    };
+  }
+
   ensureDefaultProfile(): Profile {
-    const [existing] = this.list();
-    if (existing) {
-      return existing;
+    const profiles = this.list();
+    let poe1Profile =
+      profiles.find((profile) => profile.game === "poe1") ?? null;
+
+    if (!poe1Profile) {
+      poe1Profile = this.create({
+        name: "Default PoE Profile",
+        game: "poe1",
+      });
     }
 
-    return this.create({
-      name: "Default PoE Profile",
-      game: "poe1",
-    });
+    if (!profiles.some((profile) => profile.game === "poe2")) {
+      this.create({
+        name: "Default PoE 2 Profile",
+        game: "poe2",
+      });
+    }
+
+    return poe1Profile;
   }
 
   create(input: ProfileCreateInput): Profile {
@@ -94,8 +125,23 @@ class ProfilesService {
   private publishProfilesChanged(): void {
     const profiles = this.list();
 
+    for (const listener of this.changeListeners) {
+      try {
+        listener(profiles);
+      } catch (error) {
+        logWarn(PROFILES_SCOPE, "Profile listener failed", {
+          error: safeErrorMessage(error),
+        });
+      }
+    }
+
     for (const window of BrowserWindow.getAllWindows()) {
-      if (!window.isDestroyed()) {
+      if (window.isDestroyed()) {
+        continue;
+      }
+
+      const role = getIpcWindowRole({ sender: window.webContents });
+      if (role && profileChangeWindowRoles.has(role)) {
         window.webContents.send(ProfilesChannel.Changed, profiles);
       }
     }

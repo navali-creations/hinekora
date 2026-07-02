@@ -692,6 +692,12 @@ async function setupEditorE2E(page: Page) {
             onRefreshRequested: () => unsubscribe,
           },
         ),
+        captureProfiles: createBridgeDomain<
+          EditorE2EElectron["captureProfiles"]
+        >("captureProfiles", {
+          list: async () => [],
+          onChanged: () => unsubscribe,
+        }),
         clientLog: createBridgeDomain<EditorE2EElectron["clientLog"]>(
           "clientLog",
           {

@@ -9,7 +9,11 @@ import {
   isCropNumberField,
   resolveActiveAuraCropRegionId,
 } from "~/renderer/modules/crop-editor/CropEditor.utils/CropEditor.utils";
-import { useCropEditorShallow, useProfilesShallow } from "~/renderer/store";
+import {
+  useCropEditorShallow,
+  useProfilesShallow,
+  useSettingsSelector,
+} from "~/renderer/store";
 
 const cropFieldLabels: Record<CropNumberField, string> = {
   x: "screen x",
@@ -32,7 +36,14 @@ function CropRegionsEditor() {
       selectedAuraCropRegionId: cropEditor.selectedAuraCropRegionId,
     }),
   );
-  const profile = getSelectedProfile(profileItems, selectedProfileId);
+  const activeGame = useSettingsSelector(
+    (settings) => settings.value?.activeGame ?? "poe1",
+  );
+  const profile = getSelectedProfile(
+    profileItems,
+    selectedProfileId,
+    activeGame,
+  );
   const activeAuraCropRegionId = resolveActiveAuraCropRegionId(
     profile,
     selectedAuraCropRegionId,

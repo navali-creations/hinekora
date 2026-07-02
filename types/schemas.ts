@@ -21,6 +21,7 @@ export const CaptureTargetSchema = z.object({
   kind: z.enum(["display", "window"]),
   id: z.string().min(1).max(512),
   label: z.string().min(1).max(512),
+  game: GameIdSchema.nullable().optional(),
   width: z.number().int().min(1).max(100_000).nullable().optional(),
   height: z.number().int().min(1).max(100_000).nullable().optional(),
 });
@@ -31,6 +32,7 @@ export const CapturePreviewSourceSchema = z.object({
   name: z.string().min(1).max(512),
   kind: z.enum(["screen", "window"]),
   game: GameIdSchema.nullable().optional(),
+  available: z.boolean().optional(),
   displayId: z.string().max(128).nullable(),
   width: z.number().int().min(1).max(100_000).nullable().default(null),
   height: z.number().int().min(1).max(100_000).nullable().default(null),
@@ -344,6 +346,125 @@ export function normalizeRecordingEncoderChoice(
 export const AppCloseBehaviorSchema = z.enum(["exit", "minimize-to-tray"]);
 export type AppCloseBehavior = z.infer<typeof AppCloseBehaviorSchema>;
 
+export const RecordingAutoStartModeSchema = z.enum([
+  "off",
+  "recording",
+  "rewind",
+]);
+export type RecordingAutoStartMode = z.infer<
+  typeof RecordingAutoStartModeSchema
+>;
+
+export const defaultCaptureProfileNames: Record<GameId, string> = {
+  poe1: "Default PoE Capture",
+  poe2: "Default PoE 2 Capture",
+};
+export const defaultCaptureProfileIds: Record<GameId, string> = {
+  poe1: "default-capture-poe1",
+  poe2: "default-capture-poe2",
+};
+export const CaptureProfileSelectionMemorySchema = z
+  .object({
+    poe1: z.string().min(1).max(128).nullable().optional(),
+    poe2: z.string().min(1).max(128).nullable().optional(),
+  })
+  .default({});
+export type CaptureProfileSelectionMemory = z.infer<
+  typeof CaptureProfileSelectionMemorySchema
+>;
+
+const captureProfileSettingsShape = {
+  recordingOutputResolution: z.string().min(1).max(32),
+  recordingFps: z.number().int().min(1).max(240),
+  recordingEncoder: RecordingEncoderSchema,
+  recordingClipQuality: RecordingQualitySchema,
+  recordingRunQuality: RecordingQualitySchema,
+  recordingAudioInputDeviceId: z.string().min(1).max(512).nullable(),
+  recordingAudioOutputDeviceId: z.string().min(1).max(512).nullable(),
+  recordingHideOverlaysFromRecording: z.boolean(),
+  recordingHideOverlaysFromRewind: z.boolean(),
+  recordingAutoStartMode: RecordingAutoStartModeSchema,
+  deathClipSeconds: z
+    .number()
+    .int()
+    .min(minRewindSaveSeconds)
+    .max(maxRewindSaveSeconds),
+} as const;
+const captureProfileSettingsDefaultShape = {
+  recordingOutputResolution:
+    captureProfileSettingsShape.recordingOutputResolution.default("native"),
+  recordingFps: captureProfileSettingsShape.recordingFps.default(30),
+  recordingEncoder:
+    captureProfileSettingsShape.recordingEncoder.default("hardware_h264"),
+  recordingClipQuality:
+    captureProfileSettingsShape.recordingClipQuality.default("high"),
+  recordingRunQuality:
+    captureProfileSettingsShape.recordingRunQuality.default("moderate"),
+  recordingAudioInputDeviceId:
+    captureProfileSettingsShape.recordingAudioInputDeviceId.default(null),
+  recordingAudioOutputDeviceId:
+    captureProfileSettingsShape.recordingAudioOutputDeviceId.default(null),
+  recordingHideOverlaysFromRecording:
+    captureProfileSettingsShape.recordingHideOverlaysFromRecording.default(
+      true,
+    ),
+  recordingHideOverlaysFromRewind:
+    captureProfileSettingsShape.recordingHideOverlaysFromRewind.default(true),
+  recordingAutoStartMode:
+    captureProfileSettingsShape.recordingAutoStartMode.default("off"),
+  deathClipSeconds: captureProfileSettingsShape.deathClipSeconds.default(
+    defaultRewindSaveSeconds,
+  ),
+} as const;
+
+export const CaptureProfileSettingsSchema = z.object(
+  captureProfileSettingsDefaultShape,
+);
+export const CaptureProfileSettingsUpdateSchema = z
+  .object(captureProfileSettingsShape)
+  .partial();
+export type CaptureProfileSettings = z.infer<
+  typeof CaptureProfileSettingsSchema
+>;
+export const captureProfileSettingKeys = Object.keys(
+  captureProfileSettingsShape,
+) as Array<keyof CaptureProfileSettings>;
+
+export const CaptureProfileSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    name: z.string().min(1).max(80),
+    game: GameIdSchema,
+    isDefault: z.boolean().default(false),
+    captureTarget: CaptureTargetSchema.nullable(),
+  })
+  .merge(CaptureProfileSettingsSchema)
+  .extend({
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+  });
+export type CaptureProfile = z.infer<typeof CaptureProfileSchema>;
+
+export const CaptureProfileCreateInputSchema = z.object({
+  name: z.string().min(1).max(80),
+  game: GameIdSchema.default("poe1"),
+});
+export type CaptureProfileCreateInput = z.infer<
+  typeof CaptureProfileCreateInputSchema
+>;
+
+export const CaptureProfileUpdateInputSchema = z
+  .object({
+    id: z.string().min(1).max(128),
+    name: z.string().min(1).max(80).optional(),
+    game: GameIdSchema.optional(),
+    captureTarget: CaptureTargetSchema.nullable().optional(),
+  })
+  .merge(CaptureProfileSettingsUpdateSchema);
+export type CaptureProfileUpdateInput = z.infer<
+  typeof CaptureProfileUpdateInputSchema
+>;
+
 export const MainWindowBoundsSchema = z.object({
   x: z.number().int().min(-100_000).max(100_000),
   y: z.number().int().min(-100_000).max(100_000),
@@ -371,25 +492,10 @@ export const AppSettingsSchema = z.object({
   recorderOverlayBounds: RecorderOverlayBoundsSchema.nullable().default(null),
   installedGames: z.array(GameIdSchema).min(1).max(2).default(["poe1"]),
   recordingStoragePath: z.string().max(2_048).nullable().default(null),
-  recordingOutputResolution: z.string().min(1).max(32).default("native"),
-  recordingFps: z.number().int().min(1).max(240).default(30),
-  recordingEncoder: RecordingEncoderSchema.default("hardware_h264"),
-  recordingClipQuality: RecordingQualitySchema.default("high"),
-  recordingRunQuality: RecordingQualitySchema.default("moderate"),
-  recordingAudioInputDeviceId: z
-    .string()
-    .min(1)
-    .max(512)
-    .nullable()
-    .default(null),
-  recordingAudioOutputDeviceId: z
-    .string()
-    .min(1)
-    .max(512)
-    .nullable()
-    .default(null),
-  recordingHideOverlaysFromRecording: z.boolean().default(true),
-  recordingHideOverlaysFromRewind: z.boolean().default(true),
+  ...CaptureProfileSettingsSchema.shape,
+  selectedCaptureProfileId: z.string().min(1).max(128).nullable().default(null),
+  selectedCaptureProfileIdsByGame: CaptureProfileSelectionMemorySchema,
+  selectedProfileId: z.string().min(1).max(128).nullable().default(null),
   recordingMaxStorageGb: z.number().int().min(0).max(100_000).default(50),
   poe1ClientTxtPath: z.string().max(2_048).nullable().default(null),
   poe2ClientTxtPath: z.string().max(2_048).nullable().default(null),
@@ -403,12 +509,6 @@ export const AppSettingsSchema = z.object({
   poe1SelectedLeague: z.string().min(1).max(80).default("Standard"),
   poe2SelectedLeague: z.string().min(1).max(80).default("Standard"),
   editorAutoPruneProjects: z.boolean().default(false),
-  deathClipSeconds: z
-    .number()
-    .int()
-    .min(minRewindSaveSeconds)
-    .max(maxRewindSaveSeconds)
-    .default(defaultRewindSaveSeconds),
   telemetryCrashReporting: z.boolean().default(false),
   telemetryUsageAnalytics: z.boolean().default(false),
   lastSeenAppVersion: z.string().min(1).max(64).nullable().default(null),
@@ -494,6 +594,7 @@ export const StateBundleSchema = z.object({
   appVersion: z.string().min(1).max(64),
   sections: z.object({
     profiles: z.array(ProfileSchema),
+    captureProfiles: z.array(CaptureProfileSchema).default([]),
     settings: AppSettingsSchema,
     replayClips: z.array(ReplayClipSchema),
   }),
@@ -505,6 +606,7 @@ export type StateImportMode = z.infer<typeof StateImportModeSchema>;
 
 export const StateImportPreviewSchema = z.object({
   profileCount: z.number().int().min(0),
+  captureProfileCount: z.number().int().min(0),
   replayClipCount: z.number().int().min(0),
   settingsIncluded: z.boolean(),
 });
@@ -524,6 +626,23 @@ export function createDefaultProfile(input: ProfileCreateInput): Profile {
     createdAt: now,
     updatedAt: now,
   };
+}
+
+export function createDefaultCaptureProfile(
+  input: CaptureProfileCreateInput,
+  options: { id?: string; isDefault?: boolean } = {},
+): CaptureProfile {
+  const now = new Date().toISOString();
+
+  return CaptureProfileSchema.parse({
+    id: options.id ?? crypto.randomUUID(),
+    name: input.name,
+    game: input.game,
+    isDefault: options.isDefault ?? false,
+    captureTarget: null,
+    createdAt: now,
+    updatedAt: now,
+  });
 }
 
 export function createDefaultSettings(): AppSettings {

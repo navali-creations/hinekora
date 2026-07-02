@@ -7,6 +7,7 @@ import { createAppMenuSlice } from "~/renderer/modules/app-menu/AppMenu.slice/Ap
 import { createAppSetupSlice } from "~/renderer/modules/app-setup";
 import { createAuraOverlaySlice } from "~/renderer/modules/aura-overlay/AuraOverlay.slice/AuraOverlay.slice";
 import { createCapturePreviewSlice } from "~/renderer/modules/capture-preview/CapturePreview.slice/CapturePreview.slice";
+import { createCaptureProfilesSlice } from "~/renderer/modules/capture-profiles/CaptureProfiles.slice/CaptureProfiles.slice";
 import { createChangelogSlice } from "~/renderer/modules/changelog/Changelog.slice/Changelog.slice";
 import { createClientLogSlice } from "~/renderer/modules/client-log/ClientLog.slice/ClientLog.slice";
 import { createCropEditorSlice } from "~/renderer/modules/crop-editor/CropEditor.slice/CropEditor.slice";
@@ -43,6 +44,7 @@ export const useBoundStore = create<BoundStore>()(
       const auraOverlaySlice = createAuraOverlaySlice(...args);
       const appSetupSlice = createAppSetupSlice(...args);
       const profilesSlice = createProfilesSlice(...args);
+      const captureProfilesSlice = createCaptureProfilesSlice(...args);
       const cropEditorSlice = createCropEditorSlice(...args);
       const onboardingSlice = createOnboardingSlice(...args);
       const editorSlice = createEditorSlice(...args);
@@ -64,6 +66,7 @@ export const useBoundStore = create<BoundStore>()(
         ...auraOverlaySlice,
         ...appSetupSlice,
         ...profilesSlice,
+        ...captureProfilesSlice,
         ...cropEditorSlice,
         ...onboardingSlice,
         ...editorSlice,
@@ -80,7 +83,9 @@ export const useBoundStore = create<BoundStore>()(
         ...changelogSlice,
         ...savedEditsSlice,
         hydrate: async () => {
+          await settingsSlice.settings.hydrate();
           await profilesSlice.profiles.hydrate();
+          await captureProfilesSlice.captureProfiles.hydrate();
           await Promise.all([
             appMenuSlice.appMenu.hydrate(),
             appSetupSlice.appSetup.hydrate(),
@@ -88,7 +93,6 @@ export const useBoundStore = create<BoundStore>()(
             cropEditorSlice.cropEditor.hydrate(),
             managedRecorderSlice.managedRecorder.hydrate(),
             poeProcessSlice.poeProcess.hydrate(),
-            settingsSlice.settings.hydrate(),
             clientLogSlice.clientLog.hydrate(),
           ]);
         },
@@ -96,6 +100,7 @@ export const useBoundStore = create<BoundStore>()(
           const unsubscribers = [
             appMenuSlice.appMenu.startListening(),
             capturePreviewSlice.capturePreview.startListening(),
+            captureProfilesSlice.captureProfiles.startListening(),
             profilesSlice.profiles.startListening(),
             cropEditorSlice.cropEditor.startListening(),
             managedRecorderSlice.managedRecorder.startListening(),

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const storeMocks = vi.hoisted(() => ({
   settingsValue: {
     deathClipSeconds: 15,
+    recordingAutoStartMode: "off",
     recordingHideOverlaysFromRewind: true,
   },
   updateSettings: vi.fn(),
@@ -38,8 +39,8 @@ function getDurationInput(): HTMLInputElement {
 }
 
 function getPresetButton(label: string): HTMLButtonElement {
-  const button = [...container.querySelectorAll("button")].find(
-    (buttonElement) => buttonElement.textContent?.trim() === label,
+  const button = container.querySelector<HTMLButtonElement>(
+    `button[aria-label="${label} second rewind duration"]`,
   );
   if (!(button instanceof HTMLButtonElement)) {
     throw new Error(`Expected ${label} preset button to render`);
@@ -49,20 +50,26 @@ function getPresetButton(label: string): HTMLButtonElement {
 }
 
 function getDurationButtons(): string[] {
-  return [...container.querySelectorAll("button")].map(
-    (button) => button.textContent?.trim() ?? "",
-  );
+  return [
+    ...container.querySelectorAll<HTMLButtonElement>(
+      'button[aria-label$="second rewind duration"]',
+    ),
+  ].map((button) => button.textContent?.trim() ?? "");
 }
 
-function getOverlayCheckbox(): HTMLInputElement {
+function getCheckbox(ariaLabel: string): HTMLInputElement {
   const checkbox = container.querySelector<HTMLInputElement>(
-    'input[type="checkbox"]',
+    `input[aria-label="${ariaLabel}"]`,
   );
   if (!checkbox) {
-    throw new Error("Expected overlay capture checkbox to render");
+    throw new Error(`Expected ${ariaLabel} checkbox to render`);
   }
 
   return checkbox;
+}
+
+function getOverlayCheckbox(): HTMLInputElement {
+  return getCheckbox("Hide Hinekora overlays from rewind");
 }
 
 describe("ManagedRecorderRewindSettingsFields", () => {
@@ -72,6 +79,7 @@ describe("ManagedRecorderRewindSettingsFields", () => {
     root = createRoot(container);
     storeMocks.settingsValue = {
       deathClipSeconds: 15,
+      recordingAutoStartMode: "off",
       recordingHideOverlaysFromRewind: true,
     };
     storeMocks.updateSettings.mockReset();
@@ -100,6 +108,7 @@ describe("ManagedRecorderRewindSettingsFields", () => {
     expect(getDurationInput().value).toBe("");
     expect(getPresetButton("15").getAttribute("aria-pressed")).toBe("true");
     expect(container.textContent).toContain("seconds");
+    expect(container.textContent).toContain("Start rewind automatically");
     expect(container.textContent).toContain("Hide overlays from rewind");
     expect(getOverlayCheckbox().checked).toBe(true);
   });
@@ -160,6 +169,7 @@ describe("ManagedRecorderRewindSettingsFields", () => {
   it("shows the custom input when the saved duration is not a preset", async () => {
     storeMocks.settingsValue = {
       deathClipSeconds: 12,
+      recordingAutoStartMode: "off",
       recordingHideOverlaysFromRewind: true,
     };
 
@@ -178,6 +188,37 @@ describe("ManagedRecorderRewindSettingsFields", () => {
 
     expect(storeMocks.updateSettings).toHaveBeenCalledWith({
       recordingHideOverlaysFromRewind: false,
+    });
+  });
+
+  it("updates rewind auto-start from the rewind tab", async () => {
+    await renderFields();
+
+    await act(async () => {
+      getCheckbox("Start rewind automatically").click();
+    });
+
+    expect(storeMocks.updateSettings).toHaveBeenCalledWith({
+      recordingAutoStartMode: "rewind",
+    });
+  });
+
+  it("disables active rewind auto-start from the rewind tab", async () => {
+    storeMocks.settingsValue = {
+      deathClipSeconds: 15,
+      recordingAutoStartMode: "rewind",
+      recordingHideOverlaysFromRewind: true,
+    };
+    await renderFields();
+
+    expect(getCheckbox("Start rewind automatically").checked).toBe(true);
+
+    await act(async () => {
+      getCheckbox("Start rewind automatically").click();
+    });
+
+    expect(storeMocks.updateSettings).toHaveBeenCalledWith({
+      recordingAutoStartMode: "off",
     });
   });
 });

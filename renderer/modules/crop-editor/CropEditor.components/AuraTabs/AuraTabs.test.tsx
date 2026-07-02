@@ -5,12 +5,14 @@ const storeMocks = vi.hoisted(() => ({
   selectAura: vi.fn(),
   useCropEditorShallow: vi.fn(),
   useProfilesShallow: vi.fn(),
+  useSettingsSelector: vi.fn(),
   updateProfile: vi.fn(),
 }));
 
 vi.mock("~/renderer/store", () => ({
   useCropEditorShallow: storeMocks.useCropEditorShallow,
   useProfilesShallow: storeMocks.useProfilesShallow,
+  useSettingsSelector: storeMocks.useSettingsSelector,
 }));
 
 import { AuraTabs } from "./AuraTabs";
@@ -58,6 +60,9 @@ describe("AuraTabs", () => {
         selectedAuraCropRegionId: "crop-2",
         selectAura: storeMocks.selectAura,
       }),
+    );
+    storeMocks.useSettingsSelector.mockImplementation((selector) =>
+      selector({ value: { activeGame: "poe1" } }),
     );
   });
 

@@ -8,10 +8,14 @@ import { HiViewGrid } from "react-icons/hi";
 import { PiBezierCurve, PiFilmSlate, PiSelection } from "react-icons/pi";
 import { TbRouteSquare2 } from "react-icons/tb";
 
+import {
+  getProfilesForGame,
+  resolveActiveGameProfile,
+} from "~/renderer/modules/profiles/Profiles.utils/Profiles.utils";
 import { CaptureModeTabs } from "~/renderer/modules/recorder-controls-overlay/RecorderControlsOverlay.components/CaptureModeTabs/CaptureModeTabs";
 import { RecorderOverlayTimer } from "~/renderer/modules/recorder-controls-overlay/RecorderControlsOverlay.components/RecorderOverlayTimer/RecorderOverlayTimer";
 import { useRecorderOverlayControls } from "~/renderer/modules/recorder-controls-overlay/RecorderControlsOverlay.hooks/useRecorderOverlayControls/useRecorderOverlayControls";
-import { useProfilesShallow } from "~/renderer/store";
+import { useProfilesShallow, useSettingsSelector } from "~/renderer/store";
 
 import styles from "../../RecorderControlsOverlay.page/RecorderControlsOverlayPage.module.css";
 import { RecorderAuraActionButton } from "../RecorderAuraActionButton/RecorderAuraActionButton";
@@ -47,10 +51,15 @@ function ExpandedRecorderControlsOverlay({
       selectProfile: profiles.select,
     }),
   );
-  const selectedProfile =
-    profileItems.find((profile) => profile.id === selectedProfileId) ??
-    profileItems[0] ??
-    null;
+  const activeGame = useSettingsSelector(
+    (settings) => settings.value?.activeGame ?? "poe1",
+  );
+  const activeGameProfiles = getProfilesForGame(profileItems, activeGame);
+  const selectedProfile = resolveActiveGameProfile(
+    profileItems,
+    selectedProfileId,
+    activeGame,
+  );
   const canUnlockAuras = gameRunning && !isRecorderBusy && !!selectedProfile;
 
   const handleProfileChange = (event: ChangeEvent<HTMLSelectElement>) => {
@@ -158,14 +167,14 @@ function ExpandedRecorderControlsOverlay({
           className={`${styles.profileSelect} my-2 select select-bordered select-primary select-xs h-7 min-h-7 w-full min-w-0 pl-2 pr-6 text-[0.6875rem] font-medium`}
           value={selectedProfile?.id ?? ""}
           onChange={handleProfileChange}
-          disabled={profileItems.length === 0}
+          disabled={activeGameProfiles.length === 0}
           title="Aura profile"
           aria-label="Aura profile"
         >
-          {profileItems.length === 0 ? (
+          {activeGameProfiles.length === 0 ? (
             <option value="">No profiles</option>
           ) : (
-            profileItems.map((profile) => (
+            activeGameProfiles.map((profile) => (
               <option key={profile.id} value={profile.id}>
                 {profile.name}
               </option>

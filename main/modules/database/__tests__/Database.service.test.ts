@@ -157,11 +157,19 @@ describe("DatabaseService", () => {
 
     try {
       database.runQuery(
-        database.kysely.insertInto("settings").values({
-          key: "activeGame",
-          value_json: JSON.stringify("poe2"),
-          updated_at: new Date().toISOString(),
-        }),
+        database.kysely
+          .insertInto("settings")
+          .values({
+            key: "activeGame",
+            value_json: JSON.stringify("poe2"),
+            updated_at: new Date().toISOString(),
+          })
+          .onConflict((conflict) =>
+            conflict.column("key").doUpdateSet({
+              value_json: JSON.stringify("poe2"),
+              updated_at: new Date().toISOString(),
+            }),
+          ),
       );
       database.backupToFile(backupPath);
 

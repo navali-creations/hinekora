@@ -24,9 +24,13 @@ function CropEditorPanel() {
     (poeProcess) => poeProcess.state,
   );
   const settingsValue = useSettingsSelector((settings) => settings.value);
-  const profile = getSelectedProfile(profileItems, selectedProfileId);
-  const hasAuraSource = Boolean(profile?.captureTarget || selectedSourceId);
   const activeGame = settingsValue?.activeGame ?? "poe1";
+  const profile = getSelectedProfile(
+    profileItems,
+    selectedProfileId,
+    activeGame,
+  );
+  const hasAuraSource = Boolean(profile?.captureTarget || selectedSourceId);
   const isGameRunning = isPoeProcessStateForGame(poeProcessState, activeGame);
   const shouldShowAuraOverlay =
     settingsValue !== null &&

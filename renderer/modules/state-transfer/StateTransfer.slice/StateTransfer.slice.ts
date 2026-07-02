@@ -5,7 +5,7 @@ import type {
 
 export const createStateTransferSlice: BoundStoreStateCreator<
   StateTransferSlice
-> = (set) => ({
+> = (set, get) => ({
   stateTransfer: {
     preview: null,
     lastMessage: null,
@@ -28,7 +28,18 @@ export const createStateTransferSlice: BoundStoreStateCreator<
     },
     importPortable: async (mode) => {
       const result = await window.electron.stateTransfer.importPortable(mode);
+      if (result.ok) {
+        await Promise.all([
+          get().settings.hydrate(),
+          get().profiles.hydrate(),
+          get().captureProfiles.hydrate(),
+          get().replayClips.hydrate(),
+        ]);
+      }
       set((state) => {
+        if (result.ok) {
+          state.stateTransfer.preview = null;
+        }
         state.stateTransfer.lastMessage = result.ok
           ? "Import applied"
           : (result.error ?? "Import failed");

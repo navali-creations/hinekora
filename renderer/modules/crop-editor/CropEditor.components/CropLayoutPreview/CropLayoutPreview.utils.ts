@@ -1,8 +1,14 @@
 import type { CSSProperties } from "react";
 
 import { findCapturePreviewSourceForTarget } from "~/renderer/modules/capture-preview/CapturePreview.utils/CapturePreview.utils";
+import { resolveActiveGameProfile } from "~/renderer/modules/profiles/Profiles.utils/Profiles.utils";
 
-import type { CapturePreviewSource, CropRegion, Profile } from "~/types";
+import type {
+  CapturePreviewSource,
+  CropRegion,
+  GameId,
+  Profile,
+} from "~/types";
 
 export type CropResizeCorner = "nw" | "ne" | "sw" | "se";
 
@@ -51,12 +57,9 @@ export const cropResizeCorners: CropResizeCorner[] = ["nw", "ne", "sw", "se"];
 export function getSelectedCropLayoutProfile(
   profiles: Profile[],
   selectedProfileId: string | null,
+  activeGame: GameId,
 ): Profile | null {
-  return (
-    profiles.find((profile) => profile.id === selectedProfileId) ??
-    profiles[0] ??
-    null
-  );
+  return resolveActiveGameProfile(profiles, selectedProfileId, activeGame);
 }
 
 export function createCropLayoutPreview(

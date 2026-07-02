@@ -1,9 +1,12 @@
+import { resolveActiveGameProfile } from "~/renderer/modules/profiles/Profiles.utils/Profiles.utils";
+
 import {
   AuraPointPlacementSettings,
   type CropRegion,
   type CropRegionArc,
   type CropRegionPoint,
   createCoordinateReferenceDimensions,
+  type GameId,
   type OverlayPlacement,
   type Profile,
 } from "~/types";
@@ -170,12 +173,9 @@ export function resolveSelectionPlacementViewport(
 export function getSelectedProfile(
   profiles: Profile[],
   selectedProfileId: string | null,
+  activeGame: GameId,
 ): Profile | null {
-  return (
-    profiles.find((profile) => profile.id === selectedProfileId) ??
-    profiles[0] ??
-    null
-  );
+  return resolveActiveGameProfile(profiles, selectedProfileId, activeGame);
 }
 
 export function resolveActiveAuraCropRegionId(

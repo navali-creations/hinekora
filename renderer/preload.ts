@@ -3,6 +3,7 @@ import { contextBridge } from "electron";
 import { AppAPI } from "~/main/modules/app/App.api";
 import { AppSetupAPI } from "~/main/modules/app-setup/AppSetup.api";
 import { CapturePreviewAPI } from "~/main/modules/capture-preview/CapturePreview.api";
+import { CaptureProfilesAPI } from "~/main/modules/capture-profiles/CaptureProfiles.api";
 import { ClientLogAPI } from "~/main/modules/client-log/ClientLog.api";
 import { DiagLogAPI } from "~/main/modules/diag-log/DiagLog.api";
 import { EditorAPI } from "~/main/modules/editor/Editor.api";
@@ -23,6 +24,7 @@ const fullApi = {
   app: AppAPI,
   appSetup: AppSetupAPI,
   capturePreview: CapturePreviewAPI,
+  captureProfiles: CaptureProfilesAPI,
   clientLog: ClientLogAPI,
   diagLog: DiagLogAPI,
   editor: EditorAPI,

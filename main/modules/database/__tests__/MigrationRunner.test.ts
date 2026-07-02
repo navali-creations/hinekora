@@ -1,13 +1,17 @@
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { appSettingsKeys } from "~/types";
 import { type Migration, MigrationRunner, migrations } from "../migrations";
 import { migration_20260618_000000_replay_clip_kind } from "../migrations/20260618_000000_replay_clip_kind";
 import { migration_20260620_000000_media_library_performance } from "../migrations/20260620_000000_media_library_performance";
 import { migration_20260628_000000_editor_project_saved_edit_metadata } from "../migrations/20260628_000000_editor_project_saved_edit_metadata";
 import { migration_20260630_000000_settings_cleanup } from "../migrations/20260630_000000_settings_cleanup";
 import { migration_20260630_010000_recording_storage_path_migrations } from "../migrations/20260630_010000_recording_storage_path_migrations";
+import { migration_20260701_000000_capture_profiles } from "../migrations/20260701_000000_capture_profiles";
 
 let database: DatabaseSync | null = null;
 
@@ -88,6 +92,46 @@ function readSettings(db: DatabaseSync): Record<string, unknown> {
   );
 }
 
+function readCaptureProfiles(db: DatabaseSync): Array<{
+  data: Record<string, unknown>;
+  game: string;
+  id: string;
+  name: string;
+}> {
+  const rows = db
+    .prepare(
+      `
+      SELECT id, name, game, data_json
+      FROM capture_profiles
+      ORDER BY game ASC, id ASC
+    `,
+    )
+    .all() as Array<{
+    data_json: string;
+    game: string;
+    id: string;
+    name: string;
+  }>;
+
+  return rows.map((row) => ({
+    data: JSON.parse(row.data_json) as Record<string, unknown>,
+    game: row.game,
+    id: row.id,
+    name: row.name,
+  }));
+}
+
+function insertSetting(
+  db: DatabaseSync,
+  key: string,
+  value: unknown,
+  updatedAt = "2026-07-01T00:00:00.000Z",
+): void {
+  db.prepare(
+    "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+  ).run(key, JSON.stringify(value), updatedAt);
+}
+
 function createTableMigration(id: string): Migration {
   return {
     id,
@@ -102,6 +146,27 @@ function createTableMigration(id: string): Migration {
 }
 
 describe("MigrationRunner", () => {
+  it("keeps migration files independent from live app settings schemas", () => {
+    const migrationDirectory = join(
+      process.cwd(),
+      "main",
+      "modules",
+      "database",
+      "migrations",
+    );
+    const migrationFiles = readdirSync(migrationDirectory).filter((file) =>
+      /^\d{8}_\d{6}_.+\.ts$/.test(file),
+    );
+
+    for (const file of migrationFiles) {
+      const content = readFileSync(join(migrationDirectory, file), "utf8");
+
+      expect(content, file).not.toMatch(/AppSettingsSchema/);
+      expect(content, file).not.toMatch(/AppSettingsKey/);
+      expect(content, file).not.toMatch(/createDefaultSettings/);
+    }
+  });
+
   afterEach(() => {
     closeDatabase();
   });
@@ -580,6 +645,16 @@ describe("MigrationRunner", () => {
     insertSetting.run("deathClipSeconds", JSON.stringify(120), updatedAt);
     insertSetting.run("activeGame", JSON.stringify("poe2"), updatedAt);
     insertSetting.run(
+      "recordingAutoStartMode",
+      JSON.stringify("recording"),
+      updatedAt,
+    );
+    insertSetting.run(
+      "selectedProfileId",
+      JSON.stringify("profile-1"),
+      updatedAt,
+    );
+    insertSetting.run(
       "obsoleteSetting",
       JSON.stringify("remove me"),
       updatedAt,
@@ -591,8 +666,10 @@ describe("MigrationRunner", () => {
     expect(readSettings(db)).toMatchObject({
       activeGame: "poe2",
       deathClipSeconds: 60,
+      recordingAutoStartMode: "recording",
       recordingHideOverlaysFromRecording: true,
       recordingHideOverlaysFromRewind: true,
+      selectedProfileId: "profile-1",
     });
     expect(readSettings(db)).not.toHaveProperty(
       "recordingHideOverlaysFromCapture",
@@ -644,15 +721,1055 @@ describe("MigrationRunner", () => {
     insertSetting.run("recordingHideOverlaysFromRecording", "{bad", updatedAt);
     insertSetting.run("activeGame", JSON.stringify("poe3"), updatedAt);
     insertSetting.run("recordingMaxStorageGb", JSON.stringify(25), updatedAt);
+    insertSetting.run("mainWindowBounds", JSON.stringify({ x: 0 }), updatedAt);
+    insertSetting.run(
+      "recorderOverlayBounds",
+      JSON.stringify({ x: 0 }),
+      updatedAt,
+    );
+    insertSetting.run(
+      "onboardingDismissedBeacons",
+      JSON.stringify(["x".repeat(129)]),
+      updatedAt,
+    );
+    insertSetting.run(
+      "recordingAudioInputDeviceId",
+      JSON.stringify(""),
+      updatedAt,
+    );
+    insertSetting.run(
+      "recordingAudioOutputDeviceId",
+      JSON.stringify("x".repeat(513)),
+      updatedAt,
+    );
+    insertSetting.run(
+      "selectedCaptureProfileId",
+      JSON.stringify(""),
+      updatedAt,
+    );
+    insertSetting.run("lastSeenAppVersion", JSON.stringify(""), updatedAt);
+    insertSetting.run("poe1ClientTxtPath", JSON.stringify(42), updatedAt);
+    insertSetting.run(
+      "poe2ClientTxtPath",
+      JSON.stringify("x".repeat(2_049)),
+      updatedAt,
+    );
 
     migration_20260630_000000_settings_cleanup.up(db);
 
-    expect(readSettings(db)).toEqual({
+    expect(readSettings(db)).toMatchObject({
       activeGame: "poe1",
       deathClipSeconds: 10,
+      mainWindowBounds: null,
+      onboardingDismissedBeacons: [],
+      poe1ClientTxtPath: null,
+      poe2ClientTxtPath: null,
+      recorderOverlayBounds: null,
+      recordingAudioInputDeviceId: null,
+      recordingAudioOutputDeviceId: null,
       recordingHideOverlaysFromRecording: true,
       recordingMaxStorageGb: 25,
+      selectedCaptureProfileId: null,
+      lastSeenAppVersion: null,
     });
+    expect(readSettings(db)).not.toHaveProperty(
+      "recordingHideOverlaysFromCapture",
+    );
+  });
+
+  it("backfills missing current settings idempotently", () => {
+    const db = createDatabase();
+
+    db.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    migration_20260630_000000_settings_cleanup.up(db);
+    migration_20260630_000000_settings_cleanup.up(db);
+
+    const settings = readSettings(db);
+
+    expect(new Set(Object.keys(settings))).toEqual(new Set(appSettingsKeys));
+    expect(settings).toMatchObject({
+      activeGame: "poe1",
+      recordingHideOverlaysFromRecording: true,
+      recordingHideOverlaysFromRewind: true,
+      recordingAutoStartMode: "off",
+      selectedCaptureProfileId: null,
+      selectedProfileId: null,
+    });
+  });
+
+  it("preserves valid startup settings during settings cleanup", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-07-01T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    ).run("recordingAutoStartMode", JSON.stringify("rewind"), updatedAt);
+    db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    ).run("selectedProfileId", JSON.stringify("profile-1"), updatedAt);
+    db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    ).run(
+      "mainWindowBounds",
+      JSON.stringify({ x: 0, y: 0, width: 1200, height: 800 }),
+      updatedAt,
+    );
+    db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    ).run(
+      "recorderOverlayBounds",
+      JSON.stringify({ x: 0, y: 0, width: 236, height: 42 }),
+      updatedAt,
+    );
+    db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    ).run("recordingAudioInputDeviceId", JSON.stringify("mic-1"), updatedAt);
+    db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    ).run(
+      "recordingAudioOutputDeviceId",
+      JSON.stringify("desktop-1"),
+      updatedAt,
+    );
+    db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    ).run("selectedCaptureProfileId", JSON.stringify("capture-1"), updatedAt);
+    db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    ).run("lastSeenAppVersion", JSON.stringify("0.6.0"), updatedAt);
+
+    migration_20260630_000000_settings_cleanup.up(db);
+
+    expect(readSettings(db)).toMatchObject({
+      lastSeenAppVersion: "0.6.0",
+      mainWindowBounds: { x: 0, y: 0, width: 1200, height: 800 },
+      recorderOverlayBounds: { x: 0, y: 0, width: 236, height: 42 },
+      recordingAudioInputDeviceId: "mic-1",
+      recordingAudioOutputDeviceId: "desktop-1",
+      recordingAutoStartMode: "rewind",
+      selectedCaptureProfileId: "capture-1",
+      selectedProfileId: "profile-1",
+    });
+  });
+
+  it("resets invalid startup settings during settings cleanup", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-07-01T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    ).run("recordingAutoStartMode", JSON.stringify("session"), updatedAt);
+    db.prepare(
+      "INSERT INTO settings (key, value_json, updated_at) VALUES (?, ?, ?)",
+    ).run("selectedProfileId", JSON.stringify(""), updatedAt);
+
+    migration_20260630_000000_settings_cleanup.up(db);
+
+    expect(readSettings(db)).toMatchObject({
+      recordingAutoStartMode: "off",
+      selectedCaptureProfileIdsByGame: {},
+      selectedProfileId: null,
+    });
+  });
+
+  it("creates default capture profiles on a fresh database and rolls back cleanly", () => {
+    const db = createDatabase();
+
+    migration_20260701_000000_capture_profiles.up(db);
+    migration_20260701_000000_capture_profiles.up(db);
+
+    expect(tableExists(db, "capture_profiles")).toBe(true);
+    expect(indexExists(db, "idx_capture_profiles_game_updated_at")).toBe(true);
+    expect(readCaptureProfiles(db)).toEqual([
+      expect.objectContaining({
+        data: expect.objectContaining({
+          captureTarget: null,
+          deathClipSeconds: 10,
+          game: "poe1",
+          recordingAutoStartMode: "off",
+          recordingFps: 30,
+          recordingHideOverlaysFromRecording: true,
+          recordingHideOverlaysFromRewind: true,
+        }),
+        game: "poe1",
+        id: "default-capture-poe1",
+        name: "Default PoE Capture",
+      }),
+      expect.objectContaining({
+        data: expect.objectContaining({
+          captureTarget: null,
+          deathClipSeconds: 10,
+          game: "poe2",
+          recordingAutoStartMode: "off",
+          recordingFps: 30,
+          recordingHideOverlaysFromRecording: true,
+          recordingHideOverlaysFromRewind: true,
+        }),
+        game: "poe2",
+        id: "default-capture-poe2",
+        name: "Default PoE 2 Capture",
+      }),
+    ]);
+
+    migration_20260701_000000_capture_profiles.down(db);
+
+    expect(tableExists(db, "capture_profiles")).toBe(false);
+    expect(indexExists(db, "idx_capture_profiles_game_updated_at")).toBe(false);
+  });
+
+  it("seeds capture profiles from aura profiles and backfills the selected capture profile", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-07-01T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        game TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    insertSetting(db, "activeGame", "poe2", updatedAt);
+    insertSetting(db, "selectedProfileId", "legacy-poe2", updatedAt);
+    insertSetting(db, "recordingOutputResolution", "1440p", updatedAt);
+    insertSetting(db, "recordingFps", 120, updatedAt);
+    insertSetting(db, "recordingEncoder", "obs_nvenc_av1_tex", updatedAt);
+    insertSetting(db, "recordingClipQuality", "ultra", updatedAt);
+    insertSetting(db, "recordingRunQuality", "high", updatedAt);
+    insertSetting(db, "recordingAudioInputDeviceId", "mic-1", updatedAt);
+    insertSetting(db, "recordingAudioOutputDeviceId", "desktop-1", updatedAt);
+    insertSetting(db, "recordingHideOverlaysFromRecording", false, updatedAt);
+    insertSetting(db, "recordingHideOverlaysFromRewind", false, updatedAt);
+    insertSetting(db, "recordingAutoStartMode", "rewind", updatedAt);
+    insertSetting(db, "deathClipSeconds", 45, updatedAt);
+
+    const insertProfile = db.prepare(`
+      INSERT INTO profiles (id, name, game, data_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    insertProfile.run(
+      "legacy-poe1",
+      "Default PoE Profile",
+      "poe1",
+      JSON.stringify({ captureTarget: null }),
+      updatedAt,
+      updatedAt,
+    );
+    insertProfile.run(
+      "legacy-poe2",
+      "Bossing",
+      "poe2",
+      JSON.stringify({
+        captureTarget: {
+          id: "window:poe2",
+          kind: "window",
+          label: "Path of Exile 2",
+        },
+      }),
+      updatedAt,
+      updatedAt,
+    );
+
+    migration_20260701_000000_capture_profiles.up(db);
+    migration_20260701_000000_capture_profiles.up(db);
+
+    const captureProfiles = readCaptureProfiles(db);
+    const poe2Profile = captureProfiles.find(
+      (profile) => profile.id === "legacy-poe2",
+    );
+
+    expect(captureProfiles).toHaveLength(4);
+    expect(poe2Profile).toMatchObject({
+      data: expect.objectContaining({
+        captureTarget: {
+          id: "window:poe2",
+          kind: "window",
+          label: "Path of Exile 2",
+        },
+        deathClipSeconds: 45,
+        recordingAudioInputDeviceId: "mic-1",
+        recordingAudioOutputDeviceId: "desktop-1",
+        recordingAutoStartMode: "rewind",
+        recordingClipQuality: "ultra",
+        recordingEncoder: "obs_nvenc_av1_tex",
+        recordingFps: 120,
+        recordingHideOverlaysFromRecording: false,
+        recordingHideOverlaysFromRewind: false,
+        recordingOutputResolution: "1440p",
+        recordingRunQuality: "high",
+      }),
+      game: "poe2",
+      name: "Bossing Capture",
+    });
+    expect(captureProfiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          data: expect.objectContaining({ isDefault: true }),
+          id: "default-capture-poe1",
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({ isDefault: true }),
+          id: "default-capture-poe2",
+        }),
+      ]),
+    );
+    expect(readSettings(db)).toMatchObject({
+      selectedCaptureProfileId: "legacy-poe2",
+      selectedCaptureProfileIdsByGame: expect.objectContaining({
+        poe2: "legacy-poe2",
+      }),
+    });
+  });
+
+  it("repairs deterministic capture profile defaults without replacing selected custom profiles", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-07-01T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        game TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    insertSetting(db, "activeGame", "poe2", updatedAt);
+    insertSetting(db, "selectedProfileId", "legacy-poe2", updatedAt);
+    db.prepare(
+      `
+      INSERT INTO profiles (id, name, game, data_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "legacy-poe2",
+      "Bossing",
+      "poe2",
+      JSON.stringify({ captureTarget: null }),
+      updatedAt,
+      updatedAt,
+    );
+
+    migration_20260701_000000_capture_profiles.up(db);
+    migration_20260701_000000_capture_profiles.up(db);
+
+    expect(readCaptureProfiles(db)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          data: expect.objectContaining({ isDefault: true }),
+          id: "default-capture-poe1",
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({ isDefault: true }),
+          id: "default-capture-poe2",
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({ isDefault: false }),
+          id: "legacy-poe2",
+        }),
+      ]),
+    );
+    expect(readSettings(db)).toMatchObject({
+      selectedCaptureProfileId: "legacy-poe2",
+      selectedCaptureProfileIdsByGame: expect.objectContaining({
+        poe2: "legacy-poe2",
+      }),
+    });
+  });
+
+  it("does not promote profiles named like defaults when they are not marked as default", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-07-01T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE capture_profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        game TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    db.prepare(
+      `
+      INSERT INTO capture_profiles (
+        id,
+        name,
+        game,
+        data_json,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "legacy-default-poe2",
+      "Default PoE 2 Capture",
+      "poe2",
+      JSON.stringify({
+        isDefault: false,
+      }),
+      updatedAt,
+      updatedAt,
+    );
+    insertSetting(
+      db,
+      "selectedCaptureProfileId",
+      "legacy-default-poe2",
+      updatedAt,
+    );
+
+    migration_20260701_000000_capture_profiles.up(db);
+    migration_20260701_000000_capture_profiles.up(db);
+
+    expect(readCaptureProfiles(db)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          data: expect.objectContaining({ isDefault: true }),
+          id: "default-capture-poe1",
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({ isDefault: true }),
+          id: "default-capture-poe2",
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({ isDefault: false }),
+          id: "legacy-default-poe2",
+        }),
+      ]),
+    );
+    expect(readSettings(db)).toMatchObject({
+      selectedCaptureProfileId: "legacy-default-poe2",
+      selectedCaptureProfileIdsByGame: expect.objectContaining({
+        poe2: "legacy-default-poe2",
+      }),
+    });
+  });
+
+  it("promotes selected legacy default capture profiles to stable default ids", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-07-01T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE capture_profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        game TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    db.prepare(
+      `
+      INSERT INTO capture_profiles (
+        id,
+        name,
+        game,
+        data_json,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "legacy-default-poe2",
+      "Default PoE 2 Profile Capture",
+      "poe2",
+      JSON.stringify({
+        isDefault: true,
+        recordingFps: 120,
+        captureTarget: {
+          id: "window:poe2",
+          kind: "window",
+          label: "Path of Exile 2",
+          game: "poe2",
+        },
+      }),
+      updatedAt,
+      updatedAt,
+    );
+    insertSetting(
+      db,
+      "selectedCaptureProfileId",
+      "legacy-default-poe2",
+      updatedAt,
+    );
+
+    migration_20260701_000000_capture_profiles.up(db);
+    migration_20260701_000000_capture_profiles.up(db);
+
+    expect(readCaptureProfiles(db)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          data: expect.objectContaining({
+            captureTarget: {
+              game: "poe2",
+              id: "window:poe2",
+              kind: "window",
+              label: "Path of Exile 2",
+            },
+            isDefault: true,
+            recordingFps: 120,
+          }),
+          id: "default-capture-poe2",
+          name: "Default PoE 2 Capture",
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({ isDefault: true }),
+          id: "default-capture-poe1",
+        }),
+      ]),
+    );
+    expect(
+      readCaptureProfiles(db).some(
+        (profile) => profile.id === "legacy-default-poe2",
+      ),
+    ).toBe(false);
+    expect(readSettings(db)).toMatchObject({
+      selectedCaptureProfileId: "default-capture-poe2",
+      selectedCaptureProfileIdsByGame: expect.objectContaining({
+        poe2: "default-capture-poe2",
+      }),
+    });
+  });
+
+  it("repairs malformed local capture profile defaults without settings", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-07-01T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE capture_profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        game TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    db.prepare(
+      `
+      INSERT INTO capture_profiles (
+        id,
+        name,
+        game,
+        data_json,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "legacy-default-poe2",
+      "Default PoE 2 Profile Capture",
+      "poe2",
+      JSON.stringify({
+        isDefault: true,
+        captureTarget: {
+          id: 42,
+          kind: "application",
+          label: null,
+        },
+      }),
+      updatedAt,
+      updatedAt,
+    );
+    db.prepare(
+      `
+      INSERT INTO capture_profiles (
+        id,
+        name,
+        game,
+        data_json,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "broken-custom-poe1",
+      "Broken custom PoE 1",
+      "poe1",
+      "{bad",
+      updatedAt,
+      updatedAt,
+    );
+    db.prepare(
+      `
+      INSERT INTO capture_profiles (
+        id,
+        name,
+        game,
+        data_json,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "primitive-custom-poe2",
+      "Primitive custom PoE 2",
+      "poe2",
+      "42",
+      updatedAt,
+      updatedAt,
+    );
+
+    migration_20260701_000000_capture_profiles.up(db);
+    migration_20260701_000000_capture_profiles.up(db);
+
+    expect(readCaptureProfiles(db)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          data: expect.objectContaining({
+            captureTarget: null,
+            isDefault: true,
+          }),
+          id: "default-capture-poe2",
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({
+            captureTarget: null,
+            isDefault: false,
+          }),
+          id: "broken-custom-poe1",
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({
+            captureTarget: null,
+            isDefault: false,
+          }),
+          id: "primitive-custom-poe2",
+        }),
+        expect.objectContaining({
+          data: expect.objectContaining({ isDefault: true }),
+          id: "default-capture-poe1",
+        }),
+      ]),
+    );
+    expect(
+      readCaptureProfiles(db).some(
+        (profile) => profile.id === "legacy-default-poe2",
+      ),
+    ).toBe(false);
+  });
+
+  it("falls back safely when legacy capture profile data or settings are invalid", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-07-01T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        game TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    insertSetting(db, "activeGame", "poe3", updatedAt);
+    insertSetting(db, "selectedProfileId", "", updatedAt);
+    insertSetting(db, "recordingOutputResolution", "", updatedAt);
+    insertSetting(db, "recordingFps", "fast", updatedAt);
+    insertSetting(db, "recordingEncoder", "not-real", updatedAt);
+    insertSetting(db, "recordingClipQuality", "cinematic", updatedAt);
+    insertSetting(db, "recordingRunQuality", "cinematic", updatedAt);
+    insertSetting(
+      db,
+      "recordingAudioInputDeviceId",
+      "x".repeat(513),
+      updatedAt,
+    );
+    insertSetting(
+      db,
+      "recordingAudioOutputDeviceId",
+      "x".repeat(513),
+      updatedAt,
+    );
+    insertSetting(db, "recordingHideOverlaysFromRecording", "false", updatedAt);
+    insertSetting(db, "recordingHideOverlaysFromRewind", "false", updatedAt);
+    insertSetting(db, "recordingAutoStartMode", "session", updatedAt);
+    insertSetting(db, "deathClipSeconds", "many", updatedAt);
+    db.prepare(
+      `
+      INSERT INTO profiles (id, name, game, data_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run("legacy-bad", "Broken", "poe1", "{bad", updatedAt, updatedAt);
+    db.prepare(
+      `
+      INSERT INTO profiles (id, name, game, data_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "legacy-bad-target",
+      "Bad Target",
+      "poe2",
+      JSON.stringify({
+        captureTarget: { id: 42, kind: "application", label: null },
+      }),
+      updatedAt,
+      updatedAt,
+    );
+    db.prepare(
+      `
+      INSERT INTO profiles (id, name, game, data_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "legacy-invalid-game",
+      "Invalid Game",
+      "poe3",
+      JSON.stringify({ captureTarget: null }),
+      updatedAt,
+      updatedAt,
+    );
+
+    migration_20260701_000000_capture_profiles.up(db);
+
+    const captureProfiles = readCaptureProfiles(db);
+    const brokenProfile = captureProfiles.find(
+      (profile) => profile.id === "legacy-bad",
+    );
+
+    expect(captureProfiles).toHaveLength(4);
+    expect(brokenProfile).toMatchObject({
+      data: expect.objectContaining({
+        captureTarget: null,
+        deathClipSeconds: 10,
+        recordingAudioInputDeviceId: null,
+        recordingAudioOutputDeviceId: null,
+        recordingAutoStartMode: "off",
+        recordingClipQuality: "high",
+        recordingEncoder: "hardware_h264",
+        recordingFps: 30,
+        recordingHideOverlaysFromRecording: true,
+        recordingHideOverlaysFromRewind: true,
+        recordingOutputResolution: "native",
+        recordingRunQuality: "moderate",
+      }),
+      game: "poe1",
+      name: "Broken Capture",
+    });
+    expect(
+      captureProfiles.find((profile) => profile.id === "legacy-bad-target"),
+    ).toMatchObject({
+      data: expect.objectContaining({
+        captureTarget: null,
+      }),
+      game: "poe2",
+      name: "Bad Target Capture",
+    });
+    expect(readSettings(db)).toMatchObject({
+      selectedCaptureProfileId: "default-capture-poe1",
+      selectedCaptureProfileIdsByGame: expect.objectContaining({
+        poe1: "default-capture-poe1",
+      }),
+    });
+  });
+
+  it("preserves an existing selected capture profile when it still exists", () => {
+    const db = createDatabase();
+
+    db.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    insertSetting(db, "selectedCaptureProfileId", "default-capture-poe2");
+    insertSetting(db, "activeGame", "poe1");
+    insertSetting(db, "activeLeague", "Settlers");
+    insertSetting(db, "poe1SelectedLeague", "Settlers");
+    insertSetting(db, "poe2SelectedLeague", "Runes of Aldur");
+
+    migration_20260701_000000_capture_profiles.up(db);
+
+    expect(readSettings(db)).toMatchObject({
+      activeGame: "poe2",
+      activeLeague: "Runes of Aldur",
+      poe2SelectedLeague: "Runes of Aldur",
+      selectedCaptureProfileId: "default-capture-poe2",
+      selectedCaptureProfileIdsByGame: expect.objectContaining({
+        poe2: "default-capture-poe2",
+      }),
+    });
+    expect(readCaptureProfiles(db)).toHaveLength(2);
+
+    migration_20260701_000000_capture_profiles.up(db);
+
+    expect(readSettings(db)).toMatchObject({
+      activeGame: "poe2",
+      activeLeague: "Runes of Aldur",
+      poe2SelectedLeague: "Runes of Aldur",
+      selectedCaptureProfileId: "default-capture-poe2",
+      selectedCaptureProfileIdsByGame: expect.objectContaining({
+        poe2: "default-capture-poe2",
+      }),
+    });
+  });
+
+  it("repairs a stale selected capture profile setting", () => {
+    const db = createDatabase();
+
+    db.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    insertSetting(db, "selectedCaptureProfileId", "missing-capture-profile");
+    insertSetting(db, "activeGame", "poe2");
+
+    migration_20260701_000000_capture_profiles.up(db);
+
+    expect(readSettings(db)).toMatchObject({
+      activeGame: "poe2",
+      selectedCaptureProfileId: "default-capture-poe2",
+      selectedCaptureProfileIdsByGame: expect.objectContaining({
+        poe2: "default-capture-poe2",
+      }),
+    });
+  });
+
+  it("falls back to active game when the legacy selected profile is missing", () => {
+    const db = createDatabase();
+
+    db.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    insertSetting(db, "selectedProfileId", "missing-profile");
+    insertSetting(db, "activeGame", "poe2");
+
+    migration_20260701_000000_capture_profiles.up(db);
+
+    expect(readSettings(db)).toMatchObject({
+      activeGame: "poe2",
+      selectedCaptureProfileId: "default-capture-poe2",
+      selectedCaptureProfileIdsByGame: expect.objectContaining({
+        poe2: "default-capture-poe2",
+      }),
+    });
+  });
+
+  it("repairs partial local data before backfilling the active-game capture profile", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-07-01T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        game TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE capture_profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        game TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    db.prepare(
+      `
+      INSERT INTO profiles (id, name, game, data_json, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "legacy-poe1",
+      "Legacy PoE 1",
+      "poe1",
+      JSON.stringify({ captureTarget: null }),
+      updatedAt,
+      updatedAt,
+    );
+    db.prepare(
+      `
+      INSERT INTO capture_profiles (
+        id,
+        name,
+        game,
+        data_json,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "legacy-poe1",
+      "Invalid Existing",
+      "poe3",
+      "{}",
+      updatedAt,
+      updatedAt,
+    );
+    insertSetting(db, "activeGame", "poe1");
+
+    migration_20260701_000000_capture_profiles.up(db);
+
+    expect(readSettings(db)).toMatchObject({
+      activeGame: "poe1",
+      selectedCaptureProfileId: "default-capture-poe1",
+      selectedCaptureProfileIdsByGame: expect.objectContaining({
+        poe1: "default-capture-poe1",
+      }),
+    });
+  });
+
+  it("tolerates invalid preexisting capture profile rows from a partial local migration", () => {
+    const db = createDatabase();
+    const updatedAt = "2026-07-01T00:00:00.000Z";
+
+    db.exec(`
+      CREATE TABLE capture_profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        game TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+    db.prepare(
+      `
+      INSERT INTO capture_profiles (
+        id,
+        name,
+        game,
+        data_json,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "invalid-existing",
+      "Invalid Existing",
+      "poe3",
+      "{}",
+      updatedAt,
+      updatedAt,
+    );
+
+    migration_20260701_000000_capture_profiles.up(db);
+
+    expect(
+      db.prepare("SELECT COUNT(*) AS count FROM capture_profiles").get(),
+    ).toMatchObject({ count: 3 });
+    expect(readSettings(db)).toMatchObject({
+      selectedCaptureProfileId: "default-capture-poe1",
+      selectedCaptureProfileIdsByGame: expect.objectContaining({
+        poe1: "default-capture-poe1",
+      }),
+    });
+  });
+
+  it("removes the selected capture profile setting when rolling back capture profiles", () => {
+    const db = createDatabase();
+
+    db.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    migration_20260701_000000_capture_profiles.up(db);
+    expect(readSettings(db)).toHaveProperty("selectedCaptureProfileId");
+    expect(readSettings(db)).toHaveProperty("selectedCaptureProfileIdsByGame");
+
+    migration_20260701_000000_capture_profiles.down(db);
+
+    expect(tableExists(db, "capture_profiles")).toBe(false);
+    expect(readSettings(db)).not.toHaveProperty("selectedCaptureProfileId");
+    expect(readSettings(db)).not.toHaveProperty(
+      "selectedCaptureProfileIdsByGame",
+    );
   });
 
   it("creates the recording storage path migration journal idempotently", () => {

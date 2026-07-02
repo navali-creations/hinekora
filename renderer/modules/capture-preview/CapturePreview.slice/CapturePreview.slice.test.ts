@@ -3,7 +3,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { BoundStore } from "~/renderer/store/store.types";
 import { createBoundStoreForTests } from "~/renderer/test/createBoundStoreForTests";
 
-import type { CapturePreviewSource, Profile } from "~/types";
+import {
+  type CapturePreviewSource,
+  type CaptureProfile,
+  createDefaultSettings,
+} from "~/types";
 import { createCapturePreviewSlice } from "./CapturePreview.slice";
 
 const source: CapturePreviewSource = {
@@ -34,7 +38,7 @@ const poe2WindowSource: CapturePreviewSource = {
   width: 2560,
 };
 
-const profile: Profile = {
+const profile: CaptureProfile = {
   captureTarget: {
     height: 1080,
     id: "screen:1",
@@ -43,12 +47,21 @@ const profile: Profile = {
     width: 1920,
   },
   createdAt: "2026-06-18T00:00:00.000Z",
-  cropRegions: [],
+  deathClipSeconds: 10,
   game: "poe2",
-  id: "profile-1",
-  name: "PoE 2",
-  overlayPlacements: [],
-  targetFps: 60,
+  id: "capture-profile-1",
+  isDefault: false,
+  name: "PoE 2 Capture",
+  recordingAudioInputDeviceId: null,
+  recordingAudioOutputDeviceId: null,
+  recordingAutoStartMode: "off",
+  recordingClipQuality: "high",
+  recordingEncoder: "hardware_h264",
+  recordingFps: 60,
+  recordingHideOverlaysFromRecording: true,
+  recordingHideOverlaysFromRewind: true,
+  recordingOutputResolution: "native",
+  recordingRunQuality: "moderate",
   updatedAt: "2026-06-18T00:00:00.000Z",
 };
 
@@ -58,13 +71,14 @@ function createTestStore() {
 
     return {
       ...capturePreviewSlice,
-      profiles: {
+      captureProfiles: {
         error: null,
         hydrate: vi.fn(),
         isLoading: false,
         items: [profile],
         selectedProfileId: profile.id,
         create: vi.fn(),
+        delete: vi.fn(),
         update: vi.fn(),
         select: vi.fn(),
         startListening: vi.fn(),
@@ -78,6 +92,14 @@ function createTestStore() {
           processName: "",
         },
       },
+      settings: {
+        hydrate: vi.fn(),
+        update: vi.fn(),
+        value: {
+          ...createDefaultSettings(),
+          activeGame: "poe2",
+        },
+      },
     } as unknown as BoundStore;
   });
 }
@@ -85,8 +107,8 @@ function createTestStore() {
 function createTestStoreWithoutSelectedProfile() {
   const store = createTestStore();
   store.setState((state) => ({
-    profiles: {
-      ...state.profiles,
+    captureProfiles: {
+      ...state.captureProfiles,
       selectedProfileId: "missing",
     },
   }));
@@ -134,7 +156,19 @@ describe("CapturePreview slice", () => {
       error: null,
       isLoading: false,
       selectedSourceId: "screen:1",
-      sources: [source],
+      sources: [
+        source,
+        expect.objectContaining({
+          available: false,
+          game: "poe1",
+          id: "missing-window:poe1",
+        }),
+        expect.objectContaining({
+          available: false,
+          game: "poe2",
+          id: "missing-window:poe2",
+        }),
+      ],
     });
   });
 
@@ -163,9 +197,12 @@ describe("CapturePreview slice", () => {
     expect(unsubscribeRefreshRequested).toHaveBeenCalled();
   });
 
-  it("retries once when a requested refresh misses the running game source", async () => {
+  it("retries until a requested refresh finds the running game source", async () => {
     vi.useFakeTimers();
-    listSources.mockResolvedValue([source]);
+    listSources
+      .mockResolvedValueOnce([source])
+      .mockResolvedValueOnce([source])
+      .mockResolvedValueOnce([source, poe2WindowSource]);
     const store = createTestStore();
     store.setState((state) => ({
       poeProcess: {
@@ -191,8 +228,15 @@ describe("CapturePreview slice", () => {
     await vi.waitFor(() => {
       expect(listSources).toHaveBeenCalledTimes(2);
     });
+    await vi.advanceTimersByTimeAsync(2_500);
+    await vi.waitFor(() => {
+      expect(listSources).toHaveBeenCalledTimes(3);
+    });
+    await vi.advanceTimersByTimeAsync(2_500);
+    expect(listSources).toHaveBeenCalledTimes(3);
     expect(listSources).toHaveBeenNthCalledWith(1, true);
     expect(listSources).toHaveBeenNthCalledWith(2, true);
+    expect(listSources).toHaveBeenNthCalledWith(3, true);
 
     stopListening();
     vi.useRealTimers();

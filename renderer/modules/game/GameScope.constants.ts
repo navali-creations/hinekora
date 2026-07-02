@@ -5,6 +5,10 @@ export const gameOptions: Array<{ id: GameId; label: string }> = [
   { id: "poe2", label: "Path of Exile 2" },
 ];
 
+export function getGameLabel(game: GameId): string {
+  return gameOptions.find((option) => option.id === game)?.label ?? game;
+}
+
 export const leagueOptions: Record<GameId, string[]> = {
   poe1: ["Standard", "Mirage"],
   poe2: ["Standard", "Runes of Aldur"],

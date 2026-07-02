@@ -22,6 +22,7 @@ const storeMocks = vi.hoisted(() => ({
   useManagedRecorderShallow: vi.fn(),
   useProfilesShallow: vi.fn(),
   useReplayClipsShallow: vi.fn(),
+  useSettingsSelector: vi.fn(),
   useSettingsShallow: vi.fn(),
 }));
 
@@ -42,6 +43,7 @@ vi.mock("~/renderer/store", () => ({
   useManagedRecorderShallow: storeMocks.useManagedRecorderShallow,
   useProfilesShallow: storeMocks.useProfilesShallow,
   useReplayClipsShallow: storeMocks.useReplayClipsShallow,
+  useSettingsSelector: storeMocks.useSettingsSelector,
   useSettingsShallow: storeMocks.useSettingsShallow,
 }));
 
@@ -181,6 +183,7 @@ describe("RecorderControlsOverlayPage", () => {
     };
     profilesState = {
       create: vi.fn().mockResolvedValue(undefined),
+      delete: vi.fn().mockResolvedValue(undefined),
       error: null,
       hydrate: vi.fn().mockResolvedValue(undefined),
       isLoading: false,
@@ -236,6 +239,10 @@ describe("RecorderControlsOverlayPage", () => {
         selector(replayClipsState),
     );
     storeMocks.useSettingsShallow.mockImplementation(
+      <T,>(selector: (state: SettingsSlice["settings"]) => T) =>
+        selector(settingsState),
+    );
+    storeMocks.useSettingsSelector.mockImplementation(
       <T,>(selector: (state: SettingsSlice["settings"]) => T) =>
         selector(settingsState),
     );

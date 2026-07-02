@@ -19,8 +19,11 @@ import type { DownloadProgress, UpdateInfo } from "../../main/modules/updater";
 import {
   type AppSettings,
   type CapturePreviewSource,
+  type CaptureProfile,
+  type CaptureProfileUpdateInput,
   type ClientLogStatus,
   createDefaultSettings,
+  type GameId,
   type ManagedRecorderStatus,
   type Profile,
   type ProfileUpdateInput,
@@ -34,12 +37,17 @@ interface DashboardE2ECalls {
   audioDeviceRequests: Array<ManagedRecorderListAudioDevicesOptions | null>;
   auraLockEvents: boolean[];
   captureModeChanges: ManagedRecorderCaptureMode[];
+  captureProfileCreates: Array<{ game: GameId; id: string; name: string }>;
+  captureProfileDeletes: string[];
+  captureProfileUpdates: CaptureProfileUpdateInput[];
   captureSourceRequests: boolean[];
   captureSourceResponses: string[][];
   clientLogActiveGames: Array<{ game: "poe1" | "poe2" }>;
   duplicatePoeStateEmissions: number;
   getUserMediaConstraints: unknown[];
   mainWindowActions: string[];
+  profileCreates: Array<{ game: GameId; id: string; name: string }>;
+  profileDeletes: string[];
   profileUpdates: ProfileUpdateInput[];
   recorderOverlayToggles: number;
   recorderVisibilityEvents: boolean[];
@@ -66,6 +74,7 @@ interface DashboardE2EFixture {
   clientLogStatus: ClientLogStatus;
   now: string;
   poeProcessState: PoeProcessState;
+  captureProfile: CaptureProfile;
   profile: Profile;
   recordingStorageUsage: RecordingStorageUsage;
   recorderStatus: ManagedRecorderStatus;
@@ -81,6 +90,7 @@ type DashboardE2EElectron = Window["electron"];
 const dashboardE2ENow = "2026-06-25T00:00:00.000Z";
 
 interface DashboardE2EOptions {
+  activeGame?: GameId;
   auraLocked?: boolean;
   recorderOverlayVisible?: boolean;
 }
@@ -88,10 +98,16 @@ interface DashboardE2EOptions {
 function createDashboardE2EFixture(
   options: DashboardE2EOptions = {},
 ): DashboardE2EFixture {
+  const activeGame = options.activeGame ?? "poe2";
+  const activeLeague = activeGame === "poe1" ? "Standard" : "Runes of Aldur";
+  const selectedCaptureProfileId =
+    activeGame === "poe1" ? "default-capture-poe1" : "capture-profile-1";
+  const selectedProfileId =
+    activeGame === "poe1" ? "profile-poe1" : "profile-1";
   const settings: AppSettings = {
     ...createDefaultSettings(),
-    activeGame: "poe2",
-    activeLeague: "Runes of Aldur",
+    activeGame,
+    activeLeague,
     installedGames: ["poe1", "poe2"],
     lastSeenAppVersion: "0.1.2",
     poe1SelectedLeague: "Standard",
@@ -103,6 +119,8 @@ function createDashboardE2EFixture(
     setupCompleted: true,
     setupStep: 3,
     setupVersion: 1,
+    selectedCaptureProfileId,
+    selectedProfileId,
   };
   const sources: CapturePreviewSource[] = [
     {
@@ -140,6 +158,27 @@ function createDashboardE2EFixture(
     name: "PoE 2",
     overlayPlacements: [],
     targetFps: 60,
+    updatedAt: dashboardE2ENow,
+  };
+  const captureProfile: CaptureProfile = {
+    captureTarget: profile.captureTarget,
+    createdAt: dashboardE2ENow,
+    deathClipSeconds: settings.deathClipSeconds,
+    game: "poe2",
+    id: "capture-profile-1",
+    isDefault: false,
+    name: "PoE 2 Capture",
+    recordingAudioInputDeviceId: settings.recordingAudioInputDeviceId,
+    recordingAudioOutputDeviceId: settings.recordingAudioOutputDeviceId,
+    recordingAutoStartMode: settings.recordingAutoStartMode,
+    recordingClipQuality: settings.recordingClipQuality,
+    recordingEncoder: settings.recordingEncoder,
+    recordingFps: settings.recordingFps,
+    recordingHideOverlaysFromRecording:
+      settings.recordingHideOverlaysFromRecording,
+    recordingHideOverlaysFromRewind: settings.recordingHideOverlaysFromRewind,
+    recordingOutputResolution: settings.recordingOutputResolution,
+    recordingRunQuality: settings.recordingRunQuality,
     updatedAt: dashboardE2ENow,
   };
   const recorderStatus: ManagedRecorderStatus = {
@@ -192,7 +231,7 @@ function createDashboardE2EFixture(
     },
     auraLocked: options.auraLocked ?? true,
     clientLogStatus: {
-      activeGame: "poe2",
+      activeGame,
       activeGameFocused: true,
       lastError: null,
       path: null,
@@ -200,11 +239,12 @@ function createDashboardE2EFixture(
     },
     now: dashboardE2ENow,
     poeProcessState: {
-      game: "poe2",
+      game: activeGame,
       isRunning: true,
       processName: "PathOfExileSteam.exe",
     },
     profile,
+    captureProfile,
     recorderOverlayVisible: options.recorderOverlayVisible ?? false,
     recordingStorageUsage: {
       calculatedAt: dashboardE2ENow,
@@ -245,6 +285,22 @@ async function setupDashboardE2E(
       const { fixture } = input;
       const unsubscribe = () => undefined;
       const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+      const applyCaptureProfileUpdate = (
+        profile: CaptureProfile,
+        update: CaptureProfileUpdateInput,
+      ): CaptureProfile => {
+        const updates = Object.fromEntries(
+          Object.entries(update).filter(
+            ([key, value]) => key !== "id" && value !== undefined,
+          ),
+        ) as Partial<CaptureProfile>;
+
+        return {
+          ...profile,
+          ...updates,
+          updatedAt: fixture.now,
+        };
+      };
       const transparentPixel =
         "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
       const createBridgeDomainFactory = Function(
@@ -260,12 +316,48 @@ async function setupDashboardE2E(
       const profilesById = new Map([
         [fixture.profile.id, clone(fixture.profile)],
       ]);
+      const poe1Profile: Profile = {
+        ...fixture.profile,
+        captureTarget: null,
+        game: "poe1",
+        id: "profile-poe1",
+        name: "PoE 1",
+      };
+      profilesById.set(poe1Profile.id, clone(poe1Profile));
+      const poe1CaptureProfile: CaptureProfile = {
+        ...fixture.captureProfile,
+        captureTarget: null,
+        game: "poe1",
+        id: "capture-profile-poe1",
+        isDefault: false,
+        name: "PoE 1 Capture",
+      };
+      const defaultPoe1CaptureProfile: CaptureProfile = {
+        ...poe1CaptureProfile,
+        id: "default-capture-poe1",
+        isDefault: true,
+        name: "Default PoE Capture",
+      };
+      const defaultPoe2CaptureProfile: CaptureProfile = {
+        ...fixture.captureProfile,
+        captureTarget: null,
+        id: "default-capture-poe2",
+        isDefault: true,
+        name: "Default PoE 2 Capture",
+      };
+      const captureProfilesById = new Map([
+        [defaultPoe1CaptureProfile.id, clone(defaultPoe1CaptureProfile)],
+        [defaultPoe2CaptureProfile.id, clone(defaultPoe2CaptureProfile)],
+        [fixture.captureProfile.id, clone(fixture.captureProfile)],
+        [poe1CaptureProfile.id, clone(poe1CaptureProfile)],
+      ]);
       const clientLogStatus = clone(fixture.clientLogStatus);
       let poeProcessState = clone(fixture.poeProcessState);
       let captureSources = clone(fixture.sources);
       const listeners: {
         auraLock?: (locked: boolean) => void;
         captureMode?: (mode: ManagedRecorderCaptureMode) => void;
+        captureProfileChanged?: (profiles: CaptureProfile[]) => void;
         captureRefreshRequested?: () => void;
         poeError?: (error: { error: string }) => void;
         poeStart?: (state: PoeProcessState) => void;
@@ -281,12 +373,17 @@ async function setupDashboardE2E(
         audioDeviceRequests: [],
         auraLockEvents: [],
         captureModeChanges: [],
+        captureProfileCreates: [],
+        captureProfileDeletes: [],
+        captureProfileUpdates: [],
         captureSourceRequests: [],
         captureSourceResponses: [],
         clientLogActiveGames: [],
         duplicatePoeStateEmissions: 0,
         getUserMediaConstraints: [],
         mainWindowActions: [],
+        profileCreates: [],
+        profileDeletes: [],
         profileUpdates: [],
         recorderOverlayToggles: 0,
         recorderVisibilityEvents: [],
@@ -401,6 +498,59 @@ async function setupDashboardE2E(
           },
           sourceExists: async (sourceId: string) =>
             captureSources.some((source) => source.id === sourceId),
+        }),
+        captureProfiles: createBridgeDomain<
+          DashboardE2EElectron["captureProfiles"]
+        >("captureProfiles", {
+          create: async (input) => {
+            const createdProfile: CaptureProfile = {
+              ...fixture.captureProfile,
+              id: `capture-profile-${captureProfilesById.size + 1}`,
+              isDefault: false,
+              name: input.name,
+              game: input.game,
+              createdAt: fixture.now,
+              updatedAt: fixture.now,
+            };
+            calls.captureProfileCreates.push(
+              clone({
+                game: input.game,
+                id: createdProfile.id,
+                name: input.name,
+              }),
+            );
+            captureProfilesById.set(createdProfile.id, createdProfile);
+            listeners.captureProfileChanged?.(
+              clone(Array.from(captureProfilesById.values())),
+            );
+
+            return clone(createdProfile);
+          },
+          delete: async (id) => {
+            calls.captureProfileDeletes.push(id);
+            captureProfilesById.delete(id);
+            listeners.captureProfileChanged?.(
+              clone(Array.from(captureProfilesById.values())),
+            );
+          },
+          list: async () => clone(Array.from(captureProfilesById.values())),
+          onChanged: (callback) => {
+            listeners.captureProfileChanged = callback;
+
+            return unsubscribe;
+          },
+          update: async (input) => {
+            calls.captureProfileUpdates.push(clone(input));
+            const profile =
+              captureProfilesById.get(input.id) ?? fixture.captureProfile;
+            const updatedProfile = applyCaptureProfileUpdate(profile, input);
+            captureProfilesById.set(input.id, updatedProfile);
+            listeners.captureProfileChanged?.(
+              clone(Array.from(captureProfilesById.values())),
+            );
+
+            return clone(updatedProfile);
+          },
         }),
         clientLog: createBridgeDomain<DashboardE2EElectron["clientLog"]>(
           "clientLog",
@@ -577,6 +727,39 @@ async function setupDashboardE2E(
         profiles: createBridgeDomain<DashboardE2EElectron["profiles"]>(
           "profiles",
           {
+            create: async (input) => {
+              const createdProfile: Profile = {
+                ...fixture.profile,
+                captureTarget: null,
+                cropRegions: [],
+                game: input.game,
+                id: `profile-${profilesById.size + 1}`,
+                name: input.name,
+                overlayPlacements: [],
+                createdAt: fixture.now,
+                updatedAt: fixture.now,
+              };
+              calls.profileCreates.push(
+                clone({
+                  game: input.game,
+                  id: createdProfile.id,
+                  name: input.name,
+                }),
+              );
+              profilesById.set(createdProfile.id, createdProfile);
+              listeners.profileChanged?.(
+                clone(Array.from(profilesById.values())),
+              );
+
+              return clone(createdProfile);
+            },
+            delete: async (id) => {
+              calls.profileDeletes.push(id);
+              profilesById.delete(id);
+              listeners.profileChanged?.(
+                clone(Array.from(profilesById.values())),
+              );
+            },
             list: async () => clone(Array.from(profilesById.values())),
             onChanged: (callback) => {
               listeners.profileChanged = callback;

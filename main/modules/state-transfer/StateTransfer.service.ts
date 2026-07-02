@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 
 import { app, dialog } from "electron";
 
+import { CaptureProfilesService } from "~/main/modules/capture-profiles";
 import { DatabaseService } from "~/main/modules/database";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ProfilesService } from "~/main/modules/profiles";
@@ -18,6 +19,8 @@ import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 
 import {
   type AppSettings,
+  type CaptureProfile,
+  type GameId,
   type StateBundle,
   StateBundleSchema,
   type StateImportMode,
@@ -30,13 +33,90 @@ import type {
   StateTransferResult,
 } from "./StateTransfer.dto";
 
-function sanitizeImportedSettings(settings: AppSettings): AppSettings {
-  return {
+function sanitizeImportedSettings(
+  settings: AppSettings,
+  captureProfiles: CaptureProfile[] = [],
+): AppSettings {
+  const sanitizedSettings = {
     ...settings,
     recordingStoragePath: null,
     poe1ClientTxtPath: null,
     poe2ClientTxtPath: null,
   };
+  const selectedProfile = resolveImportedSelectedCaptureProfile(
+    sanitizedSettings,
+    captureProfiles,
+  );
+  const activeGame = selectedProfile?.game ?? sanitizedSettings.activeGame;
+  const activeLeague = getSelectedLeagueForGame(sanitizedSettings, activeGame);
+  const selectedCaptureProfileIdsByGame =
+    sanitizeImportedCaptureProfileSelections(
+      sanitizedSettings,
+      captureProfiles,
+    );
+  if (selectedProfile) {
+    selectedCaptureProfileIdsByGame[activeGame] = selectedProfile.id;
+  }
+
+  return {
+    ...sanitizedSettings,
+    activeGame,
+    activeLeague,
+    selectedCaptureProfileId: selectedProfile?.id ?? null,
+    selectedCaptureProfileIdsByGame,
+  };
+}
+
+function sanitizeImportedCaptureProfileSelections(
+  settings: AppSettings,
+  captureProfiles: CaptureProfile[],
+): AppSettings["selectedCaptureProfileIdsByGame"] {
+  const selections: AppSettings["selectedCaptureProfileIdsByGame"] = {};
+  for (const game of ["poe1", "poe2"] as const) {
+    const selectedProfileId = settings.selectedCaptureProfileIdsByGame[game];
+    if (
+      selectedProfileId &&
+      captureProfiles.some(
+        (profile) => profile.id === selectedProfileId && profile.game === game,
+      )
+    ) {
+      selections[game] = selectedProfileId;
+    }
+  }
+
+  return selections;
+}
+
+function resolveImportedSelectedCaptureProfile(
+  settings: AppSettings,
+  captureProfiles: CaptureProfile[],
+): CaptureProfile | null {
+  const activeGameSelection =
+    settings.selectedCaptureProfileIdsByGame[settings.activeGame];
+  if (!settings.selectedCaptureProfileId) {
+    return activeGameSelection
+      ? (captureProfiles.find(
+          (profile) =>
+            profile.id === activeGameSelection &&
+            profile.game === settings.activeGame,
+        ) ?? null)
+      : null;
+  }
+
+  return (
+    captureProfiles.find(
+      (profile) => profile.id === settings.selectedCaptureProfileId,
+    ) ??
+    captureProfiles.find((profile) => profile.game === settings.activeGame) ??
+    captureProfiles[0] ??
+    null
+  );
+}
+
+function getSelectedLeagueForGame(settings: AppSettings, game: GameId): string {
+  return game === "poe1"
+    ? settings.poe1SelectedLeague
+    : settings.poe2SelectedLeague;
 }
 
 class StateTransferService {
@@ -98,6 +178,7 @@ class StateTransferService {
 
     return {
       profileCount: bundle.sections.profiles.length,
+      captureProfileCount: bundle.sections.captureProfiles.length,
       replayClipCount: bundle.sections.replayClips.length,
       settingsIncluded: true,
     };
@@ -128,10 +209,16 @@ class StateTransferService {
           bundle.sections.replayClips,
           replayClipStorageRoot,
         );
-        const settings = sanitizeImportedSettings(bundle.sections.settings);
+        const settings = sanitizeImportedSettings(
+          bundle.sections.settings,
+          bundle.sections.captureProfiles,
+        );
 
         if (parsedMode === "replace") {
           ProfilesService.getInstance().replaceAll(bundle.sections.profiles);
+          CaptureProfilesService.getInstance().replaceAll(
+            bundle.sections.captureProfiles,
+          );
           SettingsStoreService.getInstance().replace(settings);
           ReplayClipsService.getInstance().replaceAll(
             replayClips,
@@ -141,6 +228,9 @@ class StateTransferService {
         }
 
         ProfilesService.getInstance().upsertMany(bundle.sections.profiles);
+        CaptureProfilesService.getInstance().upsertMany(
+          bundle.sections.captureProfiles,
+        );
         SettingsStoreService.getInstance().update(settings);
         ReplayClipsService.getInstance().upsertMany(
           replayClips,
@@ -163,6 +253,7 @@ class StateTransferService {
       appVersion: app.getVersion(),
       sections: {
         profiles: ProfilesService.getInstance().list(),
+        captureProfiles: CaptureProfilesService.getInstance().list(),
         settings: SettingsStoreService.getInstance().get(),
         replayClips: ReplayClipsService.getInstance().list(),
       },

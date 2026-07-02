@@ -7,7 +7,12 @@ import {
   AuraPointPlacementSettings,
   appSettingsKeys,
   CapturePreviewSourceSchema,
+  CaptureProfileSchema,
+  CaptureProfileSettingsSchema,
+  CaptureProfileUpdateInputSchema,
+  captureProfileSettingKeys,
   createCoordinateReferenceDimensions,
+  createDefaultCaptureProfile,
   createDefaultSettings,
   normalizeRecordingEncoderChoice,
   ProfileSchema,
@@ -36,6 +41,10 @@ describe("shared schemas", () => {
       recordingAudioOutputDeviceId: null,
       recordingHideOverlaysFromRecording: true,
       recordingHideOverlaysFromRewind: true,
+      recordingAutoStartMode: "off",
+      selectedCaptureProfileId: null,
+      selectedCaptureProfileIdsByGame: {},
+      selectedProfileId: null,
       recordingMaxStorageGb: 50,
       poe1ClientTxtPath: null,
       poe2ClientTxtPath: null,
@@ -65,6 +74,45 @@ describe("shared schemas", () => {
     expect(appSettingsKeys).not.toContain("recordingHideOverlaysFromCapture");
   });
 
+  it("tracks capture profile setting keys from the profile settings schema", () => {
+    expect(new Set(captureProfileSettingKeys)).toEqual(
+      new Set(Object.keys(CaptureProfileSettingsSchema.shape)),
+    );
+    expect(captureProfileSettingKeys).toContain("recordingAutoStartMode");
+    expect(captureProfileSettingKeys).toContain("deathClipSeconds");
+  });
+
+  it("keeps omitted capture profile update settings omitted", () => {
+    expect(CaptureProfileUpdateInputSchema.parse({ id: "profile-1" })).toEqual({
+      id: "profile-1",
+    });
+  });
+
+  it("defaults and creates capture profile identity fields", () => {
+    expect(
+      CaptureProfileSchema.parse({
+        id: "profile-1",
+        name: "Profile 1",
+        game: "poe1",
+        captureTarget: null,
+        createdAt: "2026-07-01T00:00:00.000Z",
+        updatedAt: "2026-07-01T00:00:00.000Z",
+      }),
+    ).toMatchObject({
+      id: "profile-1",
+      isDefault: false,
+    });
+    expect(
+      createDefaultCaptureProfile(
+        { name: "Default PoE Capture", game: "poe1" },
+        { id: "default-capture-poe1", isDefault: true },
+      ),
+    ).toMatchObject({
+      id: "default-capture-poe1",
+      isDefault: true,
+    });
+  });
+
   it("rejects empty active leagues", () => {
     expect(() => AppSettingsSchema.parse({ activeLeague: "" })).toThrow();
   });
@@ -74,6 +122,45 @@ describe("shared schemas", () => {
       deathClipSeconds: 60,
     });
     expect(() => AppSettingsSchema.parse({ deathClipSeconds: 61 })).toThrow();
+  });
+
+  it("accepts bounded recording auto-start modes", () => {
+    expect(
+      AppSettingsSchema.parse({ recordingAutoStartMode: "recording" }),
+    ).toMatchObject({
+      recordingAutoStartMode: "recording",
+    });
+    expect(
+      AppSettingsSchema.parse({ recordingAutoStartMode: "rewind" }),
+    ).toMatchObject({
+      recordingAutoStartMode: "rewind",
+    });
+    expect(() =>
+      AppSettingsSchema.parse({ recordingAutoStartMode: "session" }),
+    ).toThrow();
+  });
+
+  it("accepts bounded per-game capture profile selection memory", () => {
+    expect(
+      AppSettingsSchema.parse({
+        selectedCaptureProfileIdsByGame: {
+          poe1: "capture-poe1",
+          poe2: "capture-poe2",
+        },
+      }),
+    ).toMatchObject({
+      selectedCaptureProfileIdsByGame: {
+        poe1: "capture-poe1",
+        poe2: "capture-poe2",
+      },
+    });
+    expect(() =>
+      AppSettingsSchema.parse({
+        selectedCaptureProfileIdsByGame: {
+          poe1: "",
+        },
+      }),
+    ).toThrow();
   });
 
   it("clamps rewind save durations for runtime settings", () => {
@@ -552,6 +639,7 @@ describe("shared schemas", () => {
       appVersion: "0.0.0",
       sections: {
         profiles: [],
+        captureProfiles: [],
         settings,
         replayClips: [],
       },

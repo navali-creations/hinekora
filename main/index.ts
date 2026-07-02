@@ -7,6 +7,7 @@ import { app, protocol } from "electron";
 import { AppService } from "./modules/app";
 import { AppSetupService } from "./modules/app-setup";
 import { CapturePreviewService } from "./modules/capture-preview";
+import { CaptureProfilesService } from "./modules/capture-profiles";
 import { ClientLogService } from "./modules/client-log";
 import { DatabaseService } from "./modules/database";
 import { resolveMainDatabasePath } from "./modules/database/Database.paths";
@@ -134,7 +135,12 @@ async function bootstrap(): Promise<void> {
   profilesService.ensureDefaultProfile();
   logInfo("startup", "Profiles initialized");
 
-  ManagedRecorderService.getInstance();
+  const captureProfilesService = CaptureProfilesService.getInstance();
+  captureProfilesService.ensureDefaultProfiles();
+  logInfo("startup", "Capture profiles initialized");
+
+  const managedRecorder = ManagedRecorderService.getInstance();
+  managedRecorder.initializeAutoStart();
   logInfo("startup", "Managed recorder initialized");
 
   const recordingStorage = RecordingStorageService.getInstance();

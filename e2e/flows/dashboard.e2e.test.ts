@@ -124,7 +124,9 @@ test("prevents Live Preview refresh loops and covers source preview controls", a
 }) => {
   await setupDashboardE2E(page);
 
-  const sourceSelect = page.getByRole("combobox", { name: /^Source$/ });
+  const sourceSelect = page.getByRole("combobox", {
+    name: /^Capture source$/,
+  });
   await expect(sourceSelect).toHaveValue("screen:1:0");
   await expect(page.getByText("Preview stopped")).toBeVisible();
 
@@ -154,17 +156,10 @@ test("prevents Live Preview refresh loops and covers source preview controls", a
   expect(callsAfterRefresh.captureSourceRequests.at(-1)).toBe(true);
 
   await sourceSelect.selectOption("window:poe2:1");
-  await expect
-    .poll(async () => {
-      const calls = await getDashboardE2ECalls(page);
-
-      return calls.profileUpdates.at(-1)?.captureTarget;
-    })
-    .toMatchObject({
-      id: "window:poe2:1",
-      kind: "window",
-      label: "Path of Exile 2",
-    });
+  await expect(sourceSelect).toHaveValue("window:poe2:1");
+  expect((await getDashboardE2ECalls(page)).captureProfileUpdates).toHaveLength(
+    0,
+  );
 
   await page.getByRole("button", { name: "Show Preview" }).click();
   await expect(
@@ -184,12 +179,72 @@ test("prevents Live Preview refresh loops and covers source preview controls", a
   ).toBeVisible();
 });
 
+test("covers unavailable PoE live preview sources and auto-start alerts", async ({
+  page,
+}) => {
+  await setupDashboardE2E(page);
+
+  await setDashboardCaptureSources(page, [dashboardScreenSource]);
+  await page.getByRole("button", { exact: true, name: "Refresh" }).click();
+
+  const sourceSelect = page.getByRole("combobox", {
+    name: /^Capture source$/,
+  });
+  await expect
+    .poll(async () => openLivePreviewSourceSelect(sourceSelect))
+    .toContainEqual({
+      label: "Path of Exile 2 (not running)",
+      value: "missing-window:poe2",
+    });
+
+  await sourceSelect.selectOption("missing-window:poe2");
+  await expect(
+    page.getByText("Path of Exile 2 is currently unavailable."),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Show Preview" }),
+  ).toBeDisabled();
+  await expect(sourceSelect).toHaveValue("missing-window:poe2");
+  expect((await getDashboardE2ECalls(page)).captureProfileUpdates).toHaveLength(
+    0,
+  );
+
+  const recordingSettingsTabs = page.getByRole("tablist", {
+    name: "Recording settings",
+  });
+  await recordingSettingsTabs.getByRole("tab", { name: "Rewind" }).click();
+  await page.getByLabel("Start rewind automatically").check();
+  await expect(
+    page.getByText(
+      "Automatic rewind will continue once Path of Exile 2 is running",
+    ),
+  ).toBeVisible();
+
+  const poe2Variant = processVariantCases.find(
+    (processVariant) => processVariant.game === "poe2",
+  )!;
+  await setDashboardCaptureSources(page, [
+    dashboardScreenSource,
+    poe2Variant.source,
+  ]);
+  await emitDashboardPoeProcessStart(page, createPoeProcessState(poe2Variant));
+
+  await expect(sourceSelect).toHaveValue(poe2Variant.source.id);
+  await expect(
+    page.getByText(
+      "Automatic rewind will continue once Path of Exile 2 is running",
+    ),
+  ).toBeHidden();
+});
+
 test("updates appbar and live preview sources for PoE process variants", async ({
   page,
 }) => {
   await setupDashboardE2E(page);
 
-  const sourceSelect = page.getByRole("combobox", { name: /^Source$/ });
+  const sourceSelect = page.getByRole("combobox", {
+    name: /^Capture source$/,
+  });
   const poe1Button = page.getByRole("button", { name: /Path of Exile 1/ });
   const poe2Button = page.getByRole("button", { name: /Path of Exile 2/ });
 
@@ -234,18 +289,35 @@ test("updates appbar and live preview sources for PoE process variants", async (
         refreshed: true,
         requestedForceRefresh: true,
       });
+    const expectedSourceOptions = [
+      {
+        label: dashboardScreenSource.name,
+        value: dashboardScreenSource.id,
+      },
+      {
+        label: processVariant.source.name,
+        value: processVariant.source.id,
+      },
+    ];
+    expectedSourceOptions.push(
+      processVariant.game === "poe1"
+        ? {
+            label: "Path of Exile 2 (not running)",
+            value: "missing-window:poe2",
+          }
+        : {
+            label: "Path of Exile 1 (not running)",
+            value: "missing-window:poe1",
+          },
+    );
+
     await expect
       .poll(() => openLivePreviewSourceSelect(sourceSelect))
-      .toEqual([
-        {
-          label: dashboardScreenSource.name,
-          value: dashboardScreenSource.id,
-        },
-        {
-          label: processVariant.source.name,
-          value: processVariant.source.id,
-        },
-      ]);
+      .toEqual(expectedSourceOptions);
+    await (processVariant.game === "poe1" ? poe1Button : poe2Button).click();
+    await expect(
+      sourceSelect.locator(`option[value="${processVariant.source.id}"]`),
+    ).toBeEnabled();
     await sourceSelect.selectOption(processVariant.source.id);
     await expect(sourceSelect).toHaveValue(processVariant.source.id);
 
@@ -261,7 +333,9 @@ test("retries live preview source refresh when the game window appears after pro
 }) => {
   await setupDashboardE2E(page);
 
-  const sourceSelect = page.getByRole("combobox", { name: /^Source$/ });
+  const sourceSelect = page.getByRole("combobox", {
+    name: /^Capture source$/,
+  });
   const poe2Button = page.getByRole("button", { name: /Path of Exile 2/ });
   const poe2Source = processVariantCases.find(
     (processVariant) => processVariant.name === "Path of Exile 2 Steam",
@@ -316,6 +390,10 @@ test("retries live preview source refresh when the game window appears after pro
       {
         label: poe2Source.name,
         value: poe2Source.id,
+      },
+      {
+        label: "Path of Exile 1 (not running)",
+        value: "missing-window:poe1",
       },
     ]);
 });
@@ -408,12 +486,18 @@ test("covers recorder mode, capture settings, and audio settings interactions", 
   await expect(
     page.getByLabel("Hide Hinekora overlays from recording"),
   ).toBeChecked();
+  await expect(
+    page.getByLabel("Start recording automatically"),
+  ).not.toBeChecked();
+  await page.getByLabel("Start recording automatically").check();
   await page.getByLabel("Hide Hinekora overlays from recording").uncheck();
   await recordingSettingsTabs.getByRole("tab", { name: "Rewind" }).click();
   await expect(
     page.getByRole("heading", { name: "Rewind Settings" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "45" }).click();
+  await expect(page.getByLabel("Start rewind automatically")).not.toBeChecked();
+  await page.getByLabel("Start rewind automatically").check();
   await expect(
     page.getByLabel("Hide Hinekora overlays from rewind"),
   ).toBeChecked();
@@ -443,6 +527,8 @@ test("covers recorder mode, capture settings, and audio settings interactions", 
         expect.objectContaining({ recordingEncoder: "hardware_h265" }),
         expect.objectContaining({ recordingRunQuality: "ultra" }),
         expect.objectContaining({ recordingClipQuality: "low" }),
+        expect.objectContaining({ recordingAutoStartMode: "recording" }),
+        expect.objectContaining({ recordingAutoStartMode: "rewind" }),
         expect.objectContaining({ deathClipSeconds: 45 }),
         expect.objectContaining({ recordingHideOverlaysFromRecording: false }),
         expect.objectContaining({ recordingHideOverlaysFromRewind: false }),
@@ -486,7 +572,7 @@ test("covers dashboard app shell game, overlay, and window controls", async ({
         expect.objectContaining({
           activeGame: "poe1",
           activeLeague: "Standard",
-          poe1SelectedLeague: "Standard",
+          selectedCaptureProfileId: "default-capture-poe1",
         }),
         expect.objectContaining({
           activeLeague: "Mirage",

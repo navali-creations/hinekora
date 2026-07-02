@@ -11,6 +11,7 @@ import {
   type TabsBoxItem,
   TabsBoxTabs,
 } from "~/renderer/components/TabsBoxTabs/TabsBoxTabs";
+import { CaptureProfileSelect } from "~/renderer/modules/capture-profiles/CaptureProfiles.components/CaptureProfileSelect/CaptureProfileSelect";
 import {
   useManagedRecorderShallow,
   useSettingsShallow,
@@ -122,9 +123,11 @@ function CaptureModePageHeader({
         subtitle={subtitle}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
+            <CaptureProfileSelect />
+
             <div
               aria-label="Capture mode"
-              className="tabs tabs-box tabs-sm min-w-0 flex-auto bg-base-200"
+              className="tabs tabs-box tabs-xs min-w-0 flex-auto bg-base-200"
               data-onboarding="capture-mode"
               role="tablist"
             >
@@ -143,7 +146,7 @@ function CaptureModePageHeader({
                     },
                   ] satisfies TabsBoxItem<CaptureMode>[]
                 }
-                size="sm"
+                size="xs"
                 value={selectedMode}
                 onChange={handleCaptureModeChange}
               />

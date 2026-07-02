@@ -6,6 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { CaptureProfilesService } from "~/main/modules/capture-profiles";
 import { DatabaseService } from "~/main/modules/database";
 import { ProfilesService } from "~/main/modules/profiles";
 import { ReplayClipsService } from "~/main/modules/replay-clips";
@@ -13,7 +14,11 @@ import { SettingsStoreService } from "~/main/modules/settings-store";
 import { createReplayClip } from "~/main/test/factories/replayClip";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
 
-import { createDefaultSettings, type StateBundle } from "~/types";
+import {
+  createDefaultCaptureProfile,
+  createDefaultSettings,
+  type StateBundle,
+} from "~/types";
 import { StateTransferChannel } from "../StateTransfer.channels";
 import {
   StateTransferService,
@@ -43,18 +48,31 @@ let trustedRoot: string;
 let importedRoot: string;
 let database: DatabaseService;
 
-function createBundle(overrides: Partial<StateBundle> = {}): StateBundle {
-  return {
+function createBundle(
+  overrides: Partial<Omit<StateBundle, "sections">> & {
+    sections?: Partial<StateBundle["sections"]>;
+  } = {},
+): StateBundle {
+  const bundle: StateBundle = {
     format: "hinekora-state",
     formatVersion: 1,
     exportedAt: new Date().toISOString(),
     appVersion: "0.0.0",
     sections: {
       profiles: [],
+      captureProfiles: [],
       settings: createDefaultSettings(),
       replayClips: [],
     },
+  };
+
+  return {
+    ...bundle,
     ...overrides,
+    sections: {
+      ...bundle.sections,
+      ...overrides.sections,
+    },
   };
 }
 
@@ -73,11 +91,19 @@ beforeEach(() => {
   importedRoot = join(directory, "imported-recordings");
   database = new DatabaseService(join(directory, "hinekora.sqlite"));
   database.runQuery(
-    database.kysely.insertInto("settings").values({
-      key: "activeGame",
-      value_json: JSON.stringify("poe2"),
-      updated_at: new Date().toISOString(),
-    }),
+    database.kysely
+      .insertInto("settings")
+      .values({
+        key: "activeGame",
+        value_json: JSON.stringify("poe2"),
+        updated_at: new Date().toISOString(),
+      })
+      .onConflict((conflict) =>
+        conflict.column("key").doUpdateSet({
+          value_json: JSON.stringify("poe2"),
+          updated_at: new Date().toISOString(),
+        }),
+      ),
   );
   electronMocks.getPath.mockReturnValue(join(directory, "videos"));
   electronMocks.getVersion.mockReturnValue("1.2.3");
@@ -114,6 +140,9 @@ describe("StateTransferService", () => {
     vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
       list: () => [],
     } as unknown as ProfilesService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      list: () => [],
+    } as unknown as CaptureProfilesService);
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
       get: () => createDefaultSettings(),
     } as unknown as SettingsStoreService);
@@ -136,6 +165,7 @@ describe("StateTransferService", () => {
       appVersion: "1.2.3",
       sections: {
         profiles: [],
+        captureProfiles: [],
         replayClips: [],
       },
     });
@@ -176,6 +206,7 @@ describe("StateTransferService", () => {
     const bundle = createBundle({
       sections: {
         profiles: [],
+        captureProfiles: [],
         settings: createDefaultSettings(),
         replayClips: [createReplayClip()],
       },
@@ -189,7 +220,33 @@ describe("StateTransferService", () => {
 
     await expect(service.previewImport()).resolves.toEqual({
       profileCount: 0,
+      captureProfileCount: 0,
       replayClipCount: 1,
+      settingsIncluded: true,
+    });
+  });
+
+  it("previews old import bundles without capture profile sections", async () => {
+    const bundle = createBundle({
+      sections: {
+        settings: createDefaultSettings(),
+      },
+    });
+    const legacyBundle = JSON.parse(JSON.stringify(bundle));
+    delete legacyBundle.sections.captureProfiles;
+    vi.spyOn(fsPromises, "readFile").mockResolvedValue(
+      JSON.stringify(legacyBundle),
+    );
+    electronMocks.showOpenDialog.mockResolvedValue({
+      canceled: false,
+      filePaths: [join(directory, "legacy-backup.json")],
+    });
+    const service = new StateTransferService();
+
+    await expect(service.previewImport()).resolves.toEqual({
+      profileCount: 0,
+      captureProfileCount: 0,
+      replayClipCount: 0,
       settingsIncluded: true,
     });
   });
@@ -206,12 +263,21 @@ describe("StateTransferService", () => {
 
   it("backs up the database and sanitizes imported replay paths against the pre-import storage root", () => {
     const replaceAllProfiles = vi.fn();
+    const replaceAllCaptureProfiles = vi.fn();
     const replaceSettings = vi.fn();
     const replaceAllReplayClips = vi.fn();
+    const captureProfile = {
+      ...createDefaultCaptureProfile({
+        name: "Capture import",
+        game: "poe2",
+      }),
+      id: "capture-profile-import",
+    };
     const importedClipPath = join(importedRoot, "2026-06-12_10-30-00.mp4");
     const bundle = createBundle({
       sections: {
         profiles: [],
+        captureProfiles: [captureProfile],
         settings: {
           ...createDefaultSettings(),
           recordingStoragePath: importedRoot,
@@ -237,6 +303,9 @@ describe("StateTransferService", () => {
     vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
       replaceAll: replaceAllProfiles,
     } as unknown as ProfilesService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      replaceAll: replaceAllCaptureProfiles,
+    } as unknown as CaptureProfilesService);
     vi.spyOn(ReplayClipsService, "getInstance").mockReturnValue({
       replaceAll: replaceAllReplayClips,
     } as unknown as ReplayClipsService);
@@ -246,8 +315,9 @@ describe("StateTransferService", () => {
     expect(result.backupPath).toEqual(expect.stringMatching(/\.sqlite$/));
     expect(result.backupPath && existsSync(result.backupPath)).toBe(true);
     expect(replaceSettings).toHaveBeenCalledWith(
-      sanitizeImportedSettings(bundle.sections.settings),
+      sanitizeImportedSettings(bundle.sections.settings, [captureProfile]),
     );
+    expect(replaceAllCaptureProfiles).toHaveBeenCalledWith([captureProfile]);
     expect(replaceAllReplayClips).toHaveBeenCalledWith(
       [
         expect.objectContaining({
@@ -276,6 +346,7 @@ describe("StateTransferService", () => {
   it("replaces imported state without a backup for in-memory databases", () => {
     const memoryDatabase = new DatabaseService(":memory:");
     const replaceAllProfiles = vi.fn();
+    const replaceAllCaptureProfiles = vi.fn();
     const replaceSettings = vi.fn();
     const replaceAllReplayClips = vi.fn();
     const bundle = createBundle();
@@ -289,6 +360,9 @@ describe("StateTransferService", () => {
     vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
       replaceAll: replaceAllProfiles,
     } as unknown as ProfilesService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      replaceAll: replaceAllCaptureProfiles,
+    } as unknown as CaptureProfilesService);
     vi.spyOn(ReplayClipsService, "getInstance").mockReturnValue({
       replaceAll: replaceAllReplayClips,
     } as unknown as ReplayClipsService);
@@ -300,8 +374,9 @@ describe("StateTransferService", () => {
         error: null,
       });
       expect(replaceAllProfiles).toHaveBeenCalledWith([]);
+      expect(replaceAllCaptureProfiles).toHaveBeenCalledWith([]);
       expect(replaceSettings).toHaveBeenCalledWith(
-        sanitizeImportedSettings(bundle.sections.settings),
+        sanitizeImportedSettings(bundle.sections.settings, []),
       );
       expect(replaceAllReplayClips).toHaveBeenCalledWith(
         [],
@@ -314,12 +389,21 @@ describe("StateTransferService", () => {
 
   it("merges imported state without creating a database backup", () => {
     const upsertProfiles = vi.fn();
+    const upsertCaptureProfiles = vi.fn();
     const updateSettings = vi.fn();
     const upsertReplayClips = vi.fn();
+    const captureProfile = {
+      ...createDefaultCaptureProfile({
+        name: "Capture merge",
+        game: "poe1",
+      }),
+      id: "capture-profile-merge",
+    };
     const clipPath = join(trustedRoot, "2026-06-12_10-30-00.mp4");
     const bundle = createBundle({
       sections: {
         profiles: [],
+        captureProfiles: [captureProfile],
         settings: createDefaultSettings(),
         replayClips: [createReplayClip({ processedClipPath: clipPath })],
       },
@@ -337,6 +421,9 @@ describe("StateTransferService", () => {
     vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
       upsertMany: upsertProfiles,
     } as unknown as ProfilesService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      upsertMany: upsertCaptureProfiles,
+    } as unknown as CaptureProfilesService);
     vi.spyOn(ReplayClipsService, "getInstance").mockReturnValue({
       upsertMany: upsertReplayClips,
     } as unknown as ReplayClipsService);
@@ -347,8 +434,9 @@ describe("StateTransferService", () => {
       error: null,
     });
     expect(upsertProfiles).toHaveBeenCalledWith([]);
+    expect(upsertCaptureProfiles).toHaveBeenCalledWith([captureProfile]);
     expect(updateSettings).toHaveBeenCalledWith(
-      sanitizeImportedSettings(bundle.sections.settings),
+      sanitizeImportedSettings(bundle.sections.settings, [captureProfile]),
     );
     expect(upsertReplayClips).toHaveBeenCalledWith(
       [expect.objectContaining({ processedClipPath: clipPath })],
@@ -368,6 +456,131 @@ describe("StateTransferService", () => {
       poe1ClientTxtPath: null,
       poe2ClientTxtPath: null,
       recordingStoragePath: null,
+    });
+  });
+
+  it("normalizes imported capture profile game and league settings", () => {
+    const captureProfile = {
+      ...createDefaultCaptureProfile({
+        name: "PoE 2 Capture",
+        game: "poe2",
+      }),
+      id: "capture-profile-poe2",
+    };
+
+    expect(
+      sanitizeImportedSettings(
+        {
+          ...createDefaultSettings(),
+          activeGame: "poe1",
+          activeLeague: "Settlers",
+          poe1SelectedLeague: "Settlers",
+          poe2SelectedLeague: "Runes of Aldur",
+          selectedCaptureProfileId: captureProfile.id,
+          selectedCaptureProfileIdsByGame: {
+            poe2: captureProfile.id,
+          },
+        },
+        [captureProfile],
+      ),
+    ).toMatchObject({
+      activeGame: "poe2",
+      activeLeague: "Runes of Aldur",
+      selectedCaptureProfileId: captureProfile.id,
+      selectedCaptureProfileIdsByGame: {
+        poe2: captureProfile.id,
+      },
+    });
+  });
+
+  it("repairs stale imported capture profile selections", () => {
+    const captureProfile = {
+      ...createDefaultCaptureProfile({
+        name: "PoE 2 Capture",
+        game: "poe2",
+      }),
+      id: "capture-profile-poe2",
+    };
+
+    expect(
+      sanitizeImportedSettings(
+        {
+          ...createDefaultSettings(),
+          activeGame: "poe1",
+          activeLeague: "Settlers",
+          poe1SelectedLeague: "Settlers",
+          poe2SelectedLeague: "Runes of Aldur",
+          selectedCaptureProfileId: "missing-capture-profile",
+          selectedCaptureProfileIdsByGame: {
+            poe1: "stale-poe1",
+            poe2: captureProfile.id,
+          },
+        },
+        [captureProfile],
+      ),
+    ).toMatchObject({
+      activeGame: "poe2",
+      activeLeague: "Runes of Aldur",
+      selectedCaptureProfileId: captureProfile.id,
+      selectedCaptureProfileIdsByGame: {
+        poe2: captureProfile.id,
+      },
+    });
+  });
+
+  it("restores imported selection from per-game capture profile memory", () => {
+    const captureProfile = {
+      ...createDefaultCaptureProfile({
+        name: "PoE 2 Capture",
+        game: "poe2",
+      }),
+      id: "capture-profile-poe2",
+    };
+
+    expect(
+      sanitizeImportedSettings(
+        {
+          ...createDefaultSettings(),
+          activeGame: "poe2",
+          activeLeague: "Runes of Aldur",
+          poe2SelectedLeague: "Runes of Aldur",
+          selectedCaptureProfileId: null,
+          selectedCaptureProfileIdsByGame: {
+            poe2: captureProfile.id,
+          },
+        },
+        [captureProfile],
+      ),
+    ).toMatchObject({
+      activeGame: "poe2",
+      activeLeague: "Runes of Aldur",
+      selectedCaptureProfileId: captureProfile.id,
+      selectedCaptureProfileIdsByGame: {
+        poe2: captureProfile.id,
+      },
+    });
+  });
+
+  it("resets stale imported capture profile selections when no capture profiles are imported", () => {
+    expect(
+      sanitizeImportedSettings(
+        {
+          ...createDefaultSettings(),
+          activeGame: "poe2",
+          activeLeague: "Runes of Aldur",
+          poe2SelectedLeague: "Runes of Aldur",
+          selectedCaptureProfileId: "missing-capture-profile",
+          selectedCaptureProfileIdsByGame: {
+            poe2: "missing-capture-profile",
+          },
+        },
+        [],
+      ),
+    ).toMatchObject({
+      activeGame: "poe2",
+      activeLeague: "Runes of Aldur",
+      selectedCaptureProfileId: null,
+      selectedCaptureProfileIdsByGame: {},
     });
   });
 

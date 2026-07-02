@@ -163,4 +163,19 @@ describe("ClientLog slice", () => {
     expect(store.getState().clientLog.status?.path).toBeNull();
     expect(unsubscribe).toHaveBeenCalled();
   });
+
+  it("can switch the client-log watcher without hydrating settings", async () => {
+    const hydrateSettings = vi.fn().mockResolvedValue(undefined);
+    const store = createTestStore({
+      hydrate: hydrateSettings,
+    });
+
+    await store
+      .getState()
+      .clientLog.setActiveGame("poe2", { hydrateSettings: false });
+
+    expect(setActiveGame).toHaveBeenCalledWith({ game: "poe2" });
+    expect(hydrateSettings).not.toHaveBeenCalled();
+    expect(store.getState().clientLog.status).toBe(poe2Status);
+  });
 });

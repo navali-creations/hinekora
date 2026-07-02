@@ -1,4 +1,6 @@
-import type { CapturePreviewSource, CaptureTarget } from "~/types";
+import { isCapturePreviewSourceAvailable } from "~/renderer/modules/capture-preview/CapturePreview.utils/CapturePreview.utils";
+
+import type { CapturePreviewSource } from "~/types";
 
 export function createDesktopPreviewConstraints(
   sourceId: string,
@@ -17,27 +19,8 @@ export function createDesktopPreviewConstraints(
   };
 }
 
-export function createCaptureTargetFromPreviewSource(
-  source: CapturePreviewSource,
-): CaptureTarget {
-  return {
-    kind: source.kind === "screen" ? "display" : "window",
-    id: source.kind === "screen" ? (source.displayId ?? source.id) : source.id,
-    label: source.name,
-    width: source.width,
-    height: source.height,
-  };
-}
-
-export function isSameCaptureTarget(
-  left: CaptureTarget | null,
-  right: CaptureTarget,
-): boolean {
-  return (
-    left?.kind === right.kind &&
-    left.id === right.id &&
-    left.label === right.label &&
-    left.width === right.width &&
-    left.height === right.height
-  );
+export function canPreviewCaptureSource(
+  source: CapturePreviewSource | null | undefined,
+): source is CapturePreviewSource {
+  return Boolean(source && isCapturePreviewSourceAvailable(source));
 }

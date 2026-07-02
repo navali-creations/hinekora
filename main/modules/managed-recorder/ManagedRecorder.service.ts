@@ -3,8 +3,8 @@ import { basename, dirname, join, normalize, resolve } from "node:path";
 
 import { app, screen } from "electron";
 
+import { CaptureProfilesService } from "~/main/modules/capture-profiles";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
-import { ProfilesService } from "~/main/modules/profiles";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
 import {
   DEFAULT_RECORDING_DIRECTORY_NAME,
@@ -36,6 +36,7 @@ import {
   type GameId,
   type ManagedRecorderStatus,
   maxRewindSaveSeconds,
+  type RecordingAutoStartMode,
   rewindBufferSeconds,
 } from "~/types";
 import { ManagedRecorderChannel } from "./ManagedRecorder.channels";
@@ -111,6 +112,9 @@ const RECORDING_FILE_STABLE_MS = 1_000;
 const REPLAY_CONVERSION_STOP_DELAY_MS = 250;
 const AUDIO_DEVICE_PROBE_RETRY_MS = 250;
 const AUDIO_DEVICE_PROBE_EMPTY_COOLDOWN_MS = 3_000;
+const AUTO_START_CAPTURE_RETRY_MS = 2_500;
+const CAPTURE_WINDOW_UNAVAILABLE_ERROR =
+  "Selected capture window is not available yet";
 const NATIVE_RECORDING_RESOLUTION = "native";
 const WINDOWS_PATH_DELIMITER = ";";
 const FALLBACK_RECORDING_RESOLUTION: ManagedRecorderResolution = {
@@ -149,6 +153,10 @@ interface EnsureNoobsRuntimeInitializedOptions {
   publishStatus?: boolean;
 }
 
+interface ManagedRecorderGameRunningSnapshot {
+  gameRunning: boolean;
+}
+
 class ManagedRecorderService {
   private static instance: ManagedRecorderService | null = null;
 
@@ -179,6 +187,7 @@ class ManagedRecorderService {
   };
   private captureMode: ManagedRecorderCaptureMode = "rewind";
   private activeRecordingMode: ManagedRecordingMode | null = null;
+  private startingRecordingMode: ManagedRecordingMode | null = null;
   private captureSourceName: string | null = null;
   private captureSourceKey: string | null = null;
   private captureSourceResolution: ManagedRecorderResolution | null = null;
@@ -205,7 +214,12 @@ class ManagedRecorderService {
   private audioDevicesCache: ManagedRecorderAudioDevices | null = null;
   private audioDeviceProbeCooldownUntilMs = 0;
   private gameRunningRefreshRequest: Promise<boolean> | null = null;
+  private gameRunningRefreshVersion = 0;
   private offlineStopRequest: Promise<void> | null = null;
+  private autoStartRequest: Promise<ManagedRecorderStatus | null> | null = null;
+  private autoStartRequestNeedsRecheck = false;
+  private autoStartRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private previousAutoStartConfigurationKey = "";
 
   static getInstance(): ManagedRecorderService {
     if (!ManagedRecorderService.instance) {
@@ -217,6 +231,8 @@ class ManagedRecorderService {
 
   constructor() {
     this.refreshStatusFromSettings();
+    this.setupAutoStartSettingsListener();
+    this.setupAutoStartCaptureProfilesListener();
     this.setupHandlers();
   }
 
@@ -236,6 +252,16 @@ class ManagedRecorderService {
     return () => {
       this.changeListeners.delete(listener);
     };
+  }
+
+  initializeAutoStart(): void {
+    void this.attemptConfiguredAutoStartWhenGameRunning("startup", {
+      refreshGameRunning: true,
+    }).catch((error) => {
+      logWarn(MANAGED_RECORDER_LOG_SCOPE, "Automatic recorder startup failed", {
+        error: safeErrorMessage(error),
+      });
+    });
   }
 
   async listAudioDevices(
@@ -338,17 +364,20 @@ class ManagedRecorderService {
       return this.status;
     }
 
-    if (!(await this.ensureActiveGameRunning())) {
+    if (!this.beginRecordingStart("buffer")) {
       return this.status;
     }
 
-    this.setStatus({ isStartingRecording: true, error: null });
-    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Replay buffer start requested", {
-      outputDirectorySet: this.status.outputDirectory !== null,
-      initialized: this.status.initialized,
-    });
-
     try {
+      if (!(await this.ensureActiveGameRunning())) {
+        this.setStatus({ isStartingRecording: false });
+        return this.status;
+      }
+
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Replay buffer start requested", {
+        outputDirectorySet: this.status.outputDirectory !== null,
+        initialized: this.status.initialized,
+      });
       logInfoSync(
         MANAGED_RECORDER_LOG_SCOPE,
         "Initializing recorder for replay buffer",
@@ -403,6 +432,8 @@ class ManagedRecorderService {
         recordingStartedAt: null,
         error: safeErrorMessage(error),
       });
+    } finally {
+      this.finishRecordingStart("buffer");
     }
 
     return this.status;
@@ -466,14 +497,17 @@ class ManagedRecorderService {
       return this.status;
     }
 
-    if (!(await this.ensureActiveGameRunning())) {
+    if (!this.beginRecordingStart("run")) {
       return this.status;
     }
 
-    this.setStatus({ isStartingRecording: true, error: null });
-    logInfo(MANAGED_RECORDER_LOG_SCOPE, "Starting full run recording");
-
     try {
+      if (!(await this.ensureActiveGameRunning())) {
+        this.setStatus({ isStartingRecording: false });
+        return this.status;
+      }
+
+      logInfo(MANAGED_RECORDER_LOG_SCOPE, "Starting full run recording");
       await this.initialize();
       if (!this.noobs) {
         throw new Error("noobs module is not installed");
@@ -519,6 +553,8 @@ class ManagedRecorderService {
         runRecordingStartedAt: null,
         error: safeErrorMessage(error),
       });
+    } finally {
+      this.finishRecordingStart("run");
     }
 
     return this.status;
@@ -578,11 +614,12 @@ class ManagedRecorderService {
       });
       if (savedPath && runRecordingStartedAt) {
         const settings = SettingsStoreService.getInstance().get();
+        const configuredGame = this.resolveConfiguredGame(settings);
         RecordingStorageService.getInstance().registerRunRecording({
           path: savedPath,
           startedAt: runRecordingStartedAt,
           stoppedAt: new Date().toISOString(),
-          sourceGame: settings.activeGame,
+          sourceGame: configuredGame,
           sourceLeague: settings.activeLeague,
         });
       }
@@ -619,21 +656,22 @@ class ManagedRecorderService {
   }
 
   async refreshGameRunningStatus(
-    _options: { forceRefresh?: boolean } = {},
+    options: { forceRefresh?: boolean } = {},
   ): Promise<boolean> {
-    if (this.gameRunningRefreshRequest) {
+    if (this.gameRunningRefreshRequest && options.forceRefresh !== true) {
       return this.gameRunningRefreshRequest;
     }
 
-    this.gameRunningRefreshRequest = this.resolveActiveGameRunning()
-      .then(async (gameRunning) => {
-        const nextGameRunning =
-          !gameRunning && this.status.gameRunning
-            ? this.status.gameRunning
-            : gameRunning;
-        await this.applyGameRunningState(nextGameRunning);
+    const refreshVersion = ++this.gameRunningRefreshVersion;
+    const request = this.resolveActiveGameRunning()
+      .then(async ({ gameRunning }) => {
+        if (refreshVersion !== this.gameRunningRefreshVersion) {
+          return this.status.gameRunning;
+        }
 
-        return nextGameRunning;
+        await this.applyGameRunningState(gameRunning);
+
+        return gameRunning;
       })
       .catch((error) => {
         logWarn(
@@ -645,18 +683,166 @@ class ManagedRecorderService {
         );
 
         return this.status.gameRunning;
-      })
-      .finally(() => {
-        this.gameRunningRefreshRequest = null;
       });
+    let trackedRequest: Promise<boolean>;
+    trackedRequest = request.finally(() => {
+      if (this.gameRunningRefreshRequest === trackedRequest) {
+        this.gameRunningRefreshRequest = null;
+      }
+    });
+    this.gameRunningRefreshRequest = trackedRequest;
 
-    return this.gameRunningRefreshRequest;
+    return trackedRequest;
   }
 
   async setGameRunningState(gameRunning: boolean): Promise<boolean> {
+    const wasGameRunning = this.status.gameRunning;
     await this.applyGameRunningState(gameRunning);
+    if (gameRunning && !wasGameRunning) {
+      await this.attemptConfiguredAutoStart("game-running");
+    }
 
     return gameRunning;
+  }
+
+  private async attemptConfiguredAutoStartWhenGameRunning(
+    reason: "game-running" | "settings-changed" | "startup",
+    options: { refreshGameRunning?: boolean } = {},
+  ): Promise<ManagedRecorderStatus | null> {
+    if (
+      SettingsStoreService.getInstance().get().recordingAutoStartMode === "off"
+    ) {
+      return null;
+    }
+
+    const gameRunning =
+      options.refreshGameRunning === true
+        ? await this.refreshGameRunningStatus({ forceRefresh: true })
+        : this.status.gameRunning;
+    if (!gameRunning) {
+      this.clearAutoStartRetry();
+      return null;
+    }
+
+    return this.attemptConfiguredAutoStart(reason);
+  }
+
+  private async attemptConfiguredAutoStart(
+    reason: "game-running" | "settings-changed" | "startup",
+  ): Promise<ManagedRecorderStatus | null> {
+    if (this.autoStartRequest) {
+      this.autoStartRequestNeedsRecheck = true;
+      return this.autoStartRequest;
+    }
+
+    const settings = SettingsStoreService.getInstance().get();
+    if (settings.recordingAutoStartMode === "off") {
+      this.clearAutoStartRetry();
+      return null;
+    }
+
+    if (!this.status.gameRunning) {
+      this.clearAutoStartRetry();
+      return null;
+    }
+
+    if (
+      this.status.recording ||
+      this.status.isStartingRecording ||
+      this.status.isStoppingRecording
+    ) {
+      return this.status;
+    }
+
+    this.autoStartRequest = this.runConfiguredAutoStart(
+      settings.recordingAutoStartMode,
+      reason,
+    ).finally(() => {
+      this.autoStartRequest = null;
+      if (this.autoStartRequestNeedsRecheck) {
+        this.autoStartRequestNeedsRecheck = false;
+        void this.attemptConfiguredAutoStartWhenGameRunning(
+          "settings-changed",
+          {
+            refreshGameRunning: true,
+          },
+        ).catch((error) => {
+          logWarn(
+            MANAGED_RECORDER_LOG_SCOPE,
+            "Automatic recorder startup recheck failed",
+            {
+              error: safeErrorMessage(error),
+            },
+          );
+        });
+      }
+    });
+
+    return this.autoStartRequest;
+  }
+
+  private async runConfiguredAutoStart(
+    mode: Exclude<RecordingAutoStartMode, "off">,
+    reason: "game-running" | "settings-changed" | "startup",
+  ): Promise<ManagedRecorderStatus> {
+    logInfo(
+      MANAGED_RECORDER_LOG_SCOPE,
+      "Automatic recorder startup requested",
+      {
+        gameRunning: this.status.gameRunning,
+        mode,
+        reason,
+      },
+    );
+
+    const status =
+      mode === "recording"
+        ? await this.startRunRecording()
+        : await this.startBuffer();
+
+    if (status.error === CAPTURE_WINDOW_UNAVAILABLE_ERROR) {
+      this.scheduleAutoStartRetry(reason);
+      return status;
+    }
+
+    if (status.recording) {
+      this.clearAutoStartRetry();
+    }
+
+    return status;
+  }
+
+  private scheduleAutoStartRetry(
+    reason: "game-running" | "settings-changed" | "startup",
+  ): void {
+    if (this.autoStartRetryTimer || !this.status.gameRunning) {
+      return;
+    }
+
+    this.autoStartRetryTimer = setTimeout(() => {
+      this.autoStartRetryTimer = null;
+      void this.attemptConfiguredAutoStartWhenGameRunning(reason, {
+        refreshGameRunning: true,
+      }).catch((error) => {
+        logWarn(
+          MANAGED_RECORDER_LOG_SCOPE,
+          "Automatic recorder startup retry failed",
+          {
+            error: safeErrorMessage(error),
+          },
+        );
+      });
+    }, AUTO_START_CAPTURE_RETRY_MS);
+    this.autoStartRetryTimer.unref?.();
+  }
+
+  private clearAutoStartRetry(): void {
+    if (!this.autoStartRetryTimer) {
+      return;
+    }
+
+    clearTimeout(this.autoStartRetryTimer);
+    this.autoStartRetryTimer = null;
   }
 
   private async runSaveReplay(
@@ -716,14 +902,21 @@ class ManagedRecorderService {
     return false;
   }
 
-  private async resolveActiveGameRunning(): Promise<boolean> {
+  private async resolveActiveGameRunning(): Promise<ManagedRecorderGameRunningSnapshot> {
     const settings = SettingsStoreService.getInstance().get();
-    const state = await detectPoeProcessState(null, settings.activeGame);
+    const configuredGame = this.resolveConfiguredGame(settings);
+    const state = await detectPoeProcessState(null, configuredGame);
 
-    return isPoeProcessStateForGame(state, settings.activeGame);
+    return {
+      gameRunning: isPoeProcessStateForGame(state, configuredGame),
+    };
   }
 
   private async applyGameRunningState(gameRunning: boolean): Promise<void> {
+    if (!gameRunning) {
+      this.clearAutoStartRetry();
+    }
+
     if (this.status.gameRunning !== gameRunning) {
       this.setStatus({
         gameRunning,
@@ -792,8 +985,9 @@ class ManagedRecorderService {
 
   private resolveGameNotRunningError(): string {
     const settings = SettingsStoreService.getInstance().get();
+    const configuredGame = this.resolveConfiguredGame(settings);
 
-    return `${this.resolveGameLabel(settings.activeGame)} is not running`;
+    return `${this.resolveGameLabel(configuredGame)} is not running`;
   }
 
   private clearGameNotRunningError(): string | null {
@@ -1133,39 +1327,67 @@ class ManagedRecorderService {
       sourceType,
     });
     const sourceName = this.noobs.CreateSource("Hinekora Capture", sourceType);
-    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.CreateSource returned");
-    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.GetSourceSettings", {
-      sourceType,
-    });
-    const settings = this.noobs.GetSourceSettings(sourceName);
-    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.GetSourceSettings returned");
-    const configuredSettings =
-      target.kind === "window"
-        ? this.createWindowSourceSettings(sourceName, settings, target)
-        : this.createDisplaySourceSettings(sourceName, settings, target);
+    let sourceAddedToScene = false;
+    try {
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.CreateSource returned");
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Calling noobs.GetSourceSettings",
+        {
+          sourceType,
+        },
+      );
+      const settings = this.noobs.GetSourceSettings(sourceName);
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "noobs.GetSourceSettings returned",
+      );
+      const configuredSettings =
+        target.kind === "window"
+          ? this.createWindowSourceSettings(sourceName, settings, target)
+          : this.createDisplaySourceSettings(sourceName, settings, target);
 
-    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.SetSourceSettings", {
-      targetKind: target.kind,
-      sourceType,
-    });
-    this.noobs.SetSourceSettings(sourceName, configuredSettings);
-    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.SetSourceSettings returned");
-    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.AddSourceToScene");
-    this.noobs.AddSourceToScene(sourceName);
-    logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.AddSourceToScene returned");
-    this.captureSourceName = sourceName;
-    this.captureSourceKey = sourceKey;
-    logInfoSync(
-      MANAGED_RECORDER_LOG_SCOPE,
-      "Reading capture source resolution",
-    );
-    this.captureSourceResolution = this.readCaptureSourceResolution(sourceName);
-    logInfo(MANAGED_RECORDER_LOG_SCOPE, "Capture source configured", {
-      targetKind: target.kind,
-      sourceType,
-      sourceWidth: this.captureSourceResolution?.width ?? null,
-      sourceHeight: this.captureSourceResolution?.height ?? null,
-    });
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Calling noobs.SetSourceSettings",
+        {
+          targetKind: target.kind,
+          sourceType,
+        },
+      );
+      this.noobs.SetSourceSettings(sourceName, configuredSettings);
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "noobs.SetSourceSettings returned",
+      );
+      logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.AddSourceToScene");
+      this.noobs.AddSourceToScene(sourceName);
+      sourceAddedToScene = true;
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "noobs.AddSourceToScene returned",
+      );
+      logInfoSync(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Reading capture source resolution",
+      );
+      const captureSourceResolution =
+        this.readCaptureSourceResolution(sourceName);
+      this.captureSourceName = sourceName;
+      this.captureSourceKey = sourceKey;
+      this.captureSourceResolution = captureSourceResolution;
+      logInfo(MANAGED_RECORDER_LOG_SCOPE, "Capture source configured", {
+        targetKind: target.kind,
+        sourceType,
+        sourceWidth: this.captureSourceResolution?.width ?? null,
+        sourceHeight: this.captureSourceResolution?.height ?? null,
+      });
+    } catch (error) {
+      this.deleteCreatedSource(sourceName, {
+        removeFromScene: sourceAddedToScene,
+      });
+      throw error;
+    }
   }
 
   private removeCaptureSource(): void {
@@ -1173,21 +1395,30 @@ class ManagedRecorderService {
       return;
     }
 
-    try {
-      this.noobs?.RemoveSourceFromScene?.(this.captureSourceName);
-    } catch {
-      // Best-effort cleanup. A failed removal should not block recorder startup.
-    }
-
-    try {
-      this.noobs?.DeleteSource?.(this.captureSourceName);
-    } catch {
-      // Best-effort cleanup. The next source name will remain unique if deletion fails.
-    }
+    this.deleteCreatedSource(this.captureSourceName, { removeFromScene: true });
 
     this.captureSourceName = null;
     this.captureSourceKey = null;
     this.captureSourceResolution = null;
+  }
+
+  private deleteCreatedSource(
+    sourceName: string,
+    options: { removeFromScene?: boolean } = {},
+  ): void {
+    if (options.removeFromScene) {
+      try {
+        this.noobs?.RemoveSourceFromScene?.(sourceName);
+      } catch {
+        // Best-effort cleanup. A failed removal should not block recorder startup.
+      }
+    }
+
+    try {
+      this.noobs?.DeleteSource?.(sourceName);
+    } catch {
+      // Best-effort cleanup. The next source name will remain unique if deletion fails.
+    }
   }
 
   private configureAudioSources(): void {
@@ -1280,8 +1511,15 @@ class ManagedRecorderService {
   }
 
   private resolveCaptureTarget(): CaptureTarget {
-    const [profile] = ProfilesService.getInstance().list();
-    if (profile?.captureTarget) {
+    const settings = SettingsStoreService.getInstance().get();
+    const profile = this.resolveConfiguredCaptureProfile(settings);
+    if (
+      profile?.captureTarget &&
+      this.isCaptureTargetCompatibleWithGame(
+        profile.captureTarget,
+        profile.game,
+      )
+    ) {
       return profile.captureTarget;
     }
 
@@ -1290,6 +1528,40 @@ class ManagedRecorderService {
       id: "primary",
       label: "Primary display",
     };
+  }
+
+  private resolveConfiguredGame(
+    settings = SettingsStoreService.getInstance().get(),
+  ): GameId {
+    return (
+      this.resolveConfiguredCaptureProfile(settings)?.game ??
+      settings.activeGame
+    );
+  }
+
+  private resolveConfiguredCaptureProfile(
+    settings = SettingsStoreService.getInstance().get(),
+  ): ReturnType<CaptureProfilesService["list"]>[number] | null {
+    const profiles = CaptureProfilesService.getInstance().list();
+
+    return (
+      (settings.selectedCaptureProfileId
+        ? profiles.find(
+            (profile) => profile.id === settings.selectedCaptureProfileId,
+          )
+        : null) ??
+      profiles.find((profile) => profile.game === settings.activeGame) ??
+      null
+    );
+  }
+
+  private isCaptureTargetCompatibleWithGame(
+    target: CaptureTarget,
+    activeGame: GameId,
+  ): boolean {
+    return (
+      target.kind !== "window" || !target.game || target.game === activeGame
+    );
   }
 
   private createDisplaySourceSettings(
@@ -1318,6 +1590,9 @@ class ManagedRecorderService {
     const properties = this.readSourceProperties(sourceName);
     const window = selectWindow(properties, target);
     const method = selectWgcCaptureMethod(properties);
+    if (!window) {
+      throw new Error(CAPTURE_WINDOW_UNAVAILABLE_ERROR);
+    }
 
     return {
       ...settings,
@@ -1327,7 +1602,7 @@ class ManagedRecorderService {
       client_area: true,
       compatibility: false,
       force_sdr: false,
-      window: window?.value ?? target.id,
+      window: window.value,
     };
   }
 
@@ -1855,6 +2130,83 @@ class ManagedRecorderService {
     this.refreshRuntimeAvailability();
   }
 
+  private setupAutoStartSettingsListener(): void {
+    const settingsStore = SettingsStoreService.getInstance();
+    this.previousAutoStartConfigurationKey =
+      this.createAutoStartConfigurationKey();
+
+    if (typeof settingsStore.onDidChange !== "function") {
+      return;
+    }
+
+    settingsStore.onDidChange((settings) => {
+      this.refreshStatusFromSettings();
+      if (settings.recordingAutoStartMode === "off") {
+        this.previousAutoStartConfigurationKey =
+          this.createAutoStartConfigurationKey();
+        this.autoStartRequestNeedsRecheck = this.autoStartRequest !== null;
+        this.clearAutoStartRetry();
+        return;
+      }
+
+      this.handleAutoStartConfigurationChange("settings-changed");
+    });
+  }
+
+  private setupAutoStartCaptureProfilesListener(): void {
+    const profilesService = CaptureProfilesService.getInstance();
+    if (typeof profilesService.onDidChange !== "function") {
+      return;
+    }
+
+    profilesService.onDidChange(() => {
+      this.handleAutoStartConfigurationChange("settings-changed");
+    });
+  }
+
+  private handleAutoStartConfigurationChange(
+    reason: "game-running" | "settings-changed" | "startup",
+  ): void {
+    const nextConfigurationKey = this.createAutoStartConfigurationKey();
+    if (this.previousAutoStartConfigurationKey === nextConfigurationKey) {
+      return;
+    }
+
+    this.previousAutoStartConfigurationKey = nextConfigurationKey;
+    if (
+      SettingsStoreService.getInstance().get().recordingAutoStartMode === "off"
+    ) {
+      this.autoStartRequestNeedsRecheck = this.autoStartRequest !== null;
+      this.clearAutoStartRetry();
+      return;
+    }
+
+    this.clearAutoStartRetry();
+    void this.attemptConfiguredAutoStartWhenGameRunning(reason, {
+      refreshGameRunning: true,
+    }).catch((error) => {
+      logWarn(MANAGED_RECORDER_LOG_SCOPE, "Automatic recorder startup failed", {
+        error: safeErrorMessage(error),
+      });
+    });
+  }
+
+  private createAutoStartConfigurationKey(): string {
+    const settings = SettingsStoreService.getInstance().get();
+    if (settings.recordingAutoStartMode === "off") {
+      return JSON.stringify({
+        mode: settings.recordingAutoStartMode,
+      });
+    }
+
+    return JSON.stringify({
+      activeGame: this.resolveConfiguredGame(settings),
+      captureTarget: this.resolveCaptureTarget(),
+      mode: settings.recordingAutoStartMode,
+      selectedCaptureProfileId: settings.selectedCaptureProfileId,
+    });
+  }
+
   private refreshRuntimeAvailability(): void {
     const runtimePath = this.resolveNoobsRuntimePath();
     this.status = {
@@ -2079,6 +2431,47 @@ class ManagedRecorderService {
   private setStatus(update: Partial<ManagedRecorderStatus>): void {
     this.status = { ...this.status, ...update };
     this.publishStatus();
+  }
+
+  private beginRecordingStart(mode: ManagedRecordingMode): boolean {
+    if (
+      this.startingRecordingMode !== null ||
+      this.status.isStartingRecording ||
+      this.status.isStoppingRecording
+    ) {
+      this.setStatus({
+        error: this.resolveRecordingStartBlockedMessage(mode),
+      });
+      return false;
+    }
+
+    this.startingRecordingMode = mode;
+    this.setStatus({ isStartingRecording: true, error: null });
+    return true;
+  }
+
+  private finishRecordingStart(mode: ManagedRecordingMode): void {
+    if (this.startingRecordingMode === mode) {
+      this.startingRecordingMode = null;
+    }
+  }
+
+  private resolveRecordingStartBlockedMessage(
+    mode: ManagedRecordingMode,
+  ): string {
+    if (this.status.isStoppingRecording) {
+      return "Wait for the current recording to stop before starting another recording";
+    }
+
+    if (this.startingRecordingMode === "buffer" && mode === "run") {
+      return "Replay buffer is already starting";
+    }
+
+    if (this.startingRecordingMode === "run" && mode === "buffer") {
+      return "Full run recording is already starting";
+    }
+
+    return "Recording is already starting";
   }
 
   private updateCaptureMode(mode: ManagedRecorderCaptureMode): void {

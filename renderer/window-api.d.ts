@@ -83,6 +83,9 @@ import type {
   AppSettings,
   AppSetupStep,
   CapturePreviewSource,
+  CaptureProfile,
+  CaptureProfileCreateInput,
+  CaptureProfileUpdateInput,
   ClientLogStatus,
   ManagedRecorderStatus,
   Profile,
@@ -117,6 +120,15 @@ declare global {
         ) => Promise<CapturePreviewSource[]>;
         onRefreshRequested: (callback: () => void) => () => void;
         sourceExists: (sourceId: string) => Promise<boolean>;
+      };
+      captureProfiles: {
+        list: () => Promise<CaptureProfile[]>;
+        create: (input: CaptureProfileCreateInput) => Promise<CaptureProfile>;
+        update: (input: CaptureProfileUpdateInput) => Promise<CaptureProfile>;
+        delete: (id: string) => Promise<void>;
+        onChanged: (
+          callback: (profiles: CaptureProfile[]) => void,
+        ) => () => void;
       };
       clientLog: {
         getStatus: () => Promise<ClientLogStatus>;

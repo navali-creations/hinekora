@@ -36,6 +36,13 @@ function GameSelectorBeacon(props: PopoverComponentProps) {
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
+                Switching games restores that game&apos;s selected capture
+                profile and live preview source.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
                 Use the league selector beside each game to keep clips
                 organized.
               </span>

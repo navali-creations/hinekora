@@ -6,20 +6,31 @@ import { createBoundStoreForTests } from "~/renderer/test/createBoundStoreForTes
 import type { StateImportPreview } from "~/types";
 import { createStateTransferSlice } from "./StateTransfer.slice";
 
-const preview = {
-  appVersion: "0.1.0",
-  exportedAt: "2026-06-18T00:00:00.000Z",
-  sections: {
-    profiles: 1,
-    replayClips: 2,
-    settings: true,
-  },
-} as unknown as StateImportPreview;
+const preview: StateImportPreview = {
+  profileCount: 1,
+  captureProfileCount: 1,
+  replayClipCount: 2,
+  settingsIncluded: true,
+};
 
 function createTestStore() {
   return createBoundStoreForTests(
     (set, get, api) =>
-      createStateTransferSlice(set, get, api) as unknown as BoundStore,
+      ({
+        ...createStateTransferSlice(set, get, api),
+        captureProfiles: {
+          hydrate: vi.fn().mockResolvedValue(undefined),
+        },
+        profiles: {
+          hydrate: vi.fn().mockResolvedValue(undefined),
+        },
+        replayClips: {
+          hydrate: vi.fn().mockResolvedValue(undefined),
+        },
+        settings: {
+          hydrate: vi.fn().mockResolvedValue(undefined),
+        },
+      }) as unknown as BoundStore,
   );
 }
 
@@ -62,6 +73,11 @@ describe("StateTransfer slice", () => {
 
     await store.getState().stateTransfer.importPortable("merge");
     expect(importPortable).toHaveBeenCalledWith("merge");
+    expect(store.getState().settings.hydrate).toHaveBeenCalled();
+    expect(store.getState().profiles.hydrate).toHaveBeenCalled();
+    expect(store.getState().captureProfiles.hydrate).toHaveBeenCalled();
+    expect(store.getState().replayClips.hydrate).toHaveBeenCalled();
+    expect(store.getState().stateTransfer.preview).toBeNull();
     expect(store.getState().stateTransfer.lastMessage).toBe("Import applied");
   });
 

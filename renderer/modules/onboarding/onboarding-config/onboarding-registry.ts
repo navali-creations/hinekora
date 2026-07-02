@@ -27,6 +27,11 @@ const onboardingBeaconRegistry = [
         selector: "[data-onboarding='capture-mode']",
       },
       {
+        id: "capture-profiles",
+        label: "Capture profiles",
+        selector: "[data-onboarding='capture-profiles']",
+      },
+      {
         id: "start-recording",
         label: "Start recording",
         selector: "[data-onboarding='start-recording']",

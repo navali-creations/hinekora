@@ -11,6 +11,7 @@ import { AuraNewAuraBeacon } from "../Onboarding.beacons/AuraNewAuraBeacon/AuraN
 import { AuraProfileBeacon } from "../Onboarding.beacons/AuraProfileBeacon/AuraProfileBeacon";
 import { AuraSourcePositionBeacon } from "../Onboarding.beacons/AuraSourcePositionBeacon/AuraSourcePositionBeacon";
 import { CaptureModeBeacon } from "../Onboarding.beacons/CaptureModeBeacon/CaptureModeBeacon";
+import { CaptureProfilesBeacon } from "../Onboarding.beacons/CaptureProfilesBeacon/CaptureProfilesBeacon";
 import { CaptureSettingsBeacon } from "../Onboarding.beacons/CaptureSettingsBeacon/CaptureSettingsBeacon";
 import { CaptureSourceBeacon } from "../Onboarding.beacons/CaptureSourceBeacon/CaptureSourceBeacon";
 import { EditorMoreOptionsBeacon } from "../Onboarding.beacons/EditorMoreOptionsBeacon/EditorMoreOptionsBeacon";
@@ -85,6 +86,17 @@ const beaconVisualConfigById = {
     popover: {
       component: StartRecordingBeacon as ComponentType<unknown>,
       anchorPoint: AnchorPoint.BottomRight,
+      offset: { y: 10 },
+    },
+  },
+  "capture-profiles": {
+    trigger: {
+      anchorPoint: AnchorPoint.BottomCenter,
+      offset: { y: 5 },
+    },
+    popover: {
+      component: CaptureProfilesBeacon as ComponentType<unknown>,
+      anchorPoint: AnchorPoint.BottomCenter,
       offset: { y: 10 },
     },
   },

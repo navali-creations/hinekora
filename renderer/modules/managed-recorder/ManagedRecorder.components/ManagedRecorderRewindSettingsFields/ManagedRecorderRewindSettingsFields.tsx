@@ -12,8 +12,11 @@ import {
   rewindBufferSeconds,
   rewindDurationPresetSeconds,
 } from "~/types";
+import { ManagedRecorderAutoStartToggle } from "../ManagedRecorderAutoStartToggle/ManagedRecorderAutoStartToggle";
 import { ManagedRecorderOverlayCaptureToggle } from "../ManagedRecorderOverlayCaptureToggle/ManagedRecorderOverlayCaptureToggle";
 
+const rewindAutoStartHelp =
+  "Starts the rewind buffer when Hinekora opens or when the selected game becomes available.";
 const rewindDurationHelp = `Controls how many seconds are saved for death clips and manual replays. Hinekora keeps a ${rewindBufferSeconds} second rewind buffer and saves up to ${maxRewindSaveSeconds} seconds.`;
 const rewindOverlayCaptureHelp =
   "Uses window capture protection so Hinekora overlays stay out of death clips, manual replays, screenshots, and external capture tools.";
@@ -139,6 +142,7 @@ function ManagedRecorderRewindSettingsFields() {
 
             return (
               <button
+                aria-label={`${seconds} second rewind duration`}
                 aria-pressed={isPresetSelected}
                 className={clsx(
                   "btn join-item btn-sm h-8 min-h-0 min-w-0 flex-1 basis-0 px-1 text-xs",
@@ -161,6 +165,15 @@ function ManagedRecorderRewindSettingsFields() {
             seconds
           </span>
         </div>
+      </div>
+
+      <div className="border-base-content/10 border-t pt-3">
+        <ManagedRecorderAutoStartToggle
+          ariaLabel="Start rewind automatically"
+          helpText={rewindAutoStartHelp}
+          label="Start rewind automatically"
+          mode="rewind"
+        />
       </div>
 
       <div className="border-base-content/10 border-t pt-3">

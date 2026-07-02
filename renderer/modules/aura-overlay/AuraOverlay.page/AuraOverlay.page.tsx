@@ -14,7 +14,11 @@ import { useAuraOverlayVideoSizing } from "~/renderer/modules/aura-overlay/AuraO
 import { useDesktopCaptureStream } from "~/renderer/modules/capture-preview/CapturePreview.hooks/useDesktopCaptureStream/useDesktopCaptureStream";
 import { resolveCapturePreviewSourceId } from "~/renderer/modules/capture-preview/CapturePreview.utils/CapturePreview.utils";
 import { getSelectedCropLayoutProfile } from "~/renderer/modules/crop-editor/CropEditor.components/CropLayoutPreview/CropLayoutPreview.utils";
-import { useCapturePreviewShallow, useProfilesShallow } from "~/renderer/store";
+import {
+  useCapturePreviewShallow,
+  useProfilesShallow,
+  useSettingsSelector,
+} from "~/renderer/store";
 
 import {
   type AuraVideoSize,
@@ -45,10 +49,14 @@ function AuraOverlayPage() {
   const routeProfileId = routeParams.get("profileId");
   const routeStartAddingAura = routeParams.get("startAddingAura") === "1";
   const routeAddAuraRequestId = routeParams.get("addAuraRequestId");
+  const activeGame = useSettingsSelector(
+    (settings) => settings.value?.activeGame ?? "poe1",
+  );
   const profile =
     (routeProfileId
       ? profileItems.find((item) => item.id === routeProfileId)
-      : null) ?? getSelectedCropLayoutProfile(profileItems, selectedProfileId);
+      : null) ??
+    getSelectedCropLayoutProfile(profileItems, selectedProfileId, activeGame);
   const { auraOverlayLocked, lockAuraOverlay, showLockHandoffHint } =
     useAuraOverlayLockState();
 

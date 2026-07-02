@@ -20,14 +20,15 @@ function CaptureModeBeacon(props: PopoverComponentProps) {
               <span className="mt-0.5 text-accent">•</span>
               <span>
                 <strong className="text-base-content">Rewind</strong> keeps a
-                rolling buffer for death clips and manual replays.
+                rolling buffer and can save death clips or manual replays up to
+                your configured duration.
               </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
                 <strong className="text-base-content">Session Recording</strong>{" "}
-                saves everything between Start and Stop.
+                saves everything between Start and Stop for later editing.
               </span>
             </li>
           </ul>
@@ -43,6 +44,13 @@ function CaptureModeBeacon(props: PopoverComponentProps) {
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>Only one mode can be active at a time.</span>
+            </li>
+            <li className="flex items-start gap-2">
+              <span className="mt-0.5 text-accent">•</span>
+              <span>
+                Capture profiles can auto-start Rewind or Session Recording when
+                the selected game appears.
+              </span>
             </li>
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>

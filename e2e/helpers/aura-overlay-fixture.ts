@@ -21,6 +21,7 @@ interface AuraOverlayE2ECalls {
   profileUpdates: ProfileUpdateInput[];
   selectCropRegionCalls: SelectCropRegionOptions[];
   settingsReads: number;
+  settingsUpdates: Array<Partial<AppSettings>>;
   unexpectedBridgeCalls: string[];
 }
 
@@ -193,10 +194,12 @@ async function setupAuraOverlayE2E(
         `"use strict"; return (${input.bridgeFactorySource});`,
       )() as E2EBridgeDomainFactory;
       let profile = clone(fixture.profile);
+      let settings = clone(fixture.settings);
       const calls: AuraOverlayE2ECalls = {
         profileUpdates: [],
         selectCropRegionCalls: [],
         settingsReads: 0,
+        settingsUpdates: [],
         unexpectedBridgeCalls: [],
       };
       const listeners: {
@@ -300,7 +303,16 @@ async function setupAuraOverlayE2E(
             get: async () => {
               calls.settingsReads += 1;
 
-              return clone(fixture.settings);
+              return clone(settings);
+            },
+            update: async (input) => {
+              calls.settingsUpdates.push(clone(input));
+              settings = {
+                ...settings,
+                ...input,
+              };
+
+              return clone(settings);
             },
           },
         ),

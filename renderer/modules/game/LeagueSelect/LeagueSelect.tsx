@@ -12,9 +12,10 @@ import type { GameId } from "~/types";
 
 interface LeagueSelectProps {
   game: GameId;
+  disabled?: boolean;
 }
 
-function LeagueSelect({ game }: LeagueSelectProps) {
+function LeagueSelect({ disabled = false, game }: LeagueSelectProps) {
   const { settingsValue, updateSettings } = useSettingsShallow((settings) => ({
     settingsValue: settings.value,
     updateSettings: settings.update,
@@ -58,6 +59,7 @@ function LeagueSelect({ game }: LeagueSelectProps) {
       <span className="label">League</span>
       <select
         className="-me-[30px] -ms-[18px]"
+        disabled={disabled}
         value={selectedLeague}
         onChange={handleLeagueChange}
       >

@@ -13,6 +13,7 @@ describe("onboarding labels", () => {
       "game-selector",
       "overlay-icon",
       "capture-mode",
+      "capture-profiles",
       "start-recording",
       "capture-source",
       "capture-settings",

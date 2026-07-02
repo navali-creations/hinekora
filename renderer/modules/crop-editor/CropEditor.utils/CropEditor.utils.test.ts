@@ -145,16 +145,25 @@ describe("CropEditor utils", () => {
     ).toBeUndefined();
   });
 
-  it("resolves the selected profile with a first-profile fallback", () => {
-    const otherProfile = { ...profile, id: "profile-2", name: "Other" };
+  it("resolves the selected profile with an active-game fallback", () => {
+    const otherProfile = {
+      ...profile,
+      game: "poe2" as const,
+      id: "profile-2",
+      name: "Other",
+    };
 
-    expect(getSelectedProfile([profile, otherProfile], "profile-2")).toBe(
+    expect(
+      getSelectedProfile([profile, otherProfile], "profile-2", "poe2"),
+    ).toBe(otherProfile);
+    expect(
+      getSelectedProfile([profile, otherProfile], "profile-2", "poe1"),
+    ).toBe(profile);
+    expect(getSelectedProfile([profile, otherProfile], "missing", "poe2")).toBe(
       otherProfile,
     );
-    expect(getSelectedProfile([profile, otherProfile], "missing")).toBe(
-      profile,
-    );
-    expect(getSelectedProfile([], null)).toBeNull();
+    expect(getSelectedProfile([profile], "profile-1", "poe2")).toBeNull();
+    expect(getSelectedProfile([], null, "poe1")).toBeNull();
   });
 
   it("resolves the selected aura with a first-source fallback", () => {

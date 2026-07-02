@@ -6,6 +6,7 @@ import {
   createCropPreviewStageStyle,
   createCropPreviewSurfaceStyle,
   formatCropPreviewBoxLabel,
+  getSelectedCropLayoutProfile,
   resizeCropRegionFromCorner,
   resolveCropPreviewSourceBounds,
 } from "./CropLayoutPreview.utils";
@@ -170,6 +171,34 @@ describe("CropLayoutPreview utils", () => {
         { width: 2560, height: 1440 },
       ).bounds,
     ).toEqual({ width: 2560, height: 1440 });
+  });
+
+  it("resolves the crop layout profile for the active game", () => {
+    const poe1Profile = {
+      id: "profile-1",
+      name: "Default",
+      game: "poe1" as const,
+      targetFps: 30,
+      captureTarget: null,
+      cropRegions: [crop],
+      overlayPlacements: [],
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    };
+    const poe2Profile = {
+      ...poe1Profile,
+      game: "poe2" as const,
+      id: "profile-2",
+      name: "PoE 2",
+    };
+
+    expect(
+      getSelectedCropLayoutProfile(
+        [poe1Profile, poe2Profile],
+        "profile-1",
+        "poe2",
+      ),
+    ).toBe(poe2Profile);
   });
 
   it("filters preview boxes to the selected aura when requested", () => {

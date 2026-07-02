@@ -6,7 +6,11 @@ import {
   getSelectedProfile,
   resolveActiveAuraCropRegionId,
 } from "~/renderer/modules/crop-editor/CropEditor.utils/CropEditor.utils";
-import { useCropEditorShallow, useProfilesShallow } from "~/renderer/store";
+import {
+  useCropEditorShallow,
+  useProfilesShallow,
+  useSettingsSelector,
+} from "~/renderer/store";
 
 function AuraTabs() {
   const { profileItems, selectedProfileId } = useProfilesShallow(
@@ -21,7 +25,14 @@ function AuraTabs() {
       selectedAuraCropRegionId: cropEditor.selectedAuraCropRegionId,
     }),
   );
-  const profile = getSelectedProfile(profileItems, selectedProfileId);
+  const activeGame = useSettingsSelector(
+    (settings) => settings.value?.activeGame ?? "poe1",
+  );
+  const profile = getSelectedProfile(
+    profileItems,
+    selectedProfileId,
+    activeGame,
+  );
   const activeAuraCropRegionId = resolveActiveAuraCropRegionId(
     profile,
     selectedAuraCropRegionId,

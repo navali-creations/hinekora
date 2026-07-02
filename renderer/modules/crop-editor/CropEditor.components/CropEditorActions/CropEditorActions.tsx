@@ -9,6 +9,7 @@ import {
   getSelectedProfile,
 } from "~/renderer/modules/crop-editor/CropEditor.utils/CropEditor.utils";
 import { isPoeProcessStateForGame } from "~/renderer/modules/game/GameStatusBadge/GameStatusBadge.utils";
+import { getProfilesForGame } from "~/renderer/modules/profiles/Profiles.utils/Profiles.utils";
 import { trackEvent } from "~/renderer/modules/umami";
 import {
   useCropEditorShallow,
@@ -37,7 +38,12 @@ function CropEditorActions() {
   const activeGame = useSettingsSelector(
     (settings) => settings.value?.activeGame ?? "poe1",
   );
-  const profile = getSelectedProfile(profileItems, selectedProfileId);
+  const activeGameProfiles = getProfilesForGame(profileItems, activeGame);
+  const profile = getSelectedProfile(
+    profileItems,
+    selectedProfileId,
+    activeGame,
+  );
   const canAddNewAura =
     profile !== null && isPoeProcessStateForGame(poeProcessState, activeGame);
   const addAuraTooltip = !profile
@@ -126,14 +132,14 @@ function CropEditorActions() {
         aria-label="Aura profile"
         className="select select-bordered select-sm no-drag w-[min(180px,38vw)]"
         data-onboarding="aura-profile-select"
-        disabled={profileItems.length === 0}
+        disabled={activeGameProfiles.length === 0}
         value={profile?.id ?? ""}
         onChange={handleProfileChange}
       >
-        {profileItems.length === 0 ? (
+        {activeGameProfiles.length === 0 ? (
           <option value="">No profiles</option>
         ) : (
-          profileItems.map((item) => (
+          activeGameProfiles.map((item) => (
             <option key={item.id} value={item.id}>
               {item.name}
             </option>

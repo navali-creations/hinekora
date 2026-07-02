@@ -7,6 +7,7 @@ import {
   useCapturePreviewShallow,
   useCropEditorShallow,
   useProfilesShallow,
+  useSettingsSelector,
 } from "~/renderer/store";
 
 import type { CropRegion } from "~/types";
@@ -74,9 +75,16 @@ function CropLayoutPreview() {
       selectedAuraCropRegionId: cropEditor.selectedAuraCropRegionId,
       showAllAurasInPreview: cropEditor.showAllAurasInPreview,
     }));
+  const activeGame = useSettingsSelector(
+    (settings) => settings.value?.activeGame ?? "poe1",
+  );
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [resizeState, setResizeState] = useState<ResizeState | null>(null);
-  const profile = getSelectedCropLayoutProfile(profileItems, selectedProfileId);
+  const profile = getSelectedCropLayoutProfile(
+    profileItems,
+    selectedProfileId,
+    activeGame,
+  );
   const activeAuraCropRegionId = resolveActiveAuraCropRegionId(
     profile,
     selectedAuraCropRegionId,
