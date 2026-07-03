@@ -4,6 +4,17 @@ import type {
   SetupState,
   StepValidationResult,
 } from "~/main/modules/app-setup/AppSetup.types";
+import type {
+  ActivitySessionLibraryPage,
+  ActivitySessionLibraryQuery,
+  ActivitySessionTimeline,
+  BookmarkLibraryPage,
+  BookmarkLibraryQuery,
+  BookmarkManualCreateResult,
+  BookmarkManualUpdateInput,
+  RecordingBookmarksPage,
+  RecordingBookmarksQuery,
+} from "~/main/modules/bookmarks";
 import type { DiagLogRevealResult } from "~/main/modules/diag-log/DiagLog.dto";
 import type {
   EditorCopyToClipboardInput,
@@ -113,6 +124,24 @@ declare global {
         completeSetup: () => Promise<AppSetupResult>;
         resetSetup: () => Promise<void>;
         skipSetup: () => Promise<void>;
+      };
+      bookmarks: {
+        createManual: () => Promise<BookmarkManualCreateResult>;
+        deleteManual: (id: string) => Promise<void>;
+        getActivitySessionTimeline: (
+          activitySessionId: string,
+        ) => Promise<ActivitySessionTimeline | null>;
+        listActivitySessions: (
+          query?: ActivitySessionLibraryQuery,
+        ) => Promise<ActivitySessionLibraryPage>;
+        listLibrary: (
+          query?: BookmarkLibraryQuery,
+        ) => Promise<BookmarkLibraryPage>;
+        listRecording: (
+          recordingId: string,
+          query?: RecordingBookmarksQuery,
+        ) => Promise<RecordingBookmarksPage>;
+        updateManual: (input: BookmarkManualUpdateInput) => Promise<void>;
       };
       capturePreview: {
         getSourceThumbnail: (sourceId: string) => Promise<string | null>;

@@ -6,6 +6,7 @@ import { app, protocol } from "electron";
 
 import { AppService } from "./modules/app";
 import { AppSetupService } from "./modules/app-setup";
+import { BookmarksService } from "./modules/bookmarks";
 import { CapturePreviewService } from "./modules/capture-preview";
 import { CaptureProfilesService } from "./modules/capture-profiles";
 import { ClientLogService } from "./modules/client-log";
@@ -157,6 +158,9 @@ async function bootstrap(): Promise<void> {
 
   SavedEditsService.getInstance();
   logInfo("startup", "Saved edits initialized");
+
+  BookmarksService.getInstance();
+  logInfo("startup", "Bookmarks initialized");
 
   const overlayWindows = OverlayWindowsService.getInstance();
   logInfo("startup", "Overlay windows initialized");

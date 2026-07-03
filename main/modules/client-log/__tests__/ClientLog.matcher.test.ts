@@ -163,6 +163,7 @@ describe("ClientLog matcher", () => {
         ].join("\n"),
       ),
     ).toEqual({
+      activityEvents: [],
       deathLines: [
         "2026/06/13 01:05:13 137436343 3ef23347 [INFO Client 41260] : AILUCANNON has been slain.",
       ],
@@ -177,6 +178,23 @@ describe("ClientLog matcher", () => {
         },
       ],
     });
+  });
+
+  it("ignores non-location scene source flicker", () => {
+    expect(
+      parseClientLogEvents(
+        [
+          "2026/07/03 11:34:40 397038937 7fbd1225 [INFO Client 52640] [SCENE] Set Source [Interlude]",
+          "2026/07/03 11:34:48 397047421 7fbd1225 [INFO Client 52640] [SCENE] Set Source [(null)]",
+          "2026/07/03 11:34:50 397049859 7fbd1225 [INFO Client 52640] [SCENE] Set Source [The Khari Bazaar]",
+        ].join("\n"),
+      ).activityEvents,
+    ).toEqual([
+      expect.objectContaining({
+        kind: "scene-source",
+        sceneName: "The Khari Bazaar",
+      }),
+    ]);
   });
 
   it("hashes lines deterministically", () => {

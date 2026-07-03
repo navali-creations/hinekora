@@ -15,9 +15,12 @@ import {
 import { useManagedRecorderSettingsDisabled } from "../../ManagedRecorder.hooks/useManagedRecorderSettingsDisabled/useManagedRecorderSettingsDisabled";
 import { ManagedRecorderAutoStartToggle } from "../ManagedRecorderAutoStartToggle/ManagedRecorderAutoStartToggle";
 import { ManagedRecorderOverlayCaptureToggle } from "../ManagedRecorderOverlayCaptureToggle/ManagedRecorderOverlayCaptureToggle";
+import { ManagedRecorderSettingsToggle } from "../ManagedRecorderSettingsToggle/ManagedRecorderSettingsToggle";
 
 const rewindAutoStartHelp =
   "Starts the rewind buffer when Hinekora opens or when the selected game becomes available.";
+const rewindBookmarkTrackingHelp =
+  "Tracks location, death, and manual replay bookmarks while rewind is active, even when no video is saved.";
 const rewindDurationHelp = `Controls how many seconds are saved for death clips and manual replays. Hinekora keeps a ${rewindBufferSeconds} second rewind buffer and saves up to ${maxRewindSaveSeconds} seconds.`;
 const rewindOverlayCaptureHelp =
   "Uses window capture protection so Hinekora overlays stay out of death clips, manual replays, screenshots, and external capture tools.";
@@ -197,6 +200,19 @@ function ManagedRecorderRewindSettingsFields() {
           helpText={rewindAutoStartHelp}
           label="Start rewind automatically"
           mode="rewind"
+        />
+      </div>
+
+      <div className="border-base-content/10 border-t pt-3">
+        <ManagedRecorderSettingsToggle
+          ariaLabel="Track bookmarks in rewind"
+          checked={settingsValue?.recordingTrackBookmarksInRewind ?? true}
+          disabled={disabled}
+          helpText={rewindBookmarkTrackingHelp}
+          label="Track bookmarks in rewind"
+          onChange={(checked) => {
+            void updateSettings({ recordingTrackBookmarksInRewind: checked });
+          }}
         />
       </div>
 

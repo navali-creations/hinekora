@@ -689,6 +689,37 @@ async function setupEditorE2E(page: Page) {
             }),
           },
         ),
+        bookmarks: createBridgeDomain<EditorE2EElectron["bookmarks"]>(
+          "bookmarks",
+          {
+            createManual: async () => ({
+              bookmark: null,
+              error: null,
+              ok: true,
+            }),
+            deleteManual: async () => undefined,
+            listLibrary: async () => ({
+              availableCategories: [],
+              availableLeagues: [],
+              items: [],
+              pageCount: 1,
+              pageIndex: 0,
+              pageSize: 20,
+              sortBy: "occurredAt",
+              sortDirection: "desc",
+              totalCount: 0,
+            }),
+            listRecording: async () => ({
+              items: [],
+              pageCount: 1,
+              pageIndex: 0,
+              pageSize: 10,
+              timelineItems: [],
+              totalCount: 0,
+            }),
+            updateManual: async () => undefined,
+          },
+        ),
         capturePreview: createBridgeDomain<EditorE2EElectron["capturePreview"]>(
           "capturePreview",
           {

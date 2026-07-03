@@ -5,6 +5,11 @@ import type {
   StepValidationResult,
 } from "~/main/modules/app-setup/AppSetup.types";
 import type { ManagedRecorderCaptureMode } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
+import type {
+  BookmarkLibraryItem,
+  BookmarkLibraryPage,
+  BookmarkLibraryQuery,
+} from "~/main/modules/bookmarks";
 import type { PoeProcessState } from "~/main/modules/poe-process/PoeProcess.dto";
 import type {
   RecordingStorageUsage,
@@ -223,6 +228,22 @@ export interface RecordingStorageSlice {
   };
 }
 
+export interface BookmarksSlice {
+  bookmarks: {
+    availableCategories: BookmarkLibraryPage["availableCategories"];
+    availableLeagues: string[];
+    error: string | null;
+    isLoading: boolean;
+    items: BookmarkLibraryItem[];
+    page: BookmarkLibraryPage | null;
+    query: BookmarkLibraryQuery | null;
+    hydrate: () => Promise<void>;
+    refresh: (query?: BookmarkLibraryQuery) => Promise<void>;
+    deleteManual: (id: string) => Promise<void>;
+    updateManual: (id: string, label: string, note?: string | null) => Promise<void>;
+  };
+}
+
 export type BoundStore = AppMenuSlice &
   AuraOverlaySlice &
   AppSetupSlice &
@@ -238,6 +259,7 @@ export type BoundStore = AppMenuSlice &
   PoeProcessSlice &
   ReplayClipsSlice &
   RecordingStorageSlice &
+  BookmarksSlice &
   StorageSlice &
   UpdaterSlice &
   ChangelogSlice &

@@ -858,6 +858,7 @@ describe("CaptureProfiles slice", () => {
         recordingHideOverlaysFromRewind: true,
         recordingOutputResolution: "native",
         recordingRunQuality: "moderate",
+        recordingTrackBookmarksInRewind: true,
       });
     });
     expect(store.getState().captureProfiles.isProfileUnlocked).toBe(true);

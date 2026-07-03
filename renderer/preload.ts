@@ -2,6 +2,7 @@ import { contextBridge } from "electron";
 
 import { AppAPI } from "~/main/modules/app/App.api";
 import { AppSetupAPI } from "~/main/modules/app-setup/AppSetup.api";
+import { BookmarksAPI } from "~/main/modules/bookmarks/Bookmarks.api";
 import { CapturePreviewAPI } from "~/main/modules/capture-preview/CapturePreview.api";
 import { CaptureProfilesAPI } from "~/main/modules/capture-profiles/CaptureProfiles.api";
 import { ClientLogAPI } from "~/main/modules/client-log/ClientLog.api";
@@ -23,6 +24,7 @@ import { UpdaterAPI } from "~/main/modules/updater/Updater.api";
 const fullApi = {
   app: AppAPI,
   appSetup: AppSetupAPI,
+  bookmarks: BookmarksAPI,
   capturePreview: CapturePreviewAPI,
   captureProfiles: CaptureProfilesAPI,
   clientLog: ClientLogAPI,
@@ -70,6 +72,9 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
         stopBuffer: ManagedRecorderAPI.stopBuffer,
         stopRunRecording: ManagedRecorderAPI.stopRunRecording,
         onStatusChanged: ManagedRecorderAPI.onStatusChanged,
+      },
+      bookmarks: {
+        createManual: BookmarksAPI.createManual,
       },
       overlayWindows: {
         getRecorderMode: OverlayWindowsAPI.getRecorderMode,

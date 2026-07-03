@@ -20,6 +20,10 @@ export const useAuraOverlayShallow = <T>(
   selector: (auraOverlay: BoundStore["auraOverlay"]) => T,
 ) => useBoundStore(useShallow((state) => selector(state.auraOverlay)));
 
+export const useBookmarksShallow = <T>(
+  selector: (bookmarks: BoundStore["bookmarks"]) => T,
+) => useBoundStore(useShallow((state) => selector(state.bookmarks)));
+
 export const useAppSetupShallow = <T>(
   selector: (appSetup: BoundStore["appSetup"]) => T,
 ) => useBoundStore(useShallow((state) => selector(state.appSetup)));

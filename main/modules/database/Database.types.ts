@@ -3,6 +3,20 @@ import type { GameId } from "~/types";
 type TimestampColumn = string;
 type NullableTextColumn = string | null;
 type RecordingStoragePathMigrationStatus = "completed" | "pending";
+type BookmarkSource = "client-log" | "manual" | "system";
+type BookmarkLinkTargetKind = "activity-session" | "recording";
+type ActivitySessionMode = "rewind";
+type ActivitySessionClipTargetKind = "replay-clip";
+type BookmarkCategory =
+  | "boss"
+  | "death"
+  | "hideout"
+  | "manual"
+  | "map"
+  | "pinnacle"
+  | "rewind-manual-replay"
+  | "town";
+type BookmarkSubcategory = "abyss-depths" | "trial" | null;
 
 interface MigrationTable {
   id: string;
@@ -75,6 +89,58 @@ interface RunRecordingTable {
   updated_at: TimestampColumn;
 }
 
+interface BookmarkTable {
+  id: string;
+  source_game: GameId;
+  source_league: string;
+  source: BookmarkSource;
+  category: BookmarkCategory;
+  subcategory: BookmarkSubcategory;
+  label: string;
+  scene_name: NullableTextColumn;
+  note: NullableTextColumn;
+  occurred_at: TimestampColumn;
+  dedupe_key: NullableTextColumn;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+}
+
+interface BookmarkLinkTable {
+  id: string;
+  bookmark_id: string;
+  target_kind: BookmarkLinkTargetKind;
+  target_id: string;
+  offset_seconds: number | null;
+  duration_seconds: number | null;
+  archived: number;
+  archived_target_title: NullableTextColumn;
+  archived_target_duration_seconds: number | null;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+}
+
+interface ActivitySessionTable {
+  id: string;
+  mode: ActivitySessionMode;
+  source_game: GameId;
+  source_league: string;
+  started_at: TimestampColumn;
+  stopped_at: TimestampColumn | null;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+}
+
+interface ActivitySessionClipTable {
+  id: string;
+  activity_session_id: string;
+  target_kind: ActivitySessionClipTargetKind;
+  target_id: string;
+  bookmark_id: string | null;
+  offset_seconds: number | null;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+}
+
 interface EditorProjectTable {
   id: string;
   title: string;
@@ -96,6 +162,10 @@ interface EditorProjectSourceLeagueTable {
 }
 
 export interface DatabaseSchema {
+  activity_session_clips: ActivitySessionClipTable;
+  activity_sessions: ActivitySessionTable;
+  bookmark_links: BookmarkLinkTable;
+  bookmarks: BookmarkTable;
   capture_profiles: CaptureProfileTable;
   editor_project_source_leagues: EditorProjectSourceLeagueTable;
   editor_projects: EditorProjectTable;

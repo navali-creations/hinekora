@@ -512,6 +512,17 @@ class RecordingStorageRepository {
     return row ? mapRunRecordingItemRow(row) : null;
   }
 
+  getItemByPath(path: string): RunRecordingItem | null {
+    const row = this.database.queryOne(
+      this.database.kysely
+        .selectFrom("run_recordings")
+        .selectAll()
+        .where("path", "=", resolve(path)),
+    );
+
+    return row ? mapRunRecordingItemRow(row) : null;
+  }
+
   getByPath(path: string): RunRecordingMetadata | null {
     const row = this.database.queryOne(
       this.database.kysely

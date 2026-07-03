@@ -3,6 +3,7 @@ import { basename, dirname, join, normalize, resolve } from "node:path";
 
 import { app, screen } from "electron";
 
+import { BookmarksService } from "~/main/modules/bookmarks";
 import { CaptureProfilesService } from "~/main/modules/capture-profiles";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
@@ -416,6 +417,11 @@ class ManagedRecorderService {
         recordingStartedAt: session.startedAt,
         error: null,
       });
+      BookmarksService.getInstance().beginRewindSession({
+        game: this.status.activeGame ?? this.resolveConfiguredGame(),
+        league: SettingsStoreService.getInstance().get().activeLeague,
+        startedAt: session.startedAt,
+      });
       logInfo(MANAGED_RECORDER_LOG_SCOPE, "Replay buffer started", {
         ...createSafePathLogFields(session.directory, "session"),
       });
@@ -471,6 +477,7 @@ class ManagedRecorderService {
         recordingStartedAt: null,
         error: null,
       });
+      BookmarksService.getInstance().endRewindSession();
       logInfo(MANAGED_RECORDER_LOG_SCOPE, "Replay buffer stopped", {
         saved: false,
       });
@@ -536,6 +543,11 @@ class ManagedRecorderService {
         recordingStartedAt: session.startedAt,
         runRecordingStartedAt: session.startedAt,
         error: null,
+      });
+      BookmarksService.getInstance().beginRecordingSession({
+        game: this.status.activeGame ?? this.resolveConfiguredGame(),
+        league: SettingsStoreService.getInstance().get().activeLeague,
+        startedAt: session.startedAt,
       });
       logInfo(MANAGED_RECORDER_LOG_SCOPE, "Full run recording started", {
         ...createSafePathLogFields(session.directory, "session"),
@@ -622,16 +634,31 @@ class ManagedRecorderService {
         const settings = SettingsStoreService.getInstance().get();
         const configuredGame =
           sessionGame ?? this.resolveConfiguredGame(settings);
-        RecordingStorageService.getInstance().registerRunRecording({
-          path: savedPath,
-          startedAt: runRecordingStartedAt,
-          stoppedAt: new Date().toISOString(),
-          sourceGame: configuredGame,
-          sourceLeague: settings.activeLeague,
-        });
+        const recordingMetadata =
+          RecordingStorageService.getInstance().registerRunRecording({
+            path: savedPath,
+            startedAt: runRecordingStartedAt,
+            stoppedAt: new Date().toISOString(),
+            sourceGame: configuredGame,
+            sourceLeague: settings.activeLeague,
+          });
+        const recordingDetail =
+          RecordingStorageService.getInstance().getRecording(
+            recordingMetadata.id,
+          );
+        if (recordingDetail) {
+          BookmarksService.getInstance().finalizeRecordingSession(
+            recordingDetail.recording,
+          );
+        } else {
+          BookmarksService.getInstance().discardRecordingSession();
+        }
+      } else {
+        BookmarksService.getInstance().discardRecordingSession();
       }
       this.cleanupRecordingStorage([savedPath]);
     } catch (error) {
+      BookmarksService.getInstance().discardRecordingSession();
       logError(MANAGED_RECORDER_LOG_SCOPE, "Full run recording stop failed", {
         error: safeErrorMessage(error),
       });

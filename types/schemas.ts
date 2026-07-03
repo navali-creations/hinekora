@@ -384,6 +384,7 @@ const captureProfileSettingsShape = {
   recordingAudioOutputDeviceId: z.string().min(1).max(512).nullable(),
   recordingHideOverlaysFromRecording: z.boolean(),
   recordingHideOverlaysFromRewind: z.boolean(),
+  recordingTrackBookmarksInRewind: z.boolean(),
   recordingAutoStartMode: RecordingAutoStartModeSchema,
   deathClipSeconds: z
     .number()
@@ -411,6 +412,8 @@ const captureProfileSettingsDefaultShape = {
     ),
   recordingHideOverlaysFromRewind:
     captureProfileSettingsShape.recordingHideOverlaysFromRewind.default(true),
+  recordingTrackBookmarksInRewind:
+    captureProfileSettingsShape.recordingTrackBookmarksInRewind.default(true),
   recordingAutoStartMode:
     captureProfileSettingsShape.recordingAutoStartMode.default("off"),
   deathClipSeconds: captureProfileSettingsShape.deathClipSeconds.default(

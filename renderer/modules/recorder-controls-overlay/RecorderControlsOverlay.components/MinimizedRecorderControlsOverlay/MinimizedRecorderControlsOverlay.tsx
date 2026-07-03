@@ -1,4 +1,6 @@
 import {
+  FiBookmark as Bookmark,
+  FiCheck as Check,
   FiMaximize2 as Expand,
   FiLoader as Loader2,
   FiPlay as Play,
@@ -21,8 +23,11 @@ function MinimizedRecorderControlsOverlay({
   onExpand,
 }: MinimizedRecorderControlsOverlayProps) {
   const {
+    bookmarkSaved,
+    canCreateBookmark,
     canSaveManualReplay,
     canToggleRecording,
+    handleCreateBookmark,
     handleSave,
     handleToggleRecording,
     isSelectedModeActive,
@@ -31,6 +36,7 @@ function MinimizedRecorderControlsOverlay({
     isStoppingRecording,
     manualReplayTitle,
     recordingButtonTitle,
+    showBookmarkAction,
   } = useRecorderOverlayControls();
   return (
     <main
@@ -53,6 +59,18 @@ function MinimizedRecorderControlsOverlay({
             <Play size={18} />
           )}
         </button>
+        {showBookmarkAction && (
+          <button
+            aria-label="Add bookmark"
+            className={`${styles.iconButton} btn btn-square ${bookmarkSaved ? "btn-success" : "btn-primary"}`}
+            disabled={!canCreateBookmark}
+            title="Add bookmark"
+            type="button"
+            onClick={handleCreateBookmark}
+          >
+            {bookmarkSaved ? <Check size={18} /> : <Bookmark size={18} />}
+          </button>
+        )}
         {!isSessionMode && (
           <button
             className={`${styles.iconButton} btn btn-primary btn-square`}

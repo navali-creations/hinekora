@@ -1,72 +1,101 @@
 import { Link } from "@tanstack/react-router";
-import clsx from "clsx";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { FiEdit3 } from "react-icons/fi";
 
+import type {
+  RecordingBookmark,
+  RecordingBookmarksPage,
+} from "~/main/modules/bookmarks";
 import type { RunRecordingDetail } from "~/main/modules/recording-storage";
 import { PageContainer } from "~/renderer/components/PageContainer/PageContainer";
 import { PageContent } from "~/renderer/components/PageContent/PageContent";
 import { PageHeader } from "~/renderer/components/PageHeader/PageHeader";
+import { MediaDetailPageActions } from "~/renderer/modules/media-library/MediaLibrary.components/MediaDetailPageActions/MediaDetailPageActions";
+
+import { RecordingBookmarksPanel } from "./RecordingBookmarksPanel/RecordingBookmarksPanel";
 import {
-  type MediaDetailCopyState,
-  MediaDetailPageActions,
-} from "~/renderer/modules/media-library/MediaLibrary.components/MediaDetailPageActions/MediaDetailPageActions";
-import { MediaDetailPlayer } from "~/renderer/modules/media-library/MediaLibrary.components/MediaDetailPlayer/MediaDetailPlayer";
-import {
-  formatBytes,
-  formatDateTime,
-  formatDurationSeconds,
-} from "~/renderer/modules/media-library/MediaLibrary.utils/MediaLibrary.utils";
+  allRecordingBookmarkCategoriesValue,
+  type RecordingBookmarkCategoryFilter,
+  resolveRecordingBookmarkCategories,
+} from "./RecordingBookmarksPanel/RecordingBookmarksPanel.utils";
+import { RecordingBookmarkTimeline } from "./RecordingBookmarkTimeline/RecordingBookmarkTimeline";
+import { RecordingDetailPlayer } from "./RecordingDetailPlayer/RecordingDetailPlayer";
+import { RecordingDetailStats } from "./RecordingDetailStats/RecordingDetailStats";
+import { RecordingDetailStatusAlerts } from "./RecordingDetailStatusAlerts/RecordingDetailStatusAlerts";
+import { useRecordingDetailFileActions } from "./useRecordingDetailFileActions/useRecordingDetailFileActions";
+import { useRecordingDetailPlayback } from "./useRecordingDetailPlayback/useRecordingDetailPlayback";
 
 interface RecordingDetailPageProps {
+  initialPlaybackSeconds?: number | null;
   recordingId: string;
 }
 
 interface RecordingDetailState {
+  bookmarksPage: RecordingBookmarksPage | null;
   detail: RunRecordingDetail | null;
   error: string | null;
   isLoading: boolean;
 }
 
-interface FileActionMessage {
-  text: string;
-  tone: "error" | "success";
-}
-
 const initialRecordingDetailState: RecordingDetailState = {
+  bookmarksPage: null,
   detail: null,
   error: null,
   isLoading: true,
 };
 
-function RecordingDetailPage({ recordingId }: RecordingDetailPageProps) {
+function RecordingDetailPage({
+  initialPlaybackSeconds = null,
+  recordingId,
+}: RecordingDetailPageProps) {
   const [state, setState] = useState<RecordingDetailState>(
     initialRecordingDetailState,
   );
-  const [copyState, setCopyState] = useState<MediaDetailCopyState>("idle");
-  const [fileActionMessage, setFileActionMessage] =
-    useState<FileActionMessage | null>(null);
-  const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
+  const appliedInitialPlaybackKeyRef = useRef<string | null>(null);
+  const [bookmarkCategoryFilter, setBookmarkCategoryFilter] =
+    useState<RecordingBookmarkCategoryFilter>(
+      allRecordingBookmarkCategoriesValue,
+    );
+  const [bookmarkPageIndex, setBookmarkPageIndex] = useState(0);
+  const [hasInteractedWithBookmarks, setHasInteractedWithBookmarks] =
+    useState(false);
+  const [videoFrameHeightPixels, setVideoFrameHeightPixels] = useState<
+    number | null
+  >(null);
+  const recording = state.detail?.recording ?? null;
+  const {
+    copyState,
+    fileActionMessage,
+    handleCopyToClipboard,
+    handleOpenLocation,
+    resetFileActions,
+  } = useRecordingDetailFileActions(recording);
 
   useEffect(() => {
     let isActive = true;
     setState(initialRecordingDetailState);
-    setCopyState("idle");
-    setFileActionMessage(null);
+    resetFileActions();
+    setBookmarkPageIndex(0);
+    setBookmarkCategoryFilter(allRecordingBookmarkCategoriesValue);
+    setHasInteractedWithBookmarks(false);
 
-    window.electron.recordingStorage
-      .getRecording(recordingId)
-      .then((detail) => {
+    Promise.all([
+      window.electron.recordingStorage.getRecording(recordingId),
+      window.electron.bookmarks.listRecording(recordingId, {
+        pageIndex: 0,
+        pageSize: 5,
+      }),
+    ])
+      .then(([detail, bookmarksPage]) => {
         if (isActive) {
-          setState({ detail, error: null, isLoading: false });
+          setState({ bookmarksPage, detail, error: null, isLoading: false });
         }
       })
       .catch((error: unknown) => {
         if (isActive) {
           setState({
             detail: null,
+            bookmarksPage: null,
             error: error instanceof Error ? error.message : "Recording failed",
             isLoading: false,
           });
@@ -76,18 +105,42 @@ function RecordingDetailPage({ recordingId }: RecordingDetailPageProps) {
     return () => {
       isActive = false;
     };
-  }, [recordingId]);
+  }, [recordingId, resetFileActions]);
 
-  useEffect(
-    () => () => {
-      if (copyResetTimeoutRef.current) {
-        clearTimeout(copyResetTimeoutRef.current);
-      }
-    },
-    [],
+  const {
+    durationSeconds,
+    handleEnded,
+    handleLoadedMetadata,
+    handlePause,
+    handlePlay,
+    handleTimeUpdate,
+    isPlaying,
+    jumpToStart,
+    playbackSeconds,
+    seekBy,
+    seekTo,
+    setVolume,
+    togglePlayback,
+    videoRef,
+    volume,
+  } = useRecordingDetailPlayback({
+    fallbackDurationSeconds: recording?.durationSeconds ?? null,
+    mediaUrl: state.detail?.mediaUrl ?? null,
+  });
+  const timelineBookmarks = state.bookmarksPage?.timelineItems ?? [];
+  const markerBookmarks = useMemo(
+    () =>
+      bookmarkCategoryFilter === allRecordingBookmarkCategoriesValue
+        ? timelineBookmarks
+        : timelineBookmarks.filter(
+            (bookmark) => bookmark.category === bookmarkCategoryFilter,
+          ),
+    [bookmarkCategoryFilter, timelineBookmarks],
   );
-
-  const recording = state.detail?.recording ?? null;
+  const bookmarkCategories = useMemo(
+    () => resolveRecordingBookmarkCategories(timelineBookmarks),
+    [timelineBookmarks],
+  );
   const canUseFileActions = Boolean(
     recording?.exists && state.detail?.mediaUrl,
   );
@@ -102,81 +155,57 @@ function RecordingDetailPage({ recordingId }: RecordingDetailPageProps) {
     </Link>
   ) : null;
 
-  const resetCopiedStateLater = () => {
-    if (copyResetTimeoutRef.current) {
-      clearTimeout(copyResetTimeoutRef.current);
-    }
-
-    copyResetTimeoutRef.current = setTimeout(() => {
-      setCopyState("idle");
-      copyResetTimeoutRef.current = null;
-    }, 1_800);
+  const handleBookmarkCategoryChange = (
+    category: RecordingBookmarkCategoryFilter,
+  ) => {
+    setBookmarkCategoryFilter(category);
+    setBookmarkPageIndex(0);
+    setHasInteractedWithBookmarks(true);
   };
 
-  const handleOpenLocation = () => {
-    if (!recording) {
+  const handlePreviousBookmarkPage = () => {
+    setBookmarkPageIndex((current) => Math.max(0, current - 1));
+  };
+
+  const handleNextBookmarkPage = () => {
+    setBookmarkPageIndex((current) => current + 1);
+  };
+
+  const handleSelectBookmark = (bookmark: RecordingBookmark) => {
+    setHasInteractedWithBookmarks(true);
+    seekTo(bookmark.offsetSeconds ?? 0);
+  };
+
+  const handleSeekBackward = () => {
+    seekBy(-5);
+  };
+
+  const handleSeekForward = () => {
+    seekBy(5);
+  };
+
+  useEffect(() => {
+    if (!state.detail || initialPlaybackSeconds === null) {
+      return;
+    }
+    if (initialPlaybackSeconds > 0 && durationSeconds <= 0) {
       return;
     }
 
-    setFileActionMessage(null);
-    void window.electron.recordingStorage
-      .revealRecording(recording.path)
-      .then((result) => {
-        if (!result.ok) {
-          setFileActionMessage({
-            text: result.error ?? "Could not open recording location.",
-            tone: "error",
-          });
-        }
-      })
-      .catch((error: unknown) => {
-        setFileActionMessage({
-          text:
-            error instanceof Error
-              ? error.message
-              : "Could not open recording location.",
-          tone: "error",
-        });
-      });
-  };
-
-  const handleCopyToClipboard = () => {
-    if (!recording) {
+    const seekKey = `${recordingId}:${initialPlaybackSeconds}`;
+    if (appliedInitialPlaybackKeyRef.current === seekKey) {
       return;
     }
 
-    setCopyState("copying");
-    setFileActionMessage(null);
-    void window.electron.recordingStorage
-      .copyRecording(recording.path)
-      .then((result) => {
-        if (result.ok) {
-          setCopyState("copied");
-          setFileActionMessage({
-            text: "Video copied to clipboard.",
-            tone: "success",
-          });
-          resetCopiedStateLater();
-          return;
-        }
-
-        setCopyState("idle");
-        setFileActionMessage({
-          text: result.error ?? "Could not copy recording to clipboard.",
-          tone: "error",
-        });
-      })
-      .catch((error: unknown) => {
-        setCopyState("idle");
-        setFileActionMessage({
-          text:
-            error instanceof Error
-              ? error.message
-              : "Could not copy recording to clipboard.",
-          tone: "error",
-        });
-      });
-  };
+    appliedInitialPlaybackKeyRef.current = seekKey;
+    seekTo(initialPlaybackSeconds);
+  }, [
+    durationSeconds,
+    initialPlaybackSeconds,
+    recordingId,
+    seekTo,
+    state.detail,
+  ]);
 
   return (
     <PageContainer>
@@ -199,72 +228,67 @@ function RecordingDetailPage({ recordingId }: RecordingDetailPageProps) {
         }
       />
       <PageContent className="space-y-4">
-        {fileActionMessage && (
-          <div
-            className={clsx("alert text-sm", {
-              "alert-error": fileActionMessage.tone === "error",
-              "alert-success": fileActionMessage.tone === "success",
-            })}
-            role="alert"
-          >
-            {fileActionMessage.text}
-          </div>
-        )}
-
-        {state.isLoading && (
-          <div className="flex items-center gap-3 text-base-content/60">
-            <span className="loading loading-spinner loading-sm" />
-            <span className="text-sm">Loading recording...</span>
-          </div>
-        )}
-
-        {state.error && (
-          <div className="alert alert-error text-sm" role="alert">
-            {state.error}
-          </div>
-        )}
-
-        {!state.isLoading && !state.error && !state.detail && (
-          <div className="alert alert-warning text-sm" role="alert">
-            Recording was not found.
-          </div>
-        )}
+        <RecordingDetailStatusAlerts
+          error={state.error}
+          fileActionMessage={fileActionMessage}
+          hasDetail={Boolean(state.detail)}
+          isLoading={state.isLoading}
+        />
 
         {state.detail && recording && (
           <>
-            <MediaDetailPlayer
-              emptyDescription="The recording record exists, but the video file is missing or unavailable."
-              emptyTitle="Recording video unavailable"
-              mediaUrl={state.detail.mediaUrl}
-              title={recording.fileName}
-            />
+            <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+              <RecordingBookmarksPanel
+                bookmarks={timelineBookmarks}
+                categories={bookmarkCategories}
+                categoryFilter={bookmarkCategoryFilter}
+                heightPixels={videoFrameHeightPixels}
+                pageIndex={bookmarkPageIndex}
+                onCategoryChange={handleBookmarkCategoryChange}
+                onNextPage={handleNextBookmarkPage}
+                onPreviousPage={handlePreviousBookmarkPage}
+                onSelectBookmark={handleSelectBookmark}
+              />
+              <RecordingDetailPlayer
+                emptyDescription="The recording record exists, but the video file is missing or unavailable."
+                emptyTitle="Recording video unavailable"
+                mediaUrl={state.detail.mediaUrl}
+                title={recording.fileName}
+                videoRef={videoRef}
+                onEnded={handleEnded}
+                onFrameHeightChange={setVideoFrameHeightPixels}
+                onLoadedMetadata={handleLoadedMetadata}
+                onPause={handlePause}
+                onPlay={handlePlay}
+                onTimeUpdate={handleTimeUpdate}
+              />
+              <div className="lg:col-span-2">
+                <RecordingBookmarkTimeline
+                  bookmarks={timelineBookmarks}
+                  durationSeconds={durationSeconds}
+                  highlightDeathsInRuler={true}
+                  highlightManualsInRuler={true}
+                  isPlaying={isPlaying}
+                  markerBookmarks={markerBookmarks}
+                  mediaUrl={state.detail.mediaUrl}
+                  playbackSeconds={playbackSeconds}
+                  showBookmarkMarkers={
+                    hasInteractedWithBookmarks ||
+                    bookmarkCategoryFilter !==
+                      allRecordingBookmarkCategoriesValue
+                  }
+                  volume={volume}
+                  onJumpToStart={jumpToStart}
+                  onSeek={seekTo}
+                  onSeekBackward={handleSeekBackward}
+                  onSeekForward={handleSeekForward}
+                  onTogglePlayback={togglePlayback}
+                  onVolumeChange={setVolume}
+                />
+              </div>
+            </div>
 
-            <section className="grid gap-4 rounded-lg bg-base-200 p-4 md:grid-cols-4">
-              <div>
-                <div className="text-base-content/55 text-xs">Saved</div>
-                <div className="font-semibold text-sm">
-                  {formatDateTime(recording.createdAt)}
-                </div>
-              </div>
-              <div>
-                <div className="text-base-content/55 text-xs">Length</div>
-                <div className="font-semibold text-sm">
-                  {formatDurationSeconds(recording.durationSeconds)}
-                </div>
-              </div>
-              <div>
-                <div className="text-base-content/55 text-xs">Size</div>
-                <div className="font-semibold text-sm">
-                  {formatBytes(recording.sizeBytes)}
-                </div>
-              </div>
-              <div>
-                <div className="text-base-content/55 text-xs">File</div>
-                <div className="truncate font-semibold text-sm">
-                  {recording.exists ? "Available" : "Missing"}
-                </div>
-              </div>
-            </section>
+            <RecordingDetailStats recording={recording} />
           </>
         )}
       </PageContent>

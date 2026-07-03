@@ -3,6 +3,7 @@ import fs from "node:fs";
 
 import { BrowserWindow } from "electron";
 
+import { BookmarksService } from "~/main/modules/bookmarks";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
 import { PoeProcessService } from "~/main/modules/poe-process";
@@ -42,6 +43,7 @@ const CLIENT_LOG_WATCH_INTERVAL_MS = 1_000;
 const CLIENT_LOG_READ_CHUNK_BYTES = 64 * 1024;
 const CLIENT_LOG_MAX_PARTIAL_LINE_CHARS = 64 * 1024;
 const CLIENT_LOG_FOCUS_STATE_TAIL_BYTES = 8 * 1024;
+const CLIENT_LOG_ACTIVITY_STATE_TAIL_BYTES = 512 * 1024;
 const CLIENT_LOG_FOCUS_STATE_SCAN_CHUNK_BYTES = 8 * 1024;
 const CLIENT_LOG_STARTUP_FOCUS_STATE_MAX_BYTES = 512 * 1024;
 
@@ -256,6 +258,7 @@ class ClientLogService extends EventEmitter {
     };
     this.lastUnavailableLogAt = 0;
     this.openFileDescriptor(filePath);
+    this.seedClientLogActivityState(filePath, game);
     this.seedPoeFocusState(filePath);
     logInfo(CLIENT_LOG_SCOPE, "Client log watcher started", {
       game,
@@ -413,6 +416,10 @@ class ClientLogService extends EventEmitter {
     const parsedEvents = parseClientLogEvents(textToParse, {
       characterName: this.characterNames[game],
     });
+    BookmarksService.getInstance().handleClientLogActivityEvents(
+      game,
+      parsedEvents.activityEvents,
+    );
     for (const focusEvent of parsedEvents.focusEvents) {
       logInfo(
         CLIENT_LOG_SCOPE,
@@ -449,7 +456,69 @@ class ClientLogService extends EventEmitter {
         lineHash: deathEvent.lineHash,
       });
       this.emit("death", deathEvent);
+      BookmarksService.getInstance().handleClientLogDeath(deathEvent);
       void ReplayClipsService.getInstance().handleDeathEvent(deathEvent);
+    }
+  }
+
+  private seedClientLogActivityState(filePath: string, game: GameId): void {
+    if (this.fd === null || this.lastKnownSize <= 0) {
+      return;
+    }
+
+    try {
+      const chunks: string[] = [];
+      const maxBytes = Math.min(
+        this.lastKnownSize,
+        CLIENT_LOG_ACTIVITY_STATE_TAIL_BYTES,
+      );
+      let scannedBytes = 0;
+      let endPosition = this.lastKnownSize;
+
+      while (scannedBytes < maxBytes) {
+        const bytesToRead = Math.min(
+          CLIENT_LOG_FOCUS_STATE_SCAN_CHUNK_BYTES,
+          maxBytes - scannedBytes,
+        );
+        const position = endPosition - bytesToRead;
+        const buffer = Buffer.allocUnsafe(bytesToRead);
+        const bytesRead = fs.readSync(
+          this.fd,
+          buffer,
+          0,
+          bytesToRead,
+          position,
+        );
+        if (bytesRead <= 0) {
+          break;
+        }
+
+        chunks.unshift(buffer.toString("utf-8", 0, bytesRead));
+        scannedBytes += bytesRead;
+        endPosition = position;
+      }
+
+      if (chunks.length === 0) {
+        return;
+      }
+
+      const parsedEvents = parseClientLogEvents(chunks.join(""), {
+        characterName: this.characterNames[game],
+      });
+      if (parsedEvents.activityEvents.length === 0) {
+        return;
+      }
+
+      BookmarksService.getInstance().seedClientLogActivityState(
+        game,
+        parsedEvents.activityEvents,
+      );
+    } catch (error) {
+      logWarn(CLIENT_LOG_SCOPE, "Client log activity seed failed", {
+        game,
+        error: safeErrorMessage(error),
+        ...createSafePathLogFields(filePath, "clientLog"),
+      });
     }
   }
 

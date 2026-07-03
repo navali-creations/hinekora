@@ -16,4 +16,20 @@ export interface ClientLogDeathEvent {
   detectedAt: string;
 }
 
+export type ClientLogActivityEvent =
+  | {
+      areaId: string;
+      kind: "generated-area";
+      line: string;
+      occurredAt: string;
+      sequenceId: string;
+    }
+  | {
+      kind: "scene-source";
+      line: string;
+      occurredAt: string;
+      sceneName: string;
+      sequenceId: string;
+    };
+
 export type { ClientLogStatus };

@@ -4,6 +4,7 @@ import { unlink } from "node:fs/promises";
 
 import { app, BrowserWindow, protocol, shell } from "electron";
 
+import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
@@ -249,6 +250,7 @@ class ReplayClipsService {
           lineHash: event.lineHash,
           clipId: existing.id,
         });
+        BookmarksService.getInstance().linkReplayClip(existing);
         return existing;
       }
     }
@@ -256,6 +258,11 @@ class ReplayClipsService {
     if (!this.isManagedReplayBufferActive(event)) {
       return null;
     }
+
+    BookmarksService.getInstance().rememberReplayClipSession({
+      game: event.game,
+      triggerLineHash: event.lineHash,
+    });
 
     const settings = SettingsStoreService.getInstance().get();
     const replayKind = event.kind ?? "death";
@@ -303,6 +310,7 @@ class ReplayClipsService {
       logInfo(REPLAY_CLIPS_LOG_SCOPE, "Replay clip ready", {
         clipId: readyClip.id,
       });
+      BookmarksService.getInstance().linkReplayClip(readyClip);
       this.cleanupRecordingStorageForClip(readyClip);
 
       return readyClip;

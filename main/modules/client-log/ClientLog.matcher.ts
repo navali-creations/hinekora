@@ -1,11 +1,19 @@
 import { createHash } from "node:crypto";
 
+import type { ClientLogActivityEvent } from "./ClientLog.dto";
+
 const DEFAULT_DEATH_PATTERNS = [/\bhas been slain\b/i, /\bwas slain\b/i];
 const IGNORED_CHAT_PREFIXES = new Set(["#", "%", "$"]);
 const FOCUS_GAINED_MESSAGE = "[WINDOW] Gained focus";
 const FOCUS_LOST_MESSAGE = "[WINDOW] Lost focus";
 const LOG_FILE_OPENING_MARKER = "***** LOG FILE OPENING *****";
 const CLOSING_GAME_MESSAGE = "Closing game gracefully";
+const IGNORED_SCENE_SOURCES = new Set(["Interlude"]);
+const CLIENT_LOG_HEADER_PATTERN =
+  /^(\d{4})\/(\d{2})\/(\d{2})\s+(\d{2}):(\d{2}):(\d{2})\s+(\d+)\s+[0-9a-f]+\s+\[[^\]]+\]\s*(.*)$/i;
+const GENERATED_AREA_PATTERN =
+  /\bGenerating level(?:\s+\d+)?\s+area\s+"([^"]+)"/i;
+const SCENE_SOURCE_PATTERN = /^\[SCENE\]\s+Set Source\s+\[([^\]]+)\]/i;
 
 interface ClientLogFocusEvent {
   focused: boolean;
@@ -17,6 +25,7 @@ interface ClientLogParseOptions {
 }
 
 interface ParsedClientLogEvents {
+  activityEvents: ClientLogActivityEvent[];
   deathLines: string[];
   focusEvents: ClientLogFocusEvent[];
 }
@@ -56,6 +65,7 @@ function parseClientLogEvents(
   text: string,
   options: ClientLogParseOptions = {},
 ): ParsedClientLogEvents {
+  const activityEvents: ClientLogActivityEvent[] = [];
   const deathLines: string[] = [];
   const focusEvents: ClientLogFocusEvent[] = [];
   const characterName = options.characterName?.trim() ?? "";
@@ -68,6 +78,10 @@ function parseClientLogEvents(
     }
 
     const message = extractMessage(line).trim();
+    const activityEvent = parseActivityEvent(line, message);
+    if (activityEvent) {
+      activityEvents.push(activityEvent);
+    }
 
     if (message === FOCUS_GAINED_MESSAGE) {
       focusEvents.push({ focused: true, line });
@@ -86,7 +100,7 @@ function parseClientLogEvents(
     }
   }
 
-  return { deathLines, focusEvents };
+  return { activityEvents, deathLines, focusEvents };
 }
 
 function findDeathLines(
@@ -125,6 +139,74 @@ function findLatestFocusState(text: string): boolean | null {
 
 function hashDeathLine(line: string): string {
   return createHash("sha256").update(line).digest("hex").slice(0, 32);
+}
+
+function parseActivityEvent(
+  line: string,
+  message: string,
+): ClientLogActivityEvent | null {
+  if (isIgnoredChatMessage(message)) {
+    return null;
+  }
+
+  const header = CLIENT_LOG_HEADER_PATTERN.exec(line);
+  if (!header) {
+    return null;
+  }
+
+  const occurredAt = new Date(
+    Number(header[1]),
+    Number(header[2]) - 1,
+    Number(header[3]),
+    Number(header[4]),
+    Number(header[5]),
+    Number(header[6]),
+  ).toISOString();
+  const sequenceId = header[7];
+  if (!sequenceId) {
+    return null;
+  }
+  const generatedAreaMatch = GENERATED_AREA_PATTERN.exec(message);
+  if (generatedAreaMatch) {
+    const areaId = generatedAreaMatch[1];
+    if (!areaId) {
+      return null;
+    }
+
+    return {
+      areaId,
+      kind: "generated-area",
+      line,
+      occurredAt,
+      sequenceId,
+    };
+  }
+
+  const sceneSourceMatch = SCENE_SOURCE_PATTERN.exec(message);
+  if (!sceneSourceMatch) {
+    return null;
+  }
+
+  const sceneSource = sceneSourceMatch[1];
+  if (!sceneSource) {
+    return null;
+  }
+
+  const sceneName = sceneSource.trim();
+  if (
+    IGNORED_SCENE_SOURCES.has(sceneName) ||
+    (sceneName.startsWith("(") && sceneName.endsWith(")"))
+  ) {
+    return null;
+  }
+
+  return {
+    kind: "scene-source",
+    line,
+    occurredAt,
+    sceneName,
+    sequenceId,
+  };
 }
 
 export type {

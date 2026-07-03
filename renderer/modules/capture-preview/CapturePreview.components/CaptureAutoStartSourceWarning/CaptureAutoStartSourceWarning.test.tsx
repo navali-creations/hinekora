@@ -45,6 +45,7 @@ function createCaptureProfile(game: GameId): CaptureProfile {
     recordingHideOverlaysFromRewind: true,
     recordingOutputResolution: "native",
     recordingRunQuality: "moderate",
+    recordingTrackBookmarksInRewind: true,
     updatedAt: "2026-07-01T00:00:00.000Z",
   };
 }

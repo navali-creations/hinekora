@@ -16,6 +16,7 @@ import { isInteractiveTableTarget } from "./MediaLibraryTable.utils";
 
 interface MediaLibraryTableProps<TData> {
   table: Table<TData>;
+  canRowClick?: (row: TData) => boolean;
   emptyMessage: string;
   getHeaderClassName: (columnId: string) => string;
   getCellClassName: (columnId: string) => string;
@@ -25,6 +26,7 @@ interface MediaLibraryTableProps<TData> {
 
 function MediaLibraryTable<TData>({
   table,
+  canRowClick,
   emptyMessage,
   getHeaderClassName,
   getCellClassName,
@@ -50,6 +52,7 @@ function MediaLibraryTable<TData>({
           "flex w-full cursor-pointer items-center gap-1",
           [
             "actions",
+            "bookmarkCount",
             "clipCount",
             "durationSeconds",
             "historyEditCount",
@@ -73,9 +76,16 @@ function MediaLibraryTable<TData>({
     );
   };
 
+  const isRowClickable = (row: Row<TData>) =>
+    Boolean(onRowClick && (!canRowClick || canRowClick(row.original)));
+
   const handleRowClick =
     (row: Row<TData>) => (event: MouseEvent<HTMLTableRowElement>) => {
-      if (!onRowClick || isInteractiveTableTarget(event.target)) {
+      if (
+        !onRowClick ||
+        !isRowClickable(row) ||
+        isInteractiveTableTarget(event.target)
+      ) {
         return;
       }
 
@@ -86,6 +96,7 @@ function MediaLibraryTable<TData>({
     (row: Row<TData>) => (event: KeyboardEvent<HTMLTableRowElement>) => {
       if (
         !onRowClick ||
+        !isRowClickable(row) ||
         isInteractiveTableTarget(event.target) ||
         (event.key !== "Enter" && event.key !== " ")
       ) {
@@ -121,12 +132,13 @@ function MediaLibraryTable<TData>({
             {table.getRowModel().rows.map((row) => (
               <tr
                 className={clsx(
-                  "hover:bg-base-content/[0.03]",
-                  onRowClick && "cursor-pointer focus:bg-base-content/[0.04]",
+                  "border-base-content/10 border-b outline-none transition-colors last:border-b-0 hover:bg-base-content/[0.03] focus:outline-none",
+                  isRowClickable(row) &&
+                    "cursor-pointer focus:bg-base-content/[0.04]",
                 )}
                 key={row.id}
-                role={onRowClick ? "button" : undefined}
-                tabIndex={onRowClick ? 0 : undefined}
+                role={isRowClickable(row) ? "button" : undefined}
+                tabIndex={isRowClickable(row) ? 0 : undefined}
                 onClick={handleRowClick(row)}
                 onKeyDown={handleRowKeyDown(row)}
               >

@@ -6,6 +6,7 @@ import { immer } from "zustand/middleware/immer";
 import { createAppMenuSlice } from "~/renderer/modules/app-menu/AppMenu.slice/AppMenu.slice";
 import { createAppSetupSlice } from "~/renderer/modules/app-setup";
 import { createAuraOverlaySlice } from "~/renderer/modules/aura-overlay/AuraOverlay.slice/AuraOverlay.slice";
+import { createBookmarksSlice } from "~/renderer/modules/bookmarks";
 import { createCapturePreviewSlice } from "~/renderer/modules/capture-preview/CapturePreview.slice/CapturePreview.slice";
 import { createCaptureProfilesSlice } from "~/renderer/modules/capture-profiles/CaptureProfiles.slice/CaptureProfiles.slice";
 import { createChangelogSlice } from "~/renderer/modules/changelog/Changelog.slice/Changelog.slice";
@@ -42,6 +43,7 @@ export const useBoundStore = create<BoundStore>()(
     immer((...args) => {
       const appMenuSlice = createAppMenuSlice(...args);
       const auraOverlaySlice = createAuraOverlaySlice(...args);
+      const bookmarksSlice = createBookmarksSlice(...args);
       const appSetupSlice = createAppSetupSlice(...args);
       const profilesSlice = createProfilesSlice(...args);
       const captureProfilesSlice = createCaptureProfilesSlice(...args);
@@ -64,6 +66,7 @@ export const useBoundStore = create<BoundStore>()(
       return {
         ...appMenuSlice,
         ...auraOverlaySlice,
+        ...bookmarksSlice,
         ...appSetupSlice,
         ...profilesSlice,
         ...captureProfilesSlice,

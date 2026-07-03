@@ -1,6 +1,7 @@
 export * from "./app";
 export * from "./app-setup";
 export * from "./aura-manager-overlays";
+export * from "./bookmarks";
 export * from "./capture-preview";
 export * from "./client-log";
 export * from "./database";

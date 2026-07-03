@@ -62,6 +62,7 @@ const profile: CaptureProfile = {
   recordingHideOverlaysFromRewind: true,
   recordingOutputResolution: "native",
   recordingRunQuality: "moderate",
+  recordingTrackBookmarksInRewind: true,
   updatedAt: "2026-06-18T00:00:00.000Z",
 };
 

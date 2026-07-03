@@ -1,5 +1,7 @@
 import type { ChangeEvent } from "react";
 import {
+  FiBookmark as Bookmark,
+  FiCheck as Check,
   FiLoader as Loader2,
   FiPlay as Play,
   FiSquare as Square,
@@ -31,9 +33,12 @@ function ExpandedRecorderControlsOverlay({
   onMinimize: () => void;
 }) {
   const {
+    bookmarkSaved,
+    canCreateBookmark,
     canSaveManualReplay,
     canToggleRecording,
     gameRunning,
+    handleCreateBookmark,
     handleSave,
     handleToggleRecording,
     isRecorderBusy,
@@ -43,6 +48,7 @@ function ExpandedRecorderControlsOverlay({
     isStoppingRecording,
     manualReplayTitle,
     recordingButtonTitle,
+    showBookmarkAction,
   } = useRecorderOverlayControls();
   const { profileItems, selectedProfileId, selectProfile } = useProfilesShallow(
     (profiles) => ({
@@ -144,6 +150,18 @@ function ExpandedRecorderControlsOverlay({
               <Play size={18} />
             )}
           </button>
+          {showBookmarkAction && (
+            <button
+              aria-label="Add bookmark"
+              className={`${styles.iconButton} btn btn-square ${bookmarkSaved ? "btn-success" : "btn-primary"}`}
+              disabled={!canCreateBookmark}
+              title="Add bookmark"
+              type="button"
+              onClick={handleCreateBookmark}
+            >
+              {bookmarkSaved ? <Check size={18} /> : <Bookmark size={18} />}
+            </button>
+          )}
           {!isSessionMode && (
             <button
               className={`${styles.iconButton} btn btn-primary btn-square`}

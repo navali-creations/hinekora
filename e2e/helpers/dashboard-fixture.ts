@@ -181,6 +181,7 @@ function createDashboardE2EFixture(
     recordingHideOverlaysFromRewind: settings.recordingHideOverlaysFromRewind,
     recordingOutputResolution: settings.recordingOutputResolution,
     recordingRunQuality: settings.recordingRunQuality,
+    recordingTrackBookmarksInRewind: settings.recordingTrackBookmarksInRewind,
     updatedAt: dashboardE2ENow,
   };
   const recorderStatus: ManagedRecorderStatus = {
@@ -471,6 +472,37 @@ async function setupDashboardE2E(
           "appSetup",
           {
             getSetupState: async () => clone(fixture.setupState),
+          },
+        ),
+        bookmarks: createBridgeDomain<DashboardE2EElectron["bookmarks"]>(
+          "bookmarks",
+          {
+            createManual: async () => ({
+              bookmark: null,
+              error: null,
+              ok: true,
+            }),
+            deleteManual: async () => undefined,
+            listLibrary: async () => ({
+              availableCategories: [],
+              availableLeagues: [],
+              items: [],
+              pageCount: 1,
+              pageIndex: 0,
+              pageSize: 20,
+              sortBy: "occurredAt",
+              sortDirection: "desc",
+              totalCount: 0,
+            }),
+            listRecording: async () => ({
+              items: [],
+              pageCount: 1,
+              pageIndex: 0,
+              pageSize: 10,
+              timelineItems: [],
+              totalCount: 0,
+            }),
+            updateManual: async () => undefined,
           },
         ),
         capturePreview: createBridgeDomain<

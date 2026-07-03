@@ -63,6 +63,8 @@ describe("SidebarNav", () => {
       "Dashboard",
       "Clips",
       "Recordings",
+      "Rewinds",
+      "Bookmarks",
       "Aura Manager",
       "Editor",
       "Saved Edits",

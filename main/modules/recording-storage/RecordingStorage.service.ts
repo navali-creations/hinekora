@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 
 import { app, shell } from "electron";
 
+import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { normalizeMediaLibraryPageQuery } from "~/main/modules/media-library/MediaLibrary.utils";
@@ -405,10 +406,16 @@ class RecordingStorageService {
       }
 
       const fileExists = existsSync(recordingPath);
+      const recording = this.repository.getItemByPath(recordingPath);
       const deletedMetadata =
         this.repository.deleteRunRecordingByPath(recordingPath);
       if (!fileExists && !deletedMetadata) {
         return { ok: false, error: "Recording file is not available" };
+      }
+      if (recording) {
+        BookmarksService.getInstance().deleteBookmarksForRecording(
+          recording.id,
+        );
       }
 
       if (fileExists) {
@@ -509,9 +516,13 @@ class RecordingStorageService {
     let actualFreedBytes = 0;
     for (const file of selection.files) {
       try {
+        const recording = this.repository.getItemByPath(file.path);
         unlinkSync(file.path);
         deletedPaths.push(file.path);
         actualFreedBytes += file.size;
+        if (recording) {
+          BookmarksService.getInstance().archiveRecordingLinks(recording);
+        }
         this.repository.updateFileState(file.path, {
           exists: false,
           sizeBytes: 0,
@@ -1027,6 +1038,10 @@ class RecordingStorageService {
       }
 
       if (metadata.exists || metadata.sizeBytes !== 0) {
+        const recording = this.repository.getItemByPath(path);
+        if (recording) {
+          BookmarksService.getInstance().archiveRecordingLinks(recording);
+        }
         this.repository.updateFileState(path, { exists: false, sizeBytes: 0 });
       }
     }

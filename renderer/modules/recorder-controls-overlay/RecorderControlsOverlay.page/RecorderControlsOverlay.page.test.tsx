@@ -27,6 +27,7 @@ const storeMocks = vi.hoisted(() => ({
 }));
 
 const electronMocks = vi.hoisted(() => ({
+  createManualBookmark: vi.fn(),
   getRecorderMode: vi.fn(),
   hideRecorder: vi.fn(),
   onRecorderModeChanged: vi.fn(),
@@ -172,6 +173,11 @@ describe("RecorderControlsOverlayPage", () => {
     );
     electronMocks.setAuraLocked.mockResolvedValue(undefined);
     electronMocks.showAura.mockResolvedValue(undefined);
+    electronMocks.createManualBookmark.mockResolvedValue({
+      bookmark: null,
+      error: null,
+      ok: true,
+    });
 
     managedRecorderState = {
       captureMode: "rewind",
@@ -254,6 +260,9 @@ describe("RecorderControlsOverlayPage", () => {
     Object.defineProperty(window, "electron", {
       configurable: true,
       value: {
+        bookmarks: {
+          createManual: electronMocks.createManualBookmark,
+        },
         overlayWindows: {
           getRecorderMode: electronMocks.getRecorderMode,
           hideRecorder: electronMocks.hideRecorder,
