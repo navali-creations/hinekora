@@ -59,7 +59,7 @@ function formatDateTime(value: string): string {
 }
 
 function formatDurationSeconds(value: number | null | undefined): string {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return "--";
   }
 

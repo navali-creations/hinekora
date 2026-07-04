@@ -21,6 +21,7 @@ import {
   useSettingsSelector,
 } from "~/renderer/store";
 
+import { ProcessingRecordingTableRow } from "../ProcessingRecordingTableRow/ProcessingRecordingTableRow";
 import {
   canOpenRecordingRow,
   createProcessingRecordingRow,
@@ -69,28 +70,45 @@ function RecordingsPanel({ scope }: RecordingsPanelProps) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: "createdAt", desc: true },
   ]);
+  const [now, setNow] = useState(() => new Date());
   const showLeagueColumn = scope.league === ALL_LEAGUES_VALUE;
+  const isProcessingRecording =
+    managedRecorderStatus?.runRecordingActive === true ||
+    managedRecorderStatus?.isStoppingRecording === true;
+
+  useEffect(() => {
+    if (!isProcessingRecording) {
+      return;
+    }
+
+    setNow(new Date());
+    const intervalId = window.setInterval(() => {
+      setNow(new Date());
+    }, 1_000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isProcessingRecording]);
+
   const processingRecording = useMemo(
     () =>
       createProcessingRecordingRow({
         activeLeague,
-        now: new Date(),
+        now,
         scope,
         status: managedRecorderStatus,
       }),
-    [activeLeague, managedRecorderStatus, scope],
+    [activeLeague, managedRecorderStatus, now, scope],
   );
   const tableRecordings = useMemo<RecordingTableRow[]>(() => {
-    const savedRows = recordings.map(toRecordingTableRow);
-    if (!processingRecording || pagination.pageIndex !== 0) {
-      return savedRows;
-    }
-
-    return [processingRecording, ...savedRows];
-  }, [pagination.pageIndex, processingRecording, recordings]);
-  const totalRecordingRows =
-    (recordingsPage?.totalCount ?? recordings.length) +
-    (processingRecording && pagination.pageIndex === 0 ? 1 : 0);
+    return recordings.map(toRecordingTableRow);
+  }, [recordings]);
+  const totalRecordingRows = recordingsPage?.totalCount ?? recordings.length;
+  const tablePageCount = Math.max(
+    recordingsPage?.pageCount ?? 1,
+    Math.ceil(totalRecordingRows / pagination.pageSize),
+  );
   const recordingQuery = useMemo<RunRecordingLibraryQuery>(() => {
     const activeSort = sorting[0];
     const query: RunRecordingLibraryQuery = {
@@ -154,6 +172,14 @@ function RecordingsPanel({ scope }: RecordingsPanelProps) {
     });
   };
 
+  const renderPinnedTopRows = () =>
+    processingRecording ? (
+      <ProcessingRecordingTableRow
+        recording={processingRecording}
+        showLeagueColumn={showLeagueColumn}
+      />
+    ) : null;
+
   const columns = useRecordingsPanelColumns({ showLeagueColumn });
   const table = useReactTable({
     data: tableRecordings,
@@ -166,7 +192,7 @@ function RecordingsPanel({ scope }: RecordingsPanelProps) {
     onPaginationChange: handlePaginationChange,
     onRowSelectionChange: handleRowSelectionChange,
     onSortingChange: handleSortingChange,
-    pageCount: recordingsPage?.pageCount ?? 1,
+    pageCount: tablePageCount,
     rowCount: totalRecordingRows,
     state: { pagination, rowSelection, sorting },
   });
@@ -180,6 +206,8 @@ function RecordingsPanel({ scope }: RecordingsPanelProps) {
         getHeaderClassName={getHeaderClassName}
         getRowClassName={getRecordingRowClassName}
         onRowClick={handleRowClick}
+        pinnedTopRowCount={processingRecording ? 1 : 0}
+        renderPinnedTopRows={renderPinnedTopRows}
         table={table}
         totalCount={totalRecordingRows}
       />

@@ -747,11 +747,15 @@ test("lists bookmarks, renames manual bookmarks, and opens attached recordings",
 }) => {
   const bookmarks: BookmarkLibraryItem[] = [
     {
+      activeActivitySessionBookmarkDurationSeconds: null,
       activeActivitySessionId: null,
+      activeActivitySessionDurationSeconds: null,
       activeActivitySessionOffsetSeconds: null,
+      activeRecordingBookmarkDurationSeconds: 96,
       activeRecordingDurationSeconds: 120,
       activeRecordingId: "recording-1",
       activeRecordingOffsetSeconds: 24,
+      archivedRecordingBookmarkDurationSeconds: null,
       archivedRecordingDurationSeconds: null,
       archivedRecordingId: null,
       archivedRecordingTitle: null,
@@ -769,11 +773,15 @@ test("lists bookmarks, renames manual bookmarks, and opens attached recordings",
       updatedAt: "2026-07-03T10:15:00.000Z",
     },
     {
+      activeActivitySessionBookmarkDurationSeconds: null,
       activeActivitySessionId: null,
+      activeActivitySessionDurationSeconds: null,
       activeActivitySessionOffsetSeconds: null,
+      activeRecordingBookmarkDurationSeconds: null,
       activeRecordingDurationSeconds: null,
       activeRecordingId: null,
       activeRecordingOffsetSeconds: null,
+      archivedRecordingBookmarkDurationSeconds: null,
       archivedRecordingDurationSeconds: null,
       archivedRecordingId: null,
       archivedRecordingTitle: null,
@@ -799,7 +807,23 @@ test("lists bookmarks, renames manual bookmarks, and opens attached recordings",
   await expect(
     page.getByRole("cell", { name: "Memorable moment Qimah Reservoir" }),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Manual" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "Source" })).toHaveCount(
+    0,
+  );
+  await expect(
+    page.getByRole("columnheader", { name: "Category" }),
+  ).toHaveCount(0);
+  await expect(page.getByRole("img", { name: "Map" })).toBeVisible();
+  await expect(
+    page.getByRole("button", { exact: true, name: "Manual" }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { exact: true, name: "Map" }).click();
+  await expect(
+    page.getByRole("cell", { name: "Qimah Reservoir Qimah Reservoir" }),
+  ).toBeVisible();
+  await expect(page.getByText("Memorable moment")).toBeHidden();
+  await page.getByRole("button", { exact: true, name: "All" }).click();
 
   await page.getByRole("button", { name: "Rename bookmark" }).click();
   await expect(
@@ -822,4 +846,7 @@ test("lists bookmarks, renames manual bookmarks, and opens attached recordings",
 
   await page.getByRole("link", { name: "Open attached recording" }).click();
   await expect(page).toHaveURL(/\/recording\/recording-1\?t=24$/);
+  await expect(page.getByRole("heading", { name: "Bookmarks" })).toBeVisible();
+  await expect(page.getByText("Latest markers")).toBeVisible();
+  await expect(page.getByText("Qimah Reservoir").first()).toBeVisible();
 });

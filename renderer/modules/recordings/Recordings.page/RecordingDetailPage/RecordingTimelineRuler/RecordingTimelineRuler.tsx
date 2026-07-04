@@ -98,7 +98,9 @@ function RecordingTimelineRuler({
                     "pointer-events-none absolute inset-y-0 z-20 border-base-content/10 border-x opacity-40",
                     bookmarkCategoryTimelineClassNames[bookmark.category],
                   )}
-                  title={`${bookmarkCategoryLabels[bookmark.category]} - ${bookmark.label}`}
+                  title={`${bookmarkCategoryLabels[bookmark.category]} - ${
+                    bookmark.label
+                  }`}
                   style={{
                     left: formatRecordingTimelineRailLeft(eventLeft),
                     width: formatRecordingTimelineRailWidth(
@@ -113,7 +115,9 @@ function RecordingTimelineRuler({
                     "pointer-events-none absolute inset-y-0 z-20 border-base-content/10 border-r opacity-50",
                     bookmarkCategoryTimelineClassNames[bookmark.category],
                   )}
-                  title={`${bookmarkCategoryLabels[bookmark.category]} processing tail - ${bookmark.label}`}
+                  title={`${
+                    bookmarkCategoryLabels[bookmark.category]
+                  } processing tail - ${bookmark.label}`}
                   style={{
                     backgroundImage:
                       "repeating-linear-gradient(135deg, rgba(255,255,255,0.24) 0 3px, transparent 3px 8px)",
@@ -149,11 +153,13 @@ function RecordingTimelineRuler({
             aria-hidden="true"
             className={clsx(
               "pointer-events-none absolute inset-y-0 border-base-content/10 border-x",
-              clipTarget ? "z-20 opacity-40" : "z-10 opacity-25",
+              "z-10 opacity-25",
               bookmarkCategoryTimelineClassNames[bookmark.category],
             )}
             key={`ruler-${bookmark.id}`}
-            title={`${bookmarkCategoryLabels[bookmark.category]} - ${bookmark.label}`}
+            title={`${bookmarkCategoryLabels[bookmark.category]} - ${
+              bookmark.label
+            }`}
             style={{
               left: formatRecordingTimelineRailLeft(left),
               width: formatRecordingTimelineRailWidth(Math.max(width, 0.2)),

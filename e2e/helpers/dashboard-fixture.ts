@@ -2,10 +2,14 @@ import { expect, type Page } from "@playwright/test";
 
 import type { SetupState } from "../../main/modules/app-setup/AppSetup.types";
 import type {
+  BookmarkCategory,
   BookmarkLibraryItem,
   BookmarkLibraryPage,
   BookmarkLibraryQuery,
   BookmarkManualUpdateInput,
+  RecordingBookmark,
+  RecordingBookmarksPage,
+  RecordingBookmarksQuery,
 } from "../../main/modules/bookmarks";
 import type {
   ManagedRecorderAudioDevices,
@@ -489,6 +493,51 @@ async function setupDashboardE2E(
           totalCount: filtered.length,
         };
       };
+      const listRecordingBookmarks = (
+        recordingId: string,
+        query: RecordingBookmarksQuery = {},
+      ): RecordingBookmarksPage => {
+        const linked = bookmarks
+          .filter((bookmark) => bookmark.activeRecordingId === recordingId)
+          .map(
+            (bookmark): RecordingBookmark => ({
+              ...bookmark,
+              durationSeconds: null,
+              offsetSeconds: bookmark.activeRecordingOffsetSeconds,
+            }),
+          );
+        const filtered = query.category
+          ? linked.filter((bookmark) => bookmark.category === query.category)
+          : linked;
+        const pageIndex = query.pageIndex ?? 0;
+        const pageSize = query.pageSize ?? 20;
+        const pageStart = pageIndex * pageSize;
+        const sortedItems = [...filtered].sort(
+          (left, right) =>
+            right.occurredAt.localeCompare(left.occurredAt) ||
+            (right.offsetSeconds ?? 0) - (left.offsetSeconds ?? 0),
+        );
+        const timelineItems =
+          query.includeTimeline === false
+            ? []
+            : [...linked].sort(
+                (left, right) =>
+                  (left.offsetSeconds ?? 0) - (right.offsetSeconds ?? 0),
+              );
+
+        return {
+          availableCategories: Array.from(
+            new Set(linked.map((bookmark) => bookmark.category)),
+          ) as BookmarkCategory[],
+          items: clone(sortedItems.slice(pageStart, pageStart + pageSize)),
+          pageCount: Math.max(1, Math.ceil(filtered.length / pageSize)),
+          pageIndex,
+          pageSize,
+          timelineItems: clone(timelineItems),
+          timelineItemsTruncated: false,
+          totalCount: filtered.length,
+        };
+      };
       const emitRecorderVisibility = (visible: boolean) => {
         recorderOverlayVisible = visible;
         calls.recorderVisibilityEvents.push(visible);
@@ -563,15 +612,8 @@ async function setupDashboardE2E(
               );
             },
             listLibrary: async (query) => listBookmarks(query),
-            listRecording: async () => ({
-              items: [],
-              pageCount: 1,
-              pageIndex: 0,
-              pageSize: 10,
-              timelineItems: [],
-              timelineItemsTruncated: false,
-              totalCount: 0,
-            }),
+            listRecording: async (recordingId, query) =>
+              listRecordingBookmarks(recordingId, query),
             updateManual: async (input) => {
               calls.bookmarkUpdates.push(clone(input));
               bookmarks = bookmarks.map((bookmark) =>

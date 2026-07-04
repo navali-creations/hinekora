@@ -13,7 +13,6 @@ import {
 } from "vitest";
 
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
-import { ReplayClipsService } from "~/main/modules/replay-clips";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
 
@@ -821,13 +820,9 @@ describe("ClientLogService", () => {
     service.stopWatchFile();
   });
 
-  it("processes new complete death lines and dispatches replay creation", async () => {
+  it("processes new complete death lines and emits death events", async () => {
     const path = join(directory, "Client.txt");
     writeFileSync(path, "");
-    const handleDeathEvent = vi.fn().mockResolvedValue(null);
-    vi.spyOn(ReplayClipsService, "getInstance").mockReturnValue({
-      handleDeathEvent,
-    } as unknown as ReplayClipsService);
     const service = new ClientLogService();
     const deaths: unknown[] = [];
     service.on("death", (event) => deaths.push(event));
@@ -851,16 +846,11 @@ describe("ClientLogService", () => {
         detectedAt: expect.any(String),
       }),
     ]);
-    expect(handleDeathEvent).toHaveBeenCalledWith(deaths[0]);
   });
 
   it("dispatches only configured character death lines when a character name is set", async () => {
     const path = join(directory, "Client.txt");
     writeFileSync(path, "");
-    const handleDeathEvent = vi.fn().mockResolvedValue(null);
-    vi.spyOn(ReplayClipsService, "getInstance").mockReturnValue({
-      handleDeathEvent,
-    } as unknown as ReplayClipsService);
     const service = new ClientLogService();
     const deaths: unknown[] = [];
     service.on("death", (event) => deaths.push(event));
@@ -890,7 +880,6 @@ describe("ClientLogService", () => {
         line: "2026/06/12 12:00:01 123 [INFO Client] : MainCharacter has been slain.",
       }),
     ]);
-    expect(handleDeathEvent).toHaveBeenCalledTimes(1);
   });
 
   it("stores partial log lines until a complete line arrives", async () => {

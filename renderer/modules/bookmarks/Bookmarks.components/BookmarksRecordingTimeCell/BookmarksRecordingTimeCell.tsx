@@ -30,6 +30,26 @@ function BookmarksRecordingTimeCell({
     );
   }
 
+  if (bookmark.activeActivitySessionId) {
+    const progressPercent = calculateBookmarkRecordingProgressPercent({
+      durationSeconds: bookmark.activeActivitySessionDurationSeconds,
+      offsetSeconds: bookmark.activeActivitySessionOffsetSeconds,
+    });
+
+    return (
+      <div className="min-w-0">
+        <div>
+          {formatDurationSeconds(bookmark.activeActivitySessionOffsetSeconds)}
+        </div>
+        <div className="text-base-content/50 text-xs">
+          {progressPercent !== null
+            ? `${progressPercent}% into rewind`
+            : "into rewind"}
+        </div>
+      </div>
+    );
+  }
+
   if (bookmark.archivedRecordingTitle) {
     return <span className="badge badge-outline badge-xs">Archived</span>;
   }

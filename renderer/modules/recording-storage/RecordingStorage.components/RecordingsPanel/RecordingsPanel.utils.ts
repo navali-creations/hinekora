@@ -12,10 +12,31 @@ import {
 import type { ManagedRecorderStatus } from "~/types";
 
 type RecordingTableRowStatus = "processing" | "saved";
+type RecordingTableColumnId =
+  | "actions"
+  | "createdAt"
+  | "durationSeconds"
+  | "fileName"
+  | "select"
+  | "sizeBytes"
+  | "sourceLeague"
+  | "tableStatus";
 
 type RecordingTableRow = RunRecordingItem & {
   tableStatus: RecordingTableRowStatus;
 };
+
+const baseRecordingTableColumnIds = [
+  "select",
+  "fileName",
+  "tableStatus",
+  "createdAt",
+] as const satisfies readonly RecordingTableColumnId[];
+const trailingRecordingTableColumnIds = [
+  "durationSeconds",
+  "sizeBytes",
+  "actions",
+] as const satisfies readonly RecordingTableColumnId[];
 
 interface CreateProcessingRecordingRowInput {
   activeLeague: string | null;
@@ -109,6 +130,16 @@ function createProcessingRecordingRow({
   };
 }
 
+function resolveRecordingTableColumnIds(
+  showLeagueColumn: boolean,
+): RecordingTableColumnId[] {
+  return [
+    ...baseRecordingTableColumnIds,
+    ...(showLeagueColumn ? (["sourceLeague"] as const) : []),
+    ...trailingRecordingTableColumnIds,
+  ];
+}
+
 function toRecordingTableRow(recording: RunRecordingItem): RecordingTableRow {
   return { ...recording, tableStatus: "saved" };
 }
@@ -124,13 +155,14 @@ function getRecordingRowClassName(row: RecordingTableRow): string {
   );
 }
 
-export type { RecordingTableRow };
+export type { RecordingTableColumnId, RecordingTableRow };
 export {
   canOpenRecordingRow,
   createProcessingRecordingRow,
   getCellClassName,
   getHeaderClassName,
   getRecordingRowClassName,
+  resolveRecordingTableColumnIds,
   resolveSortBy,
   toRecordingTableRow,
 };

@@ -1,50 +1,39 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
   ActivitySessionClip,
-  ActivitySessionTimeline,
   RecordingBookmark,
 } from "~/main/modules/bookmarks";
 import {
   allRecordingBookmarkCategoriesValue,
   type RecordingBookmarkCategoryFilter,
-  resolveRecordingBookmarkCategories,
+  recordingBookmarksPanelPageSize,
 } from "~/renderer/modules/recordings/Recordings.page/RecordingDetailPage/RecordingBookmarksPanel/RecordingBookmarksPanel.utils";
 import { clampRecordingTimelineSeconds } from "~/renderer/modules/recordings/Recordings.page/RecordingDetailPage/RecordingBookmarkTimeline/RecordingBookmarkTimeline.utils";
 
 import {
-  calculateRewindDurationSeconds,
   defaultRewindTimelineMarkerFilterValue,
-  filterRewindTimelineMarkerBookmarks,
   findRewindClipAtSeconds,
   findRewindClipForBookmark,
-  mapRewindTimelineBookmarks,
   type RewindTimelineMarkerCategoryFilter,
   resolveRewindBookmarkSeekSeconds,
   resolveRewindClipLocalSeconds,
   resolveRewindClipSegment,
-  resolveRewindClipVisualOffsetSeconds,
 } from "../RewindDetailPage.utils";
 import { useRewindClipPreview } from "../useRewindClipPreview/useRewindClipPreview";
+import { useRewindTimelineData } from "../useRewindTimelineData/useRewindTimelineData";
+import { useRewindTimelineDerivedState } from "../useRewindTimelineDerivedState/useRewindTimelineDerivedState";
 
 interface UseRewindDetailTimelineInput {
+  initialPlaybackSeconds?: number | null;
   rewindId: string;
 }
 
-interface RewindDetailState {
-  error: string | null;
-  isLoading: boolean;
-  timeline: ActivitySessionTimeline | null;
-}
-
-const initialRewindDetailState: RewindDetailState = {
-  error: null,
-  isLoading: true,
-  timeline: null,
-};
-
-function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
-  const [state, setState] = useState(initialRewindDetailState);
+function useRewindDetailTimeline({
+  initialPlaybackSeconds = null,
+  rewindId,
+}: UseRewindDetailTimelineInput) {
+  const state = useRewindTimelineData(rewindId);
   const [bookmarkCategoryFilter, setBookmarkCategoryFilter] =
     useState<RecordingBookmarkCategoryFilter>(
       allRecordingBookmarkCategoriesValue,
@@ -54,110 +43,120 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
       defaultRewindTimelineMarkerFilterValue,
     );
   const [bookmarkPageIndex, setBookmarkPageIndex] = useState(0);
-  const { clipPreviewState, mediaUrl, playback, selectClip, selectedClipId } =
-    useRewindClipPreview();
+  const initialClipAppliedRef = useRef<string | null>(null);
+  const {
+    clipPreviewState,
+    mediaUrl,
+    playback,
+    selectClip,
+    selectedClipId,
+    subscribeVisualPlaybackTime,
+  } = useRewindClipPreview();
   const [playbackSeconds, setPlaybackSeconds] = useState(0);
-
   useEffect(() => {
-    let isActive = true;
-    setState(initialRewindDetailState);
+    if (!rewindId) {
+      return;
+    }
+
     setBookmarkCategoryFilter(allRecordingBookmarkCategoriesValue);
     setTimelineMarkerCategoryFilter(defaultRewindTimelineMarkerFilterValue);
     setBookmarkPageIndex(0);
     setPlaybackSeconds(0);
+    initialClipAppliedRef.current = null;
     selectClip(null);
-
-    window.electron.bookmarks
-      .getActivitySessionTimeline(rewindId)
-      .then((timeline) => {
-        if (isActive) {
-          setState({ error: null, isLoading: false, timeline });
-          const firstClip = timeline?.clips[0] ?? null;
-          const firstClipSegment = resolveRewindClipSegment(firstClip);
-
-          if (firstClip && firstClipSegment) {
-            setPlaybackSeconds(firstClipSegment.startSeconds);
-            selectClip(firstClip.targetId, {
-              play: false,
-              seekSeconds: resolveRewindClipLocalSeconds(
-                firstClip,
-                firstClipSegment.startSeconds,
-              ),
-            });
-          }
-        }
-      })
-      .catch((error: unknown) => {
-        if (isActive) {
-          setState({
-            error: error instanceof Error ? error.message : "Rewind failed",
-            isLoading: false,
-            timeline: null,
-          });
-        }
-      });
-
-    return () => {
-      isActive = false;
-    };
   }, [rewindId, selectClip]);
 
-  const clipTargetsByBookmarkId = useMemo(
-    () =>
-      Object.fromEntries(
-        (state.timeline?.clips ?? [])
-          .filter((clip) => clip.bookmarkId)
-          .map((clip) => [
-            clip.bookmarkId as string,
-            {
-              durationSeconds: clip.durationSeconds,
-              targetDurationSeconds: clip.targetDurationSeconds,
-              targetId: clip.targetId,
-            },
-          ]),
-      ),
-    [state.timeline?.clips],
+  const {
+    bookmarkCategories,
+    bookmarks,
+    clipTargetsByBookmarkId,
+    durationSeconds,
+    markerBookmarks,
+    selectedClipSegment,
+    selectedClipTarget,
+    visualPlaybackOffsetSeconds,
+  } = useRewindTimelineDerivedState({
+    selectedClipId,
+    timeline: state.timeline,
+    timelineMarkerCategoryFilter,
+  });
+  const isTimelineTruncated =
+    (state.timeline?.bookmarkTimelineItemsTruncated ?? false) ||
+    (state.timeline?.clipTimelineItemsTruncated ?? false);
+  const filteredPanelBookmarks = useMemo(() => {
+    const filteredBookmarks =
+      bookmarkCategoryFilter === allRecordingBookmarkCategoriesValue
+        ? bookmarks
+        : bookmarks.filter(
+            (bookmark) => bookmark.category === bookmarkCategoryFilter,
+          );
+
+    return [...filteredBookmarks].sort(
+      (left, right) => (right.offsetSeconds ?? 0) - (left.offsetSeconds ?? 0),
+    );
+  }, [bookmarkCategoryFilter, bookmarks]);
+  const bookmarkPageCount = Math.max(
+    1,
+    Math.ceil(filteredPanelBookmarks.length / recordingBookmarksPanelPageSize),
   );
-  const durationSeconds = useMemo(
-    () => calculateRewindDurationSeconds(state.timeline),
-    [state.timeline],
+  const clampedBookmarkPageIndex = Math.min(
+    bookmarkPageIndex,
+    bookmarkPageCount - 1,
   );
-  const bookmarks = useMemo<RecordingBookmark[]>(
-    () =>
-      mapRewindTimelineBookmarks({
-        bookmarks: state.timeline?.bookmarks ?? [],
-        clipTargetsByBookmarkId,
-        durationSeconds,
-      }),
-    [clipTargetsByBookmarkId, durationSeconds, state.timeline?.bookmarks],
-  );
-  const markerBookmarks = useMemo<RecordingBookmark[]>(
-    () =>
-      filterRewindTimelineMarkerBookmarks({
-        bookmarks,
-        categoryFilter: timelineMarkerCategoryFilter,
-      }),
-    [bookmarks, timelineMarkerCategoryFilter],
-  );
-  const selectedClipTarget = useMemo(
-    () =>
-      (state.timeline?.clips ?? []).find(
-        (clip) => clip.targetId === selectedClipId,
-      ) ?? null,
-    [selectedClipId, state.timeline?.clips],
-  );
-  const selectedClipSegment = useMemo(
-    () => resolveRewindClipSegment(selectedClipTarget),
-    [selectedClipTarget],
-  );
-  const visualPlaybackOffsetSeconds = useMemo(
-    () => resolveRewindClipVisualOffsetSeconds(selectedClipTarget),
-    [selectedClipTarget],
-  );
-  const bookmarkCategories = useMemo(
-    () => resolveRecordingBookmarkCategories(bookmarks),
-    [bookmarks],
-  );
+  const bookmarkPanelItems = useMemo(() => {
+    const startIndex =
+      clampedBookmarkPageIndex * recordingBookmarksPanelPageSize;
+
+    return filteredPanelBookmarks.slice(
+      startIndex,
+      startIndex + recordingBookmarksPanelPageSize,
+    );
+  }, [clampedBookmarkPageIndex, filteredPanelBookmarks]);
+
+  useEffect(() => {
+    if (bookmarkPageIndex !== clampedBookmarkPageIndex) {
+      setBookmarkPageIndex(clampedBookmarkPageIndex);
+    }
+  }, [bookmarkPageIndex, clampedBookmarkPageIndex]);
+
+  useEffect(() => {
+    if (!state.timeline) {
+      return;
+    }
+
+    const initialKey = `${rewindId}:${initialPlaybackSeconds ?? "first-clip"}`;
+    if (initialClipAppliedRef.current === initialKey) {
+      return;
+    }
+
+    initialClipAppliedRef.current = initialKey;
+    const firstClip = state.timeline.clips[0] ?? null;
+    const initialSeconds =
+      initialPlaybackSeconds !== null
+        ? clampRecordingTimelineSeconds(initialPlaybackSeconds, durationSeconds)
+        : (resolveRewindClipSegment(firstClip)?.startSeconds ?? 0);
+    const clipTarget =
+      initialPlaybackSeconds !== null
+        ? findRewindClipAtSeconds(state.timeline.clips, initialSeconds)
+        : firstClip;
+
+    setPlaybackSeconds(initialSeconds);
+    if (!clipTarget) {
+      selectClip(null);
+      return;
+    }
+
+    selectClip(clipTarget.targetId, {
+      play: false,
+      seekSeconds: resolveRewindClipLocalSeconds(clipTarget, initialSeconds),
+    });
+  }, [
+    durationSeconds,
+    initialPlaybackSeconds,
+    rewindId,
+    selectClip,
+    state.timeline,
+  ]);
 
   useEffect(() => {
     if (!selectedClipSegment || !mediaUrl) {
@@ -221,9 +220,10 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
   const handlePreviousBookmarkPage = () => {
     setBookmarkPageIndex((current) => Math.max(0, current - 1));
   };
-
   const handleNextBookmarkPage = () => {
-    setBookmarkPageIndex((current) => current + 1);
+    setBookmarkPageIndex((current) =>
+      Math.min(bookmarkPageCount - 1, current + 1),
+    );
   };
 
   const handleSelectBookmark = (bookmark: RecordingBookmark) => {
@@ -294,7 +294,10 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
   return {
     bookmarkCategories,
     bookmarkCategoryFilter,
+    bookmarkPageCount,
     bookmarkPageIndex,
+    bookmarkPanelItems,
+    bookmarkTotalCount: filteredPanelBookmarks.length,
     bookmarks,
     clipPreviewState,
     clipTargetsByBookmarkId,
@@ -309,12 +312,14 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
     handleSeekForward,
     handleSelectBookmark,
     handleVolumeChange,
+    isTimelineTruncated,
     mediaUrl,
     markerBookmarks,
     playback,
     playbackSeconds,
     selectedClipId,
     state,
+    subscribeVisualPlaybackTime,
     visualPlaybackOffsetSeconds,
   };
 }

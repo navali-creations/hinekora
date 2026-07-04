@@ -55,9 +55,9 @@ function RecordingDetailPlayer({
 
   if (!mediaUrl) {
     return (
-      <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-300">
+      <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-300">
         <div
-          className="grid aspect-video place-items-center bg-black p-4 text-center"
+          className="grid h-full min-h-0 place-items-center bg-black p-4 text-center"
           ref={frameRef}
         >
           <div className="rounded-lg border border-base-content/10 border-dashed p-8">
@@ -72,8 +72,8 @@ function RecordingDetailPlayer({
   }
 
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-300">
-      <div className="aspect-video bg-black p-4" ref={frameRef}>
+    <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-300">
+      <div className="h-full min-h-0 bg-black p-4" ref={frameRef}>
         <video
           className="block h-full w-full object-contain"
           preload="metadata"

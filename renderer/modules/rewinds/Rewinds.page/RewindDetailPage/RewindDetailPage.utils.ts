@@ -187,9 +187,35 @@ function resolveRewindClipSegment(
 }
 
 function resolveRewindClipDurationSeconds(
-  clip: Pick<ActivitySessionClip, "durationSeconds" | "targetDurationSeconds">,
+  clip: Pick<
+    ActivitySessionClip,
+    "durationSeconds" | "offsetSeconds" | "targetDurationSeconds"
+  >,
 ): number {
-  return clip.durationSeconds ?? clip.targetDurationSeconds ?? 0;
+  if (
+    typeof clip.durationSeconds === "number" &&
+    Number.isFinite(clip.durationSeconds) &&
+    clip.durationSeconds > 0
+  ) {
+    return clip.durationSeconds;
+  }
+
+  if (
+    typeof clip.targetDurationSeconds !== "number" ||
+    !Number.isFinite(clip.targetDurationSeconds) ||
+    clip.targetDurationSeconds <= 0
+  ) {
+    return 0;
+  }
+
+  if (
+    typeof clip.offsetSeconds !== "number" ||
+    !Number.isFinite(clip.offsetSeconds)
+  ) {
+    return 0;
+  }
+
+  return Math.min(clip.targetDurationSeconds, Math.max(0, clip.offsetSeconds));
 }
 
 function resolveRewindLocationDurationSeconds(input: {

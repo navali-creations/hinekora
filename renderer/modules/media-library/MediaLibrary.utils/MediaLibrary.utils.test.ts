@@ -26,6 +26,7 @@ describe("MediaLibrary utils", () => {
 
   it("formats common media values", () => {
     expect(formatBytes(2_621_440)).toBe("2.5 MB");
+    expect(formatDurationSeconds(0)).toBe("0:00");
     expect(formatDurationSeconds(65)).toBe("1:05");
     expect(formatDurationSeconds(3723)).toBe("1:02:03");
     expect(formatDurationSeconds(null)).toBe("--");

@@ -6,7 +6,7 @@ import { immer } from "zustand/middleware/immer";
 import { createAppMenuSlice } from "~/renderer/modules/app-menu/AppMenu.slice/AppMenu.slice";
 import { createAppSetupSlice } from "~/renderer/modules/app-setup";
 import { createAuraOverlaySlice } from "~/renderer/modules/aura-overlay/AuraOverlay.slice/AuraOverlay.slice";
-import { createBookmarksSlice } from "~/renderer/modules/bookmarks";
+import { createBookmarksSlice } from "~/renderer/modules/bookmarks/Bookmarks.slice/Bookmarks.slice";
 import { createCapturePreviewSlice } from "~/renderer/modules/capture-preview/CapturePreview.slice/CapturePreview.slice";
 import { createCaptureProfilesSlice } from "~/renderer/modules/capture-profiles/CaptureProfiles.slice/CaptureProfiles.slice";
 import { createChangelogSlice } from "~/renderer/modules/changelog/Changelog.slice/Changelog.slice";

@@ -9,7 +9,11 @@ import { AppSetupService } from "./modules/app-setup";
 import { BookmarksService } from "./modules/bookmarks";
 import { CapturePreviewService } from "./modules/capture-preview";
 import { CaptureProfilesService } from "./modules/capture-profiles";
-import { ClientLogService } from "./modules/client-log";
+import {
+  type ClientLogActivityBatchEvent,
+  type ClientLogDeathEvent,
+  ClientLogService,
+} from "./modules/client-log";
 import { DatabaseService } from "./modules/database";
 import { resolveMainDatabasePath } from "./modules/database/Database.paths";
 import { DiagLogService } from "./modules/diag-log";
@@ -78,6 +82,23 @@ function initializeLocalDiagnostics(): void {
       error: error instanceof Error ? error.message : "Diagnostics failed",
     });
   }
+}
+
+function wireClientLogConsumers(
+  clientLog: ClientLogService,
+  bookmarks: BookmarksService,
+  replayClips: ReplayClipsService,
+): void {
+  clientLog.on("activity", (event: ClientLogActivityBatchEvent) => {
+    bookmarks.handleClientLogActivityEvents(event.game, event.events);
+  });
+  clientLog.on("activity-seed", (event: ClientLogActivityBatchEvent) => {
+    bookmarks.seedClientLogActivityState(event.game, event.events);
+  });
+  clientLog.on("death", (event: ClientLogDeathEvent) => {
+    bookmarks.handleClientLogDeath(event);
+    void replayClips.handleDeathEvent(event);
+  });
 }
 
 async function bootstrap(): Promise<void> {
@@ -150,7 +171,7 @@ async function bootstrap(): Promise<void> {
   StorageService.getInstance();
   logInfo("startup", "Storage initialized");
 
-  ReplayClipsService.getInstance();
+  const replayClips = ReplayClipsService.getInstance();
   logInfo("startup", "Replay clips initialized");
 
   EditorService.getInstance();
@@ -159,7 +180,7 @@ async function bootstrap(): Promise<void> {
   SavedEditsService.getInstance();
   logInfo("startup", "Saved edits initialized");
 
-  BookmarksService.getInstance();
+  const bookmarks = BookmarksService.getInstance();
   logInfo("startup", "Bookmarks initialized");
 
   const overlayWindows = OverlayWindowsService.getInstance();
@@ -171,7 +192,9 @@ async function bootstrap(): Promise<void> {
   UpdaterService.getInstance();
   logInfo("startup", "Updater initialized");
 
-  ClientLogService.getInstance().initializeFromSettings();
+  const clientLog = ClientLogService.getInstance();
+  wireClientLogConsumers(clientLog, bookmarks, replayClips);
+  clientLog.initializeFromSettings();
   logInfo("startup", "Client log initialized");
 
   await MainWindowService.getInstance().createMainWindow();

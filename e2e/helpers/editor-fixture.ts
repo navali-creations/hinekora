@@ -710,6 +710,7 @@ async function setupEditorE2E(page: Page) {
               totalCount: 0,
             }),
             listRecording: async () => ({
+              availableCategories: [],
               items: [],
               pageCount: 1,
               pageIndex: 0,

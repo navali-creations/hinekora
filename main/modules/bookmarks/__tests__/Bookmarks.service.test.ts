@@ -6,6 +6,7 @@ import { mockIpcMainHandlers } from "~/main/test/ipc";
 
 import type { ReplayClip } from "~/types";
 import { createDefaultSettings } from "~/types";
+import { BookmarksChannel } from "../Bookmarks.channels";
 import { BookmarksService } from "../Bookmarks.service";
 
 function createRecordingItem(input: {
@@ -255,12 +256,70 @@ describe("BookmarksService", () => {
     expect(queryOneSpy).toHaveBeenCalledTimes(1);
     expect(listPage.items[0]).toEqual(
       expect.objectContaining({
+        activeRecordingBookmarkDurationSeconds: 110,
         activeRecordingDurationSeconds: 120,
         activeRecordingId: "recording-one",
         activeRecordingOffsetSeconds: 10,
         label: "Confluence",
       }),
     );
+  });
+
+  it("pages recording bookmarks by category without refetching timeline markers", () => {
+    const service = new BookmarksService();
+    const recording = createRecordingItem({
+      durationSeconds: 120,
+      id: "recording-filtered",
+      startedAt: "2026-07-03T10:00:00.000Z",
+      stoppedAt: "2026-07-03T10:02:00.000Z",
+    });
+
+    service.beginRecordingSession({
+      game: "poe2",
+      league: "Standard",
+      startedAt: recording.startedAt,
+    });
+    service.handleClientLogActivityEvents("poe2", [
+      {
+        areaId: "MapSevenWaters",
+        kind: "generated-area",
+        line: 'Generating level 71 area "MapSevenWaters"',
+        occurredAt: "2026-07-03T10:00:09.000Z",
+        sequenceId: "recording-filtered-area",
+      },
+      {
+        kind: "scene-source",
+        line: "[SCENE] Set Source [Confluence]",
+        occurredAt: "2026-07-03T10:00:10.000Z",
+        sceneName: "Confluence",
+        sequenceId: "recording-filtered-scene",
+      },
+    ]);
+    service.handleClientLogDeath({
+      detectedAt: "2026-07-03T10:00:20.000Z",
+      game: "poe2",
+      line: ": ailubleed has been slain.",
+      lineHash: "recording-filtered-death",
+    });
+    service.finalizeRecordingSession(recording);
+
+    const page = service.listRecording(recording.id, {
+      category: "death",
+      includeTimeline: false,
+      pageSize: 5,
+    });
+
+    expect(page.availableCategories).toEqual(["death", "map"]);
+    expect(page.items).toEqual([
+      expect.objectContaining({
+        category: "death",
+        label: "Death",
+        offsetSeconds: 20,
+      }),
+    ]);
+    expect(page.timelineItems).toEqual([]);
+    expect(page.timelineItemsTruncated).toBe(false);
+    expect(page.totalCount).toBe(1);
   });
 
   it("archives recording links with enough context for bookmark statistics", () => {
@@ -302,8 +361,10 @@ describe("BookmarksService", () => {
       service.listLibrary({ game: "poe2", pageSize: 10 }).items[0],
     ).toEqual(
       expect.objectContaining({
+        activeRecordingBookmarkDurationSeconds: null,
         activeRecordingDurationSeconds: null,
         activeRecordingId: null,
+        archivedRecordingBookmarkDurationSeconds: 110,
         archivedRecordingDurationSeconds: 120,
         archivedRecordingId: "recording-archive",
         archivedRecordingTitle: "recording-archive.mp4",
@@ -425,16 +486,24 @@ describe("BookmarksService", () => {
 
     expect(service.listLibrary({ game: "poe2", pageSize: 10 }).items).toEqual([
       expect.objectContaining({
+        activeActivitySessionBookmarkDurationSeconds: null,
         activeActivitySessionId: session.id,
+        activeActivitySessionDurationSeconds: expect.any(Number),
         activeActivitySessionOffsetSeconds: 20,
         category: "rewind-manual-replay",
       }),
       expect.objectContaining({
+        activeActivitySessionBookmarkDurationSeconds: expect.any(Number),
         activeActivitySessionId: session.id,
+        activeActivitySessionDurationSeconds: expect.any(Number),
         activeActivitySessionOffsetSeconds: 5,
         category: "town",
       }),
     ]);
+    expect(
+      service.listLibrary({ game: "poe2", pageSize: 10 }).items[0]
+        ?.activeActivitySessionDurationSeconds,
+    ).toBeGreaterThanOrEqual(20);
   });
 
   it("removes rewind activity clip links when replay clips are deleted", () => {
@@ -511,5 +580,51 @@ describe("BookmarksService", () => {
         .listActivitySessionTimeline(session.id)
         ?.bookmarks.map((bookmark) => bookmark.category),
     ).toEqual(["death"]);
+  });
+
+  it("rejects invalid library query enum values over IPC", async () => {
+    const { handlers } = mockIpcMainHandlers();
+    new BookmarksService();
+
+    expect(
+      await handlers.get(BookmarksChannel.ListLibrary)?.({}, { game: "poe3" }),
+    ).toEqual({
+      ok: false,
+      error: "game must be poe1 or poe2",
+    });
+    expect(
+      await handlers.get(BookmarksChannel.ListLibrary)?.(
+        {},
+        { category: "everything" },
+      ),
+    ).toEqual({
+      ok: false,
+      error: "bookmark category is invalid",
+    });
+    expect(
+      await handlers.get(BookmarksChannel.ListActivitySessions)?.(
+        {},
+        { sortBy: "label" },
+      ),
+    ).toEqual({
+      ok: false,
+      error: "rewind sort field is invalid",
+    });
+    expect(
+      await handlers.get(BookmarksChannel.ListRecording)?.({}, "recording-1", {
+        category: "everything",
+      }),
+    ).toEqual({
+      ok: false,
+      error: "bookmark category is invalid",
+    });
+    expect(
+      await handlers.get(BookmarksChannel.ListRecording)?.({}, "recording-1", {
+        includeTimeline: "nope",
+      }),
+    ).toEqual({
+      ok: false,
+      error: "include timeline must be a boolean",
+    });
   });
 });

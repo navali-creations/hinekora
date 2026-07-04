@@ -1,12 +1,13 @@
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
 import type { MouseEvent, PointerEvent } from "react";
-import { FiPlay } from "react-icons/fi";
 
 import type { RecordingBookmark } from "~/main/modules/bookmarks";
+import { BookmarkCategoryIcon } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarkCategoryIcon/BookmarkCategoryIcon";
 import {
   bookmarkCategoryLabels,
-  bookmarkCategoryTimelineClassNames,
+  bookmarkCategoryTimelineLineClassNames,
+  bookmarkCategoryTimelineThumbClassNames,
 } from "~/renderer/modules/bookmarks/Bookmarks.utils";
 
 import {
@@ -32,16 +33,28 @@ function RecordingBookmarkTimelineMarker({
     bookmark.offsetSeconds,
     durationSeconds,
   );
-  const colorClassName = bookmarkCategoryTimelineClassNames[bookmark.category];
+  const thumbClassName =
+    bookmarkCategoryTimelineThumbClassNames[bookmark.category];
+  const lineClassName =
+    bookmarkCategoryTimelineLineClassNames[bookmark.category];
   const title = `${bookmarkCategoryLabels[bookmark.category]} - ${
     bookmark.label
   } at ${formatRecordingTimelineTimestamp(bookmark.offsetSeconds)}`;
   const markerClassName = clsx(
-    "rounded-full border border-base-content/30 p-0 shadow-sm ring-2 ring-base-300",
+    "grid h-4 w-4 place-items-center rounded-full border border-base-content/30 p-0 shadow-sm ring-2 ring-base-300",
     clipTargetId
-      ? "mt-3.5 grid h-4 w-4 cursor-pointer appearance-none place-items-center text-base-100 transition hover:scale-110 hover:ring-primary"
-      : "mt-4 h-3 w-3",
-    colorClassName,
+      ? "mt-3.5 cursor-pointer appearance-none transition hover:scale-110 hover:ring-primary"
+      : "mt-3.5",
+    thumbClassName,
+  );
+  const iconElement = (
+    <BookmarkCategoryIcon
+      category={bookmark.category}
+      className="h-3 w-3"
+      colorClassName="text-primary"
+      isDecorative
+      size={10}
+    />
   );
 
   const handleClipPointerDown = (event: PointerEvent<HTMLElement>) => {
@@ -59,7 +72,7 @@ function RecordingBookmarkTimelineMarker({
 
   return (
     <span
-      className="group absolute top-0 bottom-0 z-20 flex -translate-x-1/2 flex-col items-center"
+      className="group absolute top-0 bottom-0 z-[35] flex -translate-x-1/2 flex-col items-center"
       style={{ left: formatRecordingTimelineRailLeft(left) }}
       title={title}
     >
@@ -71,7 +84,7 @@ function RecordingBookmarkTimelineMarker({
           onClick={handleClipClick}
           onPointerDown={handleClipPointerDown}
         >
-          <FiPlay aria-hidden="true" size={9} />
+          {iconElement}
         </button>
       ) : clipTargetId ? (
         <Link
@@ -82,13 +95,13 @@ function RecordingBookmarkTimelineMarker({
           onClick={handleClipClick}
           onPointerDown={handleClipPointerDown}
         >
-          <FiPlay aria-hidden="true" size={9} />
+          {iconElement}
         </Link>
       ) : (
-        <span className={markerClassName} />
+        <span className={markerClassName}>{iconElement}</span>
       )}
       <span
-        className={clsx("min-h-0 flex-1 w-px rounded-full", colorClassName)}
+        className={clsx("min-h-0 flex-1 w-px rounded-full", lineClassName)}
       />
     </span>
   );

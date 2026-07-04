@@ -1,6 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
 import {
-  type ColumnDef,
   getCoreRowModel,
   type OnChangeFn,
   type PaginationState,
@@ -14,35 +13,26 @@ import type {
   BookmarkLibraryItem,
   BookmarkLibraryQuery,
 } from "~/main/modules/bookmarks";
-import { BookmarkCategoryBadge } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarkCategoryBadge/BookmarkCategoryBadge";
 import type { BookmarksCategoryFilterValue } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksCategoryFilterChip/BookmarksCategoryFilterChip";
 import { BookmarksCategoryFilterRow } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksCategoryFilterRow/BookmarksCategoryFilterRow";
-import { BookmarksRecordingTimeCell } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksRecordingTimeCell/BookmarksRecordingTimeCell";
-import { BookmarksTableActions } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksTableActions/BookmarksTableActions";
 import {
   allBookmarkCategoriesValue,
   bookmarkCategoryLabels,
-  bookmarkSourceLabels,
 } from "~/renderer/modules/bookmarks/Bookmarks.utils";
 import { MediaLibraryTable } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable";
 import { useMediaLibraryScope } from "~/renderer/modules/media-library/MediaLibrary.hooks/useMediaLibraryScope/useMediaLibraryScope";
-import {
-  ALL_LEAGUES_VALUE,
-  formatDateTime,
-} from "~/renderer/modules/media-library/MediaLibrary.utils/MediaLibrary.utils";
+import { ALL_LEAGUES_VALUE } from "~/renderer/modules/media-library/MediaLibrary.utils/MediaLibrary.utils";
 import { useBookmarksShallow } from "~/renderer/store";
 
+import { BookmarksTableSeparator } from "../BookmarksTableSeparator/BookmarksTableSeparator";
 import {
   getCellClassName,
   getHeaderClassName,
+  getRowClassName,
   resolveBookmarkTableSeparator,
   resolveSortBy,
 } from "./BookmarksTable.utils";
-
-const bookmarkTableSeparatorStyle = {
-  backgroundImage:
-    "repeating-linear-gradient(135deg, rgba(255,255,255,0.08) 0 1px, transparent 1px 8px)",
-};
+import { useBookmarksTableColumns } from "./useBookmarksTableColumns/useBookmarksTableColumns";
 
 function BookmarksTable() {
   const navigate = useNavigate();
@@ -67,7 +57,7 @@ function BookmarksTable() {
     { id: "occurredAt", desc: true },
   ]);
   const showLeagueColumn = scope.league === ALL_LEAGUES_VALUE;
-  const filterResetKey = `${category}:${scope.game}:${scope.league}`;
+  const filterResetKey = `${scope.game}:${scope.league}`;
   const categoryOptions = useMemo(() => {
     const categories = new Set<BookmarkCategory>(availableCategories);
     if (category !== allBookmarkCategoriesValue) {
@@ -78,6 +68,7 @@ function BookmarksTable() {
       bookmarkCategoryLabels[left].localeCompare(bookmarkCategoryLabels[right]),
     );
   }, [availableCategories, category]);
+  const sortDirection = sorting[0]?.desc === false ? "asc" : "desc";
   const bookmarkQuery = useMemo<BookmarkLibraryQuery>(() => {
     const activeSort = sorting[0];
     const query: BookmarkLibraryQuery = {
@@ -85,7 +76,7 @@ function BookmarksTable() {
       pageIndex: pagination.pageIndex,
       pageSize: pagination.pageSize,
       sortBy: resolveSortBy(activeSort?.id),
-      sortDirection: activeSort?.desc === false ? "asc" : "desc",
+      sortDirection,
     };
     if (scope.league !== ALL_LEAGUES_VALUE) {
       query.league = scope.league;
@@ -95,7 +86,7 @@ function BookmarksTable() {
     }
 
     return query;
-  }, [category, pagination, scope.game, scope.league, sorting]);
+  }, [category, pagination, scope.game, scope.league, sortDirection, sorting]);
 
   useEffect(() => {
     if (!filterResetKey) {
@@ -123,8 +114,11 @@ function BookmarksTable() {
   };
 
   const handleCategorySelect = (nextCategory: BookmarksCategoryFilterValue) => {
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
     setCategory(nextCategory);
   };
+
+  const canShowContextSeparators = sorting[0]?.id === "occurredAt";
 
   const renderBookmarkSeparatorBefore = ({
     previousRow,
@@ -133,107 +127,46 @@ function BookmarksTable() {
     previousRow: BookmarkLibraryItem;
     row: BookmarkLibraryItem;
   }) => {
+    if (!canShowContextSeparators) {
+      return null;
+    }
+
     const separator = resolveBookmarkTableSeparator({
       previousBookmark: previousRow,
       bookmark: row,
+      sortDirection,
     });
 
     if (!separator) {
       return null;
     }
 
-    return (
-      <div
-        className="flex min-h-10 flex-col items-center justify-center gap-0.5 text-[10px] text-base-content/50 leading-none"
-        style={bookmarkTableSeparatorStyle}
-      >
-        <span>Start of new {separator.nextLabel}</span>
-        <span className="h-px w-24 bg-base-content/20" />
-        <span>End of previous {separator.previousLabel}</span>
-      </div>
-    );
+    return <BookmarksTableSeparator separator={separator} />;
   };
 
-  const canOpenBookmarkRecording = (bookmark: BookmarkLibraryItem) =>
-    Boolean(bookmark.activeRecordingId);
+  const canOpenBookmarkTarget = (bookmark: BookmarkLibraryItem) =>
+    Boolean(bookmark.activeRecordingId || bookmark.activeActivitySessionId);
 
-  const handleOpenBookmarkRecording = (bookmark: BookmarkLibraryItem) => {
-    if (!bookmark.activeRecordingId) {
+  const handleOpenBookmarkTarget = (bookmark: BookmarkLibraryItem) => {
+    if (bookmark.activeRecordingId) {
+      void navigate({
+        params: { recordingId: bookmark.activeRecordingId },
+        search: { t: bookmark.activeRecordingOffsetSeconds ?? 0 },
+        to: "/recording/$recordingId",
+      });
       return;
     }
 
-    void navigate({
-      params: { recordingId: bookmark.activeRecordingId },
-      search: { t: bookmark.activeRecordingOffsetSeconds ?? 0 },
-      to: "/recording/$recordingId",
-    });
-  };
-
-  const columns = useMemo<ColumnDef<BookmarkLibraryItem>[]>(() => {
-    const tableColumns: ColumnDef<BookmarkLibraryItem>[] = [
-      {
-        accessorKey: "occurredAt",
-        header: "Time",
-        cell: ({ getValue }) => formatDateTime(getValue<string>()),
-      },
-      {
-        accessorKey: "category",
-        header: "Category",
-        cell: ({ row, getValue }) => (
-          <BookmarkCategoryBadge
-            category={getValue<BookmarkCategory>()}
-            subcategory={row.original.subcategory}
-          />
-        ),
-      },
-      {
-        accessorKey: "label",
-        header: "Label",
-        cell: ({ row, getValue }) => (
-          <div className="min-w-0">
-            <div className="truncate font-medium">{getValue<string>()}</div>
-            {row.original.sceneName && (
-              <div className="truncate text-base-content/50 text-xs">
-                {row.original.sceneName}
-              </div>
-            )}
-          </div>
-        ),
-      },
-    ];
-
-    if (showLeagueColumn) {
-      tableColumns.push({
-        accessorKey: "sourceLeague",
-        header: "League",
+    if (bookmark.activeActivitySessionId) {
+      void navigate({
+        params: { rewindId: bookmark.activeActivitySessionId },
+        search: { t: bookmark.activeActivitySessionOffsetSeconds ?? 0 },
+        to: "/rewind/$rewindId",
       });
     }
+  };
 
-    tableColumns.push(
-      {
-        accessorKey: "source",
-        enableSorting: false,
-        header: "Source",
-        cell: ({ row }) => bookmarkSourceLabels[row.original.source],
-      },
-      {
-        id: "recordingTime",
-        enableSorting: false,
-        header: "Recording Time",
-        cell: ({ row }) => (
-          <BookmarksRecordingTimeCell bookmark={row.original} />
-        ),
-      },
-      {
-        id: "actions",
-        enableSorting: false,
-        header: "Actions",
-        cell: ({ row }) => <BookmarksTableActions bookmark={row.original} />,
-      },
-    );
-
-    return tableColumns;
-  }, [showLeagueColumn]);
+  const columns = useBookmarksTableColumns({ showLeagueColumn });
   const table = useReactTable({
     data: items,
     columns,
@@ -258,7 +191,7 @@ function BookmarksTable() {
         />
       </div>
       <MediaLibraryTable
-        canRowClick={canOpenBookmarkRecording}
+        canRowClick={canOpenBookmarkTarget}
         emptyMessage={
           isLoading
             ? "Loading bookmarks..."
@@ -266,7 +199,8 @@ function BookmarksTable() {
         }
         getCellClassName={getCellClassName}
         getHeaderClassName={getHeaderClassName}
-        onRowClick={handleOpenBookmarkRecording}
+        getRowClassName={getRowClassName}
+        onRowClick={handleOpenBookmarkTarget}
         renderRowSeparatorBefore={renderBookmarkSeparatorBefore}
         table={table}
         totalCount={page?.totalCount ?? items.length}

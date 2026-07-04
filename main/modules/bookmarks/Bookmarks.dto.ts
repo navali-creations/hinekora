@@ -149,11 +149,15 @@ export interface ActivitySessionLibraryPage {
 }
 
 export interface BookmarkLibraryItem extends Bookmark {
+  activeActivitySessionBookmarkDurationSeconds: number | null;
   activeActivitySessionId: string | null;
+  activeActivitySessionDurationSeconds: number | null;
   activeActivitySessionOffsetSeconds: number | null;
+  activeRecordingBookmarkDurationSeconds: number | null;
   activeRecordingDurationSeconds: number | null;
   activeRecordingId: string | null;
   activeRecordingOffsetSeconds: number | null;
+  archivedRecordingBookmarkDurationSeconds: number | null;
   archivedRecordingId: string | null;
   archivedRecordingTitle: string | null;
   archivedRecordingDurationSeconds: number | null;
@@ -207,11 +211,14 @@ export interface RecordingBookmark extends Bookmark {
 }
 
 export interface RecordingBookmarksQuery {
+  category?: BookmarkCategory;
+  includeTimeline?: boolean;
   pageIndex?: number;
   pageSize?: number;
 }
 
 export interface RecordingBookmarksPage {
+  availableCategories: BookmarkCategory[];
   items: RecordingBookmark[];
   pageCount: number;
   pageIndex: number;

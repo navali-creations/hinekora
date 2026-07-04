@@ -9,7 +9,10 @@ const thumbnailUtilsMocks = vi.hoisted(() => ({
   ),
 }));
 
-vi.mock("./useEditorClipThumbnails.utils", () => thumbnailUtilsMocks);
+vi.mock(
+  "~/renderer/modules/media-playback/useMediaClipThumbnails/useMediaClipThumbnails.utils",
+  () => thumbnailUtilsMocks,
+);
 
 import { useEditorClipThumbnails } from "./useEditorClipThumbnails";
 

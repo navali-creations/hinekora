@@ -3,7 +3,7 @@ import clsx from "clsx";
 import type { BookmarkCategory } from "~/main/modules/bookmarks";
 import {
   allBookmarkCategoriesValue,
-  bookmarkCategoryBadgeClassNames,
+  bookmarkCategoryChipClassNames,
   bookmarkCategoryLabels,
 } from "~/renderer/modules/bookmarks/Bookmarks.utils";
 
@@ -24,9 +24,15 @@ function BookmarksCategoryFilterChip({
 }: BookmarksCategoryFilterChipProps) {
   const isAllCategory = category === allBookmarkCategoriesValue;
   const label = isAllCategory ? "All" : bookmarkCategoryLabels[category];
-  const badgeClassName = isAllCategory
-    ? "badge-neutral"
-    : bookmarkCategoryBadgeClassNames[category];
+  let chipClassName: string;
+  if (isAllCategory) {
+    chipClassName = isActive
+      ? "border-primary/70 bg-primary/15 text-primary"
+      : "border-base-content/10 bg-base-300 text-base-content/55 hover:border-primary/50 hover:bg-primary/10 hover:text-primary";
+  } else {
+    chipClassName =
+      bookmarkCategoryChipClassNames[category][isActive ? "selected" : "idle"];
+  }
 
   const handleSelect = () => {
     onSelect(category);
@@ -35,9 +41,9 @@ function BookmarksCategoryFilterChip({
   return (
     <button
       className={clsx(
-        "badge badge-sm cursor-pointer border-base-content/10",
-        badgeClassName,
-        isActive ? "ring-2 ring-primary/50" : "opacity-70 hover:opacity-100",
+        "inline-flex h-6 cursor-pointer items-center rounded-md border px-2 font-medium text-xs transition-colors",
+        chipClassName,
+        isActive ? "shadow-sm" : "opacity-80 hover:opacity-100",
       )}
       type="button"
       onClick={handleSelect}

@@ -27,6 +27,8 @@ interface MediaLibraryTableProps<TData> {
   getCellClassName: (columnId: string) => string;
   getRowClassName?: (row: TData) => string;
   onRowClick?: (row: TData) => void;
+  pinnedTopRowCount?: number;
+  renderPinnedTopRows?: () => ReactNode;
   renderRowSeparatorBefore?: (input: {
     previousRow: TData;
     row: TData;
@@ -42,9 +44,12 @@ function MediaLibraryTable<TData>({
   getCellClassName,
   getRowClassName,
   onRowClick,
+  pinnedTopRowCount = 0,
+  renderPinnedTopRows,
   renderRowSeparatorBefore,
   totalCount,
 }: MediaLibraryTableProps<TData>) {
+  const pinnedTopRows = renderPinnedTopRows?.() ?? null;
   const renderHeaderContent = (header: Header<TData, unknown>) => {
     if (header.isPlaceholder) {
       return null;
@@ -141,6 +146,7 @@ function MediaLibraryTable<TData>({
             ))}
           </thead>
           <tbody>
+            {pinnedTopRows}
             {table.getRowModel().rows.map((row, rowIndex, rows) => {
               const previousRow = rows[rowIndex - 1] ?? null;
               const separator =
@@ -190,7 +196,7 @@ function MediaLibraryTable<TData>({
                 </Fragment>
               );
             })}
-            {table.getRowModel().rows.length === 0 && (
+            {table.getRowModel().rows.length === 0 && !pinnedTopRows && (
               <tr>
                 <td
                   className="py-8 text-center text-base-content/55"
@@ -203,7 +209,11 @@ function MediaLibraryTable<TData>({
           </tbody>
         </table>
       </div>
-      <MediaLibraryTablePagination table={table} totalCount={totalCount} />
+      <MediaLibraryTablePagination
+        pinnedRowCount={pinnedTopRowCount}
+        table={table}
+        totalCount={totalCount}
+      />
     </div>
   );
 }

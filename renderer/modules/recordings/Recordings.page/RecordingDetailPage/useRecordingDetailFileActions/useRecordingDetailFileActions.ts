@@ -1,46 +1,25 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 import type { RunRecordingDetail } from "~/main/modules/recording-storage";
-import type { MediaDetailCopyState } from "~/renderer/modules/media-library/MediaLibrary.components/MediaDetailPageActions/MediaDetailPageActions";
 
 interface FileActionMessage {
   text: string;
   tone: "error" | "success";
 }
 
+interface UseRecordingDetailFileActionsOptions {
+  onDeleted?: () => void;
+}
+
 function useRecordingDetailFileActions(
   recording: RunRecordingDetail["recording"] | null,
+  { onDeleted }: UseRecordingDetailFileActionsOptions = {},
 ) {
-  const [copyState, setCopyState] = useState<MediaDetailCopyState>("idle");
   const [fileActionMessage, setFileActionMessage] =
     useState<FileActionMessage | null>(null);
-  const copyResetTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
-    null,
-  );
-
-  useEffect(
-    () => () => {
-      if (copyResetTimeoutRef.current) {
-        clearTimeout(copyResetTimeoutRef.current);
-      }
-    },
-    [],
-  );
 
   const resetFileActions = useCallback(() => {
-    setCopyState("idle");
     setFileActionMessage(null);
-  }, []);
-
-  const resetCopiedStateLater = useCallback(() => {
-    if (copyResetTimeoutRef.current) {
-      clearTimeout(copyResetTimeoutRef.current);
-    }
-
-    copyResetTimeoutRef.current = setTimeout(() => {
-      setCopyState("idle");
-      copyResetTimeoutRef.current = null;
-    }, 1_800);
   }, []);
 
   const handleOpenLocation = useCallback(() => {
@@ -70,48 +49,39 @@ function useRecordingDetailFileActions(
       });
   }, [recording]);
 
-  const handleCopyToClipboard = useCallback(() => {
+  const handleDeleteRecording = useCallback(() => {
     if (!recording) {
       return;
     }
 
-    setCopyState("copying");
     setFileActionMessage(null);
     void window.electron.recordingStorage
-      .copyRecording(recording.path)
+      .deleteRecording(recording.path)
       .then((result) => {
         if (result.ok) {
-          setCopyState("copied");
-          setFileActionMessage({
-            text: "Video copied to clipboard.",
-            tone: "success",
-          });
-          resetCopiedStateLater();
+          onDeleted?.();
           return;
         }
 
-        setCopyState("idle");
         setFileActionMessage({
-          text: result.error ?? "Could not copy recording to clipboard.",
+          text: result.error ?? "Could not delete recording.",
           tone: "error",
         });
       })
       .catch((error: unknown) => {
-        setCopyState("idle");
         setFileActionMessage({
           text:
             error instanceof Error
               ? error.message
-              : "Could not copy recording to clipboard.",
+              : "Could not delete recording.",
           tone: "error",
         });
       });
-  }, [recording, resetCopiedStateLater]);
+  }, [onDeleted, recording]);
 
   return {
-    copyState,
     fileActionMessage,
-    handleCopyToClipboard,
+    handleDeleteRecording,
     handleOpenLocation,
     resetFileActions,
   };

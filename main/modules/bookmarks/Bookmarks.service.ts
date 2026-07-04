@@ -14,6 +14,7 @@ import {
   assertObject,
   assertString,
   handleValidationError,
+  IpcValidationError,
 } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 
@@ -42,6 +43,21 @@ const deathBookmarkLabel = "Death";
 const maxPendingReplayClipSessionLinks = 64;
 const maxGeneratedAreaScenePairAgeMs = 30_000;
 const bookmarkCategorySet = new Set<BookmarkCategory>(bookmarkCategories);
+const bookmarkLibrarySortKeys = new Set<BookmarkLibraryQuery["sortBy"]>([
+  "category",
+  "label",
+  "occurredAt",
+  "sourceLeague",
+]);
+const activitySessionLibrarySortKeys = new Set<
+  ActivitySessionLibraryQuery["sortBy"]
+>([
+  "bookmarkCount",
+  "clipCount",
+  "durationSeconds",
+  "sourceLeague",
+  "startedAt",
+]);
 
 interface BookmarkSession {
   activitySessionId?: string;
@@ -358,16 +374,6 @@ class BookmarksService {
   ): Bookmark | null {
     const session = this.resolveActiveSessionForGame(game);
     if (!session) {
-      logInfo(
-        BOOKMARKS_LOG_SCOPE,
-        "Tracked bookmark skipped: no active session",
-        {
-          category: input.category,
-          game,
-          label: input.label,
-          source: input.source,
-        },
-      );
       return null;
     }
 
@@ -775,15 +781,21 @@ class BookmarksService {
   }
 
   private parseLibraryQuery(input: object): BookmarkLibraryQuery {
-    const query = input as BookmarkLibraryQuery;
+    const query = input as Record<string, unknown>;
     const parsed: BookmarkLibraryQuery = {};
-    if (query.game === "poe1" || query.game === "poe2") {
+    if (query.game !== undefined) {
+      assertGameId(query.game, BookmarksChannel.ListLibrary);
       parsed.game = query.game;
     }
-    if (typeof query.league === "string" && query.league.length <= 80) {
+    if (query.league !== undefined) {
+      assertString(query.league, "league", BookmarksChannel.ListLibrary, {
+        min: 1,
+        max: 80,
+      });
       parsed.league = query.league;
     }
-    if (query.category && bookmarkCategorySet.has(query.category)) {
+    if (query.category !== undefined) {
+      assertBookmarkCategory(query.category, BookmarksChannel.ListLibrary);
       parsed.category = query.category;
     }
     if (query.pageIndex !== undefined) {
@@ -807,15 +819,12 @@ class BookmarksService {
       });
       parsed.pageSize = query.pageSize;
     }
-    if (
-      query.sortBy === "category" ||
-      query.sortBy === "label" ||
-      query.sortBy === "occurredAt" ||
-      query.sortBy === "sourceLeague"
-    ) {
+    if (query.sortBy !== undefined) {
+      assertBookmarkLibrarySortKey(query.sortBy, BookmarksChannel.ListLibrary);
       parsed.sortBy = query.sortBy;
     }
-    if (query.sortDirection === "asc" || query.sortDirection === "desc") {
+    if (query.sortDirection !== undefined) {
+      assertSortDirection(query.sortDirection, BookmarksChannel.ListLibrary);
       parsed.sortDirection = query.sortDirection;
     }
 
@@ -825,13 +834,23 @@ class BookmarksService {
   private parseActivitySessionLibraryQuery(
     input: object,
   ): ActivitySessionLibraryQuery {
-    const query = input as ActivitySessionLibraryQuery;
+    const query = input as Record<string, unknown>;
     const parsed: ActivitySessionLibraryQuery = {};
 
-    if (query.game === "poe1" || query.game === "poe2") {
+    if (query.game !== undefined) {
+      assertGameId(query.game, BookmarksChannel.ListActivitySessions);
       parsed.game = query.game;
     }
-    if (typeof query.league === "string" && query.league.length <= 80) {
+    if (query.league !== undefined) {
+      assertString(
+        query.league,
+        "league",
+        BookmarksChannel.ListActivitySessions,
+        {
+          min: 1,
+          max: 80,
+        },
+      );
       parsed.league = query.league;
     }
     if (query.pageIndex !== undefined) {
@@ -860,16 +879,18 @@ class BookmarksService {
       );
       parsed.pageSize = query.pageSize;
     }
-    if (
-      query.sortBy === "bookmarkCount" ||
-      query.sortBy === "clipCount" ||
-      query.sortBy === "durationSeconds" ||
-      query.sortBy === "sourceLeague" ||
-      query.sortBy === "startedAt"
-    ) {
+    if (query.sortBy !== undefined) {
+      assertActivitySessionLibrarySortKey(
+        query.sortBy,
+        BookmarksChannel.ListActivitySessions,
+      );
       parsed.sortBy = query.sortBy;
     }
-    if (query.sortDirection === "asc" || query.sortDirection === "desc") {
+    if (query.sortDirection !== undefined) {
+      assertSortDirection(
+        query.sortDirection,
+        BookmarksChannel.ListActivitySessions,
+      );
       parsed.sortDirection = query.sortDirection;
     }
 
@@ -877,9 +898,22 @@ class BookmarksService {
   }
 
   private parseRecordingBookmarksQuery(input: object): RecordingBookmarksQuery {
-    const query = input as RecordingBookmarksQuery;
+    const query = input as Record<string, unknown>;
     const parsed: RecordingBookmarksQuery = {};
 
+    if (query.category !== undefined) {
+      assertBookmarkCategory(query.category, BookmarksChannel.ListRecording);
+      parsed.category = query.category;
+    }
+    if (query.includeTimeline !== undefined) {
+      if (typeof query.includeTimeline !== "boolean") {
+        throw new IpcValidationError(
+          BookmarksChannel.ListRecording,
+          "include timeline must be a boolean",
+        );
+      }
+      parsed.includeTimeline = query.includeTimeline;
+    }
     if (query.pageIndex !== undefined) {
       assertNumber(
         query.pageIndex,
@@ -908,6 +942,55 @@ class BookmarksService {
     }
 
     return parsed;
+  }
+}
+
+function assertGameId(
+  value: unknown,
+  channel: BookmarksChannel,
+): asserts value is NonNullable<BookmarkLibraryQuery["game"]> {
+  if (value !== "poe1" && value !== "poe2") {
+    throw new IpcValidationError(channel, "game must be poe1 or poe2");
+  }
+}
+
+function assertBookmarkCategory(
+  value: unknown,
+  channel: BookmarksChannel,
+): asserts value is BookmarkCategory {
+  if (!bookmarkCategorySet.has(value as BookmarkCategory)) {
+    throw new IpcValidationError(channel, "bookmark category is invalid");
+  }
+}
+
+function assertBookmarkLibrarySortKey(
+  value: unknown,
+  channel: BookmarksChannel,
+): asserts value is NonNullable<BookmarkLibraryQuery["sortBy"]> {
+  if (!bookmarkLibrarySortKeys.has(value as BookmarkLibraryQuery["sortBy"])) {
+    throw new IpcValidationError(channel, "bookmark sort field is invalid");
+  }
+}
+
+function assertActivitySessionLibrarySortKey(
+  value: unknown,
+  channel: BookmarksChannel,
+): asserts value is NonNullable<ActivitySessionLibraryQuery["sortBy"]> {
+  if (
+    !activitySessionLibrarySortKeys.has(
+      value as ActivitySessionLibraryQuery["sortBy"],
+    )
+  ) {
+    throw new IpcValidationError(channel, "rewind sort field is invalid");
+  }
+}
+
+function assertSortDirection(
+  value: unknown,
+  channel: BookmarksChannel,
+): asserts value is "asc" | "desc" {
+  if (value !== "asc" && value !== "desc") {
+    throw new IpcValidationError(channel, "sort direction must be asc or desc");
   }
 }
 

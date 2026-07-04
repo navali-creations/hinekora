@@ -1,12 +1,15 @@
-import type { PointerEvent, ReactNode } from "react";
-import { useRef } from "react";
+import { type PointerEvent, type ReactNode, useRef } from "react";
 
 import type { RecordingBookmark } from "~/main/modules/bookmarks";
 
 import { RecordingBookmarkTimelineMarker } from "../RecordingBookmarkTimelineMarker/RecordingBookmarkTimelineMarker";
 import { RecordingPlaybackControls } from "../RecordingPlaybackControls/RecordingPlaybackControls";
 import { RecordingTimelineHoverMarker } from "../RecordingTimelineHoverMarker/RecordingTimelineHoverMarker";
-import { RecordingTimelinePlayhead } from "../RecordingTimelinePlayhead/RecordingTimelinePlayhead";
+import { RecordingTimelineHoverSegment } from "../RecordingTimelineHoverSegment/RecordingTimelineHoverSegment";
+import {
+  RecordingTimelinePlayhead,
+  type RecordingVisualPlaybackSubscriber,
+} from "../RecordingTimelinePlayhead/RecordingTimelinePlayhead";
 import { RecordingTimelineRuler } from "../RecordingTimelineRuler/RecordingTimelineRuler";
 import { RecordingTimelineVideoRail } from "../RecordingTimelineVideoRail/RecordingTimelineVideoRail";
 import { RecordingVolumeControls } from "../RecordingVolumeControls/RecordingVolumeControls";
@@ -35,12 +38,14 @@ interface RecordingBookmarkTimelineProps {
   enableVisualPlaybackSubscription?: boolean;
   highlightDeathsInRuler?: boolean;
   highlightManualsInRuler?: boolean;
+  hoveredBookmark?: RecordingBookmark | null;
   isPlaying: boolean;
   isPlaybackDisabled?: boolean;
   markerBookmarks?: RecordingBookmark[];
   mediaUrl: string | null;
   playbackSeconds: number;
   showBookmarkMarkers?: boolean;
+  subscribeVisualPlaybackTime?: RecordingVisualPlaybackSubscriber;
   toolbarStart?: ReactNode;
   visualPlaybackOffsetSeconds?: number;
   volume: number;
@@ -60,12 +65,14 @@ function RecordingBookmarkTimeline({
   enableVisualPlaybackSubscription,
   highlightDeathsInRuler = false,
   highlightManualsInRuler = false,
+  hoveredBookmark = null,
   isPlaying,
   isPlaybackDisabled,
   markerBookmarks,
   mediaUrl,
   playbackSeconds,
   showBookmarkMarkers = true,
+  subscribeVisualPlaybackTime,
   toolbarStart,
   visualPlaybackOffsetSeconds,
   volume,
@@ -193,6 +200,11 @@ function RecordingBookmarkTimeline({
             mediaUrl={mediaUrl}
             railWidthPixels={timelineRailWidthPixels}
           />
+          <RecordingTimelineHoverSegment
+            clipTargetsByBookmarkId={clipTargetsByBookmarkId}
+            durationSeconds={duration}
+            hoveredBookmark={hoveredBookmark}
+          />
 
           {showBookmarkMarkers &&
             visibleMarkerBookmarks.map((bookmark) => {
@@ -216,6 +228,9 @@ function RecordingBookmarkTimeline({
           <RecordingTimelinePlayhead
             durationSeconds={duration}
             playbackSeconds={playbackSeconds}
+            {...(subscribeVisualPlaybackTime
+              ? { subscribeVisualPlaybackTime }
+              : {})}
             {...(enableVisualPlaybackSubscription !== undefined
               ? { enableVisualPlaybackSubscription }
               : {})}

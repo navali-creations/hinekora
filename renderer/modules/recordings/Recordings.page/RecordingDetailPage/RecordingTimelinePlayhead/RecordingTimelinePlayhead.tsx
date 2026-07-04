@@ -4,12 +4,16 @@ import {
   calculateRecordingTimelinePercent,
   formatRecordingTimelineRailLeft,
 } from "../RecordingBookmarkTimeline/RecordingBookmarkTimeline.utils";
-import { subscribeRecordingPlaybackVisualTime } from "../RecordingDetailPage.utils";
+
+type RecordingVisualPlaybackSubscriber = (
+  listener: (seconds: number) => void,
+) => () => void;
 
 interface RecordingTimelinePlayheadProps {
   durationSeconds: number;
   enableVisualPlaybackSubscription?: boolean;
   playbackSeconds: number;
+  subscribeVisualPlaybackTime?: RecordingVisualPlaybackSubscriber;
   visualPlaybackOffsetSeconds?: number;
 }
 
@@ -17,6 +21,7 @@ function RecordingTimelinePlayhead({
   durationSeconds,
   enableVisualPlaybackSubscription = true,
   playbackSeconds,
+  subscribeVisualPlaybackTime,
   visualPlaybackOffsetSeconds = 0,
 }: RecordingTimelinePlayheadProps) {
   const playheadRef = useRef<HTMLDivElement>(null);
@@ -50,12 +55,16 @@ function RecordingTimelinePlayhead({
   );
 
   useEffect(() => {
-    if (!enableVisualPlaybackSubscription) {
+    if (!enableVisualPlaybackSubscription || !subscribeVisualPlaybackTime) {
       return;
     }
 
-    return subscribeRecordingPlaybackVisualTime(applyVisualPlaybackSeconds);
-  }, [applyVisualPlaybackSeconds, enableVisualPlaybackSubscription]);
+    return subscribeVisualPlaybackTime(applyVisualPlaybackSeconds);
+  }, [
+    applyVisualPlaybackSeconds,
+    enableVisualPlaybackSubscription,
+    subscribeVisualPlaybackTime,
+  ]);
 
   return (
     <div
@@ -71,4 +80,5 @@ function RecordingTimelinePlayhead({
   );
 }
 
+export type { RecordingVisualPlaybackSubscriber };
 export { RecordingTimelinePlayhead };

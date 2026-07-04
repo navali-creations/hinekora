@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { FiArrowLeft, FiEdit2 } from "react-icons/fi";
 
+import type { RecordingBookmark } from "~/main/modules/bookmarks";
 import { PageContainer } from "~/renderer/components/PageContainer/PageContainer";
 import { PageContent } from "~/renderer/components/PageContent/PageContent";
 import { PageHeader } from "~/renderer/components/PageHeader/PageHeader";
@@ -15,11 +17,20 @@ import { RewindClipPreview } from "./RewindClipPreview/RewindClipPreview";
 import { useRewindDetailTimeline } from "./useRewindDetailTimeline/useRewindDetailTimeline";
 
 interface RewindDetailPageProps {
+  initialPlaybackSeconds?: number | null;
   rewindId: string;
 }
 
-function RewindDetailPage({ rewindId }: RewindDetailPageProps) {
-  const detail = useRewindDetailTimeline({ rewindId });
+function RewindDetailPage({
+  initialPlaybackSeconds = null,
+  rewindId,
+}: RewindDetailPageProps) {
+  const detail = useRewindDetailTimeline({
+    initialPlaybackSeconds,
+    rewindId,
+  });
+  const [hoveredBookmark, setHoveredBookmark] =
+    useState<RecordingBookmark | null>(null);
   const session = detail.state.timeline?.session ?? null;
 
   return (
@@ -30,7 +41,9 @@ function RewindDetailPage({ rewindId }: RewindDetailPageProps) {
         }
         subtitle={
           session
-            ? `${session.sourceGame} - ${session.sourceLeague} - ${formatDurationSeconds(detail.durationSeconds)}`
+            ? `${session.sourceGame} - ${
+                session.sourceLeague
+              } - ${formatDurationSeconds(detail.durationSeconds)}`
             : "Rewind activity session"
         }
         actions={
@@ -54,12 +67,16 @@ function RewindDetailPage({ rewindId }: RewindDetailPageProps) {
         {detail.state.timeline && (
           <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
             <RecordingBookmarksPanel
-              bookmarks={detail.bookmarks}
+              bookmarks={detail.bookmarkPanelItems}
               categories={detail.bookmarkCategories}
               categoryFilter={detail.bookmarkCategoryFilter}
               heightPixels={360}
+              isTimelineTruncated={detail.isTimelineTruncated}
+              pageCount={detail.bookmarkPageCount}
               pageIndex={detail.bookmarkPageIndex}
+              totalCount={detail.bookmarkTotalCount}
               onCategoryChange={detail.handleBookmarkCategoryChange}
+              onHoverBookmark={setHoveredBookmark}
               onNextPage={detail.handleNextBookmarkPage}
               onPreviousPage={detail.handlePreviousBookmarkPage}
               onSelectBookmark={detail.handleSelectBookmark}
@@ -84,11 +101,13 @@ function RewindDetailPage({ rewindId }: RewindDetailPageProps) {
                 clipTargetsByBookmarkId={detail.clipTargetsByBookmarkId}
                 durationSeconds={detail.durationSeconds}
                 enableVisualPlaybackSubscription={!!detail.mediaUrl}
+                hoveredBookmark={hoveredBookmark}
                 isPlaybackDisabled={!detail.mediaUrl}
                 isPlaying={detail.playback.isPlaying}
                 markerBookmarks={detail.markerBookmarks}
                 mediaUrl={null}
                 playbackSeconds={detail.playbackSeconds}
+                subscribeVisualPlaybackTime={detail.subscribeVisualPlaybackTime}
                 toolbarStart={
                   <div
                     aria-label="Rewind tools"

@@ -7,20 +7,25 @@ import {
 } from "react-icons/fi";
 
 interface MediaLibraryTablePaginationProps<TData> {
+  pinnedRowCount?: number;
   table: Table<TData>;
   totalCount: number;
 }
 
 function MediaLibraryTablePagination<TData>({
+  pinnedRowCount = 0,
   table,
   totalCount,
 }: MediaLibraryTablePaginationProps<TData>) {
   const { pageIndex, pageSize } = table.getState().pagination;
   const pageCount = Math.max(1, table.getPageCount());
-  const pageRowCount = table.getRowModel().rows.length;
-  const startRow = totalCount === 0 ? 0 : pageIndex * pageSize + 1;
+  const displayTotalCount = totalCount + pinnedRowCount;
+  const pageRowCount = table.getRowModel().rows.length + pinnedRowCount;
+  const startRow = displayTotalCount === 0 ? 0 : pageIndex * pageSize + 1;
   const endRow =
-    totalCount === 0 ? 0 : Math.min(totalCount, startRow + pageRowCount - 1);
+    displayTotalCount === 0
+      ? 0
+      : Math.min(displayTotalCount, startRow + pageRowCount - 1);
 
   const handleFirstPage = () => {
     table.setPageIndex(0);
@@ -41,7 +46,7 @@ function MediaLibraryTablePagination<TData>({
   return (
     <div className="sticky bottom-0 z-10 flex shrink-0 items-center justify-between gap-2 border-base-300 border-t bg-base-200 px-3 py-2">
       <div className="text-base-content/70 text-sm">
-        Showing {startRow} to {endRow} of {totalCount} results
+        Showing {startRow} to {endRow} of {displayTotalCount} results
       </div>
       <div className="join no-drag">
         <button

@@ -1,6 +1,7 @@
 export { ClientLogAPI } from "./ClientLog.api";
 export { ClientLogChannel } from "./ClientLog.channels";
 export type {
+  ClientLogActivityBatchEvent,
   ClientLogActivityEvent,
   ClientLogDeathEvent,
   ClientLogPathInput,

@@ -10,18 +10,19 @@ import { RecordingBookmarksPanelItem } from "../RecordingBookmarksPanelItem/Reco
 import {
   allRecordingBookmarkCategoriesValue,
   type RecordingBookmarkCategoryFilter,
-  resolveRecordingBookmarksPanelPage,
 } from "./RecordingBookmarksPanel.utils";
-
-const recordingBookmarksPanelPageSize = 5;
 
 interface RecordingBookmarksPanelProps {
   bookmarks: RecordingBookmark[];
   categories: BookmarkCategory[];
   categoryFilter: RecordingBookmarkCategoryFilter;
   heightPixels: number | null;
+  isTimelineTruncated?: boolean;
+  pageCount: number;
   pageIndex: number;
+  totalCount: number;
   onCategoryChange: (category: RecordingBookmarkCategoryFilter) => void;
+  onHoverBookmark?: (bookmark: RecordingBookmark | null) => void;
   onNextPage: () => void;
   onPreviousPage: () => void;
   onSelectBookmark: (bookmark: RecordingBookmark) => void;
@@ -32,18 +33,16 @@ function RecordingBookmarksPanel({
   categories,
   categoryFilter,
   heightPixels,
+  isTimelineTruncated = false,
+  pageCount,
   pageIndex,
+  totalCount,
   onCategoryChange,
+  onHoverBookmark,
   onNextPage,
   onPreviousPage,
   onSelectBookmark,
 }: RecordingBookmarksPanelProps) {
-  const page = resolveRecordingBookmarksPanelPage({
-    bookmarks,
-    categoryFilter,
-    pageIndex,
-    pageSize: recordingBookmarksPanelPageSize,
-  });
   const filterCategories: RecordingBookmarkCategoryFilter[] = [
     allRecordingBookmarkCategoriesValue,
     ...categories,
@@ -74,39 +73,46 @@ function RecordingBookmarksPanel({
           ))}
         </div>
       </div>
-      <div className="grid min-h-0 flex-1 content-start gap-2 overflow-auto p-3">
-        {page.items.map((bookmark) => (
+      {isTimelineTruncated && (
+        <p className="m-0 border-base-content/10 border-b px-3 py-2 text-warning text-xs">
+          Timeline markers were capped for performance. Use the Bookmarks page
+          for the complete list.
+        </p>
+      )}
+      <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto p-3">
+        {bookmarks.map((bookmark) => (
           <RecordingBookmarksPanelItem
             bookmark={bookmark}
             key={bookmark.id}
+            {...(onHoverBookmark ? { onHover: onHoverBookmark } : {})}
             onSelect={onSelectBookmark}
           />
         ))}
-        {page.items.length === 0 && (
+        {bookmarks.length === 0 && (
           <p className="m-0 text-base-content/55 text-sm">
             No bookmarks are attached to this recording yet.
           </p>
         )}
       </div>
       <div className="flex h-9 shrink-0 items-center justify-between border-base-content/10 border-t px-3 text-xs">
-        <span className="text-base-content/60">{page.totalCount} items</span>
+        <span className="text-base-content/60">{totalCount} items</span>
         <div className="flex items-center gap-2">
           <button
             aria-label="Previous bookmark page"
             className="btn btn-ghost btn-xs btn-square"
-            disabled={page.pageIndex === 0}
+            disabled={pageIndex === 0}
             type="button"
             onClick={onPreviousPage}
           >
             <FiChevronLeft size={14} />
           </button>
           <span className="min-w-10 text-center font-mono">
-            {page.pageIndex + 1} / {page.pageCount}
+            {pageIndex + 1} / {pageCount}
           </span>
           <button
             aria-label="Next bookmark page"
             className="btn btn-ghost btn-xs btn-square"
-            disabled={page.pageIndex >= page.pageCount - 1}
+            disabled={pageIndex >= pageCount - 1}
             type="button"
             onClick={onNextPage}
           >

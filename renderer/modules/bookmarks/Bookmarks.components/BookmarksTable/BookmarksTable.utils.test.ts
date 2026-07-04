@@ -8,11 +8,15 @@ function createBookmarkLibraryItem(
   input: Partial<BookmarkLibraryItem>,
 ): BookmarkLibraryItem {
   return {
+    activeActivitySessionBookmarkDurationSeconds: null,
     activeActivitySessionId: null,
+    activeActivitySessionDurationSeconds: null,
     activeActivitySessionOffsetSeconds: null,
+    activeRecordingBookmarkDurationSeconds: null,
     activeRecordingDurationSeconds: null,
     activeRecordingId: null,
     activeRecordingOffsetSeconds: null,
+    archivedRecordingBookmarkDurationSeconds: null,
     archivedRecordingDurationSeconds: null,
     archivedRecordingId: null,
     archivedRecordingTitle: null,
@@ -44,11 +48,12 @@ describe("BookmarksTable utils", () => {
           activeRecordingId: "recording-1",
           id: "bookmark-2",
         }),
+        sortDirection: "desc",
       }),
     ).toBeNull();
   });
 
-  it("separates rows when the owning recording or rewind changes", () => {
+  it("separates newest-first rows without switching the labels", () => {
     expect(
       resolveBookmarkTableSeparator({
         previousBookmark: createBookmarkLibraryItem({
@@ -59,6 +64,26 @@ describe("BookmarksTable utils", () => {
           activeActivitySessionId: "rewind-1",
           id: "bookmark-2",
         }),
+        sortDirection: "desc",
+      }),
+    ).toEqual({
+      nextLabel: "Recording",
+      previousLabel: "Rewind",
+    });
+  });
+
+  it("separates oldest-first rows without switching the labels", () => {
+    expect(
+      resolveBookmarkTableSeparator({
+        previousBookmark: createBookmarkLibraryItem({
+          activeRecordingId: "recording-1",
+          id: "bookmark-1",
+        }),
+        bookmark: createBookmarkLibraryItem({
+          activeActivitySessionId: "rewind-1",
+          id: "bookmark-2",
+        }),
+        sortDirection: "asc",
       }),
     ).toEqual({
       nextLabel: "Rewind",
@@ -74,6 +99,7 @@ describe("BookmarksTable utils", () => {
           activeRecordingId: "recording-1",
           id: "bookmark-2",
         }),
+        sortDirection: "desc",
       }),
     ).toBeNull();
   });

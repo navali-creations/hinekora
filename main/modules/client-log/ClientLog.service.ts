@@ -3,11 +3,9 @@ import fs from "node:fs";
 
 import { BrowserWindow } from "electron";
 
-import { BookmarksService } from "~/main/modules/bookmarks";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
 import { PoeProcessService } from "~/main/modules/poe-process";
-import { ReplayClipsService } from "~/main/modules/replay-clips";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import {
   createSafePathLogFields,
@@ -28,6 +26,7 @@ import type { AppSettings, ClientLogStatus, GameId } from "~/types";
 import { ClientLogChannel } from "./ClientLog.channels";
 import type {
   ClientLogActiveGameInput,
+  ClientLogActivityBatchEvent,
   ClientLogDeathEvent,
   ClientLogPathInput,
 } from "./ClientLog.dto";
@@ -418,22 +417,11 @@ class ClientLogService extends EventEmitter {
       characterName: this.characterNames[game],
     });
     if (parsedEvents.activityEvents.length > 0) {
-      logInfo(CLIENT_LOG_SCOPE, "Client log activity events matched", {
+      this.emit("activity", {
+        events: parsedEvents.activityEvents,
         game,
-        count: parsedEvents.activityEvents.length,
-        generatedAreaCount: parsedEvents.activityEvents.filter(
-          (event) => event.kind === "generated-area",
-        ).length,
-        sceneSourceCount: parsedEvents.activityEvents.filter(
-          (event) => event.kind === "scene-source",
-        ).length,
-        chunkHash: createTextHash(textToParse),
-      });
+      } satisfies ClientLogActivityBatchEvent);
     }
-    BookmarksService.getInstance().handleClientLogActivityEvents(
-      game,
-      parsedEvents.activityEvents,
-    );
     for (const focusEvent of parsedEvents.focusEvents) {
       logInfo(
         CLIENT_LOG_SCOPE,
@@ -471,8 +459,6 @@ class ClientLogService extends EventEmitter {
         lineHash: deathEvent.lineHash,
       });
       this.emit("death", deathEvent);
-      BookmarksService.getInstance().handleClientLogDeath(deathEvent);
-      void ReplayClipsService.getInstance().handleDeathEvent(deathEvent);
     }
   }
 
@@ -524,20 +510,10 @@ class ClientLogService extends EventEmitter {
         return;
       }
 
-      logInfo(CLIENT_LOG_SCOPE, "Client log activity state seeded", {
+      this.emit("activity-seed", {
+        events: parsedEvents.activityEvents,
         game,
-        count: parsedEvents.activityEvents.length,
-        generatedAreaCount: parsedEvents.activityEvents.filter(
-          (event) => event.kind === "generated-area",
-        ).length,
-        sceneSourceCount: parsedEvents.activityEvents.filter(
-          (event) => event.kind === "scene-source",
-        ).length,
-      });
-      BookmarksService.getInstance().seedClientLogActivityState(
-        game,
-        parsedEvents.activityEvents,
-      );
+      } satisfies ClientLogActivityBatchEvent);
     } catch (error) {
       logWarn(CLIENT_LOG_SCOPE, "Client log activity seed failed", {
         game,

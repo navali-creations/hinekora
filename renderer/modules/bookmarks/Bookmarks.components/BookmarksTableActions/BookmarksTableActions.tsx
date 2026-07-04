@@ -1,6 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import type { MouseEvent } from "react";
-import { FiEdit2 as Edit2, FiTrash2 as Trash2 } from "react-icons/fi";
+import {
+  FiEdit2 as Edit2,
+  FiRotateCcw as Rewind,
+  FiTrash2 as Trash2,
+} from "react-icons/fi";
 import { IoIosRecording } from "react-icons/io";
 
 import type { BookmarkLibraryItem } from "~/main/modules/bookmarks";
@@ -50,6 +54,18 @@ function BookmarksTableActions({ bookmark }: BookmarksTableActionsProps) {
           to="/recording/$recordingId"
         >
           <IoIosRecording size={16} />
+        </Link>
+      )}
+      {!bookmark.activeRecordingId && bookmark.activeActivitySessionId && (
+        <Link
+          aria-label="Open attached rewind"
+          className="btn btn-primary btn-square btn-xs"
+          params={{ rewindId: bookmark.activeActivitySessionId }}
+          search={{ t: bookmark.activeActivitySessionOffsetSeconds ?? 0 }}
+          title="Open attached rewind"
+          to="/rewind/$rewindId"
+        >
+          <Rewind size={14} />
         </Link>
       )}
       {isManualBookmark && (

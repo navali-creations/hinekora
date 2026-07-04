@@ -16,6 +16,11 @@ export interface ClientLogDeathEvent {
   detectedAt: string;
 }
 
+export interface ClientLogActivityBatchEvent {
+  events: ClientLogActivityEvent[];
+  game: GameId;
+}
+
 export type ClientLogActivityEvent =
   | {
       areaId: string;

@@ -1,4 +1,4 @@
-import { useEditorClipThumbnails } from "~/renderer/modules/editor/Editor.hooks/useEditorClipThumbnails/useEditorClipThumbnails";
+import { useMediaClipThumbnails } from "~/renderer/modules/media-playback/useMediaClipThumbnails/useMediaClipThumbnails";
 
 import {
   formatRecordingTimelineRailLeft,
@@ -16,7 +16,7 @@ function RecordingTimelineVideoRail({
   mediaUrl,
   railWidthPixels,
 }: RecordingTimelineVideoRailProps) {
-  const thumbnails = useEditorClipThumbnails({
+  const thumbnails = useMediaClipThumbnails({
     durationSeconds,
     inSeconds: 0,
     mediaUrl,

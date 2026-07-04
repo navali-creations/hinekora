@@ -1,113 +1,96 @@
-import { Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { FiEdit3 } from "react-icons/fi";
+import { useNavigate } from "@tanstack/react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import type {
-  RecordingBookmark,
-  RecordingBookmarksPage,
-} from "~/main/modules/bookmarks";
-import type { RunRecordingDetail } from "~/main/modules/recording-storage";
+import type { RecordingBookmark } from "~/main/modules/bookmarks";
 import { PageContainer } from "~/renderer/components/PageContainer/PageContainer";
 import { PageContent } from "~/renderer/components/PageContent/PageContent";
 import { PageHeader } from "~/renderer/components/PageHeader/PageHeader";
-import { MediaDetailPageActions } from "~/renderer/modules/media-library/MediaLibrary.components/MediaDetailPageActions/MediaDetailPageActions";
+import {
+  formatBytes,
+  formatDurationSeconds,
+} from "~/renderer/modules/media-library/MediaLibrary.utils/MediaLibrary.utils";
 import { useMediaPlayback } from "~/renderer/modules/media-playback/useMediaPlayback/useMediaPlayback";
 
 import { RecordingBookmarksPanel } from "./RecordingBookmarksPanel/RecordingBookmarksPanel";
 import {
   allRecordingBookmarkCategoriesValue,
-  type RecordingBookmarkCategoryFilter,
-  resolveRecordingBookmarkCategories,
+  recordingBookmarksPanelPageSize,
 } from "./RecordingBookmarksPanel/RecordingBookmarksPanel.utils";
 import { RecordingBookmarkTimeline } from "./RecordingBookmarkTimeline/RecordingBookmarkTimeline";
-import { publishRecordingPlaybackVisualTime } from "./RecordingDetailPage.utils";
+import { RecordingDetailPageActions } from "./RecordingDetailPageActions/RecordingDetailPageActions";
 import { RecordingDetailPlayer } from "./RecordingDetailPlayer/RecordingDetailPlayer";
-import { RecordingDetailStats } from "./RecordingDetailStats/RecordingDetailStats";
 import { RecordingDetailStatusAlerts } from "./RecordingDetailStatusAlerts/RecordingDetailStatusAlerts";
+import { useRecordingBookmarkFilters } from "./useRecordingBookmarkFilters/useRecordingBookmarkFilters";
+import { useRecordingDetailData } from "./useRecordingDetailData/useRecordingDetailData";
 import { useRecordingDetailFileActions } from "./useRecordingDetailFileActions/useRecordingDetailFileActions";
+import { useRecordingVisualPlaybackPublisher } from "./useRecordingVisualPlaybackPublisher/useRecordingVisualPlaybackPublisher";
 
 interface RecordingDetailPageProps {
   initialPlaybackSeconds?: number | null;
   recordingId: string;
 }
 
-interface RecordingDetailState {
-  bookmarksPage: RecordingBookmarksPage | null;
-  detail: RunRecordingDetail | null;
-  error: string | null;
-  isLoading: boolean;
-}
-
-const initialRecordingDetailState: RecordingDetailState = {
-  bookmarksPage: null,
-  detail: null,
-  error: null,
-  isLoading: true,
-};
-
 function RecordingDetailPage({
   initialPlaybackSeconds = null,
   recordingId,
 }: RecordingDetailPageProps) {
-  const [state, setState] = useState<RecordingDetailState>(
-    initialRecordingDetailState,
-  );
+  const navigate = useNavigate();
   const appliedInitialPlaybackKeyRef = useRef<string | null>(null);
-  const [bookmarkCategoryFilter, setBookmarkCategoryFilter] =
-    useState<RecordingBookmarkCategoryFilter>(
-      allRecordingBookmarkCategoriesValue,
-    );
-  const [bookmarkPageIndex, setBookmarkPageIndex] = useState(0);
-  const [hasInteractedWithBookmarks, setHasInteractedWithBookmarks] =
-    useState(false);
   const [videoFrameHeightPixels, setVideoFrameHeightPixels] = useState<
     number | null
   >(null);
+  const [hoveredBookmark, setHoveredBookmark] =
+    useState<RecordingBookmark | null>(null);
+  const state = useRecordingDetailData(recordingId);
   const recording = state.detail?.recording ?? null;
+  const handleRecordingDeleted = useCallback(() => {
+    void navigate({ to: "/recordings" });
+  }, [navigate]);
   const {
-    copyState,
     fileActionMessage,
-    handleCopyToClipboard,
+    handleDeleteRecording,
     handleOpenLocation,
     resetFileActions,
-  } = useRecordingDetailFileActions(recording);
+  } = useRecordingDetailFileActions(recording, {
+    onDeleted: handleRecordingDeleted,
+  });
+  const timelineBookmarks = state.bookmarksPage?.timelineItems ?? [];
+  const latestBookmarks = state.bookmarksPage?.items ?? [];
+  const bookmarkFilters = useRecordingBookmarkFilters(
+    timelineBookmarks,
+    state.bookmarksPage?.availableCategories ?? [],
+  );
+  const { publishVisualPlaybackTime, subscribeVisualPlaybackTime } =
+    useRecordingVisualPlaybackPublisher();
 
   useEffect(() => {
-    let isActive = true;
-    setState(initialRecordingDetailState);
+    if (!recordingId) {
+      return;
+    }
+
     resetFileActions();
-    setBookmarkPageIndex(0);
-    setBookmarkCategoryFilter(allRecordingBookmarkCategoriesValue);
-    setHasInteractedWithBookmarks(false);
+    bookmarkFilters.reset();
+  }, [bookmarkFilters.reset, recordingId, resetFileActions]);
 
-    Promise.all([
-      window.electron.recordingStorage.getRecording(recordingId),
-      window.electron.bookmarks.listRecording(recordingId, {
-        pageIndex: 0,
-        pageSize: 5,
-      }),
-    ])
-      .then(([detail, bookmarksPage]) => {
-        if (isActive) {
-          setState({ bookmarksPage, detail, error: null, isLoading: false });
-        }
-      })
-      .catch((error: unknown) => {
-        if (isActive) {
-          setState({
-            detail: null,
-            bookmarksPage: null,
-            error: error instanceof Error ? error.message : "Recording failed",
-            isLoading: false,
-          });
-        }
-      });
+  useEffect(() => {
+    if (!state.detail) {
+      return;
+    }
 
-    return () => {
-      isActive = false;
-    };
-  }, [recordingId, resetFileActions]);
-
+    void state.refreshBookmarksPage({
+      ...(bookmarkFilters.categoryFilter !== allRecordingBookmarkCategoriesValue
+        ? { category: bookmarkFilters.categoryFilter }
+        : {}),
+      includeTimeline: false,
+      pageIndex: bookmarkFilters.pageIndex,
+      pageSize: recordingBookmarksPanelPageSize,
+    });
+  }, [
+    bookmarkFilters.categoryFilter,
+    bookmarkFilters.pageIndex,
+    state.detail,
+    state.refreshBookmarksPage,
+  ]);
   const {
     durationSeconds,
     handleEnded,
@@ -127,54 +110,14 @@ function RecordingDetailPage({
   } = useMediaPlayback({
     fallbackDurationSeconds: recording?.durationSeconds ?? null,
     mediaUrl: state.detail?.mediaUrl ?? null,
-    onVisualTimeChange: publishRecordingPlaybackVisualTime,
+    onVisualTimeChange: publishVisualPlaybackTime,
   });
-  const timelineBookmarks = state.bookmarksPage?.timelineItems ?? [];
-  const markerBookmarks = useMemo(
-    () =>
-      bookmarkCategoryFilter === allRecordingBookmarkCategoriesValue
-        ? timelineBookmarks
-        : timelineBookmarks.filter(
-            (bookmark) => bookmark.category === bookmarkCategoryFilter,
-          ),
-    [bookmarkCategoryFilter, timelineBookmarks],
-  );
-  const bookmarkCategories = useMemo(
-    () => resolveRecordingBookmarkCategories(timelineBookmarks),
-    [timelineBookmarks],
-  );
   const canUseFileActions = Boolean(
     recording?.exists && state.detail?.mediaUrl,
   );
-  const editAction = recording ? (
-    <Link
-      className="btn btn-primary btn-sm no-drag"
-      search={{ id: recording.id, kind: "recording" }}
-      to="/editor"
-    >
-      <FiEdit3 size={15} />
-      Edit
-    </Link>
-  ) : null;
-
-  const handleBookmarkCategoryChange = (
-    category: RecordingBookmarkCategoryFilter,
-  ) => {
-    setBookmarkCategoryFilter(category);
-    setBookmarkPageIndex(0);
-    setHasInteractedWithBookmarks(true);
-  };
-
-  const handlePreviousBookmarkPage = () => {
-    setBookmarkPageIndex((current) => Math.max(0, current - 1));
-  };
-
-  const handleNextBookmarkPage = () => {
-    setBookmarkPageIndex((current) => current + 1);
-  };
 
   const handleSelectBookmark = (bookmark: RecordingBookmark) => {
-    setHasInteractedWithBookmarks(true);
+    bookmarkFilters.markInteracted();
     seekTo(bookmark.offsetSeconds ?? 0);
   };
 
@@ -210,26 +153,28 @@ function RecordingDetailPage({
   ]);
 
   return (
-    <PageContainer>
+    <PageContainer className="relative gap-4">
       <PageHeader
         title={recording?.fileName ?? "Recording"}
         subtitle={
           recording
-            ? `Full recording - ${recording.sourceGame} - ${recording.sourceLeague}`
+            ? `Full recording - ${recording.sourceGame} - ${
+                recording.sourceLeague
+              } - ${formatDurationSeconds(
+                recording.durationSeconds,
+              )} - ${formatBytes(recording.sizeBytes)}`
             : "Recording details"
         }
         actions={
-          <MediaDetailPageActions
-            canUseFileActions={canUseFileActions}
-            copyState={copyState}
-            extraAction={editAction}
-            fallbackTo="/recordings"
-            onCopy={handleCopyToClipboard}
+          <RecordingDetailPageActions
+            canOpenLocation={canUseFileActions}
+            recording={recording}
+            onDeleteRecording={handleDeleteRecording}
             onOpenLocation={handleOpenLocation}
           />
         }
       />
-      <PageContent className="space-y-4">
+      <PageContent className="flex min-h-0 flex-col gap-4 !overflow-hidden">
         <RecordingDetailStatusAlerts
           error={state.error}
           fileActionMessage={fileActionMessage}
@@ -238,60 +183,64 @@ function RecordingDetailPage({
         />
 
         {state.detail && recording && (
-          <>
-            <div className="grid gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
-              <RecordingBookmarksPanel
+          <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_220px] gap-4 lg:grid-cols-[18rem_minmax(0,1fr)]">
+            <RecordingBookmarksPanel
+              bookmarks={latestBookmarks}
+              categories={bookmarkFilters.categories}
+              categoryFilter={bookmarkFilters.categoryFilter}
+              heightPixels={videoFrameHeightPixels}
+              isTimelineTruncated={
+                state.bookmarksPage?.timelineItemsTruncated ?? false
+              }
+              pageCount={state.bookmarksPage?.pageCount ?? 1}
+              pageIndex={state.bookmarksPage?.pageIndex ?? 0}
+              totalCount={state.bookmarksPage?.totalCount ?? 0}
+              onCategoryChange={bookmarkFilters.selectCategory}
+              onHoverBookmark={setHoveredBookmark}
+              onNextPage={bookmarkFilters.nextPage}
+              onPreviousPage={bookmarkFilters.previousPage}
+              onSelectBookmark={handleSelectBookmark}
+            />
+            <RecordingDetailPlayer
+              emptyDescription="The recording record exists, but the video file is missing or unavailable."
+              emptyTitle="Recording video unavailable"
+              mediaUrl={state.detail.mediaUrl}
+              title={recording.fileName}
+              videoRef={videoRef}
+              onEnded={handleEnded}
+              onFrameHeightChange={setVideoFrameHeightPixels}
+              onLoadedMetadata={handleLoadedMetadata}
+              onPause={handlePause}
+              onPlay={handlePlay}
+              onTimeUpdate={handleTimeUpdate}
+            />
+            <div className="min-h-0 lg:col-span-2">
+              <RecordingBookmarkTimeline
                 bookmarks={timelineBookmarks}
-                categories={bookmarkCategories}
-                categoryFilter={bookmarkCategoryFilter}
-                heightPixels={videoFrameHeightPixels}
-                pageIndex={bookmarkPageIndex}
-                onCategoryChange={handleBookmarkCategoryChange}
-                onNextPage={handleNextBookmarkPage}
-                onPreviousPage={handlePreviousBookmarkPage}
-                onSelectBookmark={handleSelectBookmark}
-              />
-              <RecordingDetailPlayer
-                emptyDescription="The recording record exists, but the video file is missing or unavailable."
-                emptyTitle="Recording video unavailable"
+                durationSeconds={durationSeconds}
+                highlightDeathsInRuler={true}
+                highlightManualsInRuler={true}
+                hoveredBookmark={hoveredBookmark}
+                isPlaying={isPlaying}
+                markerBookmarks={bookmarkFilters.markerBookmarks}
                 mediaUrl={state.detail.mediaUrl}
-                title={recording.fileName}
-                videoRef={videoRef}
-                onEnded={handleEnded}
-                onFrameHeightChange={setVideoFrameHeightPixels}
-                onLoadedMetadata={handleLoadedMetadata}
-                onPause={handlePause}
-                onPlay={handlePlay}
-                onTimeUpdate={handleTimeUpdate}
+                playbackSeconds={playbackSeconds}
+                showBookmarkMarkers={
+                  bookmarkFilters.hasInteracted ||
+                  bookmarkFilters.categoryFilter !==
+                    allRecordingBookmarkCategoriesValue
+                }
+                subscribeVisualPlaybackTime={subscribeVisualPlaybackTime}
+                volume={volume}
+                onJumpToStart={jumpToStart}
+                onSeek={seekTo}
+                onSeekBackward={handleSeekBackward}
+                onSeekForward={handleSeekForward}
+                onTogglePlayback={togglePlayback}
+                onVolumeChange={setVolume}
               />
-              <div className="lg:col-span-2">
-                <RecordingBookmarkTimeline
-                  bookmarks={timelineBookmarks}
-                  durationSeconds={durationSeconds}
-                  highlightDeathsInRuler={true}
-                  highlightManualsInRuler={true}
-                  isPlaying={isPlaying}
-                  markerBookmarks={markerBookmarks}
-                  mediaUrl={state.detail.mediaUrl}
-                  playbackSeconds={playbackSeconds}
-                  showBookmarkMarkers={
-                    hasInteractedWithBookmarks ||
-                    bookmarkCategoryFilter !==
-                      allRecordingBookmarkCategoriesValue
-                  }
-                  volume={volume}
-                  onJumpToStart={jumpToStart}
-                  onSeek={seekTo}
-                  onSeekBackward={handleSeekBackward}
-                  onSeekForward={handleSeekForward}
-                  onTogglePlayback={togglePlayback}
-                  onVolumeChange={setVolume}
-                />
-              </div>
             </div>
-
-            <RecordingDetailStats recording={recording} />
-          </>
+          </div>
         )}
       </PageContent>
     </PageContainer>

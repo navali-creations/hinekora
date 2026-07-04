@@ -259,6 +259,22 @@ describe("RewindDetailPage utils", () => {
     ).toBe(34.5);
   });
 
+  it("keeps early replay clips event-only until finalized media duration is known", () => {
+    const clip = createClip({
+      bookmarkId: "death-1",
+      durationSeconds: null,
+      id: "clip-link-1",
+      offsetSeconds: 30,
+      targetDurationSeconds: 50,
+      targetId: "clip-death",
+    });
+
+    expect(resolveRewindClipSegment(clip)).toEqual({
+      startSeconds: 0,
+      endSeconds: 30,
+    });
+  });
+
   it("falls back to bookmark offset for non-clip bookmarks", () => {
     const bookmark = createBookmark({
       category: "map",
