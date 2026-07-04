@@ -1,3 +1,5 @@
+import clsx from "clsx";
+
 import type {
   BookmarkCategory,
   BookmarkSubcategory,
@@ -9,17 +11,23 @@ import {
 
 interface BookmarkCategoryBadgeProps {
   category: BookmarkCategory;
+  size?: "sm" | "xs";
   subcategory: BookmarkSubcategory;
 }
 
 function BookmarkCategoryBadge({
   category,
+  size = "sm",
   subcategory,
 }: BookmarkCategoryBadgeProps) {
   return (
     <div className="flex items-center gap-1.5">
       <span
-        className={`badge badge-sm ${bookmarkCategoryBadgeClassNames[category]}`}
+        className={clsx(
+          "badge",
+          size === "xs" ? "badge-xs" : "badge-sm",
+          bookmarkCategoryBadgeClassNames[category],
+        )}
       >
         {bookmarkCategoryLabels[category]}
       </span>

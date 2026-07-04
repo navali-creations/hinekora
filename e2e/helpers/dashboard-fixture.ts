@@ -2,6 +2,12 @@ import { expect, type Page } from "@playwright/test";
 
 import type { SetupState } from "../../main/modules/app-setup/AppSetup.types";
 import type {
+  BookmarkLibraryItem,
+  BookmarkLibraryPage,
+  BookmarkLibraryQuery,
+  BookmarkManualUpdateInput,
+} from "../../main/modules/bookmarks";
+import type {
   ManagedRecorderAudioDevices,
   ManagedRecorderCaptureMode,
   ManagedRecorderListAudioDevicesOptions,
@@ -37,6 +43,8 @@ import {
 interface DashboardE2ECalls {
   audioDeviceRequests: Array<ManagedRecorderListAudioDevicesOptions | null>;
   auraLockEvents: boolean[];
+  bookmarkDeletes: string[];
+  bookmarkUpdates: BookmarkManualUpdateInput[];
   captureModeChanges: ManagedRecorderCaptureMode[];
   captureProfileCreates: Array<{ game: GameId; id: string; name: string }>;
   captureProfileDeletes: string[];
@@ -73,6 +81,7 @@ interface DashboardE2EApi {
 interface DashboardE2EFixture {
   audioDevices: ManagedRecorderAudioDevices;
   auraLocked: boolean;
+  bookmarks: BookmarkLibraryItem[];
   clientLogStatus: ClientLogStatus;
   now: string;
   poeProcessState: PoeProcessState;
@@ -94,6 +103,7 @@ const dashboardE2ENow = "2026-06-25T00:00:00.000Z";
 interface DashboardE2EOptions {
   activeGame?: GameId;
   auraLocked?: boolean;
+  bookmarks?: BookmarkLibraryItem[];
   recorderOverlayVisible?: boolean;
 }
 
@@ -233,6 +243,7 @@ function createDashboardE2EFixture(
       ],
     },
     auraLocked: options.auraLocked ?? true,
+    bookmarks: options.bookmarks ?? [],
     clientLogStatus: {
       activeGame,
       activeGameFocused: true,
@@ -310,6 +321,7 @@ async function setupDashboardE2E(
         `"use strict"; return (${input.bridgeFactorySource});`,
       )() as E2EBridgeDomainFactory;
       let settings = clone(fixture.settings);
+      let bookmarks = clone(fixture.bookmarks);
       let recorderStatus = clone(fixture.recorderStatus);
       let captureMode: ManagedRecorderCaptureMode = "rewind";
       let recorderOverlayRequested = fixture.recorderOverlayVisible;
@@ -376,6 +388,8 @@ async function setupDashboardE2E(
       const calls: DashboardE2ECalls = {
         audioDeviceRequests: [],
         auraLockEvents: [],
+        bookmarkDeletes: [],
+        bookmarkUpdates: [],
         captureModeChanges: [],
         captureProfileCreates: [],
         captureProfileDeletes: [],
@@ -414,6 +428,66 @@ async function setupDashboardE2E(
         auraLocked = locked;
         calls.auraLockEvents.push(locked);
         listeners.auraLock?.(locked);
+      };
+      const sortBookmarks = (
+        items: BookmarkLibraryItem[],
+        query: BookmarkLibraryQuery,
+      ) => {
+        const sortBy = query.sortBy ?? "occurredAt";
+        const direction = query.sortDirection ?? "desc";
+        const multiplier = direction === "asc" ? 1 : -1;
+
+        return [...items].sort((left, right) => {
+          const leftValue = left[sortBy];
+          const rightValue = right[sortBy];
+
+          return (
+            String(leftValue).localeCompare(String(rightValue)) * multiplier
+          );
+        });
+      };
+      const listBookmarks = (
+        query: BookmarkLibraryQuery = {},
+      ): BookmarkLibraryPage => {
+        const filtered = bookmarks.filter((bookmark) => {
+          if (query.game && bookmark.sourceGame !== query.game) {
+            return false;
+          }
+          if (query.league && bookmark.sourceLeague !== query.league) {
+            return false;
+          }
+          if (query.category && bookmark.category !== query.category) {
+            return false;
+          }
+
+          return true;
+        });
+        const pageIndex = query.pageIndex ?? 0;
+        const pageSize = query.pageSize ?? 20;
+        const pageStart = pageIndex * pageSize;
+        const sorted = sortBookmarks(filtered, query);
+
+        return {
+          availableCategories: Array.from(
+            new Set(filtered.map((bookmark) => bookmark.category)),
+          ),
+          availableLeagues: Array.from(
+            new Set(
+              bookmarks
+                .filter((bookmark) =>
+                  query.game ? bookmark.sourceGame === query.game : true,
+                )
+                .map((bookmark) => bookmark.sourceLeague),
+            ),
+          ),
+          items: clone(sorted.slice(pageStart, pageStart + pageSize)),
+          pageCount: Math.max(1, Math.ceil(filtered.length / pageSize)),
+          pageIndex,
+          pageSize,
+          sortBy: query.sortBy ?? "occurredAt",
+          sortDirection: query.sortDirection ?? "desc",
+          totalCount: filtered.length,
+        };
       };
       const emitRecorderVisibility = (visible: boolean) => {
         recorderOverlayVisible = visible;
@@ -482,27 +556,34 @@ async function setupDashboardE2E(
               error: null,
               ok: true,
             }),
-            deleteManual: async () => undefined,
-            listLibrary: async () => ({
-              availableCategories: [],
-              availableLeagues: [],
-              items: [],
-              pageCount: 1,
-              pageIndex: 0,
-              pageSize: 20,
-              sortBy: "occurredAt",
-              sortDirection: "desc",
-              totalCount: 0,
-            }),
+            deleteManual: async (bookmarkId) => {
+              calls.bookmarkDeletes.push(bookmarkId);
+              bookmarks = bookmarks.filter(
+                (bookmark) => bookmark.id !== bookmarkId,
+              );
+            },
+            listLibrary: async (query) => listBookmarks(query),
             listRecording: async () => ({
               items: [],
               pageCount: 1,
               pageIndex: 0,
               pageSize: 10,
               timelineItems: [],
+              timelineItemsTruncated: false,
               totalCount: 0,
             }),
-            updateManual: async () => undefined,
+            updateManual: async (input) => {
+              calls.bookmarkUpdates.push(clone(input));
+              bookmarks = bookmarks.map((bookmark) =>
+                bookmark.id === input.id
+                  ? {
+                      ...bookmark,
+                      label: input.label,
+                      updatedAt: fixture.now,
+                    }
+                  : bookmark,
+              );
+            },
           },
         ),
         capturePreview: createBridgeDomain<
@@ -835,6 +916,32 @@ async function setupDashboardE2E(
         recordingStorage: createBridgeDomain<
           DashboardE2EElectron["recordingStorage"]
         >("recordingStorage", {
+          getRecording: async (recordingId) => {
+            const bookmark = bookmarks.find(
+              (item) => item.activeRecordingId === recordingId,
+            );
+            if (!bookmark) {
+              return null;
+            }
+
+            return {
+              mediaUrl: `hinekora-media://run-recording/${recordingId}`,
+              recording: {
+                createdAt: bookmark.occurredAt,
+                durationSeconds: bookmark.activeRecordingDurationSeconds,
+                exists: true,
+                fileName: `${recordingId}.mp4`,
+                id: recordingId,
+                path: `C:/Hinekora/Recordings/${recordingId}.mp4`,
+                sizeBytes: 1024 * 1024,
+                sourceGame: bookmark.sourceGame,
+                sourceLeague: bookmark.sourceLeague,
+                startedAt: bookmark.occurredAt,
+                stoppedAt: bookmark.updatedAt,
+                updatedAt: bookmark.updatedAt,
+              },
+            };
+          },
           getUsage: async () => clone(fixture.recordingStorageUsage),
           listRecordingLibrary: async () => clone(emptyRecordingPage),
         }),

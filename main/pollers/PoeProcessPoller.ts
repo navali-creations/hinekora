@@ -16,6 +16,7 @@ const POE_PROCESS_NAMES = [
 ] as const;
 
 const POE_PROCESS_POLL_INTERVAL_MS = 5_000;
+const POE_INACTIVE_POLLS_BEFORE_STOP = 2;
 
 function isPoeProcessStateForGame(state: ProcessState, game: GameId): boolean {
   if (!state.isRunning) {
@@ -114,7 +115,9 @@ async function detectPoeProcessState(
 
 class PoeProcessPoller extends ProcessPoller {
   constructor(private readonly resolveFallbackGame?: () => GameId | null) {
-    super(POE_PROCESS_NAMES, POE_PROCESS_POLL_INTERVAL_MS);
+    super(POE_PROCESS_NAMES, POE_PROCESS_POLL_INTERVAL_MS, {
+      inactivePollsBeforeStop: POE_INACTIVE_POLLS_BEFORE_STOP,
+    });
   }
 
   protected override pollOnce(): Promise<ProcessState> {

@@ -25,7 +25,11 @@ interface RecordingBookmarkTimelineProps {
   bookmarks: RecordingBookmark[];
   clipTargetsByBookmarkId?: Record<
     string,
-    { targetDurationSeconds: number | null; targetId: string }
+    {
+      durationSeconds: number | null;
+      targetDurationSeconds: number | null;
+      targetId: string;
+    }
   >;
   durationSeconds: number | null;
   enableVisualPlaybackSubscription?: boolean;

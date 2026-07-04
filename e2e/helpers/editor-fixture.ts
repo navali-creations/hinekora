@@ -715,6 +715,7 @@ async function setupEditorE2E(page: Page) {
               pageIndex: 0,
               pageSize: 10,
               timelineItems: [],
+              timelineItemsTruncated: false,
               totalCount: 0,
             }),
             updateManual: async () => undefined,

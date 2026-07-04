@@ -29,6 +29,25 @@ export type BookmarkLinkTargetKind = "activity-session" | "recording";
 export type ActivitySessionMode = "rewind";
 export type ActivitySessionClipTargetKind = "replay-clip";
 
+const bookmarkCategories = [
+  "boss",
+  "death",
+  "hideout",
+  "manual",
+  "map",
+  "pinnacle",
+  "rewind-manual-replay",
+  "town",
+] as const satisfies readonly BookmarkCategory[];
+
+const locationBookmarkCategories = [
+  "boss",
+  "hideout",
+  "map",
+  "pinnacle",
+  "town",
+] as const satisfies readonly BookmarkCategory[];
+
 export interface Bookmark {
   id: string;
   sourceGame: GameId;
@@ -76,6 +95,7 @@ export interface ActivitySessionClip {
   targetId: string;
   bookmarkId: string | null;
   offsetSeconds: number | null;
+  durationSeconds: number | null;
   targetDurationSeconds: number | null;
   createdAt: string;
   updatedAt: string;
@@ -87,7 +107,9 @@ export interface ActivitySessionBookmark extends Bookmark {
 
 export interface ActivitySessionTimeline {
   bookmarks: ActivitySessionBookmark[];
+  bookmarkTimelineItemsTruncated: boolean;
   clips: ActivitySessionClip[];
+  clipTimelineItemsTruncated: boolean;
   session: ActivitySession;
 }
 
@@ -127,6 +149,8 @@ export interface ActivitySessionLibraryPage {
 }
 
 export interface BookmarkLibraryItem extends Bookmark {
+  activeActivitySessionId: string | null;
+  activeActivitySessionOffsetSeconds: number | null;
   activeRecordingDurationSeconds: number | null;
   activeRecordingId: string | null;
   activeRecordingOffsetSeconds: number | null;
@@ -193,5 +217,8 @@ export interface RecordingBookmarksPage {
   pageIndex: number;
   pageSize: number;
   timelineItems: RecordingBookmark[];
+  timelineItemsTruncated: boolean;
   totalCount: number;
 }
+
+export { bookmarkCategories, locationBookmarkCategories };

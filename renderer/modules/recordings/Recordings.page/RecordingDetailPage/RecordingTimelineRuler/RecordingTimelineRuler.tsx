@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { Fragment } from "react";
 
 import type { RecordingBookmark } from "~/main/modules/bookmarks";
 import {
@@ -12,13 +13,18 @@ import {
   formatRecordingTimelineRailLeft,
   formatRecordingTimelineRailWidth,
   formatRecordingTimelineTimestamp,
+  resolveRecordingClipTargetRulerSegment,
 } from "../RecordingBookmarkTimeline/RecordingBookmarkTimeline.utils";
 
 interface RecordingTimelineRulerProps {
   bookmarks: RecordingBookmark[];
   clipTargetsByBookmarkId?: Record<
     string,
-    { targetDurationSeconds: number | null; targetId: string }
+    {
+      durationSeconds: number | null;
+      targetDurationSeconds: number | null;
+      targetId: string;
+    }
   >;
   durationSeconds: number;
   markers: number[];
@@ -56,28 +62,85 @@ function RecordingTimelineRuler({
     >
       {bookmarks.map((bookmark) => {
         const clipTarget = clipTargetsByBookmarkId[bookmark.id];
-        const segmentDurationSeconds =
-          clipTarget?.targetDurationSeconds ?? bookmark.durationSeconds;
+        if (clipTarget) {
+          const segment = resolveRecordingClipTargetRulerSegment({
+            durationSeconds: clipTarget.durationSeconds,
+            offsetSeconds: bookmark.offsetSeconds,
+            targetDurationSeconds: clipTarget.targetDurationSeconds,
+          });
+
+          if (!segment) {
+            return null;
+          }
+
+          const eventLeft = calculateRecordingTimelinePercent(
+            segment.startSeconds,
+            durationSeconds,
+          );
+          const eventWidth = calculateRecordingTimelinePercent(
+            segment.eventDurationSeconds,
+            durationSeconds,
+          );
+          const tailLeft = calculateRecordingTimelinePercent(
+            segment.triggerSeconds,
+            durationSeconds,
+          );
+          const tailWidth = calculateRecordingTimelinePercent(
+            segment.tailDurationSeconds,
+            durationSeconds,
+          );
+
+          return (
+            <Fragment key={`ruler-${bookmark.id}`}>
+              {segment.eventDurationSeconds > 0 && (
+                <span
+                  className={clsx(
+                    "pointer-events-none absolute inset-y-0 z-20 border-base-content/10 border-x opacity-40",
+                    bookmarkCategoryTimelineClassNames[bookmark.category],
+                  )}
+                  title={`${bookmarkCategoryLabels[bookmark.category]} - ${bookmark.label}`}
+                  style={{
+                    left: formatRecordingTimelineRailLeft(eventLeft),
+                    width: formatRecordingTimelineRailWidth(
+                      Math.max(eventWidth, 0.2),
+                    ),
+                  }}
+                />
+              )}
+              {segment.tailDurationSeconds > 0 && (
+                <span
+                  className={clsx(
+                    "pointer-events-none absolute inset-y-0 z-20 border-base-content/10 border-r opacity-50",
+                    bookmarkCategoryTimelineClassNames[bookmark.category],
+                  )}
+                  title={`${bookmarkCategoryLabels[bookmark.category]} processing tail - ${bookmark.label}`}
+                  style={{
+                    backgroundImage:
+                      "repeating-linear-gradient(135deg, rgba(255,255,255,0.24) 0 3px, transparent 3px 8px)",
+                    left: formatRecordingTimelineRailLeft(tailLeft),
+                    width: formatRecordingTimelineRailWidth(
+                      Math.max(tailWidth, 0.2),
+                    ),
+                  }}
+                />
+              )}
+            </Fragment>
+          );
+        }
+
+        const segmentDurationSeconds = bookmark.durationSeconds;
         if (segmentDurationSeconds === null || segmentDurationSeconds <= 0) {
           return null;
         }
-        if (clipTarget && bookmark.offsetSeconds === null) {
-          return null;
-        }
 
-        const segmentStartSeconds = clipTarget
-          ? Math.max(0, (bookmark.offsetSeconds ?? 0) - segmentDurationSeconds)
-          : bookmark.offsetSeconds;
-        const visibleSegmentDurationSeconds = clipTarget
-          ? Math.min(segmentDurationSeconds, bookmark.offsetSeconds ?? 0)
-          : segmentDurationSeconds;
+        const segmentStartSeconds = bookmark.offsetSeconds;
 
         const left = calculateRecordingTimelinePercent(
           segmentStartSeconds,
           durationSeconds,
         );
         const width = calculateRecordingTimelinePercent(
-          visibleSegmentDurationSeconds,
+          segmentDurationSeconds,
           durationSeconds,
         );
 

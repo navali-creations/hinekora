@@ -208,7 +208,7 @@ describe("PoeProcessPoller", () => {
     });
   });
 
-  it("polls using the active game fallback and reports stopped on the first miss", async () => {
+  it("polls using the active game fallback and requires consecutive misses before stopping", async () => {
     const poller = new PoeProcessPoller(() => "poe2");
     processMocks.listWindowsProcessWindowTitles.mockResolvedValue([
       {
@@ -218,8 +218,14 @@ describe("PoeProcessPoller", () => {
     ]);
     processMocks.findRunningProcesses
       .mockResolvedValueOnce(["PathOfExileSteam.exe"])
+      .mockResolvedValueOnce([])
       .mockResolvedValueOnce([]);
 
+    await expect(poller.pollNow()).resolves.toEqual({
+      game: "poe2",
+      isRunning: true,
+      processName: "PathOfExileSteam.exe",
+    });
     await expect(poller.pollNow()).resolves.toEqual({
       game: "poe2",
       isRunning: true,

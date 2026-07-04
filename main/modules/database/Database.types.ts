@@ -67,6 +67,7 @@ interface ReplayClipTable {
   original_obs_path: NullableTextColumn;
   processed_clip_path: NullableTextColumn;
   target_duration_seconds: number;
+  duration_seconds: number | null;
   size_bytes: number;
   error: NullableTextColumn;
   created_at: TimestampColumn;

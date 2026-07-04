@@ -154,14 +154,7 @@ function parseActivityEvent(
     return null;
   }
 
-  const occurredAt = new Date(
-    Number(header[1]),
-    Number(header[2]) - 1,
-    Number(header[3]),
-    Number(header[4]),
-    Number(header[5]),
-    Number(header[6]),
-  ).toISOString();
+  const occurredAt = parseClientLogHeaderTimestamp(header);
   const sequenceId = header[7];
   if (!sequenceId) {
     return null;
@@ -209,6 +202,23 @@ function parseActivityEvent(
   };
 }
 
+function parseClientLogHeaderTimestamp(header: RegExpExecArray): string {
+  return new Date(
+    Number(header[1]),
+    Number(header[2]) - 1,
+    Number(header[3]),
+    Number(header[4]),
+    Number(header[5]),
+    Number(header[6]),
+  ).toISOString();
+}
+
+function parseClientLogLineTimestamp(line: string): string | null {
+  const header = CLIENT_LOG_HEADER_PATTERN.exec(line);
+
+  return header ? parseClientLogHeaderTimestamp(header) : null;
+}
+
 export type {
   ClientLogFocusEvent,
   ClientLogParseOptions,
@@ -220,4 +230,5 @@ export {
   findLatestFocusState,
   hashDeathLine,
   parseClientLogEvents,
+  parseClientLogLineTimestamp,
 };

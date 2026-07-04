@@ -2,12 +2,12 @@ import type {
   BookmarkCategory,
   RecordingBookmark,
 } from "~/main/modules/bookmarks";
+import type { BookmarksCategoryFilterValue } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksCategoryFilterChip/BookmarksCategoryFilterChip";
+import { allBookmarkCategoriesValue } from "~/renderer/modules/bookmarks/Bookmarks.utils";
 
-const allRecordingBookmarkCategoriesValue = "__all__";
+const allRecordingBookmarkCategoriesValue = allBookmarkCategoriesValue;
 
-type RecordingBookmarkCategoryFilter =
-  | BookmarkCategory
-  | typeof allRecordingBookmarkCategoriesValue;
+type RecordingBookmarkCategoryFilter = BookmarksCategoryFilterValue;
 
 interface ResolveRecordingBookmarksPanelPageInput {
   bookmarks: RecordingBookmark[];

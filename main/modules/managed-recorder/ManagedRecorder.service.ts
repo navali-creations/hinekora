@@ -614,6 +614,41 @@ class ManagedRecorderService {
       this.activeRecordingMode = null;
       this.activeRecordingBaselinePaths = new Set();
       this.setStatus({
+        recording: false,
+        runRecordingPath: savedPath ?? this.status.runRecordingPath,
+        lastRecordingPath: savedPath ?? this.status.lastRecordingPath,
+        error: null,
+      });
+      logInfo(MANAGED_RECORDER_LOG_SCOPE, "Full run recording stopped", {
+        saved: savedPath !== null,
+        ...createSafePathLogFields(savedPath, "recording"),
+      });
+      if (savedPath && runRecordingStartedAt) {
+        const settings = SettingsStoreService.getInstance().get();
+        const configuredGame =
+          sessionGame ?? this.resolveConfiguredGame(settings);
+        const recordingStorage = RecordingStorageService.getInstance();
+        const recordingMetadata = recordingStorage.registerRunRecording({
+          path: savedPath,
+          startedAt: runRecordingStartedAt,
+          stoppedAt: new Date().toISOString(),
+          sourceGame: configuredGame,
+          sourceLeague: settings.activeLeague,
+        });
+        const recordingDetail = recordingMetadata?.id
+          ? recordingStorage.getRecording(recordingMetadata.id)
+          : null;
+        if (recordingDetail) {
+          BookmarksService.getInstance().finalizeRecordingSession(
+            recordingDetail.recording,
+          );
+        } else {
+          BookmarksService.getInstance().discardRecordingSession();
+        }
+      } else {
+        BookmarksService.getInstance().discardRecordingSession();
+      }
+      this.setStatus({
         bufferActive: false,
         recording: false,
         isStoppingRecording: false,
@@ -626,36 +661,6 @@ class ManagedRecorderService {
         lastRecordingPath: savedPath ?? this.status.lastRecordingPath,
         error: null,
       });
-      logInfo(MANAGED_RECORDER_LOG_SCOPE, "Full run recording stopped", {
-        saved: savedPath !== null,
-        ...createSafePathLogFields(savedPath, "recording"),
-      });
-      if (savedPath && runRecordingStartedAt) {
-        const settings = SettingsStoreService.getInstance().get();
-        const configuredGame =
-          sessionGame ?? this.resolveConfiguredGame(settings);
-        const recordingMetadata =
-          RecordingStorageService.getInstance().registerRunRecording({
-            path: savedPath,
-            startedAt: runRecordingStartedAt,
-            stoppedAt: new Date().toISOString(),
-            sourceGame: configuredGame,
-            sourceLeague: settings.activeLeague,
-          });
-        const recordingDetail =
-          RecordingStorageService.getInstance().getRecording(
-            recordingMetadata.id,
-          );
-        if (recordingDetail) {
-          BookmarksService.getInstance().finalizeRecordingSession(
-            recordingDetail.recording,
-          );
-        } else {
-          BookmarksService.getInstance().discardRecordingSession();
-        }
-      } else {
-        BookmarksService.getInstance().discardRecordingSession();
-      }
       this.cleanupRecordingStorage([savedPath]);
     } catch (error) {
       BookmarksService.getInstance().discardRecordingSession();

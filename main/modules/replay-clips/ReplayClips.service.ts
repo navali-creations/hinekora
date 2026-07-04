@@ -307,6 +307,10 @@ class ReplayClipsService {
       });
 
       const readyClip = this.updateClip(clip, { status: "ready" });
+      this.repository.updateDuration(
+        readyClip.id,
+        this.readReplayClipDuration(storedReplayPath),
+      );
       logInfo(REPLAY_CLIPS_LOG_SCOPE, "Replay clip ready", {
         clipId: readyClip.id,
       });
@@ -473,6 +477,7 @@ class ReplayClipsService {
         return { ok: false, error: "Clip was not found" };
       }
 
+      BookmarksService.getInstance().deleteReplayClipLinks(id);
       this.repository.delete(id);
       try {
         await this.deleteStoredClipFiles(clip);

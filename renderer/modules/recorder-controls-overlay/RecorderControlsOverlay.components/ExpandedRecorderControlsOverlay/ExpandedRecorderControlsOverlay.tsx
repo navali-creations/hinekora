@@ -1,7 +1,5 @@
 import type { ChangeEvent } from "react";
 import {
-  FiBookmark as Bookmark,
-  FiCheck as Check,
   FiLoader as Loader2,
   FiPlay as Play,
   FiSquare as Square,
@@ -21,6 +19,7 @@ import { useProfilesShallow, useSettingsSelector } from "~/renderer/store";
 
 import styles from "../../RecorderControlsOverlay.page/RecorderControlsOverlayPage.module.css";
 import { RecorderAuraActionButton } from "../RecorderAuraActionButton/RecorderAuraActionButton";
+import { RecorderBookmarkActionButton } from "../RecorderBookmarkActionButton/RecorderBookmarkActionButton";
 import { RecorderOverlayWindowActions } from "../RecorderOverlayWindowActions/RecorderOverlayWindowActions";
 import {
   closeRecorderOverlay,
@@ -151,16 +150,11 @@ function ExpandedRecorderControlsOverlay({
             )}
           </button>
           {showBookmarkAction && (
-            <button
-              aria-label="Add bookmark"
-              className={`${styles.iconButton} btn btn-square ${bookmarkSaved ? "btn-success" : "btn-primary"}`}
+            <RecorderBookmarkActionButton
               disabled={!canCreateBookmark}
-              title="Add bookmark"
-              type="button"
+              isSaved={bookmarkSaved}
               onClick={handleCreateBookmark}
-            >
-              {bookmarkSaved ? <Check size={18} /> : <Bookmark size={18} />}
-            </button>
+            />
           )}
           {!isSessionMode && (
             <button

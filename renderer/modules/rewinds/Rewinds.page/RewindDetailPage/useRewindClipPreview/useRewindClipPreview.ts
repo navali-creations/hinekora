@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type { ReplayClipDetail } from "~/main/modules/replay-clips";
-import { useRecordingDetailPlayback } from "~/renderer/modules/recordings/Recordings.page/RecordingDetailPage/useRecordingDetailPlayback/useRecordingDetailPlayback";
+import { useMediaPlayback } from "~/renderer/modules/media-playback/useMediaPlayback/useMediaPlayback";
 
 interface RewindClipPreviewState {
   detail: ReplayClipDetail | null;
@@ -43,7 +43,7 @@ function useRewindClipPreview() {
       detail?.durationSeconds ?? detail?.clip.targetDurationSeconds ?? null
     );
   }, [clipPreviewState.detail]);
-  const playback = useRecordingDetailPlayback({
+  const playback = useMediaPlayback({
     fallbackDurationSeconds,
     mediaUrl,
   });

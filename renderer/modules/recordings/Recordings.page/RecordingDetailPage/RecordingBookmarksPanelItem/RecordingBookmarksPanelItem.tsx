@@ -1,8 +1,5 @@
 import type { RecordingBookmark } from "~/main/modules/bookmarks";
-import {
-  bookmarkCategoryBadgeClassNames,
-  bookmarkCategoryLabels,
-} from "~/renderer/modules/bookmarks/Bookmarks.utils";
+import { BookmarkCategoryBadge } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarkCategoryBadge/BookmarkCategoryBadge";
 
 import { formatRecordingTimelineTimestamp } from "../RecordingBookmarkTimeline/RecordingBookmarkTimeline.utils";
 
@@ -35,11 +32,11 @@ function RecordingBookmarksPanelItem({
       onClick={handleSelect}
     >
       <div className="flex items-center justify-between gap-2">
-        <span
-          className={`badge badge-xs ${bookmarkCategoryBadgeClassNames[bookmark.category]}`}
-        >
-          {bookmarkCategoryLabels[bookmark.category]}
-        </span>
+        <BookmarkCategoryBadge
+          category={bookmark.category}
+          size="xs"
+          subcategory={bookmark.subcategory}
+        />
         <span className="font-mono text-base-content/55 text-xs">
           {formatRecordingTimelineTimestamp(bookmark.offsetSeconds)}
         </span>

@@ -35,8 +35,14 @@ import { useBookmarksShallow } from "~/renderer/store";
 import {
   getCellClassName,
   getHeaderClassName,
+  resolveBookmarkTableSeparator,
   resolveSortBy,
 } from "./BookmarksTable.utils";
+
+const bookmarkTableSeparatorStyle = {
+  backgroundImage:
+    "repeating-linear-gradient(135deg, rgba(255,255,255,0.08) 0 1px, transparent 1px 8px)",
+};
 
 function BookmarksTable() {
   const navigate = useNavigate();
@@ -118,6 +124,34 @@ function BookmarksTable() {
 
   const handleCategorySelect = (nextCategory: BookmarksCategoryFilterValue) => {
     setCategory(nextCategory);
+  };
+
+  const renderBookmarkSeparatorBefore = ({
+    previousRow,
+    row,
+  }: {
+    previousRow: BookmarkLibraryItem;
+    row: BookmarkLibraryItem;
+  }) => {
+    const separator = resolveBookmarkTableSeparator({
+      previousBookmark: previousRow,
+      bookmark: row,
+    });
+
+    if (!separator) {
+      return null;
+    }
+
+    return (
+      <div
+        className="flex min-h-10 flex-col items-center justify-center gap-0.5 text-[10px] text-base-content/50 leading-none"
+        style={bookmarkTableSeparatorStyle}
+      >
+        <span>Start of new {separator.nextLabel}</span>
+        <span className="h-px w-24 bg-base-content/20" />
+        <span>End of previous {separator.previousLabel}</span>
+      </div>
+    );
   };
 
   const canOpenBookmarkRecording = (bookmark: BookmarkLibraryItem) =>
@@ -233,6 +267,7 @@ function BookmarksTable() {
         getCellClassName={getCellClassName}
         getHeaderClassName={getHeaderClassName}
         onRowClick={handleOpenBookmarkRecording}
+        renderRowSeparatorBefore={renderBookmarkSeparatorBefore}
         table={table}
         totalCount={page?.totalCount ?? items.length}
       />

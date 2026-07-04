@@ -1,6 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
 import {
-  type ColumnDef,
   getCoreRowModel,
   type OnChangeFn,
   type PaginationState,
@@ -10,26 +9,29 @@ import {
 } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 
-import type {
-  RunRecordingItem,
-  RunRecordingLibraryQuery,
-} from "~/main/modules/recording-storage/RecordingStorage.dto";
+import type { RunRecordingLibraryQuery } from "~/main/modules/recording-storage/RecordingStorage.dto";
 import { MediaLibraryTable } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable";
 import {
   ALL_LEAGUES_VALUE,
-  formatBytes,
-  formatDateTime,
-  formatDurationSeconds,
   type MediaLibraryScope,
 } from "~/renderer/modules/media-library/MediaLibrary.utils/MediaLibrary.utils";
-import { useRecordingStorageShallow } from "~/renderer/store";
-
-import { RecordingTableActions } from "../RecordingTableActions/RecordingTableActions";
 import {
+  useManagedRecorderSelector,
+  useRecordingStorageShallow,
+  useSettingsSelector,
+} from "~/renderer/store";
+
+import {
+  canOpenRecordingRow,
+  createProcessingRecordingRow,
   getCellClassName,
   getHeaderClassName,
+  getRecordingRowClassName,
+  type RecordingTableRow,
   resolveSortBy,
+  toRecordingTableRow,
 } from "./RecordingsPanel.utils";
+import { useRecordingsPanelColumns } from "./useRecordingsPanelColumns/useRecordingsPanelColumns";
 
 interface RecordingsPanelProps {
   scope: MediaLibraryScope;
@@ -37,6 +39,12 @@ interface RecordingsPanelProps {
 
 function RecordingsPanel({ scope }: RecordingsPanelProps) {
   const navigate = useNavigate();
+  const managedRecorderStatus = useManagedRecorderSelector(
+    (managedRecorder) => managedRecorder.status,
+  );
+  const activeLeague = useSettingsSelector(
+    (settings) => settings.value?.activeLeague ?? null,
+  );
   const {
     clearSelectedRecordings,
     recordingsPage,
@@ -62,6 +70,27 @@ function RecordingsPanel({ scope }: RecordingsPanelProps) {
     { id: "createdAt", desc: true },
   ]);
   const showLeagueColumn = scope.league === ALL_LEAGUES_VALUE;
+  const processingRecording = useMemo(
+    () =>
+      createProcessingRecordingRow({
+        activeLeague,
+        now: new Date(),
+        scope,
+        status: managedRecorderStatus,
+      }),
+    [activeLeague, managedRecorderStatus, scope],
+  );
+  const tableRecordings = useMemo<RecordingTableRow[]>(() => {
+    const savedRows = recordings.map(toRecordingTableRow);
+    if (!processingRecording || pagination.pageIndex !== 0) {
+      return savedRows;
+    }
+
+    return [processingRecording, ...savedRows];
+  }, [pagination.pageIndex, processingRecording, recordings]);
+  const totalRecordingRows =
+    (recordingsPage?.totalCount ?? recordings.length) +
+    (processingRecording && pagination.pageIndex === 0 ? 1 : 0);
   const recordingQuery = useMemo<RunRecordingLibraryQuery>(() => {
     const activeSort = sorting[0];
     const query: RunRecordingLibraryQuery = {
@@ -118,91 +147,18 @@ function RecordingsPanel({ scope }: RecordingsPanelProps) {
     );
   };
 
-  const handleRowClick = (recording: RunRecordingItem) => {
+  const handleRowClick = (recording: RecordingTableRow) => {
     void navigate({
       to: "/recording/$recordingId",
       params: { recordingId: recording.id },
     });
   };
 
-  const columns = useMemo<ColumnDef<RunRecordingItem>[]>(() => {
-    const tableColumns: ColumnDef<RunRecordingItem>[] = [
-      {
-        id: "select",
-        enableSorting: false,
-        header: ({ table }) => (
-          <input
-            aria-label="Select all recordings on this page"
-            checked={table.getIsAllPageRowsSelected()}
-            className="checkbox checkbox-sm"
-            type="checkbox"
-            onChange={table.getToggleAllPageRowsSelectedHandler()}
-          />
-        ),
-        cell: ({ row }) => (
-          <input
-            aria-label={`Select recording ${row.original.fileName}`}
-            checked={row.getIsSelected()}
-            className="checkbox checkbox-sm"
-            type="checkbox"
-            onChange={row.getToggleSelectedHandler()}
-          />
-        ),
-      },
-      {
-        accessorKey: "fileName",
-        header: "Name",
-        cell: ({ row, getValue }) => (
-          <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate" title={row.original.path}>
-              {getValue<string>()}
-            </span>
-            {!row.original.exists && (
-              <span className="badge badge-error badge-xs">Missing</span>
-            )}
-          </div>
-        ),
-      },
-      {
-        accessorKey: "createdAt",
-        header: "Saved",
-        cell: ({ getValue }) => formatDateTime(getValue<string>()),
-      },
-    ];
-
-    if (showLeagueColumn) {
-      tableColumns.push({
-        accessorKey: "sourceLeague",
-        header: "League",
-      });
-    }
-
-    tableColumns.push(
-      {
-        accessorKey: "durationSeconds",
-        header: "Length",
-        cell: ({ getValue }) =>
-          formatDurationSeconds(getValue<number | null>()),
-      },
-      {
-        accessorKey: "sizeBytes",
-        header: "Size",
-        cell: ({ getValue }) => formatBytes(getValue<number>()),
-      },
-      {
-        id: "actions",
-        enableSorting: false,
-        header: "Actions",
-        cell: ({ row }) => <RecordingTableActions recording={row.original} />,
-      },
-    );
-
-    return tableColumns;
-  }, [showLeagueColumn]);
+  const columns = useRecordingsPanelColumns({ showLeagueColumn });
   const table = useReactTable({
-    data: recordings,
+    data: tableRecordings,
     columns,
-    enableRowSelection: true,
+    enableRowSelection: (row) => canOpenRecordingRow(row.original),
     getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => row.id,
     manualPagination: true,
@@ -211,7 +167,7 @@ function RecordingsPanel({ scope }: RecordingsPanelProps) {
     onRowSelectionChange: handleRowSelectionChange,
     onSortingChange: handleSortingChange,
     pageCount: recordingsPage?.pageCount ?? 1,
-    rowCount: recordingsPage?.totalCount ?? recordings.length,
+    rowCount: totalRecordingRows,
     state: { pagination, rowSelection, sorting },
   });
 
@@ -219,11 +175,13 @@ function RecordingsPanel({ scope }: RecordingsPanelProps) {
     <section className="col-span-12 flex min-h-0 flex-col overflow-hidden rounded-lg bg-base-200">
       <MediaLibraryTable
         emptyMessage="No recordings match this page filter."
+        canRowClick={canOpenRecordingRow}
         getCellClassName={getCellClassName}
         getHeaderClassName={getHeaderClassName}
+        getRowClassName={getRecordingRowClassName}
         onRowClick={handleRowClick}
         table={table}
-        totalCount={recordingsPage?.totalCount ?? recordings.length}
+        totalCount={totalRecordingRows}
       />
       {storageError && (
         <p className="m-0 shrink-0 border-base-content/10 border-t px-4 py-3 text-error text-sm">

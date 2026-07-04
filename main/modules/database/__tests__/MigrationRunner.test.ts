@@ -13,6 +13,7 @@ import { migration_20260630_000000_settings_cleanup } from "../migrations/202606
 import { migration_20260630_010000_recording_storage_path_migrations } from "../migrations/20260630_010000_recording_storage_path_migrations";
 import { migration_20260701_000000_capture_profiles } from "../migrations/20260701_000000_capture_profiles";
 import { migration_20260702_000000_aura_profiles_global_scope } from "../migrations/20260702_000000_aura_profiles_global_scope";
+import { migration_20260702_010000_bookmarks } from "../migrations/20260702_010000_bookmarks";
 
 let database: DatabaseSync | null = null;
 
@@ -841,7 +842,9 @@ describe("MigrationRunner", () => {
     `);
 
     migration_20260630_000000_settings_cleanup.up(db);
+    migration_20260702_010000_bookmarks.up(db);
     migration_20260630_000000_settings_cleanup.up(db);
+    migration_20260702_010000_bookmarks.up(db);
 
     const settings = readSettings(db);
 
@@ -854,6 +857,161 @@ describe("MigrationRunner", () => {
       selectedCaptureProfileId: null,
       selectedProfileId: null,
     });
+  });
+
+  it("creates gameplay bookmark schema with activity sessions idempotently", () => {
+    const db = createDatabase();
+
+    db.exec(`
+      CREATE TABLE settings (
+        key TEXT PRIMARY KEY,
+        value_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `);
+
+    migration_20260702_010000_bookmarks.up(db);
+    migration_20260702_010000_bookmarks.up(db);
+
+    expect(tableExists(db, "bookmarks")).toBe(true);
+    expect(tableExists(db, "bookmark_links")).toBe(true);
+    expect(tableExists(db, "activity_sessions")).toBe(true);
+    expect(tableExists(db, "activity_session_clips")).toBe(true);
+    expect(indexExists(db, "idx_bookmarks_library")).toBe(true);
+    expect(indexExists(db, "idx_bookmarks_game_occurred_at")).toBe(true);
+    expect(indexExists(db, "idx_bookmarks_dedupe")).toBe(false);
+    expect(indexExists(db, "idx_bookmark_links_target_offset")).toBe(true);
+    expect(indexExists(db, "idx_bookmark_links_bookmark")).toBe(true);
+    expect(
+      indexExists(db, "idx_activity_sessions_game_league_started_at"),
+    ).toBe(true);
+    expect(indexExists(db, "idx_activity_sessions_open")).toBe(true);
+    expect(indexExists(db, "idx_activity_session_clips_session_offset")).toBe(
+      true,
+    );
+    expect(indexExists(db, "idx_activity_session_clips_bookmark")).toBe(true);
+    expect(indexColumns(db, "idx_bookmark_links_target_offset")).toEqual([
+      { desc: false, name: "target_kind" },
+      { desc: false, name: "target_id" },
+      { desc: false, name: "archived" },
+      { desc: false, name: "offset_seconds" },
+    ]);
+
+    db.prepare(
+      `
+      INSERT INTO bookmarks (
+        id,
+        source_game,
+        source_league,
+        source,
+        category,
+        label,
+        occurred_at,
+        dedupe_key,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "bookmark-1",
+      "poe2",
+      "Standard",
+      "client-log",
+      "map",
+      "Qimah Reservoir",
+      "2026-07-03T00:00:00.000Z",
+      "dedupe-1",
+      "2026-07-03T00:00:00.000Z",
+      "2026-07-03T00:00:00.000Z",
+    );
+    db.prepare(
+      `
+      INSERT INTO activity_sessions (
+        id,
+        mode,
+        source_game,
+        source_league,
+        started_at,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "activity-session-1",
+      "rewind",
+      "poe2",
+      "Standard",
+      "2026-07-03T00:00:00.000Z",
+      "2026-07-03T00:00:00.000Z",
+      "2026-07-03T00:00:00.000Z",
+    );
+    db.prepare(
+      `
+      INSERT INTO bookmark_links (
+        id,
+        bookmark_id,
+        target_kind,
+        target_id,
+        offset_seconds,
+        duration_seconds,
+        archived,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      "bookmark-link-1",
+      "bookmark-1",
+      "activity-session",
+      "activity-session-1",
+      1.5,
+      null,
+      0,
+      "2026-07-03T00:00:00.000Z",
+      "2026-07-03T00:00:00.000Z",
+    );
+
+    expect(
+      db
+        .prepare("SELECT target_kind, offset_seconds FROM bookmark_links")
+        .get(),
+    ).toEqual({ offset_seconds: 1.5, target_kind: "activity-session" });
+    expect(() =>
+      db
+        .prepare(
+          `
+          INSERT INTO bookmark_links (
+            id,
+            bookmark_id,
+            target_kind,
+            target_id,
+            archived,
+            created_at,
+            updated_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `,
+        )
+        .run(
+          "bookmark-link-invalid",
+          "bookmark-1",
+          "not-real",
+          "activity-session-1",
+          0,
+          "2026-07-03T00:00:00.000Z",
+          "2026-07-03T00:00:00.000Z",
+        ),
+    ).toThrow();
+
+    migration_20260702_010000_bookmarks.down(db);
+
+    expect(tableExists(db, "activity_session_clips")).toBe(false);
+    expect(tableExists(db, "activity_sessions")).toBe(false);
+    expect(tableExists(db, "bookmark_links")).toBe(false);
+    expect(tableExists(db, "bookmarks")).toBe(false);
   });
 
   it("preserves valid startup settings during settings cleanup", () => {

@@ -32,6 +32,7 @@ import type {
   RecordingBookmarksPage,
   RecordingBookmarksQuery,
 } from "./Bookmarks.dto";
+import { bookmarkCategories } from "./Bookmarks.dto";
 import { BookmarksRepository } from "./Bookmarks.repository";
 
 const BOOKMARKS_LOG_SCOPE = "bookmarks";
@@ -40,6 +41,7 @@ const manualReplayBookmarkLabel = "Manual replay";
 const deathBookmarkLabel = "Death";
 const maxPendingReplayClipSessionLinks = 64;
 const maxGeneratedAreaScenePairAgeMs = 30_000;
+const bookmarkCategorySet = new Set<BookmarkCategory>(bookmarkCategories);
 
 interface BookmarkSession {
   activitySessionId?: string;
@@ -63,7 +65,6 @@ interface PendingGeneratedArea {
 class BookmarksService {
   private static instance: BookmarksService | null = null;
 
-  private readonly repository: BookmarksRepository;
   private activeRecordingSession: BookmarkSession | null = null;
   private activeRewindSession: BookmarkSession | null = null;
   private latestGeneratedAreaByGame: Record<
@@ -94,9 +95,31 @@ class BookmarksService {
     return BookmarksService.instance;
   }
 
-  constructor() {
-    this.repository = new BookmarksRepository(DatabaseService.getInstance());
+  static resetForTests(): void {
+    BookmarksService.instance = null;
+  }
+
+  private readonly injectedRepository: BookmarksRepository | null;
+  private repositoryCache: BookmarksRepository | null = null;
+  private repositoryDatabase: DatabaseService | null = null;
+
+  constructor(repository?: BookmarksRepository) {
+    this.injectedRepository = repository ?? null;
     this.setupHandlers();
+  }
+
+  private get repository(): BookmarksRepository {
+    if (this.injectedRepository) {
+      return this.injectedRepository;
+    }
+
+    const database = DatabaseService.getInstance();
+    if (!this.repositoryCache || this.repositoryDatabase !== database) {
+      this.repositoryCache = new BookmarksRepository(database);
+      this.repositoryDatabase = database;
+    }
+
+    return this.repositoryCache;
   }
 
   beginRecordingSession(input: BookmarkSession): void {
@@ -317,6 +340,10 @@ class BookmarksService {
     this.repository.deleteBookmarksForRecording(recordingId);
   }
 
+  deleteReplayClipLinks(replayClipId: string): void {
+    this.repository.deleteReplayClipLinks(replayClipId);
+  }
+
   private createTrackedBookmark(
     game: GameId,
     input: {
@@ -331,6 +358,16 @@ class BookmarksService {
   ): Bookmark | null {
     const session = this.resolveActiveSessionForGame(game);
     if (!session) {
+      logInfo(
+        BOOKMARKS_LOG_SCOPE,
+        "Tracked bookmark skipped: no active session",
+        {
+          category: input.category,
+          game,
+          label: input.label,
+          source: input.source,
+        },
+      );
       return null;
     }
 
@@ -344,6 +381,14 @@ class BookmarksService {
       session,
       input.occurredAt,
     );
+    logInfo(BOOKMARKS_LOG_SCOPE, "Tracked bookmark saved", {
+      activitySessionId: session.activitySessionId ?? null,
+      bookmarkId: bookmark.id,
+      category: bookmark.category,
+      game: session.game,
+      label: bookmark.label,
+      league: session.league,
+    });
 
     return bookmark;
   }
@@ -732,36 +777,34 @@ class BookmarksService {
   private parseLibraryQuery(input: object): BookmarkLibraryQuery {
     const query = input as BookmarkLibraryQuery;
     const parsed: BookmarkLibraryQuery = {};
-    const categories = new Set<BookmarkCategory>([
-      "boss",
-      "death",
-      "hideout",
-      "manual",
-      "map",
-      "pinnacle",
-      "rewind-manual-replay",
-      "town",
-    ]);
-
     if (query.game === "poe1" || query.game === "poe2") {
       parsed.game = query.game;
     }
     if (typeof query.league === "string" && query.league.length <= 80) {
       parsed.league = query.league;
     }
-    if (query.category && categories.has(query.category)) {
+    if (query.category && bookmarkCategorySet.has(query.category)) {
       parsed.category = query.category;
     }
-    if (
-      typeof query.pageIndex === "number" &&
-      Number.isInteger(query.pageIndex)
-    ) {
+    if (query.pageIndex !== undefined) {
+      assertNumber(
+        query.pageIndex,
+        "page index",
+        BookmarksChannel.ListLibrary,
+        {
+          integer: true,
+          min: 0,
+          max: 10_000,
+        },
+      );
       parsed.pageIndex = query.pageIndex;
     }
-    if (
-      typeof query.pageSize === "number" &&
-      Number.isInteger(query.pageSize)
-    ) {
+    if (query.pageSize !== undefined) {
+      assertNumber(query.pageSize, "page size", BookmarksChannel.ListLibrary, {
+        integer: true,
+        min: 1,
+        max: 100,
+      });
       parsed.pageSize = query.pageSize;
     }
     if (
@@ -837,16 +880,30 @@ class BookmarksService {
     const query = input as RecordingBookmarksQuery;
     const parsed: RecordingBookmarksQuery = {};
 
-    if (
-      typeof query.pageIndex === "number" &&
-      Number.isInteger(query.pageIndex)
-    ) {
+    if (query.pageIndex !== undefined) {
+      assertNumber(
+        query.pageIndex,
+        "page index",
+        BookmarksChannel.ListRecording,
+        {
+          integer: true,
+          min: 0,
+          max: 10_000,
+        },
+      );
       parsed.pageIndex = query.pageIndex;
     }
-    if (
-      typeof query.pageSize === "number" &&
-      Number.isInteger(query.pageSize)
-    ) {
+    if (query.pageSize !== undefined) {
+      assertNumber(
+        query.pageSize,
+        "page size",
+        BookmarksChannel.ListRecording,
+        {
+          integer: true,
+          min: 1,
+          max: 100,
+        },
+      );
       parsed.pageSize = query.pageSize;
     }
 

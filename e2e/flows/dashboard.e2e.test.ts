@@ -1,5 +1,6 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
+import type { BookmarkLibraryItem } from "../../main/modules/bookmarks";
 import type { PoeProcessState } from "../../main/modules/poe-process/PoeProcess.dto";
 import type { CapturePreviewSource, GameId } from "../../types";
 import {
@@ -739,4 +740,86 @@ test("keeps recorder overlay control stable during aura lock bridge events", asy
       auraLockEvents: [false],
       recorderVisibilityEvents: [],
     });
+});
+
+test("lists bookmarks, renames manual bookmarks, and opens attached recordings", async ({
+  page,
+}) => {
+  const bookmarks: BookmarkLibraryItem[] = [
+    {
+      activeActivitySessionId: null,
+      activeActivitySessionOffsetSeconds: null,
+      activeRecordingDurationSeconds: 120,
+      activeRecordingId: "recording-1",
+      activeRecordingOffsetSeconds: 24,
+      archivedRecordingDurationSeconds: null,
+      archivedRecordingId: null,
+      archivedRecordingTitle: null,
+      category: "map",
+      createdAt: "2026-07-03T10:15:00.000Z",
+      id: "bookmark-map-1",
+      label: "Qimah Reservoir",
+      note: null,
+      occurredAt: "2026-07-03T10:15:00.000Z",
+      sceneName: "Qimah Reservoir",
+      source: "client-log",
+      sourceGame: "poe2",
+      sourceLeague: "Runes of Aldur",
+      subcategory: null,
+      updatedAt: "2026-07-03T10:15:00.000Z",
+    },
+    {
+      activeActivitySessionId: null,
+      activeActivitySessionOffsetSeconds: null,
+      activeRecordingDurationSeconds: null,
+      activeRecordingId: null,
+      activeRecordingOffsetSeconds: null,
+      archivedRecordingDurationSeconds: null,
+      archivedRecordingId: null,
+      archivedRecordingTitle: null,
+      category: "manual",
+      createdAt: "2026-07-03T10:20:00.000Z",
+      id: "bookmark-manual-1",
+      label: "Memorable moment",
+      note: null,
+      occurredAt: "2026-07-03T10:20:00.000Z",
+      sceneName: "Qimah Reservoir",
+      source: "manual",
+      sourceGame: "poe2",
+      sourceLeague: "Runes of Aldur",
+      subcategory: null,
+      updatedAt: "2026-07-03T10:20:00.000Z",
+    },
+  ];
+
+  await setupDashboardE2E(page, { bookmarks });
+  await page.getByRole("link", { name: "Bookmarks" }).click();
+
+  await expect(page.getByRole("heading", { name: "Bookmarks" })).toBeVisible();
+  await expect(
+    page.getByRole("cell", { name: "Memorable moment Qimah Reservoir" }),
+  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Manual" })).toBeVisible();
+
+  await page.getByRole("button", { name: "Rename bookmark" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Rename bookmark" }),
+  ).toBeVisible();
+  await page.getByLabel("Bookmark label").fill("Boss skip setup");
+  await page.getByRole("button", { exact: true, name: "Rename" }).click();
+
+  await expect(
+    page.getByRole("cell", { name: "Boss skip setup Qimah Reservoir" }),
+  ).toBeVisible();
+  await expect(page.getByText("Memorable moment")).toBeHidden();
+  await expect
+    .poll(async () => {
+      const calls = await getDashboardE2ECalls(page);
+
+      return calls.bookmarkUpdates;
+    })
+    .toEqual([{ id: "bookmark-manual-1", label: "Boss skip setup" }]);
+
+  await page.getByRole("link", { name: "Open attached recording" }).click();
+  await expect(page).toHaveURL(/\/recording\/recording-1\?t=24$/);
 });

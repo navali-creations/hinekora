@@ -1,5 +1,14 @@
+import {
+  calculateTimelineMarkers,
+  calculateTimelineMinorMarkers,
+  calculateTimelinePercent,
+  clampTimelineSeconds,
+  formatTimelineRailLeft,
+  formatTimelineRailWidth,
+  resolveTimelineSecondsFromClientX,
+} from "~/renderer/modules/media-playback/MediaTimeline.utils/MediaTimeline.utils";
+
 const recordingTimelineRailPaddingPixels = 24;
-const markerIntervalsSeconds = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1200];
 
 interface ResolveRecordingTimelineSecondsFromClientXInput {
   clientX: number;
@@ -7,63 +16,37 @@ interface ResolveRecordingTimelineSecondsFromClientXInput {
   timelineGrid: HTMLElement | null;
 }
 
+interface RecordingClipTargetRulerSegment {
+  endSeconds: number;
+  eventDurationSeconds: number;
+  startSeconds: number;
+  tailDurationSeconds: number;
+  triggerSeconds: number;
+}
+
 function calculateRecordingTimelinePercent(
   seconds: number | null,
   durationSeconds: number,
 ): number {
-  if (seconds === null || !Number.isFinite(seconds) || durationSeconds <= 0) {
-    return 0;
-  }
-
-  return Math.min(Math.max((seconds / durationSeconds) * 100, 0), 100);
+  return calculateTimelinePercent(seconds, durationSeconds);
 }
 
 function calculateRecordingTimelineMarkers(durationSeconds: number): number[] {
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    return [0];
-  }
-
-  const interval = resolveMarkerInterval(durationSeconds / 6);
-  const markerCount = Math.floor(durationSeconds / interval) + 1;
-  const markers = Array.from({ length: markerCount }, (_, index) =>
-    roundTimelineSeconds(index * interval),
-  );
-  const roundedDuration = roundTimelineSeconds(durationSeconds);
-  if ((markers.at(-1) ?? 0) < roundedDuration) {
-    markers.push(roundedDuration);
-  }
-
-  return markers;
+  return calculateTimelineMarkers(durationSeconds);
 }
 
 function calculateRecordingTimelineMinorMarkers(
   durationSeconds: number,
 ): number[] {
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    return [];
-  }
-
-  const interval = resolveMarkerInterval(durationSeconds / 6);
-  const minorInterval = interval / 5;
-  const minorCount = Math.floor(durationSeconds / minorInterval);
-
-  return Array.from({ length: minorCount }, (_, index) =>
-    roundTimelineSeconds((index + 1) * minorInterval),
-  ).filter(
-    (marker) => marker < durationSeconds && Math.abs(marker % interval) > 0.001,
-  );
+  return calculateTimelineMinorMarkers(durationSeconds);
 }
 
 function formatRecordingTimelineRailLeft(percent: number): string {
-  return `calc(${recordingTimelineRailPaddingPixels}px + (100% - ${
-    recordingTimelineRailPaddingPixels * 2
-  }px) * ${percent / 100})`;
+  return formatTimelineRailLeft(percent, recordingTimelineRailPaddingPixels);
 }
 
 function formatRecordingTimelineRailWidth(percent: number): string {
-  return `calc((100% - ${
-    recordingTimelineRailPaddingPixels * 2
-  }px) * ${percent / 100})`;
+  return formatTimelineRailWidth(percent, recordingTimelineRailPaddingPixels);
 }
 
 function formatRecordingTimelineMarker(seconds: number): string {
@@ -114,15 +97,45 @@ function clampRecordingTimelineSeconds(
   seconds: number,
   durationSeconds: number,
 ): number {
-  if (!Number.isFinite(seconds)) {
-    return 0;
+  return clampTimelineSeconds(seconds, durationSeconds);
+}
+
+function resolveRecordingClipTargetRulerSegment(input: {
+  durationSeconds: number | null;
+  offsetSeconds: number | null;
+  targetDurationSeconds: number | null;
+}): RecordingClipTargetRulerSegment | null {
+  if (
+    input.offsetSeconds === null ||
+    input.targetDurationSeconds === null ||
+    input.targetDurationSeconds <= 0
+  ) {
+    return null;
   }
 
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
-    return Math.max(0, seconds);
+  const clipDurationSeconds =
+    input.durationSeconds ?? input.targetDurationSeconds;
+  if (clipDurationSeconds <= 0) {
+    return null;
   }
 
-  return Math.min(Math.max(seconds, 0), durationSeconds);
+  const triggerSeconds = Math.max(0, input.offsetSeconds);
+  const preRollDurationSeconds = Math.min(
+    input.targetDurationSeconds,
+    clipDurationSeconds,
+  );
+  const startSeconds = Math.max(0, triggerSeconds - preRollDurationSeconds);
+  const endSeconds = startSeconds + clipDurationSeconds;
+  const eventDurationSeconds = Math.max(0, triggerSeconds - startSeconds);
+  const tailDurationSeconds = Math.max(0, endSeconds - triggerSeconds);
+
+  return {
+    endSeconds,
+    eventDurationSeconds,
+    startSeconds,
+    tailDurationSeconds,
+    triggerSeconds,
+  };
 }
 
 function resolveRecordingTimelineSecondsFromClientX({
@@ -130,39 +143,15 @@ function resolveRecordingTimelineSecondsFromClientX({
   durationSeconds,
   timelineGrid,
 }: ResolveRecordingTimelineSecondsFromClientXInput): number | null {
-  if (!timelineGrid || durationSeconds <= 0) {
-    return null;
-  }
-
-  const bounds = timelineGrid.getBoundingClientRect();
-  const timelineLeft = bounds.left + recordingTimelineRailPaddingPixels;
-  const timelineRight = bounds.right - recordingTimelineRailPaddingPixels;
-  if (clientX < timelineLeft || clientX > timelineRight) {
-    return null;
-  }
-
-  const timelineWidth = bounds.width - recordingTimelineRailPaddingPixels * 2;
-  if (timelineWidth <= 0) {
-    return null;
-  }
-
-  return clampRecordingTimelineSeconds(
-    ((clientX - timelineLeft) / timelineWidth) * durationSeconds,
+  return resolveTimelineSecondsFromClientX({
+    clientX,
     durationSeconds,
-  );
+    railPaddingPixels: recordingTimelineRailPaddingPixels,
+    timelineGrid,
+  });
 }
 
-function resolveMarkerInterval(targetSeconds: number): number {
-  return (
-    markerIntervalsSeconds.find((interval) => interval >= targetSeconds) ??
-    Math.ceil(targetSeconds / 1200) * 1200
-  );
-}
-
-function roundTimelineSeconds(seconds: number): number {
-  return Math.round(seconds * 1000) / 1000;
-}
-
+export type { RecordingClipTargetRulerSegment };
 export {
   calculateRecordingTimelineMarkers,
   calculateRecordingTimelineMinorMarkers,
@@ -174,5 +163,6 @@ export {
   formatRecordingTimelineTime,
   formatRecordingTimelineTimestamp,
   recordingTimelineRailPaddingPixels,
+  resolveRecordingClipTargetRulerSegment,
   resolveRecordingTimelineSecondsFromClientX,
 };

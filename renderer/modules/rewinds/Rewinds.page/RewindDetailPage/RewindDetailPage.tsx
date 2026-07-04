@@ -86,6 +86,7 @@ function RewindDetailPage({ rewindId }: RewindDetailPageProps) {
                 enableVisualPlaybackSubscription={!!detail.mediaUrl}
                 isPlaybackDisabled={!detail.mediaUrl}
                 isPlaying={detail.playback.isPlaying}
+                markerBookmarks={detail.markerBookmarks}
                 mediaUrl={null}
                 playbackSeconds={detail.playbackSeconds}
                 toolbarStart={

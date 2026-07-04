@@ -14,8 +14,13 @@ import { clampRecordingTimelineSeconds } from "~/renderer/modules/recordings/Rec
 
 import {
   calculateRewindDurationSeconds,
+  defaultRewindTimelineMarkerFilterValue,
+  filterRewindTimelineMarkerBookmarks,
   findRewindClipAtSeconds,
+  findRewindClipForBookmark,
   mapRewindTimelineBookmarks,
+  type RewindTimelineMarkerCategoryFilter,
+  resolveRewindBookmarkSeekSeconds,
   resolveRewindClipLocalSeconds,
   resolveRewindClipSegment,
   resolveRewindClipVisualOffsetSeconds,
@@ -44,6 +49,10 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
     useState<RecordingBookmarkCategoryFilter>(
       allRecordingBookmarkCategoriesValue,
     );
+  const [timelineMarkerCategoryFilter, setTimelineMarkerCategoryFilter] =
+    useState<RewindTimelineMarkerCategoryFilter>(
+      defaultRewindTimelineMarkerFilterValue,
+    );
   const [bookmarkPageIndex, setBookmarkPageIndex] = useState(0);
   const { clipPreviewState, mediaUrl, playback, selectClip, selectedClipId } =
     useRewindClipPreview();
@@ -53,6 +62,7 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
     let isActive = true;
     setState(initialRewindDetailState);
     setBookmarkCategoryFilter(allRecordingBookmarkCategoriesValue);
+    setTimelineMarkerCategoryFilter(defaultRewindTimelineMarkerFilterValue);
     setBookmarkPageIndex(0);
     setPlaybackSeconds(0);
     selectClip(null);
@@ -62,7 +72,19 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
       .then((timeline) => {
         if (isActive) {
           setState({ error: null, isLoading: false, timeline });
-          selectClip(timeline?.clips[0]?.targetId ?? null);
+          const firstClip = timeline?.clips[0] ?? null;
+          const firstClipSegment = resolveRewindClipSegment(firstClip);
+
+          if (firstClip && firstClipSegment) {
+            setPlaybackSeconds(firstClipSegment.startSeconds);
+            selectClip(firstClip.targetId, {
+              play: false,
+              seekSeconds: resolveRewindClipLocalSeconds(
+                firstClip,
+                firstClipSegment.startSeconds,
+              ),
+            });
+          }
         }
       })
       .catch((error: unknown) => {
@@ -88,6 +110,7 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
           .map((clip) => [
             clip.bookmarkId as string,
             {
+              durationSeconds: clip.durationSeconds,
               targetDurationSeconds: clip.targetDurationSeconds,
               targetId: clip.targetId,
             },
@@ -107,6 +130,14 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
         durationSeconds,
       }),
     [clipTargetsByBookmarkId, durationSeconds, state.timeline?.bookmarks],
+  );
+  const markerBookmarks = useMemo<RecordingBookmark[]>(
+    () =>
+      filterRewindTimelineMarkerBookmarks({
+        bookmarks,
+        categoryFilter: timelineMarkerCategoryFilter,
+      }),
+    [bookmarks, timelineMarkerCategoryFilter],
   );
   const selectedClipTarget = useMemo(
     () =>
@@ -183,6 +214,7 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
     category: RecordingBookmarkCategoryFilter,
   ) => {
     setBookmarkCategoryFilter(category);
+    setTimelineMarkerCategoryFilter(category);
     setBookmarkPageIndex(0);
   };
 
@@ -195,15 +227,22 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
   };
 
   const handleSelectBookmark = (bookmark: RecordingBookmark) => {
-    const nextSeconds = bookmark.offsetSeconds ?? 0;
-    const clipTarget = state.timeline
-      ? findRewindClipAtSeconds(state.timeline.clips, nextSeconds)
-      : null;
+    const timelineClips = state.timeline?.clips ?? [];
+    const nextSeconds = resolveRewindBookmarkSeekSeconds({
+      bookmark,
+      clips: timelineClips,
+    });
+    const clipTarget =
+      findRewindClipForBookmark(timelineClips, bookmark) ??
+      findRewindClipAtSeconds(timelineClips, nextSeconds);
 
     setPlaybackSeconds(nextSeconds);
     if (clipTarget) {
       selectRewindClip(clipTarget, nextSeconds, { play: false });
+      return;
     }
+
+    selectClip(null);
   };
 
   const handleSeek = (seconds: number) => {
@@ -271,6 +310,7 @@ function useRewindDetailTimeline({ rewindId }: UseRewindDetailTimelineInput) {
     handleSelectBookmark,
     handleVolumeChange,
     mediaUrl,
+    markerBookmarks,
     playback,
     playbackSeconds,
     selectedClipId,

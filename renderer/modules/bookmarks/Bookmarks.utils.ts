@@ -17,7 +17,7 @@ const bookmarkCategoryLabels: Record<BookmarkCategory, string> = {
 };
 
 const bookmarkCategoryBadgeClassNames: Record<BookmarkCategory, string> = {
-  boss: "badge-error",
+  boss: "border-orange-500 bg-orange-500 text-black",
   death: "badge-error",
   hideout: "badge-info",
   manual: "badge-primary",
@@ -28,7 +28,7 @@ const bookmarkCategoryBadgeClassNames: Record<BookmarkCategory, string> = {
 };
 
 const bookmarkCategoryTimelineClassNames: Record<BookmarkCategory, string> = {
-  boss: "bg-red-500",
+  boss: "bg-orange-500",
   death: "bg-red-600",
   hideout: "bg-sky-500",
   manual: "bg-purple-400",

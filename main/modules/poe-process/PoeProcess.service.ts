@@ -117,6 +117,12 @@ class PoeProcessService {
         return;
       }
 
+      logInfo(POE_PROCESS_SCOPE, "PoE process monitor stopped", {
+        activeGame: SettingsStoreService.getInstance().get().activeGame,
+        previousGame: this.currentState.game ?? null,
+        previousIsRunning: this.currentState.isRunning,
+        previousProcessName: this.currentState.processName,
+      });
       this.currentState = STOPPED_POE_PROCESS_STATE;
       this.syncGameRunningConsumers();
       this.sendToRenderer(PoeProcessChannel.Stop, STOPPED_POE_PROCESS_STATE);
@@ -204,7 +210,19 @@ class PoeProcessService {
     state: ProcessState,
     options: PoeProcessRefreshOptions = {},
   ): void {
+    const previousState = this.currentState;
     this.currentState = state;
+    logInfo(POE_PROCESS_SCOPE, "PoE process monitor state changed", {
+      activeGame: SettingsStoreService.getInstance().get().activeGame,
+      channel,
+      isActiveGameRunning: this.isActiveGameRunning(state),
+      previousGame: previousState.game ?? null,
+      previousIsRunning: previousState.isRunning,
+      previousProcessName: previousState.processName,
+      resolvedGame: state.game ?? null,
+      isRunning: state.isRunning,
+      processName: state.processName,
+    });
     this.syncGameRunningConsumers();
     this.sendToRenderer(channel, state);
     if (options.requestCapturePreviewRefresh !== false) {

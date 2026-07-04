@@ -6,5 +6,9 @@ export type {
   ClientLogPathInput,
   ClientLogStatus,
 } from "./ClientLog.dto";
-export { findDeathLines, hashDeathLine } from "./ClientLog.matcher";
+export {
+  findDeathLines,
+  hashDeathLine,
+  parseClientLogLineTimestamp,
+} from "./ClientLog.matcher";
 export { ClientLogService } from "./ClientLog.service";

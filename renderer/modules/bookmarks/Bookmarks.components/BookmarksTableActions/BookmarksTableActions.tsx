@@ -11,10 +11,12 @@ interface BookmarksTableActionsProps {
 }
 
 function BookmarksTableActions({ bookmark }: BookmarksTableActionsProps) {
-  const { deleteManual, updateManual } = useBookmarksShallow((bookmarks) => ({
-    deleteManual: bookmarks.deleteManual,
-    updateManual: bookmarks.updateManual,
-  }));
+  const { deleteManual, openManualRenameDialog } = useBookmarksShallow(
+    (bookmarks) => ({
+      deleteManual: bookmarks.deleteManual,
+      openManualRenameDialog: bookmarks.openManualRenameDialog,
+    }),
+  );
   const isManualBookmark =
     bookmark.category === "manual" && bookmark.source === "manual";
 
@@ -24,12 +26,7 @@ function BookmarksTableActions({ bookmark }: BookmarksTableActionsProps) {
       return;
     }
 
-    const label = window.prompt("Bookmark label", currentLabel)?.trim();
-    if (!label) {
-      return;
-    }
-
-    void updateManual(bookmarkId, label);
+    openManualRenameDialog({ id: bookmarkId, label: currentLabel });
   };
 
   const handleDeleteManual = (event: MouseEvent<HTMLButtonElement>) => {

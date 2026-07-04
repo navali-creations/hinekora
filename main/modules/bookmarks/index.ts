@@ -27,4 +27,8 @@ export type {
   RecordingBookmarksPage,
   RecordingBookmarksQuery,
 } from "./Bookmarks.dto";
+export {
+  bookmarkCategories,
+  locationBookmarkCategories,
+} from "./Bookmarks.dto";
 export { BookmarksService } from "./Bookmarks.service";

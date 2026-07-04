@@ -1,19 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { clampRecordingTimelineSeconds } from "../RecordingBookmarkTimeline/RecordingBookmarkTimeline.utils";
-import { publishRecordingPlaybackVisualTime } from "../RecordingDetailPage.utils";
-
 const playbackStoreSyncIntervalMs = 50;
 
-interface UseRecordingDetailPlaybackInput {
+interface UseMediaPlaybackInput {
   fallbackDurationSeconds: number | null;
   mediaUrl: string | null;
+  onVisualTimeChange?: (seconds: number) => void;
 }
 
-function useRecordingDetailPlayback({
+function clampMediaPlaybackSeconds(seconds: number, durationSeconds: number) {
+  if (!Number.isFinite(seconds)) {
+    return 0;
+  }
+
+  return Math.min(Math.max(seconds, 0), Math.max(durationSeconds, 0));
+}
+
+function useMediaPlayback({
   fallbackDurationSeconds,
   mediaUrl,
-}: UseRecordingDetailPlaybackInput) {
+  onVisualTimeChange,
+}: UseMediaPlaybackInput) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playbackAnimationFrameRef = useRef<number | null>(null);
   const playbackSecondsRef = useRef(0);
@@ -51,14 +58,14 @@ function useRecordingDetailPlayback({
     setActualDurationSeconds(mediaUrl ? null : 0);
     setIsPlaying(false);
     playbackSecondsRef.current = 0;
-    publishRecordingPlaybackVisualTime(0);
+    onVisualTimeChange?.(0);
     setPlaybackSeconds(0);
-  }, [mediaUrl]);
+  }, [mediaUrl, onVisualTimeChange]);
 
   useEffect(() => {
     playbackSecondsRef.current = playbackSeconds;
-    publishRecordingPlaybackVisualTime(playbackSeconds);
-  }, [playbackSeconds]);
+    onVisualTimeChange?.(playbackSeconds);
+  }, [onVisualTimeChange, playbackSeconds]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -72,13 +79,13 @@ function useRecordingDetailPlayback({
 
   const publishPlaybackSeconds = useCallback(
     (nextSeconds: number, options: { force?: boolean } = {}) => {
-      const clampedSeconds = clampRecordingTimelineSeconds(
+      const clampedSeconds = clampMediaPlaybackSeconds(
         nextSeconds,
         durationSeconds,
       );
 
       playbackSecondsRef.current = clampedSeconds;
-      publishRecordingPlaybackVisualTime(clampedSeconds);
+      onVisualTimeChange?.(clampedSeconds);
 
       const now = performance.now();
       if (
@@ -91,7 +98,7 @@ function useRecordingDetailPlayback({
       lastPlaybackStoreSyncMsRef.current = now;
       setPlaybackSeconds(clampedSeconds);
     },
-    [durationSeconds],
+    [durationSeconds, onVisualTimeChange],
   );
 
   const syncPlaybackPosition = useCallback(
@@ -106,10 +113,7 @@ function useRecordingDetailPlayback({
 
   const seekTo = useCallback(
     (seconds: number) => {
-      const nextSeconds = clampRecordingTimelineSeconds(
-        seconds,
-        durationSeconds,
-      );
+      const nextSeconds = clampMediaPlaybackSeconds(seconds, durationSeconds);
       const video = videoRef.current;
       if (video) {
         video.currentTime = nextSeconds;
@@ -229,4 +233,4 @@ function useRecordingDetailPlayback({
   };
 }
 
-export { useRecordingDetailPlayback };
+export { clampMediaPlaybackSeconds, useMediaPlayback };

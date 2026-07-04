@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { PageContainer } from "~/renderer/components/PageContainer/PageContainer";
 import { PageContent } from "~/renderer/components/PageContent/PageContent";
 import { PageHeader } from "~/renderer/components/PageHeader/PageHeader";
+import { BookmarkRenameDialog } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarkRenameDialog/BookmarkRenameDialog";
 import { BookmarksTable } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksTable/BookmarksTable";
 import { MediaLibraryPageActions } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryPageActions/MediaLibraryPageActions";
 import { useMediaLibraryScope } from "~/renderer/modules/media-library/MediaLibrary.hooks/useMediaLibraryScope/useMediaLibraryScope";
@@ -46,6 +47,7 @@ function BookmarksPage() {
       <PageContent className="grid h-full min-h-0 grid-cols-12 items-stretch gap-4 [grid-auto-flow:dense]">
         <BookmarksTable />
       </PageContent>
+      <BookmarkRenameDialog />
     </PageContainer>
   );
 }

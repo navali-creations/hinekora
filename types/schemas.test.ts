@@ -44,6 +44,7 @@ describe("shared schemas", () => {
       recordingAudioOutputDeviceId: null,
       recordingHideOverlaysFromRecording: true,
       recordingHideOverlaysFromRewind: true,
+      recordingTrackBookmarksInRewind: true,
       recordingAutoStartMode: "off",
       selectedCaptureProfileId: null,
       selectedCaptureProfileIdsByGame: {},

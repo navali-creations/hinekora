@@ -6,6 +6,7 @@ import {
   findLatestFocusState,
   hashDeathLine,
   parseClientLogEvents,
+  parseClientLogLineTimestamp,
 } from "../ClientLog.matcher";
 
 describe("ClientLog matcher", () => {
@@ -201,5 +202,14 @@ describe("ClientLog matcher", () => {
     expect(hashDeathLine("You have died.")).toBe(
       hashDeathLine("You have died."),
     );
+  });
+
+  it("parses client log timestamps from death lines", () => {
+    expect(
+      parseClientLogLineTimestamp(
+        "2026/07/03 02:45:26 365285031 3ef231e0 [INFO Client 50320] : ailubleed has been slain.",
+      ),
+    ).toBe(new Date(2026, 6, 3, 2, 45, 26).toISOString());
+    expect(parseClientLogLineTimestamp("ailubleed has been slain.")).toBeNull();
   });
 });

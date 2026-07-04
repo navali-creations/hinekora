@@ -9,7 +9,6 @@ import { migration_20260630_010000_recording_storage_path_migrations } from "./2
 import { migration_20260701_000000_capture_profiles } from "./20260701_000000_capture_profiles";
 import { migration_20260702_000000_aura_profiles_global_scope } from "./20260702_000000_aura_profiles_global_scope";
 import { migration_20260702_010000_bookmarks } from "./20260702_010000_bookmarks";
-import { migration_20260703_000000_bookmark_activity_sessions } from "./20260703_000000_bookmark_activity_sessions";
 import type { Migration } from "./Migration.interface";
 
 const migrations: Migration[] = [
@@ -24,7 +23,6 @@ const migrations: Migration[] = [
   migration_20260701_000000_capture_profiles,
   migration_20260702_000000_aura_profiles_global_scope,
   migration_20260702_010000_bookmarks,
-  migration_20260703_000000_bookmark_activity_sessions,
 ];
 
 export type { Migration } from "./Migration.interface";

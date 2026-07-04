@@ -4,12 +4,15 @@ import type {
   SetupState,
   StepValidationResult,
 } from "~/main/modules/app-setup/AppSetup.types";
-import type { ManagedRecorderCaptureMode } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
 import type {
+  ActivitySessionLibraryItem,
+  ActivitySessionLibraryPage,
+  ActivitySessionLibraryQuery,
   BookmarkLibraryItem,
   BookmarkLibraryPage,
   BookmarkLibraryQuery,
 } from "~/main/modules/bookmarks";
+import type { ManagedRecorderCaptureMode } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
 import type { PoeProcessState } from "~/main/modules/poe-process/PoeProcess.dto";
 import type {
   RecordingStorageUsage,
@@ -234,13 +237,35 @@ export interface BookmarksSlice {
     availableLeagues: string[];
     error: string | null;
     isLoading: boolean;
+    isManualRenameSaving: boolean;
     items: BookmarkLibraryItem[];
+    manualRenameDraft: { id: string; label: string } | null;
     page: BookmarkLibraryPage | null;
     query: BookmarkLibraryQuery | null;
+    closeManualRenameDialog: () => void;
+    openManualRenameDialog: (input: { id: string; label: string }) => void;
     hydrate: () => Promise<void>;
     refresh: (query?: BookmarkLibraryQuery) => Promise<void>;
     deleteManual: (id: string) => Promise<void>;
-    updateManual: (id: string, label: string, note?: string | null) => Promise<void>;
+    saveManualRename: (label: string) => Promise<void>;
+    updateManual: (
+      id: string,
+      label: string,
+      note?: string | null,
+    ) => Promise<void>;
+  };
+}
+
+export interface RewindsSlice {
+  rewinds: {
+    availableLeagues: string[];
+    error: string | null;
+    isLoading: boolean;
+    items: ActivitySessionLibraryItem[];
+    page: ActivitySessionLibraryPage | null;
+    query: ActivitySessionLibraryQuery | null;
+    hydrate: () => Promise<void>;
+    refresh: (query?: ActivitySessionLibraryQuery) => Promise<void>;
   };
 }
 
@@ -260,6 +285,7 @@ export type BoundStore = AppMenuSlice &
   ReplayClipsSlice &
   RecordingStorageSlice &
   BookmarksSlice &
+  RewindsSlice &
   StorageSlice &
   UpdaterSlice &
   ChangelogSlice &

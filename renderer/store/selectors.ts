@@ -24,6 +24,10 @@ export const useBookmarksShallow = <T>(
   selector: (bookmarks: BoundStore["bookmarks"]) => T,
 ) => useBoundStore(useShallow((state) => selector(state.bookmarks)));
 
+export const useRewindsShallow = <T>(
+  selector: (rewinds: BoundStore["rewinds"]) => T,
+) => useBoundStore(useShallow((state) => selector(state.rewinds)));
+
 export const useAppSetupShallow = <T>(
   selector: (appSetup: BoundStore["appSetup"]) => T,
 ) => useBoundStore(useShallow((state) => selector(state.appSetup)));

@@ -285,6 +285,7 @@ class ReplayClipsRepository {
           original_obs_path: clip.originalObsPath,
           processed_clip_path: clip.processedClipPath,
           target_duration_seconds: clip.targetDurationSeconds,
+          duration_seconds: null,
           size_bytes: clip.sizeBytes,
           error: clip.error,
           created_at: clip.createdAt,
@@ -311,6 +312,18 @@ class ReplayClipsRepository {
         .updateTable("replay_clips")
         .set({
           size_bytes: sizeBytes,
+          updated_at: new Date().toISOString(),
+        })
+        .where("id", "=", id),
+    );
+  }
+
+  updateDuration(id: string, durationSeconds: number | null): void {
+    this.database.runQuery(
+      this.database.kysely
+        .updateTable("replay_clips")
+        .set({
+          duration_seconds: durationSeconds,
           updated_at: new Date().toISOString(),
         })
         .where("id", "=", id),

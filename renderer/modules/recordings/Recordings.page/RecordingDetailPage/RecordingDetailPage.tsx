@@ -11,6 +11,7 @@ import { PageContainer } from "~/renderer/components/PageContainer/PageContainer
 import { PageContent } from "~/renderer/components/PageContent/PageContent";
 import { PageHeader } from "~/renderer/components/PageHeader/PageHeader";
 import { MediaDetailPageActions } from "~/renderer/modules/media-library/MediaLibrary.components/MediaDetailPageActions/MediaDetailPageActions";
+import { useMediaPlayback } from "~/renderer/modules/media-playback/useMediaPlayback/useMediaPlayback";
 
 import { RecordingBookmarksPanel } from "./RecordingBookmarksPanel/RecordingBookmarksPanel";
 import {
@@ -19,11 +20,11 @@ import {
   resolveRecordingBookmarkCategories,
 } from "./RecordingBookmarksPanel/RecordingBookmarksPanel.utils";
 import { RecordingBookmarkTimeline } from "./RecordingBookmarkTimeline/RecordingBookmarkTimeline";
+import { publishRecordingPlaybackVisualTime } from "./RecordingDetailPage.utils";
 import { RecordingDetailPlayer } from "./RecordingDetailPlayer/RecordingDetailPlayer";
 import { RecordingDetailStats } from "./RecordingDetailStats/RecordingDetailStats";
 import { RecordingDetailStatusAlerts } from "./RecordingDetailStatusAlerts/RecordingDetailStatusAlerts";
 import { useRecordingDetailFileActions } from "./useRecordingDetailFileActions/useRecordingDetailFileActions";
-import { useRecordingDetailPlayback } from "./useRecordingDetailPlayback/useRecordingDetailPlayback";
 
 interface RecordingDetailPageProps {
   initialPlaybackSeconds?: number | null;
@@ -123,9 +124,10 @@ function RecordingDetailPage({
     togglePlayback,
     videoRef,
     volume,
-  } = useRecordingDetailPlayback({
+  } = useMediaPlayback({
     fallbackDurationSeconds: recording?.durationSeconds ?? null,
     mediaUrl: state.detail?.mediaUrl ?? null,
+    onVisualTimeChange: publishRecordingPlaybackVisualTime,
   });
   const timelineBookmarks = state.bookmarksPage?.timelineItems ?? [];
   const markerBookmarks = useMemo(

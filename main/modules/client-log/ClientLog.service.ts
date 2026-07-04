@@ -35,6 +35,7 @@ import {
   findLatestFocusState,
   hashDeathLine,
   parseClientLogEvents,
+  parseClientLogLineTimestamp,
 } from "./ClientLog.matcher";
 import { extractCompleteLogLines } from "./ClientLog.reader";
 
@@ -416,6 +417,19 @@ class ClientLogService extends EventEmitter {
     const parsedEvents = parseClientLogEvents(textToParse, {
       characterName: this.characterNames[game],
     });
+    if (parsedEvents.activityEvents.length > 0) {
+      logInfo(CLIENT_LOG_SCOPE, "Client log activity events matched", {
+        game,
+        count: parsedEvents.activityEvents.length,
+        generatedAreaCount: parsedEvents.activityEvents.filter(
+          (event) => event.kind === "generated-area",
+        ).length,
+        sceneSourceCount: parsedEvents.activityEvents.filter(
+          (event) => event.kind === "scene-source",
+        ).length,
+        chunkHash: createTextHash(textToParse),
+      });
+    }
     BookmarksService.getInstance().handleClientLogActivityEvents(
       game,
       parsedEvents.activityEvents,
@@ -449,7 +463,8 @@ class ClientLogService extends EventEmitter {
         game,
         line,
         lineHash: hashDeathLine(line),
-        detectedAt: new Date().toISOString(),
+        detectedAt:
+          parseClientLogLineTimestamp(line) ?? new Date().toISOString(),
       };
       logInfo(CLIENT_LOG_SCOPE, "Dispatching death event", {
         game,
@@ -509,6 +524,16 @@ class ClientLogService extends EventEmitter {
         return;
       }
 
+      logInfo(CLIENT_LOG_SCOPE, "Client log activity state seeded", {
+        game,
+        count: parsedEvents.activityEvents.length,
+        generatedAreaCount: parsedEvents.activityEvents.filter(
+          (event) => event.kind === "generated-area",
+        ).length,
+        sceneSourceCount: parsedEvents.activityEvents.filter(
+          (event) => event.kind === "scene-source",
+        ).length,
+      });
       BookmarksService.getInstance().seedClientLogActivityState(
         game,
         parsedEvents.activityEvents,

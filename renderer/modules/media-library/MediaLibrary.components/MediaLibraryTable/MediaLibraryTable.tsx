@@ -5,7 +5,12 @@ import {
   type Table,
 } from "@tanstack/react-table";
 import clsx from "clsx";
-import type { KeyboardEvent, MouseEvent } from "react";
+import {
+  Fragment,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import {
   FiChevronDown as ChevronDown,
   FiChevronUp as ChevronUp,
@@ -20,7 +25,12 @@ interface MediaLibraryTableProps<TData> {
   emptyMessage: string;
   getHeaderClassName: (columnId: string) => string;
   getCellClassName: (columnId: string) => string;
+  getRowClassName?: (row: TData) => string;
   onRowClick?: (row: TData) => void;
+  renderRowSeparatorBefore?: (input: {
+    previousRow: TData;
+    row: TData;
+  }) => ReactNode;
   totalCount: number;
 }
 
@@ -30,7 +40,9 @@ function MediaLibraryTable<TData>({
   emptyMessage,
   getHeaderClassName,
   getCellClassName,
+  getRowClassName,
   onRowClick,
+  renderRowSeparatorBefore,
   totalCount,
 }: MediaLibraryTableProps<TData>) {
   const renderHeaderContent = (header: Header<TData, unknown>) => {
@@ -129,29 +141,55 @@ function MediaLibraryTable<TData>({
             ))}
           </thead>
           <tbody>
-            {table.getRowModel().rows.map((row) => (
-              <tr
-                className={clsx(
-                  "border-base-content/10 border-b outline-none transition-colors last:border-b-0 hover:bg-base-content/[0.03] focus:outline-none",
-                  isRowClickable(row) &&
-                    "cursor-pointer focus:bg-base-content/[0.04]",
-                )}
-                key={row.id}
-                role={isRowClickable(row) ? "button" : undefined}
-                tabIndex={isRowClickable(row) ? 0 : undefined}
-                onClick={handleRowClick(row)}
-                onKeyDown={handleRowKeyDown(row)}
-              >
-                {row.getVisibleCells().map((cell) => (
-                  <td
-                    className={getCellClassName(cell.column.id)}
-                    key={cell.id}
+            {table.getRowModel().rows.map((row, rowIndex, rows) => {
+              const previousRow = rows[rowIndex - 1] ?? null;
+              const separator =
+                previousRow && renderRowSeparatorBefore
+                  ? renderRowSeparatorBefore({
+                      previousRow: previousRow.original,
+                      row: row.original,
+                    })
+                  : null;
+
+              return (
+                <Fragment key={row.id}>
+                  {separator && (
+                    <tr aria-hidden="true">
+                      <td
+                        className="border-base-content/10 border-y bg-base-300/60 p-0"
+                        colSpan={table.getAllLeafColumns().length}
+                      >
+                        {separator}
+                      </td>
+                    </tr>
+                  )}
+                  <tr
+                    className={clsx(
+                      "border-base-content/10 border-b outline-none transition-colors last:border-b-0 hover:bg-base-content/[0.03] focus:outline-none",
+                      isRowClickable(row) &&
+                        "cursor-pointer focus:bg-base-content/[0.04]",
+                      getRowClassName?.(row.original),
+                    )}
+                    role={isRowClickable(row) ? "button" : undefined}
+                    tabIndex={isRowClickable(row) ? 0 : undefined}
+                    onClick={handleRowClick(row)}
+                    onKeyDown={handleRowKeyDown(row)}
                   >
-                    {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                  </td>
-                ))}
-              </tr>
-            ))}
+                    {row.getVisibleCells().map((cell) => (
+                      <td
+                        className={getCellClassName(cell.column.id)}
+                        key={cell.id}
+                      >
+                        {flexRender(
+                          cell.column.columnDef.cell,
+                          cell.getContext(),
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                </Fragment>
+              );
+            })}
             {table.getRowModel().rows.length === 0 && (
               <tr>
                 <td

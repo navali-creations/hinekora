@@ -1,6 +1,4 @@
 import {
-  FiBookmark as Bookmark,
-  FiCheck as Check,
   FiMaximize2 as Expand,
   FiLoader as Loader2,
   FiPlay as Play,
@@ -14,6 +12,7 @@ import { useRecorderOverlayControls } from "~/renderer/modules/recorder-controls
 
 import styles from "../../RecorderControlsOverlay.page/RecorderControlsOverlayPage.module.css";
 import { closeRecorderOverlay } from "../ExpandedRecorderControlsOverlay/ExpandedRecorderControlsOverlay.utils";
+import { RecorderBookmarkActionButton } from "../RecorderBookmarkActionButton/RecorderBookmarkActionButton";
 
 interface MinimizedRecorderControlsOverlayProps {
   onExpand: () => void;
@@ -60,16 +59,11 @@ function MinimizedRecorderControlsOverlay({
           )}
         </button>
         {showBookmarkAction && (
-          <button
-            aria-label="Add bookmark"
-            className={`${styles.iconButton} btn btn-square ${bookmarkSaved ? "btn-success" : "btn-primary"}`}
+          <RecorderBookmarkActionButton
             disabled={!canCreateBookmark}
-            title="Add bookmark"
-            type="button"
+            isSaved={bookmarkSaved}
             onClick={handleCreateBookmark}
-          >
-            {bookmarkSaved ? <Check size={18} /> : <Bookmark size={18} />}
-          </button>
+          />
         )}
         {!isSessionMode && (
           <button

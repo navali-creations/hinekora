@@ -9,10 +9,14 @@ import type { RunRecordingItem } from "~/main/modules/recording-storage/Recordin
 import { useRecordingStorageShallow } from "~/renderer/store";
 
 interface RecordingTableActionsProps {
+  disabled?: boolean;
   recording: RunRecordingItem;
 }
 
-function RecordingTableActions({ recording }: RecordingTableActionsProps) {
+function RecordingTableActions({
+  disabled = false,
+  recording,
+}: RecordingTableActionsProps) {
   const { deleteRecording, openRecording, revealRecording } =
     useRecordingStorageShallow((recordingStorage) => ({
       deleteRecording: recordingStorage.deleteRecording,
@@ -47,7 +51,7 @@ function RecordingTableActions({ recording }: RecordingTableActionsProps) {
         aria-label="Open recording"
         className="btn btn-primary btn-square btn-xs"
         data-path={recording.path}
-        disabled={!recording.exists}
+        disabled={disabled || !recording.exists}
         title="Open recording"
         type="button"
         onClick={handleOpenRecording}
@@ -58,7 +62,7 @@ function RecordingTableActions({ recording }: RecordingTableActionsProps) {
         aria-label="Reveal recording"
         className="btn btn-primary btn-square btn-xs"
         data-path={recording.path}
-        disabled={!recording.exists}
+        disabled={disabled || !recording.exists}
         title="Reveal recording"
         type="button"
         onClick={handleRevealRecording}
@@ -69,6 +73,7 @@ function RecordingTableActions({ recording }: RecordingTableActionsProps) {
         aria-label="Delete recording"
         className="btn btn-ghost btn-square btn-xs text-error"
         data-path={recording.path}
+        disabled={disabled}
         title="Delete recording"
         type="button"
         onClick={handleDeleteRecording}

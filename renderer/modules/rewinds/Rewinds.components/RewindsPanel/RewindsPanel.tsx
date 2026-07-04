@@ -7,11 +7,10 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type {
   ActivitySessionLibraryItem,
-  ActivitySessionLibraryPage,
   ActivitySessionLibraryQuery,
 } from "~/main/modules/bookmarks";
 import { MediaLibraryTable } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable";
@@ -21,23 +20,31 @@ import {
   formatDurationSeconds,
   type MediaLibraryScope,
 } from "~/renderer/modules/media-library/MediaLibrary.utils/MediaLibrary.utils";
+import { useRewindsShallow } from "~/renderer/store";
 
 import {
+  canOpenRewindRow,
   getCellClassName,
   getHeaderClassName,
+  getRewindRowClassName,
   resolveSortBy,
 } from "./RewindsPanel.utils";
 
 interface RewindsPanelProps {
   scope: MediaLibraryScope;
-  onAvailableLeaguesChange: (leagues: string[]) => void;
 }
 
-function RewindsPanel({ scope, onAvailableLeaguesChange }: RewindsPanelProps) {
+function RewindsPanel({ scope }: RewindsPanelProps) {
   const navigate = useNavigate();
-  const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [page, setPage] = useState<ActivitySessionLibraryPage | null>(null);
+  const { error, isLoading, items, page, refresh } = useRewindsShallow(
+    (rewinds) => ({
+      error: rewinds.error,
+      isLoading: rewinds.isLoading,
+      items: rewinds.items,
+      page: rewinds.page,
+      refresh: rewinds.refresh,
+    }),
+  );
   const [pagination, setPagination] = useState<PaginationState>({
     pageIndex: 0,
     pageSize: 20,
@@ -45,11 +52,8 @@ function RewindsPanel({ scope, onAvailableLeaguesChange }: RewindsPanelProps) {
   const [sorting, setSorting] = useState<SortingState>([
     { id: "startedAt", desc: true },
   ]);
-  const previousScopeRef = useRef({
-    game: scope.game,
-    league: scope.league,
-  });
   const showLeagueColumn = scope.league === ALL_LEAGUES_VALUE;
+  const filterResetKey = `${scope.game}:${scope.league}`;
   const query = useMemo<ActivitySessionLibraryQuery>(() => {
     const activeSort = sorting[0];
     const nextQuery: ActivitySessionLibraryQuery = {
@@ -67,54 +71,16 @@ function RewindsPanel({ scope, onAvailableLeaguesChange }: RewindsPanelProps) {
   }, [pagination, scope.game, scope.league, sorting]);
 
   useEffect(() => {
-    let isActive = true;
-    setError(null);
-    setIsLoading(true);
-
-    window.electron.bookmarks
-      .listActivitySessions(query)
-      .then((nextPage) => {
-        if (!isActive) {
-          return;
-        }
-
-        setPage(nextPage);
-        onAvailableLeaguesChange(nextPage.availableLeagues);
-      })
-      .catch((requestError: unknown) => {
-        if (isActive) {
-          setError(
-            requestError instanceof Error
-              ? requestError.message
-              : "Rewinds failed",
-          );
-        }
-      })
-      .finally(() => {
-        if (isActive) {
-          setIsLoading(false);
-        }
-      });
-
-    return () => {
-      isActive = false;
-    };
-  }, [onAvailableLeaguesChange, query]);
+    void refresh(query);
+  }, [query, refresh]);
 
   useEffect(() => {
-    if (
-      previousScopeRef.current.game === scope.game &&
-      previousScopeRef.current.league === scope.league
-    ) {
+    if (!filterResetKey) {
       return;
     }
 
-    previousScopeRef.current = {
-      game: scope.game,
-      league: scope.league,
-    };
     setPagination((current) => ({ ...current, pageIndex: 0 }));
-  }, [scope.game, scope.league]);
+  }, [filterResetKey]);
 
   const handlePaginationChange: OnChangeFn<PaginationState> = (updater) => {
     setPagination((current) =>
@@ -144,6 +110,22 @@ function RewindsPanel({ scope, onAvailableLeaguesChange }: RewindsPanelProps) {
         cell: ({ getValue }) => formatDateTime(getValue<string>()),
       },
       {
+        id: "tableStatus",
+        enableSorting: false,
+        header: "Status",
+        cell: ({ row }) => (
+          <span
+            className={
+              row.original.stoppedAt === null
+                ? "badge badge-warning badge-xs"
+                : "badge badge-success badge-xs"
+            }
+          >
+            {row.original.stoppedAt === null ? "Processing" : "Saved"}
+          </span>
+        ),
+      },
+      {
         accessorKey: "durationSeconds",
         header: "Length",
         cell: ({ getValue }) =>
@@ -171,7 +153,6 @@ function RewindsPanel({ scope, onAvailableLeaguesChange }: RewindsPanelProps) {
 
     return tableColumns;
   }, [showLeagueColumn]);
-  const items = page?.items ?? [];
   const table = useReactTable({
     data: items,
     columns,
@@ -194,8 +175,10 @@ function RewindsPanel({ scope, onAvailableLeaguesChange }: RewindsPanelProps) {
             ? "Loading rewinds..."
             : "No rewind sessions match this page filter."
         }
+        canRowClick={canOpenRewindRow}
         getCellClassName={getCellClassName}
         getHeaderClassName={getHeaderClassName}
+        getRowClassName={getRewindRowClassName}
         table={table}
         totalCount={page?.totalCount ?? items.length}
         onRowClick={handleRowClick}

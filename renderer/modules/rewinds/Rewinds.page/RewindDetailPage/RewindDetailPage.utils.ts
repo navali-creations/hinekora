@@ -1,27 +1,40 @@
-import type {
-  ActivitySessionBookmark,
-  ActivitySessionClip,
-  ActivitySessionTimeline,
-  BookmarkCategory,
-  RecordingBookmark,
-} from "~/main/modules/bookmarks";
+import {
+  type ActivitySessionBookmark,
+  type ActivitySessionClip,
+  type ActivitySessionTimeline,
+  type BookmarkCategory,
+  locationBookmarkCategories,
+  type RecordingBookmark,
+} from "~/main/modules/bookmarks/Bookmarks.dto";
+import {
+  allRecordingBookmarkCategoriesValue,
+  type RecordingBookmarkCategoryFilter,
+} from "~/renderer/modules/recordings/Recordings.page/RecordingDetailPage/RecordingBookmarksPanel/RecordingBookmarksPanel.utils";
 
 type RewindClipTargetsByBookmarkId = Record<
   string,
-  { targetDurationSeconds: number | null; targetId: string }
+  {
+    durationSeconds: number | null;
+    targetDurationSeconds: number | null;
+    targetId: string;
+  }
 >;
+type RewindTimelineMarkerCategoryFilter =
+  | RecordingBookmarkCategoryFilter
+  | typeof defaultRewindTimelineMarkerFilterValue;
 
 interface RewindClipSegment {
   endSeconds: number;
   startSeconds: number;
 }
 
-const rewindLocationCategories = new Set<BookmarkCategory>([
-  "boss",
-  "hideout",
-  "map",
-  "pinnacle",
-  "town",
+const defaultRewindTimelineMarkerFilterValue = "__rewind_default_markers__";
+const rewindLocationCategories = new Set<BookmarkCategory>(
+  locationBookmarkCategories,
+);
+const defaultRewindMarkerCategories = new Set<BookmarkCategory>([
+  "death",
+  "rewind-manual-replay",
 ]);
 
 function calculateRewindDurationSeconds(
@@ -42,7 +55,10 @@ function calculateRewindDurationSeconds(
   const maxBookmarkOffset = Math.max(
     0,
     ...timeline.bookmarks.map((bookmark) => bookmark.offsetSeconds ?? 0),
-    ...timeline.clips.map((clip) => clip.offsetSeconds ?? 0),
+    ...timeline.clips.map(
+      (clip) =>
+        resolveRewindClipSegment(clip)?.endSeconds ?? clip.offsetSeconds ?? 0,
+    ),
   );
 
   return Math.max(sessionDurationSeconds, maxBookmarkOffset);
@@ -66,7 +82,8 @@ function mapRewindTimelineBookmarks(input: {
     if (clipTarget) {
       return {
         ...bookmark,
-        durationSeconds: clipTarget.targetDurationSeconds,
+        durationSeconds:
+          clipTarget.durationSeconds ?? clipTarget.targetDurationSeconds,
       };
     }
 
@@ -80,6 +97,25 @@ function mapRewindTimelineBookmarks(input: {
       }),
     };
   });
+}
+
+function filterRewindTimelineMarkerBookmarks(input: {
+  bookmarks: RecordingBookmark[];
+  categoryFilter: RewindTimelineMarkerCategoryFilter;
+}): RecordingBookmark[] {
+  if (input.categoryFilter === defaultRewindTimelineMarkerFilterValue) {
+    return input.bookmarks.filter((bookmark) =>
+      defaultRewindMarkerCategories.has(bookmark.category),
+    );
+  }
+
+  if (input.categoryFilter === allRecordingBookmarkCategoriesValue) {
+    return input.bookmarks;
+  }
+
+  return input.bookmarks.filter(
+    (bookmark) => bookmark.category === input.categoryFilter,
+  );
 }
 
 function findRewindClipAtSeconds(
@@ -99,6 +135,13 @@ function findRewindClipAtSeconds(
   );
 }
 
+function findRewindClipForBookmark(
+  clips: ActivitySessionClip[],
+  bookmark: Pick<RecordingBookmark, "id">,
+): ActivitySessionClip | null {
+  return clips.find((clip) => clip.bookmarkId === bookmark.id) ?? null;
+}
+
 function resolveRewindClipLocalSeconds(
   clip: ActivitySessionClip,
   seconds: number,
@@ -111,7 +154,7 @@ function resolveRewindClipLocalSeconds(
   const visibleDurationSeconds = segment.endSeconds - segment.startSeconds;
   const hiddenLeadingSeconds = Math.max(
     0,
-    (clip.targetDurationSeconds ?? 0) - visibleDurationSeconds,
+    resolveRewindClipDurationSeconds(clip) - visibleDurationSeconds,
   );
 
   return Math.min(
@@ -132,10 +175,21 @@ function resolveRewindClipSegment(
     return null;
   }
 
-  const endSeconds = Math.max(0, clip.offsetSeconds);
-  const startSeconds = Math.max(0, endSeconds - clip.targetDurationSeconds);
+  const clipDurationSeconds = resolveRewindClipDurationSeconds(clip);
+  const preRollDurationSeconds = Math.min(
+    clip.targetDurationSeconds,
+    clipDurationSeconds,
+  );
+  const startSeconds = Math.max(0, clip.offsetSeconds - preRollDurationSeconds);
+  const endSeconds = startSeconds + clipDurationSeconds;
 
   return { endSeconds, startSeconds };
+}
+
+function resolveRewindClipDurationSeconds(
+  clip: Pick<ActivitySessionClip, "durationSeconds" | "targetDurationSeconds">,
+): number {
+  return clip.durationSeconds ?? clip.targetDurationSeconds ?? 0;
 }
 
 function resolveRewindLocationDurationSeconds(input: {
@@ -175,6 +229,21 @@ function resolveRewindClipVisualOffsetSeconds(
   );
 }
 
+function resolveRewindBookmarkSeekSeconds(input: {
+  bookmark: Pick<RecordingBookmark, "id" | "offsetSeconds">;
+  clips: ActivitySessionClip[];
+}): number {
+  const linkedClipSegment = resolveRewindClipSegment(
+    findRewindClipForBookmark(input.clips, input.bookmark),
+  );
+
+  if (linkedClipSegment) {
+    return linkedClipSegment.startSeconds;
+  }
+
+  return input.bookmark.offsetSeconds ?? 0;
+}
+
 function isRewindLocationBookmark(bookmark: ActivitySessionBookmark): boolean {
   return (
     rewindLocationCategories.has(bookmark.category) &&
@@ -185,8 +254,13 @@ function isRewindLocationBookmark(bookmark: ActivitySessionBookmark): boolean {
 
 export {
   calculateRewindDurationSeconds,
+  defaultRewindTimelineMarkerFilterValue,
+  filterRewindTimelineMarkerBookmarks,
   findRewindClipAtSeconds,
+  findRewindClipForBookmark,
   mapRewindTimelineBookmarks,
+  type RewindTimelineMarkerCategoryFilter,
+  resolveRewindBookmarkSeekSeconds,
   resolveRewindClipLocalSeconds,
   resolveRewindClipSegment,
   resolveRewindClipVisualOffsetSeconds,

@@ -45,7 +45,7 @@ function classifyBookmarkLocation(input: {
 }
 
 function isTownArea(areaId: string): boolean {
-  return /(^|_)town($|_)/i.test(areaId);
+  return /(^|_)(town|hub)($|_)/i.test(areaId);
 }
 
 function isPinnacleArea(areaId: string): boolean {

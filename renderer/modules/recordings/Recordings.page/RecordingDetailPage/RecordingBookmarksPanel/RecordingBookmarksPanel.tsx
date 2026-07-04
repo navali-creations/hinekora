@@ -4,8 +4,8 @@ import type {
   BookmarkCategory,
   RecordingBookmark,
 } from "~/main/modules/bookmarks";
+import { BookmarksCategoryFilterChip } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksCategoryFilterChip/BookmarksCategoryFilterChip";
 
-import { RecordingBookmarkFilterChip } from "../RecordingBookmarkFilterChip/RecordingBookmarkFilterChip";
 import { RecordingBookmarksPanelItem } from "../RecordingBookmarksPanelItem/RecordingBookmarksPanelItem";
 import {
   allRecordingBookmarkCategoriesValue,
@@ -65,7 +65,7 @@ function RecordingBookmarksPanel({
       <div className="border-base-content/10 border-b p-3">
         <div className="flex flex-wrap gap-1.5">
           {filterCategories.map((category) => (
-            <RecordingBookmarkFilterChip
+            <BookmarksCategoryFilterChip
               category={category}
               isActive={categoryFilter === category}
               key={category}
