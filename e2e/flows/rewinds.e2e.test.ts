@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 
 import type {
   ActivitySessionBookmark,
@@ -12,16 +12,15 @@ import {
   expectNoUnexpectedDashboardBridgeCalls,
   setupDashboardE2E,
 } from "../helpers/dashboard-fixture";
+import {
+  clickTimelineAt,
+  minutesAfterTimelineFixtureBase,
+  secondsAfterTimelineFixtureBase,
+} from "../helpers/timeline-fixture";
 
 test.afterEach(async ({ page }) => {
   await expectNoUnexpectedDashboardBridgeCalls(page);
 });
-
-const baseTime = Date.parse("2026-07-04T10:00:00.000Z");
-
-function minutesAfterBase(minutes: number): string {
-  return new Date(baseTime + minutes * 60_000).toISOString();
-}
 
 function formatDateTime(value: string): string {
   return new Date(value).toLocaleString([], {
@@ -33,9 +32,9 @@ function formatDateTime(value: string): string {
 function createSession(
   id: string,
   minutes: number,
-  overrides: Partial<ActivitySessionLibraryItem> = {}
+  overrides: Partial<ActivitySessionLibraryItem> = {},
 ): ActivitySessionLibraryItem {
-  const startedAt = minutesAfterBase(minutes);
+  const startedAt = minutesAfterTimelineFixtureBase(minutes);
   const durationSeconds = overrides.durationSeconds ?? 90;
   const stoppedAt =
     overrides.stoppedAt === undefined
@@ -63,9 +62,9 @@ function createTimelineBookmark(
   offsetSeconds: number,
   category: BookmarkCategory,
   label: string,
-  overrides: Partial<ActivitySessionBookmark> = {}
+  overrides: Partial<ActivitySessionBookmark> = {},
 ): ActivitySessionBookmark {
-  const occurredAt = new Date(baseTime + offsetSeconds * 1_000).toISOString();
+  const occurredAt = secondsAfterTimelineFixtureBase(offsetSeconds);
 
   return {
     category,
@@ -89,9 +88,9 @@ function createTimelineClip(
   id: string,
   bookmarkId: string,
   offsetSeconds: number,
-  targetId: string
+  targetId: string,
 ): ActivitySessionClip {
-  const createdAt = new Date(baseTime + offsetSeconds * 1_000).toISOString();
+  const createdAt = secondsAfterTimelineFixtureBase(offsetSeconds);
 
   return {
     activitySessionId: "rewind-detail-1",
@@ -109,9 +108,9 @@ function createTimelineClip(
 
 function createReplayClipDetail(
   id: string,
-  kind: "death" | "manual"
+  kind: "death" | "manual",
 ): ReplayClipDetail {
-  const createdAt = minutesAfterBase(60);
+  const createdAt = minutesAfterTimelineFixtureBase(60);
 
   return {
     durationSeconds: 20,
@@ -136,18 +135,6 @@ function createReplayClipDetail(
   };
 }
 
-async function clickTimelineAt(page: Page, percent: number) {
-  const timeline = page.locator('[data-recording-timeline-grid="true"]');
-  await expect(timeline).toBeVisible();
-  const box = await timeline.boundingBox();
-  expect(box).not.toBeNull();
-
-  await page.mouse.click(
-    box!.x + box!.width * percent,
-    box!.y + box!.height * 0.35
-  );
-}
-
 test("covers rewind table pagination, sorting, filtering, and disabled processing rows", async ({
   page,
 }) => {
@@ -161,7 +148,7 @@ test("covers rewind table pagination, sorting, filtering, and disabled processin
         bookmarkCount: index + 1,
         clipCount: index % 3,
         durationSeconds: 60 + index,
-      })
+      }),
     ),
     createSession("rewind-standard-poe2", 180, {
       sourceLeague: "Standard",
@@ -195,8 +182,8 @@ test("covers rewind table pagination, sorting, filtering, and disabled processin
   await page.getByRole("button", { name: /^Started/ }).click();
   await expect(
     page.getByRole("cell", {
-      name: formatDateTime(minutesAfterBase(170)),
-    })
+      name: formatDateTime(minutesAfterTimelineFixtureBase(170)),
+    }),
   ).toBeVisible();
   await expect(page.getByText("Showing 1 to 20 of 22 results")).toBeVisible();
 
@@ -205,7 +192,7 @@ test("covers rewind table pagination, sorting, filtering, and disabled processin
   await expect(page.getByRole("button", { name: /Saved.*1:30/ })).toBeVisible();
   await page.getByLabel("Library league").selectOption("__all__");
   await expect(
-    page.getByRole("columnheader", { name: "League" })
+    page.getByRole("columnheader", { name: "League" }),
   ).toBeVisible();
 
   await page.getByRole("button", { name: /Path of Exile 1/ }).click();
@@ -235,7 +222,7 @@ test("covers rewind detail playback, timeline filters, linked clips, bookmark pa
         "rewind-hideout-55",
         55,
         "hideout",
-        "Atlas Hideout"
+        "Atlas Hideout",
       ),
       createTimelineBookmark("rewind-boss-80", 80, "boss", "Trialmaster"),
       createTimelineBookmark(
@@ -243,7 +230,7 @@ test("covers rewind detail playback, timeline filters, linked clips, bookmark pa
         95,
         "rewind-manual-replay",
         "Manual replay",
-        { source: "system" }
+        { source: "system" },
       ),
     ],
     clipTimelineItemsTruncated: false,
@@ -252,13 +239,13 @@ test("covers rewind detail playback, timeline filters, linked clips, bookmark pa
         "activity-death-clip",
         "rewind-death-35",
         35,
-        "clip-death-1"
+        "clip-death-1",
       ),
       createTimelineClip(
         "activity-manual-clip",
         "rewind-manual-replay-95",
         95,
-        "clip-manual-1"
+        "clip-manual-1",
       ),
     ],
     session: savedSession,
@@ -279,49 +266,49 @@ test("covers rewind detail playback, timeline filters, linked clips, bookmark pa
   await expect(page.getByText("6 items")).toBeVisible();
   await expect(page.getByText("1 / 2")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /Manual replay.*1:35/ })
+    page.getByRole("button", { name: /Manual replay.*1:35/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /Sanctuary.*0:00/ })
+    page.getByRole("button", { name: /Sanctuary.*0:00/ }),
   ).toBeHidden();
 
   await page.getByRole("button", { name: "Next bookmark page" }).click();
   await expect(page.getByText("2 / 2")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /Sanctuary.*0:00/ })
+    page.getByRole("button", { name: /Sanctuary.*0:00/ }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Previous bookmark page" }).click();
 
   await expect(
-    page.locator('[title="Death - Death at 0:35.00"]')
+    page.locator('[title="Death - Death at 0:35.00"]'),
   ).toBeVisible();
   await expect(
-    page.locator('[title="Manual replay - Manual replay at 1:35.00"]')
+    page.locator('[title="Manual replay - Manual replay at 1:35.00"]'),
   ).toBeVisible();
   await expect(
-    page.locator('[title="Map - Sanctuary at 0:00.00"]')
+    page.locator('[title="Map - Sanctuary at 0:00.00"]'),
   ).toHaveCount(0);
 
   await page.getByRole("button", { exact: true, name: "Map" }).click();
   await expect(
-    page.locator('[title="Map - Sanctuary at 0:00.00"]')
+    page.locator('[title="Map - Sanctuary at 0:00.00"]'),
   ).toBeVisible();
   await expect(page.locator('[title="Death - Death at 0:35.00"]')).toHaveCount(
-    0
+    0,
   );
   await page.getByRole("button", { exact: true, name: "All" }).click();
   await expect(
-    page.locator('[title="Map - Sanctuary at 0:00.00"]')
+    page.locator('[title="Map - Sanctuary at 0:00.00"]'),
   ).toBeVisible();
   await expect(
-    page.locator('[title="Death - Death at 0:35.00"]')
+    page.locator('[title="Death - Death at 0:35.00"]'),
   ).toBeVisible();
 
   await page.getByRole("button", { name: /Manual replay.*1:35/ }).click();
   await expect(page.locator('video[title="Manual replay"]')).toBeVisible();
   await expect(page.getByText("1:27.00 / 2:00.00")).toBeVisible();
   await expect(
-    page.getByRole("link", { exact: true, name: "Edit" })
+    page.getByRole("link", { exact: true, name: "Edit" }),
   ).toHaveAttribute("href", /\/editor\?id=clip-manual-1&kind=clip$/);
 
   await page.getByRole("button", { name: "Seek forward 5 seconds" }).click();

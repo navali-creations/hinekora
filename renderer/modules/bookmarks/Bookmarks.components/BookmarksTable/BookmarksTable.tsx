@@ -51,7 +51,7 @@ function BookmarksTable({ scope }: BookmarksTableProps) {
       refresh: bookmarks.refresh,
     }));
   const [category, setCategory] = useState<BookmarksCategoryFilterValue>(
-    allBookmarkCategoriesValue
+    allBookmarkCategoriesValue,
   );
   const showLeagueColumn = scope.league === ALL_LEAGUES_VALUE;
   const categoryOptions = useMemo(() => {
@@ -61,7 +61,7 @@ function BookmarksTable({ scope }: BookmarksTableProps) {
     }
 
     return Array.from(categories).sort((left, right) =>
-      bookmarkCategoryLabels[left].localeCompare(bookmarkCategoryLabels[right])
+      bookmarkCategoryLabels[left].localeCompare(bookmarkCategoryLabels[right]),
     );
   }, [availableCategories, category]);
   const createBookmarkQuery = useCallback(
@@ -86,7 +86,7 @@ function BookmarksTable({ scope }: BookmarksTableProps) {
 
       return query;
     },
-    [category, scope.game, scope.league]
+    [category, scope.game, scope.league],
   );
   const { handlePaginationChange, handleSortingChange, pagination, sorting } =
     useServerMediaLibraryTableState({

@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 import type {
   BookmarkCategory,
@@ -9,26 +9,24 @@ import {
   getDashboardE2ECalls,
   setupDashboardE2E,
 } from "../helpers/dashboard-fixture";
+import {
+  clickTimelineAt,
+  minutesAfterTimelineFixtureBase,
+} from "../helpers/timeline-fixture";
 
 test.afterEach(async ({ page }) => {
   await expectNoUnexpectedDashboardBridgeCalls(page);
 });
-
-const baseTime = Date.parse("2026-07-04T10:00:00.000Z");
-
-function minutesAfterBase(minutes: number): string {
-  return new Date(baseTime + minutes * 60_000).toISOString();
-}
 
 function createBookmark(
   overrides: Partial<BookmarkLibraryItem> & {
     category: BookmarkCategory;
     id: string;
     label: string;
-  }
+  },
 ): BookmarkLibraryItem {
   const { category, id, label, ...rest } = overrides;
-  const occurredAt = overrides.occurredAt ?? minutesAfterBase(0);
+  const occurredAt = overrides.occurredAt ?? minutesAfterTimelineFixtureBase(0);
 
   return {
     activeActivitySessionBookmarkDurationSeconds: null,
@@ -63,9 +61,9 @@ function createRecordingBookmark(
   id: string,
   offsetSeconds: number,
   category: BookmarkCategory,
-  label: string
+  label: string,
 ): BookmarkLibraryItem {
-  const occurredAt = minutesAfterBase(offsetSeconds / 60);
+  const occurredAt = minutesAfterTimelineFixtureBase(offsetSeconds / 60);
 
   return createBookmark({
     activeRecordingBookmarkDurationSeconds:
@@ -79,20 +77,20 @@ function createRecordingBookmark(
     occurredAt,
     sceneName: category === "death" ? "Qimah Reservoir" : label,
     source: category === "manual" ? "manual" : "client-log",
-    updatedAt: minutesAfterBase(90 / 60),
+    updatedAt: minutesAfterTimelineFixtureBase(90 / 60),
   });
 }
 
-async function clickTimelineAt(page: Page, percent: number) {
-  const timeline = page.locator('[data-recording-timeline-grid="true"]');
-  await expect(timeline).toBeVisible();
-  const box = await timeline.boundingBox();
-  expect(box).not.toBeNull();
+async function getLastBookmarkLibraryQuery(page: Page) {
+  const queries = (await getDashboardE2ECalls(page)).bookmarkLibraryQueries;
+  const query = queries.at(-1);
 
-  await page.mouse.click(
-    box!.x + box!.width * percent,
-    box!.y + box!.height * 0.35
-  );
+  return {
+    category: query?.category,
+    game: query?.game,
+    league: query?.league,
+    pageIndex: query?.pageIndex,
+  };
 }
 
 test("covers bookmark table pagination, sorting, filters, separators, and row actions", async ({
@@ -107,7 +105,7 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
       category: "hideout",
       id: "separator-rewind-new",
       label: "Atlas Hideout",
-      occurredAt: minutesAfterBase(130),
+      occurredAt: minutesAfterTimelineFixtureBase(130),
     }),
     createBookmark({
       activeActivitySessionBookmarkDurationSeconds: 20,
@@ -117,7 +115,7 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
       category: "map",
       id: "separator-rewind-old",
       label: "Sanctuary",
-      occurredAt: minutesAfterBase(129),
+      occurredAt: minutesAfterTimelineFixtureBase(129),
     }),
     createBookmark({
       activeRecordingBookmarkDurationSeconds: 45,
@@ -127,7 +125,7 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
       category: "death",
       id: "separator-recording-new",
       label: "Death",
-      occurredAt: minutesAfterBase(128),
+      occurredAt: minutesAfterTimelineFixtureBase(128),
       sceneName: "Kriar Village",
     }),
     createBookmark({
@@ -138,7 +136,7 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
       category: "boss",
       id: "separator-recording-old",
       label: "Absence of Symmetry and Harmony",
-      occurredAt: minutesAfterBase(127),
+      occurredAt: minutesAfterTimelineFixtureBase(127),
     }),
     createBookmark({
       activeActivitySessionBookmarkDurationSeconds: 18,
@@ -148,14 +146,14 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
       category: "rewind-manual-replay",
       id: "separator-rewind-third",
       label: "Manual replay",
-      occurredAt: minutesAfterBase(126),
+      occurredAt: minutesAfterTimelineFixtureBase(126),
       source: "system",
     }),
     createBookmark({
       category: "manual",
       id: "manual-rename-delete",
       label: "Memorable moment",
-      occurredAt: minutesAfterBase(125),
+      occurredAt: minutesAfterTimelineFixtureBase(125),
       sceneName: "Qimah Reservoir",
       source: "manual",
     }),
@@ -163,14 +161,14 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
       category: "town",
       id: "standard-poe2",
       label: "The Khari Bazaar",
-      occurredAt: minutesAfterBase(124),
+      occurredAt: minutesAfterTimelineFixtureBase(124),
       sourceLeague: "Standard",
     }),
     createBookmark({
       category: "map",
       id: "poe1-standard",
       label: "Highgate",
-      occurredAt: minutesAfterBase(123),
+      occurredAt: minutesAfterTimelineFixtureBase(123),
       sourceGame: "poe1",
       sourceLeague: "Standard",
     }),
@@ -183,8 +181,8 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
         category: "map",
         id: `pagination-fill-${index + 1}`,
         label: `Pagination filler ${String(index + 1).padStart(2, "0")}`,
-        occurredAt: minutesAfterBase(90 - index),
-      })
+        occurredAt: minutesAfterTimelineFixtureBase(90 - index),
+      }),
     ),
   ];
 
@@ -197,7 +195,7 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
   await expect(page.getByText("Start of new Rewind").first()).toBeVisible();
   await expect(page.getByText("End of previous Rewind").first()).toBeVisible();
   await expect(
-    page.getByText("End of previous Recording").first()
+    page.getByText("End of previous Recording").first(),
   ).toBeVisible();
   await expect(page.getByText("Start of new Recording").first()).toBeVisible();
 
@@ -209,7 +207,7 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
 
   await page.getByRole("button", { name: /^Label/ }).click();
   await expect(
-    page.getByText("Absence of Symmetry and Harmony").first()
+    page.getByText("Absence of Symmetry and Harmony").first(),
   ).toBeVisible();
   await expect(page.getByText("Start of new Rewind")).toBeHidden();
   await page.getByRole("button", { name: /^Time/ }).click();
@@ -219,15 +217,39 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
   await page.getByLabel("Library league").selectOption("Standard");
   await expect(page.getByText("The Khari Bazaar").first()).toBeVisible();
   await expect(page.getByText("Atlas Hideout")).toBeHidden();
+  await expect
+    .poll(async () => getLastBookmarkLibraryQuery(page))
+    .toEqual({
+      category: undefined,
+      game: "poe2",
+      league: "Standard",
+      pageIndex: 0,
+    });
   await page.getByLabel("Library league").selectOption("__all__");
   await expect(
-    page.getByRole("columnheader", { name: "League" })
+    page.getByRole("columnheader", { name: "League" }),
   ).toBeVisible();
   await expect(page.getByText("Atlas Hideout").first()).toBeVisible();
+  await expect
+    .poll(async () => getLastBookmarkLibraryQuery(page))
+    .toEqual({
+      category: undefined,
+      game: "poe2",
+      league: undefined,
+      pageIndex: 0,
+    });
 
   await page.getByRole("button", { name: /Path of Exile 1/ }).click();
   await expect(page.getByText("Highgate").first()).toBeVisible();
   await expect(page.getByText("Atlas Hideout")).toBeHidden();
+  await expect
+    .poll(async () => getLastBookmarkLibraryQuery(page))
+    .toEqual({
+      category: undefined,
+      game: "poe1",
+      league: undefined,
+      pageIndex: 0,
+    });
   await page.getByRole("button", { name: /Path of Exile 2/ }).click();
   await expect(page.getByText("Atlas Hideout").first()).toBeVisible();
 
@@ -247,7 +269,7 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
   await page.getByRole("button", { exact: true, name: "Manual" }).click();
   await page.getByRole("button", { name: "Rename bookmark" }).click();
   await expect(
-    page.getByRole("heading", { name: "Rename bookmark" })
+    page.getByRole("heading", { name: "Rename bookmark" }),
   ).toBeVisible();
   await page.getByLabel("Bookmark label").fill("Boss skip setup");
   await page.getByRole("button", { exact: true, name: "Rename" }).click();
@@ -274,20 +296,20 @@ test("covers recording detail playback, timeline seeking, bookmark pagination, a
       "recording-manual-24",
       24,
       "manual",
-      "Manual bookmark"
+      "Manual bookmark",
     ),
     createRecordingBookmark(
       "recording-hideout-36",
       36,
       "hideout",
-      "Atlas Hideout"
+      "Atlas Hideout",
     ),
     createRecordingBookmark("recording-boss-48", 48, "boss", "Trialmaster"),
     createRecordingBookmark(
       "recording-town-60",
       60,
       "town",
-      "The Khari Bazaar"
+      "The Khari Bazaar",
     ),
   ];
 
@@ -295,21 +317,21 @@ test("covers recording detail playback, timeline seeking, bookmark pagination, a
   await page.goto("/#/recording/recording-detail-1");
 
   await expect(
-    page.getByRole("heading", { name: "recording-detail-1.mp4" })
+    page.getByRole("heading", { name: "recording-detail-1.mp4" }),
   ).toBeVisible();
   await expect(page.getByText("6 items")).toBeVisible();
   await expect(page.getByText("1 / 2")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /The Khari Bazaar/ })
+    page.getByRole("button", { name: /The Khari Bazaar/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /Qimah Reservoir.*0:00/ })
+    page.getByRole("button", { name: /Qimah Reservoir.*0:00/ }),
   ).toBeHidden();
 
   await page.getByRole("button", { name: "Next bookmark page" }).click();
   await expect(page.getByText("2 / 2")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /Qimah Reservoir.*0:00/ })
+    page.getByRole("button", { name: /Qimah Reservoir.*0:00/ }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Previous bookmark page" }).click();
   await expect(page.getByText("1 / 2")).toBeVisible();
@@ -317,14 +339,14 @@ test("covers recording detail playback, timeline seeking, bookmark pagination, a
   await page.getByRole("button", { exact: true, name: "Death" }).click();
   await expect(page.getByText("1 items")).toBeVisible();
   await expect(
-    page.getByRole("button", { name: /Qimah Reservoir.*0:12/ })
+    page.getByRole("button", { name: /Qimah Reservoir.*0:12/ }),
   ).toBeVisible();
   await page.getByRole("button", { exact: true, name: "All" }).click();
 
   await page.getByRole("button", { name: /Trialmaster.*0:48/ }).click();
   await expect(page.getByText("0:48.00 / 1:30.00")).toBeVisible();
   await expect(
-    page.locator('[title="Boss - Trialmaster at 0:48.00"]')
+    page.locator('[title="Boss - Trialmaster at 0:48.00"]'),
   ).toBeVisible();
 
   await page.getByRole("button", { name: "Seek backward 5 seconds" }).click();

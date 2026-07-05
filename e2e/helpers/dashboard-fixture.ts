@@ -53,6 +53,7 @@ interface DashboardE2ECalls {
   audioDeviceRequests: Array<ManagedRecorderListAudioDevicesOptions | null>;
   auraLockEvents: boolean[];
   bookmarkDeletes: string[];
+  bookmarkLibraryQueries: BookmarkLibraryQuery[];
   bookmarkUpdates: BookmarkManualUpdateInput[];
   captureModeChanges: ManagedRecorderCaptureMode[];
   captureProfileCreates: Array<{ game: GameId; id: string; name: string }>;
@@ -410,6 +411,7 @@ async function setupDashboardE2E(
         audioDeviceRequests: [],
         auraLockEvents: [],
         bookmarkDeletes: [],
+        bookmarkLibraryQueries: [],
         bookmarkUpdates: [],
         captureModeChanges: [],
         captureProfileCreates: [],
@@ -470,6 +472,7 @@ async function setupDashboardE2E(
       const listBookmarks = (
         query: BookmarkLibraryQuery = {},
       ): BookmarkLibraryPage => {
+        calls.bookmarkLibraryQueries.push(clone(query));
         const filtered = bookmarks.filter((bookmark) => {
           if (query.game && bookmark.sourceGame !== query.game) {
             return false;

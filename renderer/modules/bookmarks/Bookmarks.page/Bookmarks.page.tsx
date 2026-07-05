@@ -21,9 +21,9 @@ function BookmarksPage() {
       buildMediaLibraryLeagueOptions(
         scope.game,
         availableLeagues,
-        scope.league
+        scope.league,
       ),
-    [availableLeagues, scope.game, scope.league]
+    [availableLeagues, scope.game, scope.league],
   );
 
   const handleRefresh = () => {
