@@ -3,10 +3,9 @@ import { type PointerEvent, type ReactNode, useRef } from "react";
 import type { RecordingBookmark } from "~/main/modules/bookmarks";
 import type { VisualPlaybackSubscriber } from "~/renderer/modules/media-playback/useVisualPlaybackPublisher/useVisualPlaybackPublisher";
 
-import { RecordingBookmarkTimelineMarker } from "../RecordingBookmarkTimelineMarker/RecordingBookmarkTimelineMarker";
 import { RecordingBookmarkTimelineToolbar } from "../RecordingBookmarkTimelineToolbar/RecordingBookmarkTimelineToolbar";
+import { RecordingTimelineBookmarkMarkers } from "../RecordingTimelineBookmarkMarkers/RecordingTimelineBookmarkMarkers";
 import { RecordingTimelineHoverMarker } from "../RecordingTimelineHoverMarker/RecordingTimelineHoverMarker";
-import { RecordingTimelineHoverSegment } from "../RecordingTimelineHoverSegment/RecordingTimelineHoverSegment";
 import { RecordingTimelinePlayhead } from "../RecordingTimelinePlayhead/RecordingTimelinePlayhead";
 import { RecordingTimelineRuler } from "../RecordingTimelineRuler/RecordingTimelineRuler";
 import { RecordingTimelineVideoRail } from "../RecordingTimelineVideoRail/RecordingTimelineVideoRail";
@@ -109,12 +108,6 @@ function RecordingBookmarkTimeline({
   const minorMarkers = calculateRecordingTimelineMinorMarkers(duration);
   const isDisabled = duration <= 0 || (isPlaybackDisabled ?? !mediaUrl);
   const visibleMarkerBookmarks = markerBookmarks ?? bookmarks;
-  const shouldRenderPinnedBookmark =
-    hoveredBookmark !== null &&
-    (!showBookmarkMarkers ||
-      !visibleMarkerBookmarks.some(
-        (bookmark) => bookmark.id === hoveredBookmark.id,
-      ));
   const applyHoverSeconds = (seconds: number | null) => {
     const marker = hoverMarkerRef.current;
     if (!marker) {
@@ -205,32 +198,14 @@ function RecordingBookmarkTimeline({
             mediaUrl={mediaUrl}
             railWidthPixels={timelineRailWidthPixels}
           />
-          <RecordingTimelineHoverSegment
+          <RecordingTimelineBookmarkMarkers
             clipTargetsByBookmarkId={clipTargetsByBookmarkId}
             durationSeconds={duration}
             hoveredBookmark={hoveredBookmark}
+            markerBookmarks={visibleMarkerBookmarks}
+            showBookmarkMarkers={showBookmarkMarkers}
+            {...(onClipTargetSelect ? { onClipTargetSelect } : {})}
           />
-          {hoveredBookmark && shouldRenderPinnedBookmark && (
-            <RecordingBookmarkTimelineMarker
-              bookmark={hoveredBookmark}
-              durationSeconds={duration}
-            />
-          )}
-
-          {showBookmarkMarkers &&
-            visibleMarkerBookmarks.map((bookmark) => {
-              const clipTarget = clipTargetsByBookmarkId[bookmark.id];
-
-              return (
-                <RecordingBookmarkTimelineMarker
-                  bookmark={bookmark}
-                  durationSeconds={duration}
-                  key={bookmark.id}
-                  {...(clipTarget ? { clipTargetId: clipTarget.targetId } : {})}
-                  {...(onClipTargetSelect ? { onClipTargetSelect } : {})}
-                />
-              );
-            })}
           {bookmarks.length === 0 && (
             <div className="absolute inset-x-6 bottom-3 grid h-16 place-items-center rounded-md border border-base-content/10 border-dashed text-base-content/40 text-xs">
               No bookmarks attached

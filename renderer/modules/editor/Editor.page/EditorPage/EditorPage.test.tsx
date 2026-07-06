@@ -9,7 +9,10 @@ import type {
 } from "~/main/modules/bookmarks";
 import type { EditorProject } from "~/main/modules/editor";
 
-import { createDeferred } from "../../Editor.slice/Editor.slice.test-utils";
+import {
+  createDeferred,
+  createEditorTestRecordingBookmark,
+} from "../../Editor.slice/Editor.slice.test-utils";
 
 const storeMocks = vi.hoisted(() => ({
   copyProjectToClipboard: vi.fn(),
@@ -29,6 +32,84 @@ const storeMocks = vi.hoisted(() => ({
   useSavedEditsShallow: vi.fn(),
   useSettingsSelector: vi.fn(),
 }));
+const bookmarkStoreMocks = vi.hoisted(() => {
+  const allCategory = "__all__";
+  const listeners = new Set<() => void>();
+  const createInitialEditorRecording = () => ({
+    categoryFilter: allCategory,
+    hasInteracted: false,
+    hoveredBookmarkId: null as string | null,
+    pageIndex: 0,
+    selectedBookmarkId: null as string | null,
+  });
+  let editorRecording = createInitialEditorRecording();
+  let snapshot: unknown;
+  const notify = () => {
+    for (const listener of listeners) {
+      listener();
+    }
+  };
+  const setEditorRecording = (nextEditorRecording: typeof editorRecording) => {
+    editorRecording = nextEditorRecording;
+    snapshot = createSnapshot();
+    notify();
+  };
+  const actions = {
+    resetEditorRecordingBookmarks: () => {
+      setEditorRecording(createInitialEditorRecording());
+    },
+    selectEditorRecordingCategory: (category: string) => {
+      const isActive =
+        editorRecording.hasInteracted &&
+        editorRecording.categoryFilter === category;
+      setEditorRecording({
+        ...editorRecording,
+        categoryFilter: isActive ? allCategory : category,
+        hasInteracted: !isActive,
+        pageIndex: 0,
+      });
+    },
+    setEditorRecordingHoveredBookmarkId: (id: string | null) => {
+      setEditorRecording({ ...editorRecording, hoveredBookmarkId: id });
+    },
+    setEditorRecordingPageIndex: (
+      pageIndex: number | ((currentPageIndex: number) => number),
+    ) => {
+      const nextPageIndex =
+        typeof pageIndex === "function"
+          ? pageIndex(editorRecording.pageIndex)
+          : pageIndex;
+      setEditorRecording({
+        ...editorRecording,
+        pageIndex: Math.max(0, nextPageIndex),
+      });
+    },
+    setEditorRecordingSelectedBookmarkId: (id: string | null) => {
+      setEditorRecording({ ...editorRecording, selectedBookmarkId: id });
+    },
+  };
+  const createSnapshot = () => ({
+    ...actions,
+    editorRecording,
+  });
+  snapshot = createSnapshot();
+
+  return {
+    getSnapshot: () => snapshot,
+    reset: () => {
+      editorRecording = createInitialEditorRecording();
+      snapshot = createSnapshot();
+      listeners.clear();
+    },
+    subscribe: (listener: () => void) => {
+      listeners.add(listener);
+
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+  };
+});
 const assetRailMocks = vi.hoisted(() => ({
   props: [] as Array<{
     isHydrationEnabled?: boolean;
@@ -49,11 +130,24 @@ const timelineMocks = vi.hoisted(() => ({
   }>,
 }));
 
-vi.mock("~/renderer/store", () => ({
-  useEditorShallow: storeMocks.useEditorShallow,
-  useSavedEditsShallow: storeMocks.useSavedEditsShallow,
-  useSettingsSelector: storeMocks.useSettingsSelector,
-}));
+vi.mock("~/renderer/store", async () => {
+  const React = await vi.importActual<typeof import("react")>("react");
+
+  return {
+    useBookmarksShallow: (selector: (bookmarks: unknown) => unknown) => {
+      const bookmarks = React.useSyncExternalStore(
+        bookmarkStoreMocks.subscribe,
+        bookmarkStoreMocks.getSnapshot,
+        bookmarkStoreMocks.getSnapshot,
+      );
+
+      return selector(bookmarks);
+    },
+    useEditorShallow: storeMocks.useEditorShallow,
+    useSavedEditsShallow: storeMocks.useSavedEditsShallow,
+    useSettingsSelector: storeMocks.useSettingsSelector,
+  };
+});
 
 vi.mock("../../Editor.components/EditorAssetRail/EditorAssetRail", () => ({
   EditorAssetRail: (props: {
@@ -162,7 +256,11 @@ vi.mock("../../Editor.components/EditorTimeline/EditorTimeline", () => ({
         data-show-bookmark-markers={String(
           props.bookmarks?.showBookmarkMarkers ?? false,
         )}
-        data-timeline-bookmark-id={props.bookmarks?.hoveredBookmark?.id ?? ""}
+        data-timeline-bookmark-id={
+          props.bookmarks?.pinnedBookmark?.id ??
+          props.bookmarks?.hoveredBookmark?.id ??
+          ""
+        }
         data-testid="timeline"
       />
     );
@@ -201,33 +299,11 @@ const project: EditorProject = {
   updatedAt: "2026-06-18T00:00:00.000Z",
 };
 
-const recordingBookmark: RecordingBookmark = {
-  category: "map",
-  createdAt: "2026-07-03T10:00:00.000Z",
-  durationSeconds: 6,
+const recordingBookmark = createEditorTestRecordingBookmark({
   id: "bookmark-map",
-  label: "Qimah Reservoir",
-  note: null,
-  occurredAt: "2026-07-03T10:00:05.000Z",
-  offsetSeconds: 7,
-  sceneName: "Qimah Reservoir",
-  source: "client-log",
-  sourceGame: "poe2",
-  sourceLeague: "Standard",
-  subcategory: null,
-  updatedAt: "2026-07-03T10:00:00.000Z",
-};
+});
 
-function createRecordingBookmark(
-  overrides: Partial<RecordingBookmark> = {},
-): RecordingBookmark {
-  return {
-    ...recordingBookmark,
-    ...overrides,
-  };
-}
-
-const trimmedOverlapBookmark = createRecordingBookmark({
+const trimmedOverlapBookmark = createEditorTestRecordingBookmark({
   durationSeconds: 6,
   id: "bookmark-overlap",
   label: "Caer Blaidd",
@@ -235,7 +311,7 @@ const trimmedOverlapBookmark = createRecordingBookmark({
   offsetSeconds: 7,
   sceneName: "Caer Blaidd",
 });
-const trimmedBeforeBookmark = createRecordingBookmark({
+const trimmedBeforeBookmark = createEditorTestRecordingBookmark({
   category: "hideout",
   durationSeconds: 4,
   id: "bookmark-before-trim",
@@ -244,7 +320,7 @@ const trimmedBeforeBookmark = createRecordingBookmark({
   offsetSeconds: 0,
   sceneName: "Atlas Hideout",
 });
-const trimmedAfterBookmark = createRecordingBookmark({
+const trimmedAfterBookmark = createEditorTestRecordingBookmark({
   durationSeconds: 3,
   id: "bookmark-after-trim",
   label: "The Well of Souls",
@@ -252,7 +328,7 @@ const trimmedAfterBookmark = createRecordingBookmark({
   offsetSeconds: 22,
   sceneName: "The Well of Souls",
 });
-const trimmedManualBookmark = createRecordingBookmark({
+const trimmedManualBookmark = createEditorTestRecordingBookmark({
   category: "manual",
   durationSeconds: null,
   id: "bookmark-manual-visible",
@@ -261,7 +337,7 @@ const trimmedManualBookmark = createRecordingBookmark({
   offsetSeconds: 17,
   sceneName: null,
 });
-const trimmedDeathBookmark = createRecordingBookmark({
+const trimmedDeathBookmark = createEditorTestRecordingBookmark({
   category: "death",
   durationSeconds: null,
   id: "bookmark-death-visible",
@@ -469,6 +545,7 @@ describe("EditorPage shortcuts", () => {
     storeMocks.openProject.mockResolvedValue(true);
     configureEditorState();
     assetRailMocks.props = [];
+    bookmarkStoreMocks.reset();
     timelineMocks.props = [];
     storeMocks.useSettingsSelector.mockImplementation((selector) =>
       selector(settingsSlice),
@@ -651,6 +728,8 @@ describe("EditorPage shortcuts", () => {
       selectedClipId: "timeline-recording",
     });
     await renderEditorPage();
+
+    expect(bookmarkApiMocks.listRecording).not.toHaveBeenCalled();
 
     await act(async () => {
       document.body.dispatchEvent(

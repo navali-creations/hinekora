@@ -7,12 +7,10 @@ import type {
 import type { EditorProject } from "~/main/modules/editor";
 import {
   allRecordingBookmarkCategoriesValue,
-  type RecordingBookmarkCategoryFilter,
-  type RecordingBookmarkCategoryToggleState,
   recordingBookmarksPanelPageSize,
   resolveRecordingBookmarkCategories,
-  resolveRecordingBookmarkCategoryToggle,
 } from "~/renderer/modules/bookmarks/Bookmarks.components/RecordingBookmarksPanel/RecordingBookmarksPanel.utils";
+import { useBookmarksShallow } from "~/renderer/store";
 
 import {
   isEditorBookmarkInTimelineRange,
@@ -24,6 +22,7 @@ import {
 } from "./useEditorRecordingBookmarks.utils";
 
 interface UseEditorRecordingBookmarksInput {
+  isEnabled: boolean;
   project: EditorProject | null;
   selectedClipId: string | null;
 }
@@ -33,6 +32,7 @@ interface EditorRecordingBookmarksState {
   isLoading: boolean;
   page: RecordingBookmarksPage | null;
   sourceId: string | null;
+  sourceKey: string | null;
 }
 
 const initialBookmarksState: EditorRecordingBookmarksState = {
@@ -40,10 +40,7 @@ const initialBookmarksState: EditorRecordingBookmarksState = {
   isLoading: false,
   page: null,
   sourceId: null,
-};
-const initialBookmarkCategoryState: RecordingBookmarkCategoryToggleState = {
-  categoryFilter: allRecordingBookmarkCategoriesValue,
-  hasInteracted: false,
+  sourceKey: null,
 };
 
 function compareBookmarksByLatest(
@@ -66,56 +63,91 @@ function compareBookmarksByLatest(
 }
 
 function useEditorRecordingBookmarks({
+  isEnabled,
   project,
   selectedClipId,
 }: UseEditorRecordingBookmarksInput) {
   const requestIdRef = useRef(0);
-  const [bookmarkCategoryState, setBookmarkCategoryState] =
-    useState<RecordingBookmarkCategoryToggleState>(
-      initialBookmarkCategoryState,
-    );
-  const [hoveredBookmarkId, setHoveredBookmarkId] = useState<string | null>(
-    null,
-  );
-  const [selectedBookmarkId, setSelectedBookmarkId] = useState<string | null>(
-    null,
-  );
-  const [pageIndex, setPageIndex] = useState(0);
   const [state, setState] = useState<EditorRecordingBookmarksState>(
     initialBookmarksState,
   );
+  const {
+    categoryFilter,
+    hasInteracted,
+    hoveredBookmarkId,
+    pageIndex,
+    resetBookmarks,
+    selectedBookmarkId,
+    setHoveredBookmarkId,
+    setPageIndex,
+    setSelectedBookmarkId,
+  } = useBookmarksShallow((bookmarks) => ({
+    categoryFilter: bookmarks.editorRecording.categoryFilter,
+    hasInteracted: bookmarks.editorRecording.hasInteracted,
+    hoveredBookmarkId: bookmarks.editorRecording.hoveredBookmarkId,
+    pageIndex: bookmarks.editorRecording.pageIndex,
+    resetBookmarks: bookmarks.resetEditorRecordingBookmarks,
+    selectedBookmarkId: bookmarks.editorRecording.selectedBookmarkId,
+    setHoveredBookmarkId: bookmarks.setEditorRecordingHoveredBookmarkId,
+    setPageIndex: bookmarks.setEditorRecordingPageIndex,
+    setSelectedBookmarkId: bookmarks.setEditorRecordingSelectedBookmarkId,
+  }));
   const source = useMemo(
     () => resolveEditorRecordingBookmarkSource({ project, selectedClipId }),
     [project, selectedClipId],
   );
-  const { categoryFilter, hasInteracted } = bookmarkCategoryState;
   const sourceId = source?.id ?? null;
   const sourceAssetKey = source?.assetKey ?? null;
   const sourceClipId = source?.clipId ?? null;
-  const isCurrentSourceState = state.sourceId === sourceId;
+  const sourceKey =
+    sourceId && sourceClipId ? `${sourceId}:${sourceClipId}` : sourceId;
+  const isCurrentSourceState =
+    state.sourceId === sourceId && state.sourceKey === sourceKey;
+  const hasLoadedSourcePage = Boolean(
+    state.sourceId === sourceId && state.page,
+  );
   const currentPage = isCurrentSourceState ? state.page : null;
 
   useEffect(() => {
-    if (!sourceId) {
-      setBookmarkCategoryState(initialBookmarkCategoryState);
-      setHoveredBookmarkId(null);
-      setSelectedBookmarkId(null);
-      setPageIndex(0);
-      setState(initialBookmarksState);
-      return;
-    }
-
-    setBookmarkCategoryState(initialBookmarkCategoryState);
-    setHoveredBookmarkId(null);
-    setSelectedBookmarkId(null);
+    resetBookmarks();
     setPageIndex(0);
-    setState(initialBookmarksState);
-  }, [sourceId]);
+    setState((current) => {
+      if (!sourceId) {
+        return initialBookmarksState;
+      }
+
+      if (current.sourceId !== sourceId) {
+        return initialBookmarksState;
+      }
+
+      if (current.sourceKey === sourceKey) {
+        return current;
+      }
+
+      return {
+        ...current,
+        error: null,
+        isLoading: false,
+        sourceKey,
+      };
+    });
+  }, [resetBookmarks, setPageIndex, sourceId, sourceKey]);
 
   useEffect(() => {
     if (!sourceId) {
       requestIdRef.current += 1;
       setState(initialBookmarksState);
+      return;
+    }
+
+    if (!isEnabled) {
+      if (!hasLoadedSourcePage) {
+        requestIdRef.current += 1;
+      }
+      return;
+    }
+
+    if (hasLoadedSourcePage) {
       return;
     }
 
@@ -133,6 +165,7 @@ function useEditorRecordingBookmarks({
       isLoading: true,
       page: current.sourceId === sourceId ? current.page : null,
       sourceId,
+      sourceKey,
     }));
 
     void window.electron.bookmarks
@@ -147,6 +180,7 @@ function useEditorRecordingBookmarks({
           isLoading: false,
           page,
           sourceId,
+          sourceKey,
         });
       })
       .catch((error) => {
@@ -162,9 +196,10 @@ function useEditorRecordingBookmarks({
           isLoading: false,
           page: null,
           sourceId,
+          sourceKey,
         });
       });
-  }, [sourceId]);
+  }, [hasLoadedSourcePage, isEnabled, sourceId, sourceKey]);
 
   const rawTimelineBookmarks = currentPage?.timelineItems ?? [];
   const rawPageBookmarks = currentPage?.items ?? [];
@@ -241,7 +276,7 @@ function useEditorRecordingBookmarks({
     setPageIndex((currentPageIndex) =>
       Math.min(currentPageIndex, pageCount - 1),
     );
-  }, [pageCount]);
+  }, [pageCount, setPageIndex]);
   useEffect(() => {
     if (
       !hasInteracted ||
@@ -251,10 +286,16 @@ function useEditorRecordingBookmarks({
     }
 
     if (!clipCategorySet.has(categoryFilter)) {
-      setBookmarkCategoryState(initialBookmarkCategoryState);
+      resetBookmarks();
       setPageIndex(0);
     }
-  }, [categoryFilter, clipCategorySet, hasInteracted]);
+  }, [
+    categoryFilter,
+    clipCategorySet,
+    hasInteracted,
+    resetBookmarks,
+    setPageIndex,
+  ]);
   useEffect(() => {
     if (!isCurrentSourceState || state.isLoading) {
       return;
@@ -274,6 +315,8 @@ function useEditorRecordingBookmarks({
     hoveredBookmarkId,
     isCurrentSourceState,
     selectedBookmarkId,
+    setHoveredBookmarkId,
+    setSelectedBookmarkId,
     state.isLoading,
   ]);
   const resolveRawBookmark = useCallback(
@@ -360,26 +403,6 @@ function useEditorRecordingBookmarks({
     sourceClipId,
   ]);
 
-  const selectCategory = useCallback(
-    (category: RecordingBookmarkCategoryFilter) => {
-      setBookmarkCategoryState((currentState) =>
-        resolveRecordingBookmarkCategoryToggle(currentState, category),
-      );
-      setPageIndex(0);
-    },
-    [],
-  );
-
-  const nextPage = useCallback(() => {
-    setPageIndex((currentPageIndex) =>
-      Math.min(currentPageIndex + 1, pageCount - 1),
-    );
-  }, [pageCount]);
-
-  const previousPage = useCallback(() => {
-    setPageIndex((currentPageIndex) => Math.max(currentPageIndex - 1, 0));
-  }, []);
-
   const resolveTimelineSeconds = useCallback(
     (bookmark: RecordingBookmark) => {
       const timelineSeconds = resolveEditorBookmarkTimelineSeconds({
@@ -407,33 +430,25 @@ function useEditorRecordingBookmarks({
 
   return {
     categories,
-    categoryFilter,
     error: isCurrentSourceState ? state.error : null,
-    hasInteracted,
     highlightedBookmark: hoveredHighlightBookmark ?? selectedHighlightBookmark,
-    hoveredBookmark,
     isLoading: Boolean(sourceId) && (!isCurrentSourceState || state.isLoading),
     latestBookmarks,
     markerBookmarks,
     pageCount,
     pageIndex: activePageIndex,
-    previousPage,
-    nextPage,
     recordingSource: source,
     pinnedBookmark: hoveredBookmark ?? selectedBookmark,
     resolveTimelineSeconds,
-    selectCategory,
-    selectedBookmarkId,
-    setHoveredBookmarkId,
-    setSelectedBookmarkId,
     showBookmarkMarkers: isCurrentSourceState && hasInteracted,
-    timelineBookmarks,
     timelineItemsTruncated: currentPage?.timelineItemsTruncated ?? false,
     totalCount: categoryBookmarks.length,
   };
 }
 
-type EditorRecordingBookmarks = ReturnType<typeof useEditorRecordingBookmarks>;
+type EditorRecordingBookmarksData = ReturnType<
+  typeof useEditorRecordingBookmarks
+>;
 
-export type { EditorRecordingBookmarks };
+export type { EditorRecordingBookmarksData };
 export { useEditorRecordingBookmarks };

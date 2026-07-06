@@ -1,7 +1,18 @@
 import { expect, type Page, test } from "@playwright/test";
 
+import type {
+  BookmarkCategory,
+  RecordingBookmark,
+  RecordingBookmarksPage,
+} from "../../main/modules/bookmarks";
+import type {
+  EditorMediaAsset,
+  EditorTimelineClip,
+} from "../../main/modules/editor";
 import {
   clickTimelineMarkerAtClipOffset,
+  createEditorE2EAsset,
+  createEditorE2EProject,
   dragLocatorBy,
   expectNoTimelineOverlap,
   expectNoUnexpectedEditorBridgeCalls,
@@ -696,6 +707,263 @@ test("covers timeline letter keyboard shortcuts", async ({ page }) => {
   await expect(page.locator("[data-timeline-gap-zone='true']")).toHaveCount(0);
 });
 
+test("covers editor recording bookmarks, trim filtering, chips, hover, Escape, and multi-recording selection", async ({
+  page,
+}) => {
+  const recordingA = createEditorRecordingAsset("recording-bookmarks-a");
+  const recordingB = createEditorRecordingAsset("recording-bookmarks-b");
+  const clipA = createEditorRecordingClip(recordingA, {
+    durationSeconds: 60,
+    id: "timeline-recording-a",
+    startSeconds: 0,
+  });
+  const clipB = createEditorRecordingClip(recordingB, {
+    durationSeconds: 30,
+    id: "timeline-recording-b",
+    startSeconds: 70,
+  });
+  const recordingBookmarkProject = {
+    ...createEditorE2EProject({
+      asset: recordingA,
+      assets: [recordingA, recordingB],
+      clips: [clipA, clipB],
+      id: "project-recording-bookmarks",
+      title: "recording bookmarks edit",
+    }),
+    activeClipId: clipA.id,
+  };
+  const recordingABookmarks = [
+    createEditorRecordingBookmark({
+      category: "hideout",
+      durationSeconds: 2,
+      id: "a-first-hideout",
+      label: "A First Hideout",
+      offsetSeconds: 1,
+    }),
+    createEditorRecordingBookmark({
+      category: "map",
+      durationSeconds: 8,
+      id: "a-crossing",
+      label: "A Crossing",
+      offsetSeconds: 5,
+    }),
+    createEditorRecordingBookmark({
+      category: "manual",
+      id: "a-manual",
+      label: "A Manual",
+      offsetSeconds: 22,
+    }),
+    createEditorRecordingBookmark({
+      category: "death",
+      id: "a-death",
+      label: "A Death",
+      offsetSeconds: 30,
+      sceneName: "A Death Scene",
+    }),
+    createEditorRecordingBookmark({
+      category: "boss",
+      durationSeconds: 5,
+      id: "a-late-boss",
+      label: "A Late Boss",
+      offsetSeconds: 45,
+    }),
+  ];
+  const recordingBBookmarks = [
+    createEditorRecordingBookmark({
+      category: "hideout",
+      durationSeconds: 3,
+      id: "b-hideout",
+      label: "B Hideout",
+      offsetSeconds: 2,
+    }),
+    createEditorRecordingBookmark({
+      category: "map",
+      durationSeconds: 3,
+      id: "b-map",
+      label: "B Map",
+      offsetSeconds: 6,
+    }),
+    createEditorRecordingBookmark({
+      category: "manual",
+      id: "b-manual",
+      label: "B Manual",
+      offsetSeconds: 10,
+    }),
+    createEditorRecordingBookmark({
+      category: "death",
+      id: "b-death",
+      label: "B Death",
+      offsetSeconds: 14,
+      sceneName: "B Death Scene",
+    }),
+    createEditorRecordingBookmark({
+      category: "town",
+      durationSeconds: 3,
+      id: "b-town",
+      label: "B Town",
+      offsetSeconds: 18,
+    }),
+    createEditorRecordingBookmark({
+      category: "boss",
+      durationSeconds: 3,
+      id: "b-boss",
+      label: "B Boss",
+      offsetSeconds: 22,
+    }),
+  ];
+
+  await setupEditorE2E(page, {
+    extraAssets: [recordingA, recordingB],
+    extraProjects: [recordingBookmarkProject],
+    initialRoute: "/#/editor?projectId=project-recording-bookmarks",
+    recordingBookmarkPages: {
+      [recordingA.id]: createEditorRecordingBookmarksPage(recordingABookmarks),
+      [recordingB.id]: createEditorRecordingBookmarksPage(recordingBBookmarks),
+    },
+  });
+  await expect(
+    page.locator(
+      "[data-clip-body='true'][data-clip-id='timeline-recording-a']",
+    ),
+  ).toBeVisible();
+  expect((await getEditorE2ECalls(page)).recordingBookmarkQueries).toEqual([]);
+
+  await page.keyboard.press("ControlOrMeta+B");
+  const bookmarksRail = page.locator("aside", {
+    has: page.getByRole("heading", { name: "Bookmarks" }),
+  });
+  await expect(bookmarksRail).toBeVisible();
+  await expectBookmarkItemIds(
+    page,
+    recordingABookmarks.map((bookmark) => bookmark.id),
+  );
+  await expect(bookmarksRail.getByText("5 items")).toBeVisible();
+  await expect
+    .poll(async () => (await getEditorE2ECalls(page)).recordingBookmarkQueries)
+    .toEqual([
+      {
+        query: { includeTimeline: true, pageIndex: 0, pageSize: 5 },
+        recordingId: recordingA.id,
+      },
+    ]);
+
+  const allChip = bookmarksRail.locator(
+    "[data-bookmark-category-chip='__all__']",
+  );
+  const mapChip = bookmarksRail.locator("[data-bookmark-category-chip='map']");
+  await expect(allChip).toHaveAttribute("aria-pressed", "false");
+  await allChip.click();
+  await expect(allChip).toHaveAttribute("aria-pressed", "true");
+  await expect(
+    page.locator("[data-recording-bookmark-marker-id='a-crossing']"),
+  ).toBeVisible();
+  await allChip.click();
+  await expect(allChip).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    page.locator("[data-recording-bookmark-marker-id='a-crossing']"),
+  ).toHaveCount(0);
+
+  await mapChip.click();
+  await expect(mapChip).toHaveAttribute("aria-pressed", "true");
+  await expectBookmarkItemIds(page, ["a-crossing"]);
+  await expect(
+    page.locator("[data-recording-bookmark-marker-id='a-crossing']"),
+  ).toBeVisible();
+  await mapChip.click();
+  await expect(mapChip).toHaveAttribute("aria-pressed", "false");
+  await expectBookmarkItemIds(
+    page,
+    recordingABookmarks.map((bookmark) => bookmark.id),
+  );
+
+  const crossingItem = bookmarksRail.locator(
+    "[data-recording-bookmark-panel-item-id='a-crossing']",
+  );
+  await crossingItem.hover();
+  await expect(
+    page.locator("[data-recording-timeline-hover-segment-id='a-crossing']"),
+  ).toBeVisible();
+  await expect(
+    page.locator("[data-recording-bookmark-marker-id='a-crossing']"),
+  ).toBeVisible();
+  await crossingItem.click();
+  await expect(crossingItem).toHaveAttribute("aria-pressed", "true");
+  await page.mouse.move(8, 8);
+  await expect(
+    page.locator("[data-recording-timeline-hover-segment-id='a-crossing']"),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(crossingItem).toHaveAttribute("aria-pressed", "false");
+  await expect(
+    page.locator("[data-recording-timeline-hover-segment-id='a-crossing']"),
+  ).toHaveCount(0);
+
+  await allChip.click();
+  await dragTrimHandleBySourceSeconds(page, {
+    clipId: clipA.id,
+    edge: "end",
+    seconds: 25,
+  });
+  await expectBookmarkItemIds(page, [
+    "a-first-hideout",
+    "a-crossing",
+    "a-manual",
+    "a-death",
+  ]);
+  await expect(bookmarksRail.getByText("4 items")).toBeVisible();
+  await expect(
+    page.locator("[data-recording-bookmark-marker-id='a-late-boss']"),
+  ).toHaveCount(0);
+
+  await bookmarksRail
+    .locator("[data-recording-bookmark-panel-item-id='a-crossing']")
+    .click();
+  await dragTrimHandleBySourceSeconds(page, {
+    clipId: clipA.id,
+    edge: "start",
+    seconds: 8,
+  });
+  await expectBookmarkItemIds(page, ["a-crossing", "a-manual", "a-death"]);
+  await expect(bookmarksRail.getByText("3 items")).toBeVisible();
+  await expect(
+    page.locator("[data-recording-bookmark-marker-id='a-crossing']"),
+  ).toHaveCount(0);
+  await expect(
+    page.locator("[data-recording-timeline-hover-segment-id='a-crossing']"),
+  ).toBeVisible();
+
+  await page
+    .locator("[data-clip-body='true'][data-clip-id='timeline-recording-b']")
+    .click();
+  await expect(
+    page.locator("[data-recording-timeline-hover-segment-id='a-crossing']"),
+  ).toHaveCount(0);
+  await expectBookmarkItemIds(page, [
+    "b-boss",
+    "b-town",
+    "b-death",
+    "b-manual",
+    "b-map",
+  ]);
+  await expect(bookmarksRail.getByText("6 items")).toBeVisible();
+  await expect(bookmarksRail.getByText("1 / 2")).toBeVisible();
+  await expect
+    .poll(async () =>
+      (await getEditorE2ECalls(page)).recordingBookmarkQueries.map(
+        (call) => call.recordingId,
+      ),
+    )
+    .toEqual([recordingA.id, recordingB.id]);
+
+  await allChip.click();
+  await expect(
+    page.locator("[data-recording-bookmark-marker-id='b-hideout']"),
+  ).toBeVisible();
+  await expect(
+    page.locator("[data-recording-bookmark-marker-id='a-manual']"),
+  ).toHaveCount(0);
+});
+
 test("covers timeline pointer move, trimming, and asset drag into the track", async ({
   page,
 }) => {
@@ -758,6 +1026,140 @@ async function readClip(
   }
 
   return clip;
+}
+
+function createEditorRecordingAsset(id: string): EditorMediaAsset {
+  return {
+    ...createEditorE2EAsset({
+      category: "recording",
+      id,
+      kind: "recording",
+      name: `${id}.mp4`,
+      subtitle: "Recording - Standard",
+    }),
+    durationSeconds: 120,
+  };
+}
+
+function createEditorRecordingClip(
+  asset: EditorMediaAsset,
+  input: {
+    durationSeconds: number;
+    id: string;
+    startSeconds: number;
+  },
+): EditorTimelineClip {
+  return {
+    assetKey: asset.assetKey,
+    color: "primary",
+    durationSeconds: input.durationSeconds,
+    id: input.id,
+    inSeconds: 0,
+    mediaUrl: asset.mediaUrl,
+    name: asset.name,
+    outSeconds: input.durationSeconds,
+    sourceInSeconds: 0,
+    sourceOutSeconds: asset.durationSeconds ?? input.durationSeconds,
+    startSeconds: input.startSeconds,
+    trackId: "video-track",
+  };
+}
+
+function createEditorRecordingBookmark(input: {
+  category: BookmarkCategory;
+  durationSeconds?: number | null;
+  id: string;
+  label: string;
+  offsetSeconds: number;
+  sceneName?: string | null;
+}): RecordingBookmark {
+  const occurredAt = new Date(
+    Date.parse("2026-07-04T10:00:00.000Z") + input.offsetSeconds * 1_000,
+  ).toISOString();
+
+  return {
+    category: input.category,
+    createdAt: occurredAt,
+    durationSeconds: input.durationSeconds ?? null,
+    id: input.id,
+    label: input.label,
+    note: null,
+    occurredAt,
+    offsetSeconds: input.offsetSeconds,
+    sceneName: input.sceneName ?? null,
+    source: input.category === "manual" ? "manual" : "client-log",
+    sourceGame: "poe2",
+    sourceLeague: "Standard",
+    subcategory: null,
+    updatedAt: occurredAt,
+  };
+}
+
+function createEditorRecordingBookmarksPage(
+  bookmarks: RecordingBookmark[],
+): RecordingBookmarksPage {
+  const pageSize = 5;
+
+  return {
+    availableCategories: Array.from(
+      new Set(bookmarks.map((bookmark) => bookmark.category)),
+    ),
+    items: bookmarks.slice(0, pageSize),
+    pageCount: Math.max(1, Math.ceil(bookmarks.length / pageSize)),
+    pageIndex: 0,
+    pageSize,
+    timelineItems: bookmarks,
+    timelineItemsTruncated: false,
+    totalCount: bookmarks.length,
+  };
+}
+
+async function dragTrimHandleBySourceSeconds(
+  page: Page,
+  input: {
+    clipId: string;
+    edge: "end" | "start";
+    seconds: number;
+  },
+) {
+  const x = await page.evaluate(({ clipId, edge, seconds }) => {
+    const clip = document.querySelector<HTMLElement>(
+      `[data-clip-body='true'][data-clip-id='${clipId}']`,
+    );
+    if (!clip) {
+      throw new Error(`Timeline clip ${clipId} was not rendered`);
+    }
+
+    const durationSeconds = Number(clip.dataset.clipDurationSeconds);
+    const widthPixels = clip.getBoundingClientRect().width;
+    const offsetPixels = widthPixels * (seconds / durationSeconds);
+
+    return edge === "start" ? offsetPixels : -offsetPixels;
+  }, input);
+
+  await dragLocatorBy(
+    page.locator(
+      `[data-trim-edge='${input.edge}'][data-clip-id='${input.clipId}']`,
+    ),
+    { x, y: 0 },
+  );
+}
+
+async function expectBookmarkItemIds(page: Page, expectedIds: string[]) {
+  await expect
+    .poll(async () => (await readBookmarkItemIds(page)).sort())
+    .toEqual([...expectedIds].sort());
+}
+
+async function readBookmarkItemIds(page: Page): Promise<string[]> {
+  return page
+    .locator("[data-recording-bookmark-panel-item-id]")
+    .evaluateAll((nodes) =>
+      nodes.map(
+        (node) =>
+          (node as HTMLElement).dataset.recordingBookmarkPanelItemId ?? "",
+      ),
+    );
 }
 
 async function dragAssetToTimeline(

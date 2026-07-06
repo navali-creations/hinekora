@@ -1,6 +1,10 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 import type {
+  RecordingBookmarksPage,
+  RecordingBookmarksQuery,
+} from "../../main/modules/bookmarks";
+import type {
   EditorCreateProjectInput,
   EditorExportInput,
   EditorMediaAsset,
@@ -55,6 +59,7 @@ interface EditorE2ECalls {
   revealedClipIds: string[];
   revealedExportIds: string[];
   revealedSavedEditIds: string[];
+  recordingBookmarkQueries: Array<{ query: unknown; recordingId: string }>;
   savedEditDeleteAllCount: number;
   savedProjects: Array<{
     id: string;
@@ -74,10 +79,12 @@ interface EditorE2EFixture {
     recordingAsset: EditorMediaAsset;
   };
   emptyProject: EditorProject;
+  extraProjects: EditorProject[];
   historyOverflowProject: EditorProject;
   now: string;
   mixedLeagueProject: EditorProject;
   primaryProject: EditorProject;
+  recordingBookmarkPages: Record<string, RecordingBookmarksPage>;
   recordingStatus: ManagedRecorderStatus;
   savedEditRecords: EditorE2ESavedEditRecord[];
   secondaryProject: EditorProject;
@@ -89,6 +96,13 @@ type EditorE2EElectron = Window["electron"];
 interface EditorE2ESavedEditRecord {
   item: SavedEditItem;
   sourceLeagueMemberships: EditorProjectSourceLeagueMembership[];
+}
+
+interface SetupEditorE2EOptions {
+  extraAssets?: EditorMediaAsset[];
+  extraProjects?: EditorProject[];
+  initialRoute?: string;
+  recordingBookmarkPages?: Record<string, RecordingBookmarksPage>;
 }
 
 const editorE2ENow = "2026-06-25T00:00:00.000Z";
@@ -233,10 +247,12 @@ function createEditorE2EFixture(): EditorE2EFixture {
       recordingAsset,
     },
     emptyProject,
+    extraProjects: [],
     historyOverflowProject,
     mixedLeagueProject,
     now: editorE2ENow,
     primaryProject,
+    recordingBookmarkPages: {},
     recordingStatus: {
       activeSessionDirectory: null,
       available: true,
@@ -419,8 +435,15 @@ function resolveCommonEditorE2EAssetValue<TValue extends string>(
   return values.every((value) => value === firstValue) ? firstValue : null;
 }
 
-async function setupEditorE2E(page: Page) {
+async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
   await page.setViewportSize({ height: 760, width: 1280 });
+  const fixture = createEditorE2EFixture();
+  fixture.assets.mediaAssets.push(...(options.extraAssets ?? []));
+  fixture.extraProjects = options.extraProjects ?? [];
+  fixture.recordingBookmarkPages = options.recordingBookmarkPages ?? {};
+  fixture.savedEditRecords.push(
+    ...fixture.extraProjects.map(createEditorE2ESavedEditRecord),
+  );
   await page.exposeFunction(
     "__HINEKORA_E2E_CREATE_SAVED_EDIT_RECORD__",
     (project: EditorProject) => createEditorE2ESavedEditRecord(project),
@@ -436,10 +459,12 @@ async function setupEditorE2E(page: Page) {
         fixture.assets;
       const {
         emptyProject,
+        extraProjects,
         historyOverflowProject,
         mixedLeagueProject,
         now,
         primaryProject,
+        recordingBookmarkPages,
         recordingStatus,
       } = fixture;
       const settings = { ...fixture.settings };
@@ -468,6 +493,7 @@ async function setupEditorE2E(page: Page) {
         [secondaryProject.id, secondaryProject],
         [mixedLeagueProject.id, mixedLeagueProject],
         [historyOverflowProject.id, historyOverflowProject],
+        ...extraProjects.map((project) => [project.id, project] as const),
       ]);
       const savedEditRecordsById = new Map(
         fixture.savedEditRecords.map((record) => [record.item.id, record]),
@@ -601,6 +627,10 @@ async function setupEditorE2E(page: Page) {
         revealedClipIds: [] as string[],
         revealedExportIds: [] as string[],
         revealedSavedEditIds: [] as string[],
+        recordingBookmarkQueries: [] as Array<{
+          query: unknown;
+          recordingId: string;
+        }>,
         savedEditDeleteAllCount: 0,
         savedProjects: [] as EditorProject[],
         settingsUpdates: [] as Record<string, unknown>[],
@@ -721,16 +751,30 @@ async function setupEditorE2E(page: Page) {
               sortDirection: "desc",
               totalCount: 0,
             }),
-            listRecording: async () => ({
-              availableCategories: [],
-              items: [],
-              pageCount: 1,
-              pageIndex: 0,
-              pageSize: 10,
-              timelineItems: [],
-              timelineItemsTruncated: false,
-              totalCount: 0,
-            }),
+            listRecording: async (
+              recordingId: string,
+              query: RecordingBookmarksQuery = {},
+            ) => {
+              state.recordingBookmarkQueries.push({
+                query: clone(query),
+                recordingId,
+              });
+              const page = recordingBookmarkPages[recordingId];
+              if (page) {
+                return clone(page);
+              }
+
+              return {
+                availableCategories: [],
+                items: [],
+                pageCount: 1,
+                pageIndex: query.pageIndex ?? 0,
+                pageSize: query.pageSize ?? 10,
+                timelineItems: [],
+                timelineItemsTruncated: false,
+                totalCount: 0,
+              };
+            },
             updateManual: async () => undefined,
           },
         ),
@@ -985,12 +1029,12 @@ async function setupEditorE2E(page: Page) {
     },
     {
       bridgeFactorySource: e2eBridgeDomainFactorySource,
-      fixture: createEditorE2EFixture(),
+      fixture,
       poeProcessSnapshotFactoryScript: e2ePoeProcessSnapshotFactoryScript,
     },
   );
 
-  await page.goto("/#/editor?kind=clip&id=asset-1");
+  await page.goto(options.initialRoute ?? "/#/editor?kind=clip&id=asset-1");
   await expect(page.getByRole("heading", { name: "Editor" })).toBeVisible();
   await expect(page.locator("[data-timeline-grid='true']")).toBeVisible();
 }
@@ -1136,6 +1180,9 @@ async function dragLocatorBy(
 
 export {
   clickTimelineMarkerAtClipOffset,
+  createEditorE2EAsset,
+  createEditorE2EClip,
+  createEditorE2EProject,
   dragLocatorBy,
   expectNoTimelineOverlap,
   expectNoUnexpectedEditorBridgeCalls,

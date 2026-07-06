@@ -43,7 +43,7 @@ function RecordingBookmarkTimelineMarker({
   const markerClassName = clsx(
     "grid h-4 w-4 place-items-center rounded-full border border-base-content/30 p-0 shadow-sm ring-2 ring-base-300",
     clipTargetId
-      ? "mt-3.5 cursor-pointer appearance-none transition hover:scale-110 hover:ring-primary"
+      ? "pointer-events-auto mt-3.5 cursor-pointer appearance-none transition hover:scale-110 hover:ring-primary"
       : "mt-3.5",
     thumbClassName,
   );
@@ -72,7 +72,7 @@ function RecordingBookmarkTimelineMarker({
 
   return (
     <span
-      className="group absolute top-0 bottom-0 z-[35] flex -translate-x-1/2 flex-col items-center"
+      className="group pointer-events-none absolute top-0 bottom-0 z-[35] flex -translate-x-1/2 flex-col items-center"
       data-recording-bookmark-marker-id={bookmark.id}
       style={{ left: formatRecordingTimelineRailLeft(left) }}
       title={title}

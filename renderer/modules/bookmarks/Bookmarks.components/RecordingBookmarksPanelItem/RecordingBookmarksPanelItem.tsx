@@ -53,11 +53,13 @@ function RecordingBookmarksPanelItem({
 
   return (
     <button
+      aria-pressed={isSelected}
       className={clsx(
         "group relative shrink-0 overflow-hidden rounded-md border border-base-content/10 bg-base-100/60 p-3 text-left text-base-content transition",
         bookmarkCategoryPanelItemClassNames[bookmark.category],
         isSelected && "border-primary/70 bg-primary/10 text-primary shadow-sm",
       )}
+      data-recording-bookmark-panel-item-id={bookmark.id}
       type="button"
       onClick={handleSelect}
       onPointerEnter={handlePointerEnter}

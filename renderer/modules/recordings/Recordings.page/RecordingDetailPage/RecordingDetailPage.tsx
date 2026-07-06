@@ -17,6 +17,7 @@ import {
 } from "~/renderer/modules/media-library/MediaLibrary.utils/MediaLibrary.utils";
 import { useBookmarksShallow } from "~/renderer/store";
 
+import { resolveRecordingDetailHighlightedBookmark } from "./RecordingDetailPage.utils";
 import { RecordingDetailPageActions } from "./RecordingDetailPageActions/RecordingDetailPageActions";
 import { RecordingDetailPlayer } from "./RecordingDetailPlayer/RecordingDetailPlayer";
 import { RecordingDetailStatusAlerts } from "./RecordingDetailStatusAlerts/RecordingDetailStatusAlerts";
@@ -68,33 +69,16 @@ function RecordingDetailPage({
     timelineBookmarks,
     state.bookmarksPage?.availableCategories ?? [],
   );
-  const hoveredBookmark = useMemo(
+  const highlightedBookmark = useMemo(
     () =>
-      hoveredBookmarkId
-        ? (timelineBookmarks.find(
-            (bookmark) => bookmark.id === hoveredBookmarkId,
-          ) ??
-          latestBookmarks.find(
-            (bookmark) => bookmark.id === hoveredBookmarkId,
-          ) ??
-          null)
-        : null,
-    [hoveredBookmarkId, latestBookmarks, timelineBookmarks],
+      resolveRecordingDetailHighlightedBookmark({
+        hoveredBookmarkId,
+        latestBookmarks,
+        selectedBookmarkId,
+        timelineBookmarks,
+      }),
+    [hoveredBookmarkId, latestBookmarks, selectedBookmarkId, timelineBookmarks],
   );
-  const selectedBookmark = useMemo(
-    () =>
-      selectedBookmarkId
-        ? (timelineBookmarks.find(
-            (bookmark) => bookmark.id === selectedBookmarkId,
-          ) ??
-          latestBookmarks.find(
-            (bookmark) => bookmark.id === selectedBookmarkId,
-          ) ??
-          null)
-        : null,
-    [latestBookmarks, selectedBookmarkId, timelineBookmarks],
-  );
-  const highlightedBookmark = hoveredBookmark ?? selectedBookmark;
   const playback = useRecordingDetailPlayback({
     detailReady: Boolean(state.detail),
     fallbackDurationSeconds: recording?.durationSeconds ?? null,

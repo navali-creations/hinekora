@@ -251,24 +251,26 @@ export interface BookmarksSlice {
     manualRenameDraft: { id: string; label: string } | null;
     page: BookmarkLibraryPage | null;
     query: BookmarkLibraryQuery | null;
-    recordingDetail: {
-      categoryFilter: BookmarkCategory | typeof allBookmarkCategoriesValue;
-      hasInteracted: boolean;
-      hoveredBookmarkId: string | null;
-      pageIndex: number;
-      selectedBookmarkId: string | null;
-    };
+    editorRecording: BookmarkPanelState;
+    recordingDetail: BookmarkPanelState;
     closeManualRenameDialog: () => void;
     openManualRenameDialog: (input: { id: string; label: string }) => void;
     hydrate: () => Promise<void>;
     refresh: (query?: BookmarkLibraryQuery) => Promise<void>;
     deleteManual: (id: string) => Promise<void>;
+    resetEditorRecordingBookmarks: () => void;
+    selectEditorRecordingCategory: (
+      category: BookmarkCategory | typeof allBookmarkCategoriesValue,
+    ) => void;
+    setEditorRecordingHoveredBookmarkId: (id: string | null) => void;
+    setEditorRecordingPageIndex: (pageIndex: BookmarkPageIndexInput) => void;
+    setEditorRecordingSelectedBookmarkId: (id: string | null) => void;
     resetRecordingDetail: () => void;
     selectRecordingDetailCategory: (
       category: BookmarkCategory | typeof allBookmarkCategoriesValue,
     ) => void;
     setRecordingDetailHoveredBookmarkId: (id: string | null) => void;
-    setRecordingDetailPageIndex: (pageIndex: number) => void;
+    setRecordingDetailPageIndex: (pageIndex: BookmarkPageIndexInput) => void;
     setRecordingDetailSelectedBookmarkId: (id: string | null) => void;
     saveManualRename: (label: string) => Promise<void>;
     updateManual: (
@@ -278,6 +280,18 @@ export interface BookmarksSlice {
     ) => Promise<void>;
   };
 }
+
+export interface BookmarkPanelState {
+  categoryFilter: BookmarkCategory | typeof allBookmarkCategoriesValue;
+  hasInteracted: boolean;
+  hoveredBookmarkId: string | null;
+  pageIndex: number;
+  selectedBookmarkId: string | null;
+}
+
+export type BookmarkPageIndexInput =
+  | number
+  | ((currentPageIndex: number) => number);
 
 export type RewindDetailTimelineMarkerCategoryFilter =
   | BookmarkCategory

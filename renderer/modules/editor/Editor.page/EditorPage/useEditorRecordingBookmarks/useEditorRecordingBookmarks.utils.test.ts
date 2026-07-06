@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import type { RecordingBookmark } from "~/main/modules/bookmarks";
-
 import {
   createEditorTestAsset,
   createEditorTestProject,
+  createEditorTestRecordingBookmark,
   createEditorTestTimelineClip,
 } from "../../../Editor.slice/Editor.slice.test-utils";
 import {
@@ -15,28 +14,6 @@ import {
   resolveEditorBookmarkTimelineSeconds,
   resolveEditorRecordingBookmarkSource,
 } from "./useEditorRecordingBookmarks.utils";
-
-function createRecordingBookmark(
-  overrides: Partial<RecordingBookmark> = {},
-): RecordingBookmark {
-  return {
-    category: "map",
-    createdAt: "2026-07-03T10:00:00.000Z",
-    durationSeconds: 6,
-    id: "bookmark-1",
-    label: "Qimah Reservoir",
-    note: null,
-    occurredAt: "2026-07-03T10:00:05.000Z",
-    offsetSeconds: 7,
-    sceneName: "Qimah Reservoir",
-    source: "client-log",
-    sourceGame: "poe2",
-    sourceLeague: "Standard",
-    subcategory: null,
-    updatedAt: "2026-07-03T10:00:00.000Z",
-    ...overrides,
-  };
-}
 
 describe("editor recording bookmarks utilities", () => {
   it("resolves the selected timeline recording source", () => {
@@ -153,7 +130,7 @@ describe("editor recording bookmarks utilities", () => {
         },
       ],
     });
-    const bookmark = createRecordingBookmark({ offsetSeconds: 7 });
+    const bookmark = createEditorTestRecordingBookmark({ offsetSeconds: 7 });
 
     expect(
       resolveEditorBookmarkTimelineSeconds({
@@ -207,8 +184,11 @@ describe("editor recording bookmarks utilities", () => {
     expect(
       resolveEditorBookmarkTimelineItems({
         bookmarks: [
-          createRecordingBookmark({ id: "inside", offsetSeconds: 4 }),
-          createRecordingBookmark({ id: "outside", offsetSeconds: 12 }),
+          createEditorTestRecordingBookmark({ id: "inside", offsetSeconds: 4 }),
+          createEditorTestRecordingBookmark({
+            id: "outside",
+            offsetSeconds: 12,
+          }),
         ],
         project,
         recordingAssetKey: recordingAsset.assetKey,
@@ -244,7 +224,7 @@ describe("editor recording bookmarks utilities", () => {
         },
       ],
     });
-    const bookmark = createRecordingBookmark({
+    const bookmark = createEditorTestRecordingBookmark({
       durationSeconds: 6,
       offsetSeconds: 7,
     });
@@ -300,7 +280,7 @@ describe("editor recording bookmarks utilities", () => {
 
     expect(
       isEditorBookmarkInTimelineRange({
-        bookmark: createRecordingBookmark({
+        bookmark: createEditorTestRecordingBookmark({
           category: "manual",
           durationSeconds: null,
           offsetSeconds: 17,
@@ -312,7 +292,7 @@ describe("editor recording bookmarks utilities", () => {
     ).toBe(true);
     expect(
       isEditorBookmarkInTimelineRange({
-        bookmark: createRecordingBookmark({
+        bookmark: createEditorTestRecordingBookmark({
           category: "death",
           durationSeconds: null,
           offsetSeconds: 3,
@@ -362,7 +342,7 @@ describe("editor recording bookmarks utilities", () => {
         },
       ],
     });
-    const bookmark = createRecordingBookmark({ offsetSeconds: 4 });
+    const bookmark = createEditorTestRecordingBookmark({ offsetSeconds: 4 });
     const source = resolveEditorRecordingBookmarkSource({
       project,
       selectedClipId: "timeline-recording-second",

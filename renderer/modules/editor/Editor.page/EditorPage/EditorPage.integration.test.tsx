@@ -16,15 +16,22 @@ const storeMocks = vi.hoisted(() => ({
   redoProjectChange: vi.fn(),
   removeTimelineClip: vi.fn(),
   removeTimelineGap: vi.fn(),
+  resetEditorRecordingBookmarks: vi.fn(),
+  selectEditorRecordingCategory: vi.fn(),
   setHoveredTimelineGap: vi.fn(),
+  setEditorRecordingHoveredBookmarkId: vi.fn(),
+  setEditorRecordingPageIndex: vi.fn(),
+  setEditorRecordingSelectedBookmarkId: vi.fn(),
   setZoom: vi.fn(),
   undoProjectChange: vi.fn(),
+  useBookmarksShallow: vi.fn(),
   useEditorShallow: vi.fn(),
   useSavedEditsShallow: vi.fn(),
   useSettingsSelector: vi.fn(),
 }));
 
 vi.mock("~/renderer/store", () => ({
+  useBookmarksShallow: storeMocks.useBookmarksShallow,
   useEditorShallow: storeMocks.useEditorShallow,
   useSavedEditsShallow: storeMocks.useSavedEditsShallow,
   useSettingsSelector: storeMocks.useSettingsSelector,
@@ -198,6 +205,24 @@ describe("EditorPage integration", () => {
     );
     storeMocks.useSavedEditsShallow.mockImplementation((selector) =>
       selector(savedEditsState),
+    );
+    storeMocks.useBookmarksShallow.mockImplementation((selector) =>
+      selector({
+        editorRecording: {
+          categoryFilter: "__all__",
+          hasInteracted: false,
+          hoveredBookmarkId: null,
+          pageIndex: 0,
+          selectedBookmarkId: null,
+        },
+        resetEditorRecordingBookmarks: storeMocks.resetEditorRecordingBookmarks,
+        selectEditorRecordingCategory: storeMocks.selectEditorRecordingCategory,
+        setEditorRecordingHoveredBookmarkId:
+          storeMocks.setEditorRecordingHoveredBookmarkId,
+        setEditorRecordingPageIndex: storeMocks.setEditorRecordingPageIndex,
+        setEditorRecordingSelectedBookmarkId:
+          storeMocks.setEditorRecordingSelectedBookmarkId,
+      }),
     );
     configureEditorState();
   });

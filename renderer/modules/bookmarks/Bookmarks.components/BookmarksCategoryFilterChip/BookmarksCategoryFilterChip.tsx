@@ -36,11 +36,13 @@ function BookmarksCategoryFilterChip({
 
   return (
     <button
+      aria-pressed={isActive}
       className={clsx(
         "inline-flex h-6 cursor-pointer items-center rounded-md border px-2 font-medium text-xs transition-colors",
         chipClassName,
         isActive ? "shadow-sm" : "opacity-80 hover:opacity-100",
       )}
+      data-bookmark-category-chip={category}
       type="button"
       onClick={handleSelect}
     >

@@ -15,6 +15,62 @@ function createTestStore() {
 }
 
 describe("Bookmarks slice", () => {
+  it("tracks editor recording bookmark filters and selection state", () => {
+    const store = createTestStore();
+
+    expect(store.getState().bookmarks.editorRecording).toEqual({
+      categoryFilter: allBookmarkCategoriesValue,
+      hasInteracted: false,
+      hoveredBookmarkId: null,
+      pageIndex: 0,
+      selectedBookmarkId: null,
+    });
+
+    store.getState().bookmarks.setEditorRecordingPageIndex(2);
+    store
+      .getState()
+      .bookmarks.setEditorRecordingPageIndex(
+        (currentPageIndex) => currentPageIndex + 1,
+      );
+    expect(store.getState().bookmarks.editorRecording.pageIndex).toBe(3);
+    store
+      .getState()
+      .bookmarks.setEditorRecordingHoveredBookmarkId("bookmark-hovered");
+    store
+      .getState()
+      .bookmarks.setEditorRecordingSelectedBookmarkId("bookmark-selected");
+    store.getState().bookmarks.selectEditorRecordingCategory("map");
+
+    expect(store.getState().bookmarks.editorRecording).toEqual({
+      categoryFilter: "map",
+      hasInteracted: true,
+      hoveredBookmarkId: "bookmark-hovered",
+      pageIndex: 0,
+      selectedBookmarkId: "bookmark-selected",
+    });
+
+    store.getState().bookmarks.selectEditorRecordingCategory("map");
+    expect(store.getState().bookmarks.editorRecording).toEqual({
+      categoryFilter: allBookmarkCategoriesValue,
+      hasInteracted: false,
+      hoveredBookmarkId: "bookmark-hovered",
+      pageIndex: 0,
+      selectedBookmarkId: "bookmark-selected",
+    });
+
+    store.getState().bookmarks.setEditorRecordingPageIndex(-3);
+    expect(store.getState().bookmarks.editorRecording.pageIndex).toBe(0);
+
+    store.getState().bookmarks.resetEditorRecordingBookmarks();
+    expect(store.getState().bookmarks.editorRecording).toEqual({
+      categoryFilter: allBookmarkCategoriesValue,
+      hasInteracted: false,
+      hoveredBookmarkId: null,
+      pageIndex: 0,
+      selectedBookmarkId: null,
+    });
+  });
+
   it("tracks recording detail filters and hover state", () => {
     const store = createTestStore();
 
@@ -27,6 +83,12 @@ describe("Bookmarks slice", () => {
     });
 
     store.getState().bookmarks.setRecordingDetailPageIndex(3);
+    store
+      .getState()
+      .bookmarks.setRecordingDetailPageIndex(
+        (currentPageIndex) => currentPageIndex - 1,
+      );
+    expect(store.getState().bookmarks.recordingDetail.pageIndex).toBe(2);
     store
       .getState()
       .bookmarks.setRecordingDetailHoveredBookmarkId("bookmark-1");

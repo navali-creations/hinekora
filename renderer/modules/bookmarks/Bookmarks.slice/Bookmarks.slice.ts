@@ -8,6 +8,26 @@ import {
   resolveBookmarkCategoryToggle,
 } from "../Bookmarks.utils";
 
+const createInitialBookmarkPanelState = () => ({
+  categoryFilter: allBookmarkCategoriesValue,
+  hasInteracted: false,
+  hoveredBookmarkId: null,
+  pageIndex: 0,
+  selectedBookmarkId: null,
+});
+
+function resolveBookmarkPageIndex(
+  currentPageIndex: number,
+  pageIndex: Parameters<
+    BookmarksSlice["bookmarks"]["setEditorRecordingPageIndex"]
+  >[0],
+): number {
+  const nextPageIndex =
+    typeof pageIndex === "function" ? pageIndex(currentPageIndex) : pageIndex;
+
+  return Math.max(0, nextPageIndex);
+}
+
 export const createBookmarksSlice: BoundStoreStateCreator<BookmarksSlice> = (
   set,
   get,
@@ -63,13 +83,8 @@ export const createBookmarksSlice: BoundStoreStateCreator<BookmarksSlice> = (
       manualRenameDraft: null,
       page: null,
       query: null,
-      recordingDetail: {
-        categoryFilter: allBookmarkCategoriesValue,
-        hasInteracted: false,
-        hoveredBookmarkId: null,
-        pageIndex: 0,
-        selectedBookmarkId: null,
-      },
+      editorRecording: createInitialBookmarkPanelState(),
+      recordingDetail: createInitialBookmarkPanelState(),
       closeManualRenameDialog: () => {
         set((state) => {
           if (state.bookmarks.isManualRenameSaving) {
@@ -92,15 +107,45 @@ export const createBookmarksSlice: BoundStoreStateCreator<BookmarksSlice> = (
         await window.electron.bookmarks.deleteManual(id);
         await refresh();
       },
+      resetEditorRecordingBookmarks: () => {
+        set((state) => {
+          state.bookmarks.editorRecording = createInitialBookmarkPanelState();
+        });
+      },
+      selectEditorRecordingCategory: (category) => {
+        set((state) => {
+          const nextState = resolveBookmarkCategoryToggle(
+            state.bookmarks.editorRecording,
+            category,
+          );
+          state.bookmarks.editorRecording.categoryFilter =
+            nextState.categoryFilter;
+          state.bookmarks.editorRecording.hasInteracted =
+            nextState.hasInteracted;
+          state.bookmarks.editorRecording.pageIndex = 0;
+        });
+      },
+      setEditorRecordingHoveredBookmarkId: (id) => {
+        set((state) => {
+          state.bookmarks.editorRecording.hoveredBookmarkId = id;
+        });
+      },
+      setEditorRecordingPageIndex: (pageIndex) => {
+        set((state) => {
+          state.bookmarks.editorRecording.pageIndex = resolveBookmarkPageIndex(
+            state.bookmarks.editorRecording.pageIndex,
+            pageIndex,
+          );
+        });
+      },
+      setEditorRecordingSelectedBookmarkId: (id) => {
+        set((state) => {
+          state.bookmarks.editorRecording.selectedBookmarkId = id;
+        });
+      },
       resetRecordingDetail: () => {
         set((state) => {
-          state.bookmarks.recordingDetail = {
-            categoryFilter: allBookmarkCategoriesValue,
-            hasInteracted: false,
-            hoveredBookmarkId: null,
-            pageIndex: 0,
-            selectedBookmarkId: null,
-          };
+          state.bookmarks.recordingDetail = createInitialBookmarkPanelState();
         });
       },
       selectRecordingDetailCategory: (category) => {
@@ -123,7 +168,10 @@ export const createBookmarksSlice: BoundStoreStateCreator<BookmarksSlice> = (
       },
       setRecordingDetailPageIndex: (pageIndex) => {
         set((state) => {
-          state.bookmarks.recordingDetail.pageIndex = Math.max(0, pageIndex);
+          state.bookmarks.recordingDetail.pageIndex = resolveBookmarkPageIndex(
+            state.bookmarks.recordingDetail.pageIndex,
+            pageIndex,
+          );
         });
       },
       setRecordingDetailSelectedBookmarkId: (id) => {

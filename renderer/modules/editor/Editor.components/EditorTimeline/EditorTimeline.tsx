@@ -5,7 +5,7 @@ import { useEditorShallow } from "~/renderer/store";
 
 import { useEditorTimelineDrag } from "../../Editor.hooks/useEditorTimelineDrag/useEditorTimelineDrag";
 import { useEditorTimelinePlaybackScroll } from "../../Editor.hooks/useEditorTimelinePlaybackScroll/useEditorTimelinePlaybackScroll";
-import { EditorTimelineBookmarkMarkers } from "../EditorTimelineBookmarkMarkers/EditorTimelineBookmarkMarkers";
+import { EditorTimelineBookmarkLayer } from "../EditorTimelineBookmarkLayer/EditorTimelineBookmarkLayer";
 import { EditorTimelineClipDragPreview } from "../EditorTimelineClipDragPreview/EditorTimelineClipDragPreview";
 import { EditorTimelineControlsRow } from "../EditorTimelineControlsRow/EditorTimelineControlsRow";
 import { EditorTimelineGap } from "../EditorTimelineGap/EditorTimelineGap";
@@ -224,19 +224,10 @@ function EditorTimeline({
               visibleDurationSeconds={visibleDurationSeconds}
             />
           )}
-          {bookmarks && (
-            <EditorTimelineBookmarkMarkers
-              hoveredBookmark={bookmarks.hoveredBookmark}
-              markerBookmarks={bookmarks.markerBookmarks}
-              pinnedBookmark={
-                bookmarks.pinnedBookmark === undefined
-                  ? bookmarks.hoveredBookmark
-                  : bookmarks.pinnedBookmark
-              }
-              showBookmarkMarkers={bookmarks.showBookmarkMarkers}
-              visibleDurationSeconds={visibleDurationSeconds}
-            />
-          )}
+          <EditorTimelineBookmarkLayer
+            bookmarks={bookmarks}
+            visibleDurationSeconds={visibleDurationSeconds}
+          />
           <EditorTimelinePlayhead
             railPaddingPixels={editorTimelineRailPaddingPixels}
             visibleDurationSeconds={visibleDurationSeconds}

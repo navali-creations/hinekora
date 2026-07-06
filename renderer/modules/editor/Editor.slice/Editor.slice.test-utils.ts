@@ -1,5 +1,6 @@
 import { beforeEach, vi } from "vitest";
 
+import type { RecordingBookmark } from "~/main/modules/bookmarks";
 import type {
   EditorExportProgress,
   EditorExportResult,
@@ -217,11 +218,34 @@ function createEditorTestTimelineClip(
   };
 }
 
+function createEditorTestRecordingBookmark(
+  overrides: Partial<RecordingBookmark> = {},
+): RecordingBookmark {
+  return {
+    category: "map",
+    createdAt: "2026-07-03T10:00:00.000Z",
+    durationSeconds: 6,
+    id: "bookmark-1",
+    label: "Qimah Reservoir",
+    note: null,
+    occurredAt: "2026-07-03T10:00:05.000Z",
+    offsetSeconds: 7,
+    sceneName: "Qimah Reservoir",
+    source: "client-log",
+    sourceGame: "poe2",
+    sourceLeague: "Standard",
+    subcategory: null,
+    updatedAt: "2026-07-03T10:00:00.000Z",
+    ...overrides,
+  };
+}
+
 export {
   createDeferred,
   createEditorTestAsset,
   createEditorTestExportResult,
   createEditorTestProject,
+  createEditorTestRecordingBookmark,
   createEditorTestTimelineClip,
   loadEditorProject,
   setupEditorSliceTest,
