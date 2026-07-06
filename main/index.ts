@@ -162,8 +162,10 @@ async function bootstrap(): Promise<void> {
   logInfo("startup", "Capture profiles initialized");
 
   const managedRecorder = ManagedRecorderService.getInstance();
-  managedRecorder.initializeAutoStart();
   logInfo("startup", "Managed recorder initialized");
+
+  const poeProcessService = PoeProcessService.getInstance();
+  logInfo("startup", "PoE process monitor initialized");
 
   const recordingStorage = RecordingStorageService.getInstance();
   logInfo("startup", "Recording storage service initialized");
@@ -206,8 +208,11 @@ async function bootstrap(): Promise<void> {
     requested: overlayWindows.requestPersistentAuraOverlay(),
   });
 
-  PoeProcessService.getInstance().initialize();
+  poeProcessService.initialize();
   logInfo("startup", "PoE process monitor started");
+
+  managedRecorder.initializeAutoStart();
+  logInfo("startup", "Managed recorder auto-start initialized");
 
   await overlayWindows.showRecorderOverlay();
   logInfo("startup", "Recorder overlay requested");

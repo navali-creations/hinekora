@@ -41,6 +41,16 @@ const profile = {
   updatedAt: new Date(0).toISOString(),
 };
 
+function createRunningPoe1ProcessState() {
+  return {
+    game: "poe1" as const,
+    isRunning: true as const,
+    pid: 4241,
+    processName: "PathOfExile.exe",
+    windowTitle: "Path of Exile",
+  };
+}
+
 describe("CropEditorActions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -120,11 +130,7 @@ describe("CropEditorActions", () => {
   it("unlocks the aura overlay before selecting a new aura region", async () => {
     storeMocks.usePoeProcessSelector.mockImplementation((selector) =>
       selector({
-        state: {
-          game: "poe1",
-          isRunning: true,
-          processName: "PathOfExile.exe",
-        },
+        state: createRunningPoe1ProcessState(),
       }),
     );
     vi.spyOn(crypto, "randomUUID")
@@ -210,11 +216,7 @@ describe("CropEditorActions", () => {
     );
     storeMocks.usePoeProcessSelector.mockImplementation((selector) =>
       selector({
-        state: {
-          game: "poe1",
-          isRunning: true,
-          processName: "PathOfExile.exe",
-        },
+        state: createRunningPoe1ProcessState(),
       }),
     );
     electronMocks.selectCropRegion.mockResolvedValue(null);
@@ -248,11 +250,7 @@ describe("CropEditorActions", () => {
   it("creates an arched aura from the arched aura action", async () => {
     storeMocks.usePoeProcessSelector.mockImplementation((selector) =>
       selector({
-        state: {
-          game: "poe1",
-          isRunning: true,
-          processName: "PathOfExile.exe",
-        },
+        state: createRunningPoe1ProcessState(),
       }),
     );
     electronMocks.selectCropRegion.mockResolvedValue({

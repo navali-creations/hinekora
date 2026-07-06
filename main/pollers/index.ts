@@ -1,6 +1,9 @@
+export type { PoeProcessStateProvider } from "./PoeProcessStateProvider";
 export {
-  detectPoeProcessState,
-  isPoeProcessStateForGame,
-  PoeProcessPoller,
-} from "./PoeProcessPoller";
-export type { ProcessState } from "./ProcessPoller";
+  clearPoeProcessStateProvider,
+  isProcessStateForGame,
+  refreshPoeProcessState,
+  setPoeProcessStateProvider,
+} from "./PoeProcessStateProvider";
+export type { PoeProcessWatcherMode } from "./PoeProcessWatcher";
+export { PoeProcessWatcher } from "./PoeProcessWatcher";

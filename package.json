@@ -13,6 +13,7 @@
   "scripts": {
     "dev": "electron-forge start",
     "start": "electron-forge start",
+    "build:poe-process-helper": "node scripts/build-poe-process-helper.mjs",
     "build": "electron-forge package",
     "package": "electron-forge package",
     "make": "electron-forge make",

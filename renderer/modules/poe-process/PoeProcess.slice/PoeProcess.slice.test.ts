@@ -2,8 +2,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
   PoeProcessError,
-  PoeProcessState,
+  PoeProcessSnapshot,
 } from "~/main/modules/poe-process/PoeProcess.dto";
+import {
+  createPoeProcessSnapshot,
+  createStoppedPoeProcessStates,
+} from "~/main/modules/poe-process/PoeProcess.dto";
+import {
+  createPoeProcessSnapshotFromState,
+  createRunningPoeProcessState,
+} from "~/main/test/poe-process";
 import type { BoundStore } from "~/renderer/store/store.types";
 import { createBoundStoreForTests } from "~/renderer/test/createBoundStoreForTests";
 
@@ -39,9 +47,9 @@ function createDeferred<T>() {
 
 describe("PoeProcess slice", () => {
   const listeners: {
-    start?: (state: PoeProcessState) => void;
-    stop?: (state: PoeProcessState) => void;
-    state?: (state: PoeProcessState) => void;
+    start?: (state: PoeProcessSnapshot) => void;
+    stop?: (state: PoeProcessSnapshot) => void;
+    state?: (state: PoeProcessSnapshot) => void;
     error?: (error: PoeProcessError) => void;
   } = {};
   const unsubscribers = {
@@ -50,7 +58,7 @@ describe("PoeProcess slice", () => {
     state: vi.fn(),
     error: vi.fn(),
   };
-  const getState = vi.fn();
+  const getSnapshot = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -58,26 +66,24 @@ describe("PoeProcess slice", () => {
       delete listeners[key as keyof typeof listeners];
     }
 
-    getState.mockResolvedValue({
-      game: "poe2",
-      isRunning: true,
-      processName: "PathOfExileSteam.exe",
-    });
+    getSnapshot.mockResolvedValue(
+      createPoeProcessSnapshotFromState(createRunningPoeProcessState("poe2")),
+    );
 
     Object.defineProperty(window, "electron", {
       configurable: true,
       value: {
         poeProcess: {
-          getState,
-          onStart: vi.fn((listener: (state: PoeProcessState) => void) => {
+          getSnapshot,
+          onStart: vi.fn((listener: (state: PoeProcessSnapshot) => void) => {
             listeners.start = listener;
             return unsubscribers.start;
           }),
-          onStop: vi.fn((listener: (state: PoeProcessState) => void) => {
+          onStop: vi.fn((listener: (state: PoeProcessSnapshot) => void) => {
             listeners.stop = listener;
             return unsubscribers.stop;
           }),
-          onState: vi.fn((listener: (state: PoeProcessState) => void) => {
+          onSnapshot: vi.fn((listener: (state: PoeProcessSnapshot) => void) => {
             listeners.state = listener;
             return unsubscribers.state;
           }),
@@ -95,49 +101,37 @@ describe("PoeProcess slice", () => {
 
     await store.getState().poeProcess.hydrate();
 
-    expect(store.getState().poeProcess.state).toEqual({
-      game: "poe2",
-      isRunning: true,
-      processName: "PathOfExileSteam.exe",
-    });
+    expect(store.getState().poeProcess.state).toEqual(
+      createRunningPoeProcessState("poe2"),
+    );
+    expect(store.getState().poeProcess.states.poe2).toEqual(
+      createRunningPoeProcessState("poe2"),
+    );
   });
 
   it("updates process state from main events", () => {
     const store = createTestStore();
     const unsubscribe = store.getState().poeProcess.startListening();
 
-    listeners.state?.({
-      game: "poe2",
-      isRunning: true,
-      processName: "PathOfExileSteam.exe",
-    });
-    expect(store.getState().poeProcess.state).toEqual({
-      game: "poe2",
-      isRunning: true,
-      processName: "PathOfExileSteam.exe",
-    });
+    listeners.state?.(
+      createPoeProcessSnapshotFromState(createRunningPoeProcessState("poe2")),
+    );
+    expect(store.getState().poeProcess.state).toEqual(
+      createRunningPoeProcessState("poe2"),
+    );
 
-    listeners.state?.({
-      game: "poe2",
-      isRunning: true,
-      processName: "PathOfExileSteam.exe",
-    });
+    listeners.state?.(
+      createPoeProcessSnapshotFromState(createRunningPoeProcessState("poe2")),
+    );
 
-    listeners.state?.({
-      game: "poe1",
-      isRunning: true,
-      processName: "PathOfExileSteam.exe",
-    });
-    expect(store.getState().poeProcess.state).toEqual({
-      game: "poe1",
-      isRunning: true,
-      processName: "PathOfExileSteam.exe",
-    });
+    listeners.state?.(
+      createPoeProcessSnapshotFromState(createRunningPoeProcessState("poe1")),
+    );
+    expect(store.getState().poeProcess.state).toEqual(
+      createRunningPoeProcessState("poe1"),
+    );
 
-    listeners.stop?.({
-      isRunning: false,
-      processName: "",
-    });
+    listeners.stop?.(createPoeProcessSnapshot(createStoppedPoeProcessStates()));
     expect(store.getState().poeProcess.state).toEqual({
       isRunning: false,
       processName: "",
@@ -154,27 +148,20 @@ describe("PoeProcess slice", () => {
   });
 
   it("does not let a late hydrate overwrite process change events", async () => {
-    const hydrate = createDeferred<PoeProcessState>();
-    getState.mockReturnValueOnce(hydrate.promise);
+    const hydrate = createDeferred<PoeProcessSnapshot>();
+    getSnapshot.mockReturnValueOnce(hydrate.promise);
     const store = createTestStore();
     store.getState().poeProcess.startListening();
 
     const hydrateRequest = store.getState().poeProcess.hydrate();
-    listeners.state?.({
-      game: "poe2",
-      isRunning: true,
-      processName: "PathOfExileSteam.exe",
-    });
-    hydrate.resolve({
-      isRunning: false,
-      processName: "",
-    });
+    listeners.state?.(
+      createPoeProcessSnapshotFromState(createRunningPoeProcessState("poe2")),
+    );
+    hydrate.resolve(createPoeProcessSnapshot(createStoppedPoeProcessStates()));
     await hydrateRequest;
 
-    expect(store.getState().poeProcess.state).toEqual({
-      game: "poe2",
-      isRunning: true,
-      processName: "PathOfExileSteam.exe",
-    });
+    expect(store.getState().poeProcess.state).toEqual(
+      createRunningPoeProcessState("poe2"),
+    );
   });
 });

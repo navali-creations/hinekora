@@ -59,7 +59,7 @@ beforeEach(() => {
   poeProcessMocks.refreshState.mockResolvedValue({
     game: "poe1",
     isRunning: true,
-    processName: "PathOfExile_x64Steam.exe",
+    processName: "PathOfExile.exe",
   });
   poeProcessMocks.isActiveGameRunning.mockReset();
   poeProcessMocks.isActiveGameRunning.mockReturnValue(true);

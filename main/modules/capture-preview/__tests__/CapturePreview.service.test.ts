@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  createPoeProcessSnapshot,
+  createStoppedPoeProcessStates,
+} from "~/main/modules/poe-process/PoeProcess.dto";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
+import { createPoeProcessSnapshotFromState } from "~/main/test/poe-process";
 
 import { CapturePreviewChannel } from "../CapturePreview.channels";
 import { CapturePreviewService } from "../CapturePreview.service";
@@ -11,13 +16,9 @@ const electronMocks = vi.hoisted(() => ({
   getSources: vi.fn(),
 }));
 
-const processMocks = vi.hoisted(() => ({
-  detectPoeProcessState: vi.fn(),
-}));
-
 const poeProcessMocks = vi.hoisted(() => ({
-  getState: vi.fn(),
-  refreshState: vi.fn(),
+  getSnapshot: vi.fn(),
+  refreshSnapshot: vi.fn(),
 }));
 
 const settingsStoreMocks = vi.hoisted(() => ({
@@ -35,37 +36,6 @@ vi.mock("electron", () => ({
   },
 }));
 
-vi.mock("~/main/pollers", () => ({
-  detectPoeProcessState: processMocks.detectPoeProcessState,
-  isPoeProcessStateForGame: (
-    state: {
-      game?: "poe1" | "poe2" | null;
-      isRunning: boolean;
-      processName: string;
-    },
-    game: "poe1" | "poe2",
-  ) => {
-    if (!state.isRunning) {
-      return false;
-    }
-
-    if (state.game) {
-      return state.game === game;
-    }
-
-    const normalizedProcessName = state.processName.toLowerCase();
-    if (normalizedProcessName === "pathofexilesteam.exe") {
-      return false;
-    }
-
-    const stateGame = normalizedProcessName.includes("pathofexile2")
-      ? "poe2"
-      : "poe1";
-
-    return stateGame === game;
-  },
-}));
-
 vi.mock("~/main/modules/settings-store", () => ({
   SettingsStoreService: {
     getInstance: () => ({
@@ -77,8 +47,8 @@ vi.mock("~/main/modules/settings-store", () => ({
 vi.mock("~/main/modules/poe-process", () => ({
   PoeProcessService: {
     getInstance: () => ({
-      getState: poeProcessMocks.getState,
-      refreshState: poeProcessMocks.refreshState,
+      getSnapshot: poeProcessMocks.getSnapshot,
+      refreshSnapshot: poeProcessMocks.refreshSnapshot,
     }),
   },
 }));
@@ -119,32 +89,33 @@ function createSource(
   } as unknown as Electron.DesktopCapturerSource;
 }
 
+function createCapturePreviewSnapshotFromState(
+  state: Parameters<typeof createPoeProcessSnapshotFromState>[0],
+) {
+  return createPoeProcessSnapshotFromState(
+    state,
+    settingsStoreMocks.activeGame,
+  );
+}
+
 beforeEach(() => {
   settingsStoreMocks.activeGame = "poe2";
   settingsStoreMocks.get.mockImplementation(() => ({
     activeGame: settingsStoreMocks.activeGame,
   }));
   electronMocks.getPrimaryDisplay.mockReturnValue(createDisplay(1, 1920, 1080));
-  processMocks.detectPoeProcessState.mockImplementation(
-    async (activeGame: "poe1" | "poe2" | null = null) => ({
-      game: activeGame ?? "poe2",
+  poeProcessMocks.getSnapshot.mockImplementation(() =>
+    createCapturePreviewSnapshotFromState({
+      game: settingsStoreMocks.activeGame,
       isRunning: true,
       processName:
-        activeGame === "poe1"
-          ? "PathOfExile_x64Steam.exe"
+        settingsStoreMocks.activeGame === "poe1"
+          ? "PathOfExile.exe"
           : "PathOfExileSteam.exe",
     }),
   );
-  poeProcessMocks.getState.mockImplementation(() => ({
-    game: settingsStoreMocks.activeGame,
-    isRunning: true,
-    processName:
-      settingsStoreMocks.activeGame === "poe1"
-        ? "PathOfExile_x64Steam.exe"
-        : "PathOfExileSteam.exe",
-  }));
-  poeProcessMocks.refreshState.mockImplementation(async () =>
-    poeProcessMocks.getState(),
+  poeProcessMocks.refreshSnapshot.mockImplementation(async () =>
+    poeProcessMocks.getSnapshot(),
   );
 });
 
@@ -152,9 +123,8 @@ afterEach(() => {
   electronMocks.getAllDisplays.mockReset();
   electronMocks.getPrimaryDisplay.mockReset();
   electronMocks.getSources.mockReset();
-  processMocks.detectPoeProcessState.mockReset();
-  poeProcessMocks.getState.mockReset();
-  poeProcessMocks.refreshState.mockReset();
+  poeProcessMocks.getSnapshot.mockReset();
+  poeProcessMocks.refreshSnapshot.mockReset();
   settingsStoreMocks.get.mockReset();
   vi.restoreAllMocks();
 });
@@ -304,10 +274,18 @@ describe("CapturePreviewService", () => {
         name: "Path of Exile 1",
       }),
     ]);
-    expect(poeProcessMocks.getState).toHaveBeenCalled();
+    expect(poeProcessMocks.getSnapshot).toHaveBeenCalled();
   });
 
   it("uses the resolved process game for process-only capture source names", async () => {
+    settingsStoreMocks.activeGame = "poe1";
+    poeProcessMocks.getSnapshot.mockReturnValue(
+      createCapturePreviewSnapshotFromState({
+        game: "poe2",
+        isRunning: true,
+        processName: "PathOfExileSteam.exe",
+      }),
+    );
     electronMocks.getAllDisplays.mockReturnValue([]);
     electronMocks.getSources.mockResolvedValue([
       createSource({
@@ -334,10 +312,9 @@ describe("CapturePreviewService", () => {
   });
 
   it("omits process-only capture sources when the process game is ambiguous", async () => {
-    poeProcessMocks.getState.mockReturnValue({
-      isRunning: true,
-      processName: "PathOfExileSteam.exe",
-    });
+    poeProcessMocks.getSnapshot.mockReturnValue(
+      createPoeProcessSnapshot(createStoppedPoeProcessStates(), "poe2"),
+    );
     electronMocks.getAllDisplays.mockReturnValue([]);
     electronMocks.getSources.mockResolvedValue([
       createSource({ id: "window:process:1", name: "PathOfExileSteam.exe" }),
@@ -363,10 +340,9 @@ describe("CapturePreviewService", () => {
   });
 
   it("filters Path of Exile title matches when no game process is running", async () => {
-    poeProcessMocks.getState.mockReturnValue({
-      isRunning: false,
-      processName: "",
-    });
+    poeProcessMocks.getSnapshot.mockReturnValue(
+      createPoeProcessSnapshot(createStoppedPoeProcessStates(), "poe2"),
+    );
     electronMocks.getAllDisplays.mockReturnValue([]);
     electronMocks.getSources.mockResolvedValue([
       createSource({ id: "screen:1:0", name: "Entire Screen" }),
@@ -407,7 +383,7 @@ describe("CapturePreviewService", () => {
     await expect(service.listSources({ forceRefresh: true })).resolves.toEqual([
       expect.objectContaining({ id: "screen:2:0" }),
     ]);
-    expect(poeProcessMocks.refreshState).toHaveBeenCalledWith({
+    expect(poeProcessMocks.refreshSnapshot).toHaveBeenCalledWith({
       requestCapturePreviewRefresh: false,
     });
     await expect(service.listSources()).resolves.toEqual([
@@ -615,66 +591,6 @@ describe("CapturePreviewService", () => {
     now += 2_000;
     await expect(service.sourceExists("screen:2:0")).resolves.toBe(true);
     expect(electronMocks.getSources).toHaveBeenCalledTimes(2);
-  });
-
-  it("detects running Path of Exile games from exact window titles and process state", async () => {
-    settingsStoreMocks.activeGame = "poe1";
-    electronMocks.getAllDisplays.mockReturnValue([]);
-    electronMocks.getSources.mockResolvedValue([
-      createSource({ id: "window:poe1:1", name: "Path of Exile" }),
-      createSource({ id: "window:chrome:2", name: "Path of Exile 2 - Chrome" }),
-    ]);
-    const service = new CapturePreviewService();
-
-    await expect(service.isGameRunning("poe1")).resolves.toBe(true);
-    await expect(service.isGameRunning("poe2")).resolves.toBe(false);
-    expect(poeProcessMocks.getState).toHaveBeenCalled();
-    expect(electronMocks.getSources).toHaveBeenCalledWith({
-      types: ["window"],
-      thumbnailSize: { width: 0, height: 0 },
-    });
-  });
-
-  it("reports games offline without listing windows when no game process is running", async () => {
-    poeProcessMocks.refreshState.mockResolvedValue({
-      isRunning: false,
-      processName: "",
-    });
-    electronMocks.getAllDisplays.mockReturnValue([]);
-    const service = new CapturePreviewService();
-
-    await expect(
-      service.isGameRunning("poe2", { forceRefresh: true }),
-    ).resolves.toBe(false);
-    expect(poeProcessMocks.refreshState).toHaveBeenCalledWith({
-      requestCapturePreviewRefresh: false,
-    });
-    expect(electronMocks.getSources).not.toHaveBeenCalled();
-  });
-
-  it("shares an in-flight running game lookup", async () => {
-    settingsStoreMocks.activeGame = "poe1";
-    let resolveSources!: (sources: Electron.DesktopCapturerSource[]) => void;
-    electronMocks.getAllDisplays.mockReturnValue([]);
-    electronMocks.getSources.mockImplementation(
-      () =>
-        new Promise<Electron.DesktopCapturerSource[]>((resolve) => {
-          resolveSources = resolve;
-        }),
-    );
-    const service = new CapturePreviewService();
-
-    const first = service.isGameRunning("poe1");
-    const second = service.isGameRunning("poe2");
-
-    await Promise.resolve();
-    expect(electronMocks.getSources).toHaveBeenCalledTimes(1);
-    resolveSources([
-      createSource({ id: "window:poe1:1", name: "Path of Exile" }),
-    ]);
-    await expect(first).resolves.toBe(true);
-    await expect(second).resolves.toBe(false);
-    expect(poeProcessMocks.getState).toHaveBeenCalledTimes(1);
   });
 
   it("shares an in-flight source id request", async () => {

@@ -6,6 +6,10 @@ import type {
   SelectCropRegionOptions,
 } from "../../main/modules/overlay-windows/OverlayWindows.dto";
 import {
+  createPoeProcessSnapshot,
+  createStoppedPoeProcessStates,
+} from "../../main/modules/poe-process/PoeProcess.dto";
+import {
   type AppSettings,
   type CapturePreviewSource,
   createDefaultSettings,
@@ -287,17 +291,27 @@ async function setupAuraOverlayE2E(
         poeProcess: createBridgeDomain<AuraOverlayE2EElectron["poeProcess"]>(
           "poeProcess",
           {
-            getState: async () => ({
-              game: settings.activeGame,
-              isRunning: true,
-              processName:
-                settings.activeGame === "poe2"
-                  ? "PathOfExileSteam.exe"
-                  : "PathOfExile.exe",
-            }),
+            getSnapshot: async () => {
+              const states = createStoppedPoeProcessStates();
+              states[settings.activeGame] = {
+                game: settings.activeGame,
+                isRunning: true,
+                pid: settings.activeGame === "poe2" ? 4242 : 4241,
+                processName:
+                  settings.activeGame === "poe2"
+                    ? "PathOfExileSteam.exe"
+                    : "PathOfExile.exe",
+                windowTitle:
+                  settings.activeGame === "poe2"
+                    ? "Path of Exile 2"
+                    : "Path of Exile",
+              };
+
+              return createPoeProcessSnapshot(states, settings.activeGame);
+            },
             onError: () => unsubscribe,
             onStart: () => unsubscribe,
-            onState: () => unsubscribe,
+            onSnapshot: () => unsubscribe,
             onStop: () => unsubscribe,
           },
         ),

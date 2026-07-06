@@ -20,7 +20,10 @@ import type {
   ManagedRecorderCaptureMode,
   ManagedRecorderListAudioDevicesOptions,
 } from "../../main/modules/managed-recorder/ManagedRecorder.dto";
-import type { PoeProcessState } from "../../main/modules/poe-process/PoeProcess.dto";
+import type {
+  PoeProcessSnapshot,
+  PoeProcessState,
+} from "../../main/modules/poe-process/PoeProcess.dto";
 import type {
   RecordingStorageUsage,
   RunRecordingLibraryPage,
@@ -31,6 +34,7 @@ import type {
   StorageInfo,
 } from "../../main/modules/storage/Storage.dto";
 import type { DownloadProgress, UpdateInfo } from "../../main/modules/updater";
+import { createPoeProcessSnapshotFromState } from "../../main/test/poe-process";
 import {
   type AppSettings,
   type CapturePreviewSource,
@@ -121,6 +125,13 @@ interface DashboardE2EOptions {
   bookmarks?: BookmarkLibraryItem[];
   recorderOverlayVisible?: boolean;
   replayClipDetails?: Record<string, ReplayClipDetail>;
+}
+
+function createDashboardPoeProcessSnapshot(
+  state: PoeProcessState,
+  activeGame: GameId,
+): PoeProcessSnapshot {
+  return createPoeProcessSnapshotFromState(state, activeGame);
 }
 
 function createDashboardE2EFixture(
@@ -273,7 +284,10 @@ function createDashboardE2EFixture(
     poeProcessState: {
       game: activeGame,
       isRunning: true,
-      processName: "PathOfExileSteam.exe",
+      pid: activeGame === "poe2" ? 4242 : 4241,
+      processName:
+        activeGame === "poe2" ? "PathOfExileSteam.exe" : "PathOfExile.exe",
+      windowTitle: activeGame === "poe2" ? "Path of Exile 2" : "Path of Exile",
     },
     profile,
     captureProfile,
@@ -390,6 +404,16 @@ async function setupDashboardE2E(
       ]);
       const clientLogStatus = clone(fixture.clientLogStatus);
       let poeProcessState = clone(fixture.poeProcessState);
+      let poeProcessSnapshot = createDashboardPoeProcessSnapshot(
+        poeProcessState,
+        settings.activeGame,
+      );
+      const syncPoeProcessSnapshot = () => {
+        poeProcessSnapshot = createDashboardPoeProcessSnapshot(
+          poeProcessState,
+          settings.activeGame,
+        );
+      };
       let captureSources = clone(fixture.sources);
       const listeners: {
         auraLock?: (locked: boolean) => void;
@@ -397,9 +421,9 @@ async function setupDashboardE2E(
         captureProfileChanged?: (profiles: CaptureProfile[]) => void;
         captureRefreshRequested?: () => void;
         poeError?: (error: { error: string }) => void;
-        poeStart?: (state: PoeProcessState) => void;
-        poeState?: (state: PoeProcessState) => void;
-        poeStop?: (state: PoeProcessState) => void;
+        poeStart?: (state: PoeProcessSnapshot) => void;
+        poeSnapshot?: (state: PoeProcessSnapshot) => void;
+        poeStop?: (state: PoeProcessSnapshot) => void;
         profileChanged?: (profiles: Profile[]) => void;
         recorderStatus?: (status: ManagedRecorderStatus) => void;
         recorderVisibility?: (visible: boolean) => void;
@@ -729,7 +753,7 @@ async function setupDashboardE2E(
             if (forceRefresh === true) {
               window.setTimeout(() => {
                 calls.duplicatePoeStateEmissions += 1;
-                listeners.poeState?.(clone(poeProcessState));
+                listeners.poeSnapshot?.(clone(poeProcessSnapshot));
               }, 0);
             }
 
@@ -804,6 +828,10 @@ async function setupDashboardE2E(
             setActiveGame: async (input: { game: "poe1" | "poe2" }) => {
               calls.clientLogActiveGames.push(clone(input));
               clientLogStatus.activeGame = input.game;
+              settings = { ...settings, activeGame: input.game };
+              syncPoeProcessSnapshot();
+              listeners.settingsChanged?.(clone(settings));
+              listeners.poeSnapshot?.(clone(poeProcessSnapshot));
 
               return clone(clientLogStatus);
             },
@@ -945,7 +973,7 @@ async function setupDashboardE2E(
         poeProcess: createBridgeDomain<DashboardE2EElectron["poeProcess"]>(
           "poeProcess",
           {
-            getState: async () => clone(poeProcessState),
+            getSnapshot: async () => clone(poeProcessSnapshot),
             onError: (callback) => {
               listeners.poeError = callback;
 
@@ -956,8 +984,8 @@ async function setupDashboardE2E(
 
               return unsubscribe;
             },
-            onState: (callback) => {
-              listeners.poeState = callback;
+            onSnapshot: (callback) => {
+              listeners.poeSnapshot = callback;
 
               return unsubscribe;
             },
@@ -1123,6 +1151,7 @@ async function setupDashboardE2E(
             update: async (input) => {
               calls.settingsUpdates.push(clone(input));
               settings = { ...settings, ...input };
+              syncPoeProcessSnapshot();
               listeners.settingsChanged?.(clone(settings));
 
               return clone(settings);
@@ -1172,7 +1201,8 @@ async function setupDashboardE2E(
         },
         emitPoeProcessStart: (state) => {
           poeProcessState = clone(state);
-          listeners.poeStart?.(clone(poeProcessState));
+          syncPoeProcessSnapshot();
+          listeners.poeStart?.(clone(poeProcessSnapshot));
           listeners.captureRefreshRequested?.();
         },
         emitPoeProcessStop: (state) => {
@@ -1182,7 +1212,8 @@ async function setupDashboardE2E(
               processName: "",
             },
           );
-          listeners.poeStop?.(clone(poeProcessState));
+          syncPoeProcessSnapshot();
+          listeners.poeStop?.(clone(poeProcessSnapshot));
           listeners.captureRefreshRequested?.();
         },
         emitRecorderOverlayVisibility: (visible) => {

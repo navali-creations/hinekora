@@ -2,7 +2,12 @@ import { desktopCapturer, screen } from "electron";
 
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { PoeProcessService } from "~/main/modules/poe-process";
-import { isPoeProcessStateForGame, type ProcessState } from "~/main/pollers";
+import {
+  getPoeProcessStateForGame,
+  isPoeProcessSnapshotRunningForGame,
+  POE_PROCESS_GAMES,
+  type PoeProcessSnapshot,
+} from "~/main/modules/poe-process/PoeProcess.dto";
 import { logWarn } from "~/main/utils/app-log";
 import {
   createDisplayDimensionsLookup,
@@ -29,9 +34,7 @@ import {
 const SOURCE_ID_CACHE_MS = 1_500;
 const SOURCE_THUMBNAIL_CACHE_MS = 10_000;
 const SOURCE_THUMBNAIL_CACHE_MAX_ENTRIES = 16;
-const GAME_RUNNING_CACHE_MS = 1_500;
 const SLOW_SOURCE_LIST_MS = 250;
-const POE_GAMES = ["poe1", "poe2"] as const;
 
 interface CapturePreviewListSourcesOptions {
   forceRefresh?: boolean;
@@ -49,11 +52,6 @@ class CapturePreviewService {
     { checkedAtMs: number; dataUrl: string | null }
   >();
   private sourceThumbnailRequests = new Map<string, Promise<string | null>>();
-  private gameRunningCache: {
-    checkedAtMs: number;
-    runningGames: Set<GameId>;
-  } | null = null;
-  private gameRunningRequest: Promise<Set<GameId>> | null = null;
 
   static getInstance(): CapturePreviewService {
     if (!CapturePreviewService.instance) {
@@ -102,23 +100,23 @@ class CapturePreviewService {
       screen.getPrimaryDisplay(),
     );
     const poeProcessService = PoeProcessService.getInstance();
-    const [sources, poeProcessState] = await Promise.all([
+    const [sources, poeProcessSnapshot] = await Promise.all([
       desktopCapturer.getSources({
         types: ["screen", "window"],
         thumbnailSize: { width: 0, height: 0 },
       }),
       forceRefresh
-        ? poeProcessService.refreshState({
+        ? poeProcessService.refreshSnapshot({
             requestCapturePreviewRefresh: false,
           })
-        : Promise.resolve(poeProcessService.getState()),
+        : Promise.resolve(poeProcessService.getSnapshot()),
     ]);
 
     const sourceInputs = sources.slice(0, 64).map((source) => {
       const displayId = source.display_id || null;
       const poeGame = detectCapturePreviewSourceGame(
         source.name,
-        poeProcessState,
+        poeProcessSnapshot,
       );
       const displayLabel = displayId
         ? (displayLabels.get(displayId) ?? null)
@@ -147,7 +145,10 @@ class CapturePreviewService {
 
       const game = source.game;
 
-      return game !== null && isPoeProcessStateForGame(poeProcessState, game);
+      return (
+        game !== null &&
+        isPoeProcessSnapshotRunningForGame(poeProcessSnapshot, game)
+      );
     });
 
     const normalizedSources = normalizeCapturePreviewSources(
@@ -229,72 +230,6 @@ class CapturePreviewService {
     const ids = await this.listSourceIds();
 
     return ids.has(sourceId);
-  }
-
-  async isGameRunning(
-    game: GameId,
-    options: CapturePreviewListSourcesOptions = {},
-  ): Promise<boolean> {
-    const runningGames = await this.listRunningGames(options);
-
-    return runningGames.has(game);
-  }
-
-  private async listRunningGames(
-    options: CapturePreviewListSourcesOptions = {},
-  ): Promise<Set<GameId>> {
-    const now = Date.now();
-    if (
-      !options.forceRefresh &&
-      this.gameRunningCache &&
-      now - this.gameRunningCache.checkedAtMs < GAME_RUNNING_CACHE_MS
-    ) {
-      return this.gameRunningCache.runningGames;
-    }
-
-    if (!options.forceRefresh && this.gameRunningRequest) {
-      return this.gameRunningRequest;
-    }
-
-    const poeProcessService = PoeProcessService.getInstance();
-    this.gameRunningRequest = (
-      options.forceRefresh
-        ? poeProcessService.refreshState({
-            requestCapturePreviewRefresh: false,
-          })
-        : Promise.resolve(poeProcessService.getState())
-    )
-      .then(async (poeProcessState) => {
-        const runningGames = new Set<GameId>();
-        if (!poeProcessState.isRunning) {
-          this.gameRunningCache = { checkedAtMs: Date.now(), runningGames };
-
-          return runningGames;
-        }
-
-        const sources = await desktopCapturer.getSources({
-          types: ["window"],
-          thumbnailSize: { width: 0, height: 0 },
-        });
-
-        for (const source of sources) {
-          const game = detectCapturePreviewSourceGame(
-            source.name,
-            poeProcessState,
-          );
-          if (game && isPoeProcessStateForGame(poeProcessState, game)) {
-            runningGames.add(game);
-          }
-        }
-        this.gameRunningCache = { checkedAtMs: Date.now(), runningGames };
-
-        return runningGames;
-      })
-      .finally(() => {
-        this.gameRunningRequest = null;
-      });
-
-    return this.gameRunningRequest;
   }
 
   private async listSourceIds(): Promise<Set<string>> {
@@ -430,24 +365,27 @@ class CapturePreviewService {
 
 function detectCapturePreviewSourceGame(
   sourceName: string,
-  poeProcessState: ProcessState,
+  poeProcessSnapshot: PoeProcessSnapshot,
 ): GameId | null {
   const titleGame = detectPathOfExileWindowTitle(sourceName);
   if (titleGame) {
     return titleGame;
   }
 
-  if (
-    !poeProcessState.isRunning ||
-    !isMatchingPoeProcessSourceName(sourceName, poeProcessState.processName)
-  ) {
-    return null;
+  // Electron can sometimes expose only `PathOfExile.exe`/`PathOfExileSteam.exe`
+  // as the source name. Running PoE1 and PoE2 at the same time with the same exe
+  // name is intentionally unsupported; exact window titles remain authoritative.
+  for (const game of POE_PROCESS_GAMES) {
+    const state = getPoeProcessStateForGame(poeProcessSnapshot, game);
+    if (
+      state.isRunning &&
+      isMatchingPoeProcessSourceName(sourceName, state.processName)
+    ) {
+      return game;
+    }
   }
 
-  return (
-    POE_GAMES.find((game) => isPoeProcessStateForGame(poeProcessState, game)) ??
-    null
-  );
+  return null;
 }
 
 function isMatchingPoeProcessSourceName(

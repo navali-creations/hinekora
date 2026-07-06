@@ -1,13 +1,12 @@
-import type { PoeProcessState } from "~/main/modules/poe-process/PoeProcess.dto";
+import {
+  createStoppedPoeProcessState,
+  createStoppedPoeProcessStates,
+  type PoeProcessSnapshot,
+} from "~/main/modules/poe-process/PoeProcess.dto";
 import type {
   BoundStoreStateCreator,
   PoeProcessSlice,
 } from "~/renderer/store/store.types";
-
-const stoppedPoeProcessState: PoeProcessState = {
-  isRunning: false,
-  processName: "",
-};
 
 export const createPoeProcessSlice: BoundStoreStateCreator<PoeProcessSlice> = (
   set,
@@ -16,25 +15,28 @@ export const createPoeProcessSlice: BoundStoreStateCreator<PoeProcessSlice> = (
 
   return {
     poeProcess: {
-      state: stoppedPoeProcessState,
+      state: createStoppedPoeProcessState(),
+      states: createStoppedPoeProcessStates(),
       error: null,
       hydrate: async () => {
         const changeVersion = poeProcessChangeVersion;
-        const state = await window.electron.poeProcess.getState();
+        const snapshot = await window.electron.poeProcess.getSnapshot();
         if (changeVersion !== poeProcessChangeVersion) {
           return;
         }
 
         set((store) => {
-          store.poeProcess.state = state;
+          store.poeProcess.state = snapshot.activeState;
+          store.poeProcess.states = snapshot.states;
           store.poeProcess.error = null;
         });
       },
       startListening: () => {
-        const setProcessState = (state: PoeProcessState) => {
+        const setProcessState = (snapshot: PoeProcessSnapshot) => {
           poeProcessChangeVersion += 1;
           set((store) => {
-            store.poeProcess.state = state;
+            store.poeProcess.state = snapshot.activeState;
+            store.poeProcess.states = snapshot.states;
             store.poeProcess.error = null;
           });
         };
@@ -44,7 +46,7 @@ export const createPoeProcessSlice: BoundStoreStateCreator<PoeProcessSlice> = (
         const unsubscribeStop =
           window.electron.poeProcess.onStop(setProcessState);
         const unsubscribeState =
-          window.electron.poeProcess.onState(setProcessState);
+          window.electron.poeProcess.onSnapshot(setProcessState);
         const unsubscribeError = window.electron.poeProcess.onError((error) => {
           poeProcessChangeVersion += 1;
           set((store) => {

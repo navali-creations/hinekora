@@ -14,9 +14,11 @@ interface GameStatusBadgeProps {
 }
 
 function GameStatusBadge({ game }: GameStatusBadgeProps) {
-  const processState = usePoeProcessSelector((poeProcess) => poeProcess.state);
+  const processStates = usePoeProcessSelector(
+    (poeProcess) => poeProcess.states,
+  );
   const settings = useSettingsSelector((settingsSlice) => settingsSlice.value);
-  const isRunning = isPoeProcessStateForGame(processState, game);
+  const isRunning = isPoeProcessStateForGame(processStates, game);
   const hasPath =
     game === "poe1"
       ? Boolean(settings?.poe1ClientTxtPath)
@@ -26,12 +28,10 @@ function GameStatusBadge({ game }: GameStatusBadgeProps) {
 
   return (
     <span
-      className={clsx(
-        "game-status-badge badge badge-xs gap-1",
-        isRunning
-          ? "border-emerald-400/45 bg-emerald-500/15 text-emerald-300"
-          : "badge-success badge-soft",
-      )}
+      className={clsx("game-status-badge badge badge-xs gap-1", {
+        "border-emerald-400/45 bg-emerald-500/15 text-emerald-300": isRunning,
+        "badge-success badge-soft": !isRunning,
+      })}
       title={title}
     >
       {isRunning ? <CheckCircle size={12} /> : <CircleSlash size={12} />}

@@ -137,10 +137,10 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
         showAura: OverlayWindowsAPI.showAura,
       },
       poeProcess: {
-        getState: PoeProcessAPI.getState,
+        getSnapshot: PoeProcessAPI.getSnapshot,
         onError: PoeProcessAPI.onError,
         onStart: PoeProcessAPI.onStart,
-        onState: PoeProcessAPI.onState,
+        onSnapshot: PoeProcessAPI.onSnapshot,
         onStop: PoeProcessAPI.onStop,
       },
       profiles: {

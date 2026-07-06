@@ -163,10 +163,87 @@ jobs:
       - name: Run renderer tests
         run: pnpm test:renderer
 
+  rust-helper:
+    name: Rust Process Helper
+    if: "!contains(github.event.head_commit.message, '[ci] release')"
+    runs-on: windows-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.96.1
+        with:
+          components: clippy, rustfmt
+
+      - name: Check helper formatting
+        run: node scripts/run-msvc-cargo.mjs fmt --manifest-path helpers/poe-process-helper/Cargo.toml --check
+
+      - name: Lint helper
+        run: node scripts/run-msvc-cargo.mjs clippy --manifest-path helpers/poe-process-helper/Cargo.toml --locked -- -D warnings
+
+      - name: Test helper
+        run: node scripts/run-msvc-cargo.mjs test --manifest-path helpers/poe-process-helper/Cargo.toml --locked
+
+      - name: Smoke test helper protocol
+        shell: powershell
+        run: |
+          $helperTitle = "Hinekora PoE Process Watcher"
+
+          $output = node scripts/run-msvc-cargo.mjs run --quiet --manifest-path helpers/poe-process-helper/Cargo.toml --locked -- --once --title $helperTitle
+          if ($LASTEXITCODE -ne 0) {
+            exit $LASTEXITCODE
+          }
+
+          $payload = $output | Select-Object -Last 1 | ConvertFrom-Json
+          if ($payload.type -ne "state") {
+            Write-Host "::error::PoE process helper did not emit a state payload"
+            exit 1
+          }
+
+          $failureOutput = node scripts/run-msvc-cargo.mjs run --quiet --manifest-path helpers/poe-process-helper/Cargo.toml --locked -- --parent-pid 4294967295 --title $helperTitle
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "::error::PoE process helper accepted an invalid parent PID"
+            exit 1
+          }
+
+          $failurePayload = $failureOutput | Select-Object -Last 1 | ConvertFrom-Json
+          if ($failurePayload.type -ne "error") {
+            Write-Host "::error::PoE process helper did not emit an error payload for invalid parent PID"
+            exit 1
+          }
+          if ($failurePayload.message -notlike "Parent process watch failed for PID 4294967295:*") {
+            Write-Host "::error::PoE process helper emitted an unexpected invalid parent PID error"
+            exit 1
+          }
+
   package-windows:
     name: Windows Package Check
-    needs: [biome, typecheck, test-main, test-renderer]
-    if: "!contains(github.event.head_commit.message, '[ci] release')"
+    needs: [biome, typecheck, test-main, test-renderer, rust-helper]
+    # Version-bump commits skip the regular quality jobs, but packaging still
+    # needs to fail in CI before the Publish workflow reaches upload steps.
+    if: >-
+      always() &&
+      !cancelled() &&
+      (
+        (
+          github.event_name == 'push' &&
+          contains(github.event.head_commit.message, '[ci] release')
+        ) ||
+        (
+          needs.biome.result == 'success' &&
+          needs.typecheck.result == 'success' &&
+          needs['test-main'].result == 'success' &&
+          needs['test-renderer'].result == 'success' &&
+          needs['rust-helper'].result == 'success'
+        )
+      )
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
@@ -180,5 +257,12 @@ jobs:
           cache-version: ${{ env.NODE_MODULES_CACHE_VERSION }}
           install-command: pnpm install --frozen-lockfile
 
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@1.96.1
+
       - name: Package Windows app
         run: pnpm package
+
+      - name: Verify process helper packaged
+        shell: powershell
+        run: .\.github\scripts\assert-process-helper-packaged.ps1

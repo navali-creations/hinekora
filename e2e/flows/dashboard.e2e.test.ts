@@ -100,7 +100,9 @@ function createPoeProcessState(
   return {
     game: input.game,
     isRunning: true,
+    pid: input.game === "poe2" ? 4242 : 4241,
     processName: input.processName,
+    windowTitle: input.game === "poe2" ? "Path of Exile 2" : "Path of Exile",
   };
 }
 

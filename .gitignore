@@ -19,3 +19,5 @@ apps/desktop/win-capture/
 win-capture
 .tanstack
 coverage*
+helpers/bin/
+helpers/poe-process-helper/target/

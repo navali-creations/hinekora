@@ -14,7 +14,10 @@ import type {
   BookmarkLibraryQuery,
 } from "~/main/modules/bookmarks";
 import type { ManagedRecorderCaptureMode } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
-import type { PoeProcessState } from "~/main/modules/poe-process/PoeProcess.dto";
+import type {
+  PoeProcessState,
+  PoeProcessStatesByGame,
+} from "~/main/modules/poe-process/PoeProcess.dto";
 import type {
   RecordingStorageUsage,
   RunRecordingItem,
@@ -174,6 +177,7 @@ export interface ClientLogSlice {
 export interface PoeProcessSlice {
   poeProcess: {
     state: PoeProcessState | null;
+    states: PoeProcessStatesByGame;
     error: string | null;
     hydrate: () => Promise<void>;
     startListening: () => () => void;

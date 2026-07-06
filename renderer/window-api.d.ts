@@ -45,7 +45,7 @@ import type {
 } from "~/main/modules/overlay-windows/OverlayWindows.dto";
 import type {
   PoeProcessError,
-  PoeProcessState,
+  PoeProcessSnapshot,
 } from "~/main/modules/poe-process/PoeProcess.dto";
 import type {
   RecordingStorageBatchFileActionResult,
@@ -269,10 +269,12 @@ declare global {
         cancelCropRegionSelection: () => Promise<void>;
       };
       poeProcess: {
-        getState: () => Promise<PoeProcessState>;
-        onStart: (callback: (state: PoeProcessState) => void) => () => void;
-        onStop: (callback: (state: PoeProcessState) => void) => () => void;
-        onState: (callback: (state: PoeProcessState) => void) => () => void;
+        getSnapshot: () => Promise<PoeProcessSnapshot>;
+        onStart: (callback: (state: PoeProcessSnapshot) => void) => () => void;
+        onStop: (callback: (state: PoeProcessSnapshot) => void) => () => void;
+        onSnapshot: (
+          callback: (state: PoeProcessSnapshot) => void,
+        ) => () => void;
         onError: (callback: (error: PoeProcessError) => void) => () => void;
       };
       profiles: {

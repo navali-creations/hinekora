@@ -15,6 +15,10 @@ import {
   createEditorProjectPersistedMetadata,
   type EditorProjectSourceLeagueMembership,
 } from "../../main/modules/editor/EditorProject.metadata";
+import {
+  createPoeProcessSnapshot,
+  createStoppedPoeProcessStates,
+} from "../../main/modules/poe-process/PoeProcess.dto";
 import type {
   SavedEditItem,
   SavedEditsLibraryPage,
@@ -878,10 +882,11 @@ async function setupEditorE2E(page: Page) {
         poeProcess: createBridgeDomain<EditorE2EElectron["poeProcess"]>(
           "poeProcess",
           {
-            getState: async () => ({ isRunning: false, processName: "" }),
+            getSnapshot: async () =>
+              createPoeProcessSnapshot(createStoppedPoeProcessStates()),
             onError: () => unsubscribe,
             onStart: () => unsubscribe,
-            onState: () => unsubscribe,
+            onSnapshot: () => unsubscribe,
             onStop: () => unsubscribe,
           },
         ),

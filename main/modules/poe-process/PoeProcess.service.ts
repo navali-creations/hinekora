@@ -1,39 +1,75 @@
-import { BrowserWindow, powerMonitor } from "electron";
+import { app, BrowserWindow, powerMonitor } from "electron";
 
 import { CapturePreviewChannel } from "~/main/modules/capture-preview/CapturePreview.channels";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
+import {
+  createPoeProcessSnapshot,
+  createStoppedPoeProcessState,
+  createStoppedPoeProcessStates,
+  getPoeProcessStateForGame,
+  hasAnyRunningPoeProcess,
+  isPoeProcessSnapshotRunningForGame,
+  type PoeProcessSnapshot,
+  type PoeProcessState,
+} from "~/main/modules/poe-process/PoeProcess.dto";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import {
-  isPoeProcessStateForGame,
-  PoeProcessPoller,
-  type ProcessState,
+  clearPoeProcessStateProvider,
+  type PoeProcessStateProvider,
+  PoeProcessWatcher,
+  setPoeProcessStateProvider,
 } from "~/main/pollers";
 import { logInfo, logWarn } from "~/main/utils/app-log";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 
+import type { GameId } from "~/types";
 import { PoeProcessChannel } from "./PoeProcess.channels";
-import type { PoeProcessState } from "./PoeProcess.dto";
 
 const POE_PROCESS_SCOPE = "poe-process";
-const STOPPED_POE_PROCESS_STATE: PoeProcessState = {
-  isRunning: false,
-  processName: "",
-};
 
 interface PoeProcessRefreshOptions {
+  preferredGame?: GameId | null;
   requestCapturePreviewRefresh?: boolean;
 }
 
 class PoeProcessService {
   private static instance: PoeProcessService | null = null;
 
-  private readonly poller: PoeProcessPoller;
-  private currentState: PoeProcessState = STOPPED_POE_PROCESS_STATE;
+  private readonly watcher: PoeProcessWatcher;
+  private readonly stateProvider: PoeProcessStateProvider;
+  private activeGame: GameId = "poe1";
+  private currentSnapshot: PoeProcessSnapshot = createPoeProcessSnapshot(
+    createStoppedPoeProcessStates(),
+  );
   private initialized = false;
+  private settingsUnsubscribe: (() => void) | null = null;
   private systemSuspended = false;
+  private readonly handleSystemSuspend = () => {
+    logInfo(POE_PROCESS_SCOPE, "System suspending; stopping process watcher");
+    this.systemSuspended = true;
+    this.watcher.stop();
+    const stoppedSnapshot = this.createStoppedSnapshot();
+    this.currentSnapshot = stoppedSnapshot;
+    this.syncGameRunningConsumers();
+    this.sendToRenderer(PoeProcessChannel.Stop, stoppedSnapshot);
+    this.requestCapturePreviewRefresh();
+  };
+  private readonly handleSystemResume = () => {
+    logInfo(POE_PROCESS_SCOPE, "System resumed; starting process watcher");
+    this.systemSuspended = false;
+    if (this.initialized) {
+      this.watcher.start();
+    }
+  };
+  private readonly handleScreenLock = () => {
+    logInfo(POE_PROCESS_SCOPE, "Screen locked");
+  };
+  private readonly handleScreenUnlock = () => {
+    logInfo(POE_PROCESS_SCOPE, "Screen unlocked");
+  };
 
   static getInstance(): PoeProcessService {
     if (!PoeProcessService.instance) {
@@ -43,11 +79,28 @@ class PoeProcessService {
     return PoeProcessService.instance;
   }
 
+  static resetForTests(): void {
+    PoeProcessService.instance?.dispose();
+    PoeProcessService.instance = null;
+    clearPoeProcessStateProvider();
+  }
+
   constructor() {
-    this.poller = new PoeProcessPoller(
-      () => SettingsStoreService.getInstance().get().activeGame,
-    );
-    this.setupPollerListeners();
+    this.activeGame = SettingsStoreService.getInstance().get().activeGame;
+    this.currentSnapshot = this.createStoppedSnapshot();
+    this.watcher = new PoeProcessWatcher(() => this.activeGame, {
+      isPackaged: app.isPackaged,
+    });
+    this.stateProvider = {
+      refreshState: (preferredGame) => {
+        return this.refreshState({
+          preferredGame,
+          requestCapturePreviewRefresh: false,
+        });
+      },
+    };
+    setPoeProcessStateProvider(this.stateProvider);
+    this.setupWatcherListeners();
     this.setupHandlers();
     this.setupSettingsListener();
     this.setupPowerMonitor();
@@ -56,98 +109,177 @@ class PoeProcessService {
   initialize(): void {
     this.initialized = true;
     if (!this.systemSuspended) {
-      this.poller.start();
+      this.watcher.start();
     }
   }
 
   stop(): void {
     this.initialized = false;
-    this.poller.stop();
+    this.watcher.stop();
+  }
+
+  dispose(): void {
+    this.stop();
+    this.settingsUnsubscribe?.();
+    this.settingsUnsubscribe = null;
+    powerMonitor.off("suspend", this.handleSystemSuspend);
+    powerMonitor.off("resume", this.handleSystemResume);
+    powerMonitor.off("lock-screen", this.handleScreenLock);
+    powerMonitor.off("unlock-screen", this.handleScreenUnlock);
+    clearPoeProcessStateProvider(this.stateProvider);
   }
 
   getState(): PoeProcessState {
-    return this.currentState;
+    return this.getStateForGame(this.activeGame);
+  }
+
+  getSnapshot(): PoeProcessSnapshot {
+    return this.createSnapshotForActiveGame(this.currentSnapshot.states);
+  }
+
+  getStateForGame(game: GameId): PoeProcessState {
+    const state = getPoeProcessStateForGame(this.currentSnapshot, game);
+
+    return state.isRunning ? state : createStoppedPoeProcessState();
   }
 
   async refreshState(
     options: PoeProcessRefreshOptions = {},
   ): Promise<PoeProcessState> {
     if (this.systemSuspended) {
-      return this.currentState;
+      return options.preferredGame
+        ? this.getStateForGame(options.preferredGame)
+        : this.getState();
     }
 
     try {
-      const state = await this.poller.pollNow();
-      if (this.hasProcessStateChanged(this.currentState, state)) {
-        this.handleStateChanged(PoeProcessChannel.GetState, state, {
-          requestCapturePreviewRefresh:
-            options.requestCapturePreviewRefresh !== false,
-        });
+      const snapshot = await this.watcher.pollSnapshot();
+      if (this.hasProcessSnapshotChanged(this.currentSnapshot, snapshot)) {
+        this.handleSnapshotChanged(
+          PoeProcessChannel.SnapshotChanged,
+          snapshot,
+          {
+            requestCapturePreviewRefresh:
+              options.requestCapturePreviewRefresh !== false,
+          },
+        );
       } else {
+        this.currentSnapshot = this.createSnapshotForActiveGame(
+          snapshot.states,
+        );
         this.syncGameRunningConsumers();
       }
 
-      return state;
+      return options.preferredGame
+        ? this.normalizeResolvedState(
+            getPoeProcessStateForGame(snapshot, options.preferredGame),
+          )
+        : this.getState();
     } catch (error) {
       logWarn(POE_PROCESS_SCOPE, "PoE process refresh failed", {
         error: safeErrorMessage(error),
+        watcherMode: this.watcher.getMode(),
       });
 
-      return this.currentState;
+      return options.preferredGame
+        ? this.getStateForGame(options.preferredGame)
+        : this.getState();
     }
   }
 
-  isActiveGameRunning(state: PoeProcessState = this.currentState): boolean {
-    const { activeGame } = SettingsStoreService.getInstance().get();
+  async refreshSnapshot(
+    options: Omit<PoeProcessRefreshOptions, "preferredGame"> = {},
+  ): Promise<PoeProcessSnapshot> {
+    if (this.systemSuspended) {
+      return this.getSnapshot();
+    }
 
-    return isPoeProcessStateForGame(state, activeGame);
+    try {
+      const snapshot = await this.watcher.pollSnapshot();
+      if (this.hasProcessSnapshotChanged(this.currentSnapshot, snapshot)) {
+        this.handleSnapshotChanged(
+          PoeProcessChannel.SnapshotChanged,
+          snapshot,
+          {
+            requestCapturePreviewRefresh:
+              options.requestCapturePreviewRefresh !== false,
+          },
+        );
+      } else {
+        this.currentSnapshot = this.createSnapshotForActiveGame(
+          snapshot.states,
+        );
+        this.syncGameRunningConsumers();
+      }
+
+      return this.getSnapshot();
+    } catch (error) {
+      logWarn(POE_PROCESS_SCOPE, "PoE process refresh failed", {
+        error: safeErrorMessage(error),
+        watcherMode: this.watcher.getMode(),
+      });
+
+      return this.getSnapshot();
+    }
   }
 
-  private setupPollerListeners(): void {
-    this.poller.on("start", (state: ProcessState) => {
-      if (!this.shouldHandlePollerEvent()) {
+  isActiveGameRunning(
+    snapshot: PoeProcessSnapshot = this.currentSnapshot,
+  ): boolean {
+    return isPoeProcessSnapshotRunningForGame(snapshot, this.activeGame);
+  }
+
+  private setupWatcherListeners(): void {
+    this.watcher.on("start", (snapshot: PoeProcessSnapshot) => {
+      if (!this.shouldHandleWatcherEvent()) {
         return;
       }
 
-      this.handleStateChanged(PoeProcessChannel.Start, state);
+      this.handleSnapshotChanged(PoeProcessChannel.Start, snapshot);
     });
 
-    this.poller.on("stop", (_previousState: ProcessState) => {
-      if (!this.shouldHandlePollerEvent()) {
+    this.watcher.on("stop", (_previousSnapshot: PoeProcessSnapshot) => {
+      if (!this.shouldHandleWatcherEvent()) {
         return;
       }
 
+      const previousActiveState = this.getState();
       logInfo(POE_PROCESS_SCOPE, "PoE process monitor stopped", {
-        activeGame: SettingsStoreService.getInstance().get().activeGame,
-        previousGame: this.currentState.game ?? null,
-        previousIsRunning: this.currentState.isRunning,
-        previousProcessName: this.currentState.processName,
+        activeGame: this.activeGame,
+        previousGame: previousActiveState.game ?? null,
+        previousIsRunning: previousActiveState.isRunning,
+        previousPid: previousActiveState.pid ?? null,
+        previousProcessName: previousActiveState.processName,
+        previousWindowTitle: previousActiveState.windowTitle ?? null,
+        watcherMode: this.watcher.getMode(),
       });
-      this.currentState = STOPPED_POE_PROCESS_STATE;
+      const stoppedSnapshot = this.createStoppedSnapshot();
+      this.currentSnapshot = stoppedSnapshot;
       this.syncGameRunningConsumers();
-      this.sendToRenderer(PoeProcessChannel.Stop, STOPPED_POE_PROCESS_STATE);
+      this.sendToRenderer(PoeProcessChannel.Stop, stoppedSnapshot);
       this.requestCapturePreviewRefresh();
     });
 
-    this.poller.on("data", (state: ProcessState) => {
-      if (!this.shouldHandlePollerEvent()) {
+    this.watcher.on("data", (snapshot: PoeProcessSnapshot) => {
+      if (!this.shouldHandleWatcherEvent()) {
         return;
       }
-      if (!this.shouldHandlePollerDataEvent(state)) {
+      if (!this.shouldHandleWatcherDataEvent(snapshot)) {
         return;
       }
 
-      this.handleStateChanged(PoeProcessChannel.GetState, state);
+      this.handleSnapshotChanged(PoeProcessChannel.SnapshotChanged, snapshot);
     });
 
-    this.poller.on("error", (error: Error) => {
-      if (!this.shouldHandlePollerEvent()) {
+    this.watcher.on("error", (error: Error) => {
+      if (!this.shouldHandleWatcherEvent()) {
         return;
       }
 
       const message = safeErrorMessage(error);
-      logWarn(POE_PROCESS_SCOPE, "PoE process poller error", {
+      logWarn(POE_PROCESS_SCOPE, "PoE process watcher error", {
         error: message,
+        watcherMode: this.watcher.getMode(),
       });
       this.sendToRenderer(PoeProcessChannel.GetError, { error: message });
     });
@@ -155,102 +287,169 @@ class PoeProcessService {
 
   private setupHandlers(): void {
     registerGuardedIpcHandler(
-      PoeProcessChannel.IsRunning,
+      PoeProcessChannel.GetSnapshot,
       [WindowName.Main, WindowName.AuraOverlay],
-      () => this.getState(),
+      () => this.getSnapshot(),
     );
   }
 
   private setupSettingsListener(): void {
     const settingsStore = SettingsStoreService.getInstance();
-    let previousActiveGame = settingsStore.get().activeGame;
+    let previousActiveGame = this.activeGame;
 
-    settingsStore.onDidChange((settings) => {
+    this.settingsUnsubscribe?.();
+    this.settingsUnsubscribe = settingsStore.onDidChange((settings) => {
       if (settings.activeGame === previousActiveGame) {
         return;
       }
 
       previousActiveGame = settings.activeGame;
-      this.syncGameRunningConsumers();
-      this.sendToRenderer(PoeProcessChannel.GetState, this.currentState);
-      this.requestCapturePreviewRefresh();
+      this.activeGame = settings.activeGame;
+      void this.refreshStateAfterActiveGameChange();
     });
+  }
+
+  private async refreshStateAfterActiveGameChange(): Promise<void> {
+    if (this.systemSuspended) {
+      this.syncGameRunningConsumers();
+      this.sendToRenderer(
+        PoeProcessChannel.SnapshotChanged,
+        this.getSnapshot(),
+      );
+      this.requestCapturePreviewRefresh();
+      return;
+    }
+
+    try {
+      const snapshot = await this.watcher.pollSnapshot();
+      if (this.hasProcessSnapshotChanged(this.currentSnapshot, snapshot)) {
+        this.handleSnapshotChanged(
+          PoeProcessChannel.SnapshotChanged,
+          snapshot,
+          {
+            requestCapturePreviewRefresh: false,
+          },
+        );
+      } else {
+        this.currentSnapshot = this.createSnapshotForActiveGame(
+          snapshot.states,
+        );
+        this.syncGameRunningConsumers();
+        this.sendToRenderer(
+          PoeProcessChannel.SnapshotChanged,
+          this.getSnapshot(),
+        );
+      }
+    } catch (error) {
+      logWarn(POE_PROCESS_SCOPE, "PoE process active-game refresh failed", {
+        error: safeErrorMessage(error),
+        watcherMode: this.watcher.getMode(),
+      });
+      this.syncGameRunningConsumers();
+      this.sendToRenderer(
+        PoeProcessChannel.SnapshotChanged,
+        this.getSnapshot(),
+      );
+    }
+
+    this.requestCapturePreviewRefresh();
   }
 
   private setupPowerMonitor(): void {
-    powerMonitor.on("suspend", () => {
-      logInfo(POE_PROCESS_SCOPE, "System suspending; stopping process poller");
-      this.systemSuspended = true;
-      this.poller.stop();
-      this.currentState = STOPPED_POE_PROCESS_STATE;
-      this.syncGameRunningConsumers();
-      this.sendToRenderer(PoeProcessChannel.Stop, STOPPED_POE_PROCESS_STATE);
-      this.requestCapturePreviewRefresh();
-    });
-
-    powerMonitor.on("resume", () => {
-      logInfo(POE_PROCESS_SCOPE, "System resumed; starting process poller");
-      this.systemSuspended = false;
-      if (this.initialized) {
-        this.poller.start();
-      }
-    });
-
-    powerMonitor.on("lock-screen", () => {
-      logInfo(POE_PROCESS_SCOPE, "Screen locked");
-    });
-
-    powerMonitor.on("unlock-screen", () => {
-      logInfo(POE_PROCESS_SCOPE, "Screen unlocked");
-    });
+    powerMonitor.on("suspend", this.handleSystemSuspend);
+    powerMonitor.on("resume", this.handleSystemResume);
+    powerMonitor.on("lock-screen", this.handleScreenLock);
+    powerMonitor.on("unlock-screen", this.handleScreenUnlock);
   }
 
-  private handleStateChanged(
-    channel: PoeProcessChannel.Start | PoeProcessChannel.GetState,
-    state: ProcessState,
+  private handleSnapshotChanged(
+    channel: PoeProcessChannel.Start | PoeProcessChannel.SnapshotChanged,
+    snapshot: PoeProcessSnapshot,
     options: PoeProcessRefreshOptions = {},
   ): void {
-    const previousState = this.currentState;
-    this.currentState = state;
+    const previousSnapshot = this.currentSnapshot;
+    const previousActiveState = this.getState();
+    const nextSnapshot = this.createSnapshotForActiveGame(snapshot.states);
+    const nextActiveState = nextSnapshot.activeState;
+    this.currentSnapshot = nextSnapshot;
     logInfo(POE_PROCESS_SCOPE, "PoE process monitor state changed", {
-      activeGame: SettingsStoreService.getInstance().get().activeGame,
+      activeGame: this.activeGame,
       channel,
-      isActiveGameRunning: this.isActiveGameRunning(state),
-      previousGame: previousState.game ?? null,
-      previousIsRunning: previousState.isRunning,
-      previousProcessName: previousState.processName,
-      resolvedGame: state.game ?? null,
-      isRunning: state.isRunning,
-      processName: state.processName,
+      isActiveGameRunning: this.isActiveGameRunning(nextSnapshot),
+      anyGameRunning: hasAnyRunningPoeProcess(nextSnapshot),
+      previousActiveGame: previousSnapshot.activeGame,
+      previousGame: previousActiveState.game ?? null,
+      previousIsRunning: previousActiveState.isRunning,
+      previousPid: previousActiveState.pid ?? null,
+      previousProcessName: previousActiveState.processName,
+      previousWindowTitle: previousActiveState.windowTitle ?? null,
+      resolvedGame: nextActiveState.game ?? null,
+      isRunning: nextActiveState.isRunning,
+      pid: nextActiveState.pid ?? null,
+      processName: nextActiveState.processName,
+      windowTitle: nextActiveState.windowTitle ?? null,
+      poe1Running: nextSnapshot.states.poe1.isRunning,
+      poe2Running: nextSnapshot.states.poe2.isRunning,
+      watcherMode: this.watcher.getMode(),
     });
     this.syncGameRunningConsumers();
-    this.sendToRenderer(channel, state);
+    this.sendToRenderer(channel, nextSnapshot);
     if (options.requestCapturePreviewRefresh !== false) {
       this.requestCapturePreviewRefresh();
     }
   }
 
-  private shouldHandlePollerEvent(): boolean {
+  private shouldHandleWatcherEvent(): boolean {
     return this.initialized && !this.systemSuspended;
   }
 
-  private shouldHandlePollerDataEvent(state: ProcessState): boolean {
-    if (!this.hasProcessStateChanged(this.currentState, state)) {
+  private shouldHandleWatcherDataEvent(snapshot: PoeProcessSnapshot): boolean {
+    if (!this.hasProcessSnapshotChanged(this.currentSnapshot, snapshot)) {
       return false;
     }
 
-    return this.currentState.isRunning === state.isRunning;
+    return (
+      hasAnyRunningPoeProcess(this.currentSnapshot) ===
+      hasAnyRunningPoeProcess(snapshot)
+    );
+  }
+
+  private hasProcessSnapshotChanged(
+    previous: PoeProcessSnapshot,
+    current: PoeProcessSnapshot,
+  ): boolean {
+    return (
+      previous.activeGame !== current.activeGame ||
+      this.hasProcessStateChanged(previous.states.poe1, current.states.poe1) ||
+      this.hasProcessStateChanged(previous.states.poe2, current.states.poe2)
+    );
   }
 
   private hasProcessStateChanged(
     previous: PoeProcessState,
-    current: ProcessState,
+    current: PoeProcessState,
   ): boolean {
     return (
       previous.isRunning !== current.isRunning ||
       previous.game !== current.game ||
-      previous.processName !== current.processName
+      previous.pid !== current.pid ||
+      previous.processName !== current.processName ||
+      previous.windowTitle !== current.windowTitle
     );
+  }
+
+  private normalizeResolvedState(state: PoeProcessState): PoeProcessState {
+    return state.isRunning ? state : createStoppedPoeProcessState();
+  }
+
+  private createStoppedSnapshot(): PoeProcessSnapshot {
+    return this.createSnapshotForActiveGame(createStoppedPoeProcessStates());
+  }
+
+  private createSnapshotForActiveGame(
+    states: PoeProcessSnapshot["states"],
+  ): PoeProcessSnapshot {
+    return createPoeProcessSnapshot(states, this.activeGame);
   }
 
   private syncGameRunningConsumers(): void {

@@ -13,10 +13,7 @@ import {
 } from "~/main/modules/recording-storage/RecordingStorage.constants";
 import { resolveRecordingStorageMediaDirectory } from "~/main/modules/recording-storage/RecordingStorage.utils";
 import { SettingsStoreService } from "~/main/modules/settings-store";
-import {
-  detectPoeProcessState,
-  isPoeProcessStateForGame,
-} from "~/main/pollers";
+import { isProcessStateForGame, refreshPoeProcessState } from "~/main/pollers";
 import {
   createSafePathLogFields,
   logError,
@@ -953,10 +950,10 @@ class ManagedRecorderService {
   private async resolveActiveGameRunning(): Promise<ManagedRecorderGameRunningSnapshot> {
     const settings = SettingsStoreService.getInstance().get();
     const configuredGame = this.resolveConfiguredGame(settings);
-    const state = await detectPoeProcessState(null, configuredGame);
+    const state = await refreshPoeProcessState(configuredGame);
 
     return {
-      gameRunning: isPoeProcessStateForGame(state, configuredGame),
+      gameRunning: isProcessStateForGame(state, configuredGame),
     };
   }
 

@@ -1,4 +1,7 @@
-import type { PoeProcessState } from "~/main/modules/poe-process/PoeProcess.dto";
+import {
+  POE_PROCESS_GAMES,
+  type PoeProcessStatesByGame,
+} from "~/main/modules/poe-process/PoeProcess.dto";
 import {
   createCapturePreviewSourcesWithGameFallback,
   isCapturePreviewSourceAvailable,
@@ -42,16 +45,17 @@ function pruneCapturePreviewThumbnails(
 }
 
 function shouldRetryCaptureSourceRefresh(
-  poeProcessState: PoeProcessState | null,
+  poeProcessStates: PoeProcessStatesByGame,
   sources: CapturePreviewSource[],
 ): boolean {
-  if (!poeProcessState?.isRunning || !poeProcessState.game) {
-    return false;
-  }
+  return POE_PROCESS_GAMES.some((game) => {
+    const state = poeProcessStates[game];
 
-  const runningGame = poeProcessState.game;
-
-  return !sources.some((source) => isCaptureSourceForGame(source, runningGame));
+    return (
+      state.isRunning &&
+      !sources.some((source) => isCaptureSourceForGame(source, game))
+    );
+  });
 }
 
 function isCaptureSourceForGame(
@@ -99,7 +103,7 @@ export const createCapturePreviewSlice: BoundStoreStateCreator<
           if (
             version !== requestVersion ||
             !shouldRetryCaptureSourceRefresh(
-              nextStore.poeProcess.state,
+              nextStore.poeProcess.states,
               nextStore.capturePreview.sources,
             )
           ) {
@@ -116,7 +120,7 @@ export const createCapturePreviewSlice: BoundStoreStateCreator<
               const refreshedStore = get();
               if (
                 shouldRetryCaptureSourceRefresh(
-                  refreshedStore.poeProcess.state,
+                  refreshedStore.poeProcess.states,
                   refreshedStore.capturePreview.sources,
                 )
               ) {
@@ -134,7 +138,7 @@ export const createCapturePreviewSlice: BoundStoreStateCreator<
         const store = get();
         if (
           !shouldRetryCaptureSourceRefresh(
-            store.poeProcess.state,
+            store.poeProcess.states,
             store.capturePreview.sources,
           )
         ) {

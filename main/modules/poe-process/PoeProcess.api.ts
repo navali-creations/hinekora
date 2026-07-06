@@ -1,15 +1,15 @@
 import { ipcRenderer } from "electron";
 
 import { PoeProcessChannel } from "./PoeProcess.channels";
-import type { PoeProcessError, PoeProcessState } from "./PoeProcess.dto";
+import type { PoeProcessError, PoeProcessSnapshot } from "./PoeProcess.dto";
 
 const PoeProcessAPI = {
-  getState: (): Promise<PoeProcessState> =>
-    ipcRenderer.invoke(PoeProcessChannel.IsRunning),
-  onStart: (callback: (state: PoeProcessState) => void) => {
+  getSnapshot: (): Promise<PoeProcessSnapshot> =>
+    ipcRenderer.invoke(PoeProcessChannel.GetSnapshot),
+  onStart: (callback: (state: PoeProcessSnapshot) => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
-      state: PoeProcessState,
+      state: PoeProcessSnapshot,
     ) => {
       callback(state);
     };
@@ -17,10 +17,10 @@ const PoeProcessAPI = {
 
     return () => ipcRenderer.removeListener(PoeProcessChannel.Start, listener);
   },
-  onStop: (callback: (state: PoeProcessState) => void) => {
+  onStop: (callback: (state: PoeProcessSnapshot) => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
-      state: PoeProcessState,
+      state: PoeProcessSnapshot,
     ) => {
       callback(state);
     };
@@ -28,17 +28,17 @@ const PoeProcessAPI = {
 
     return () => ipcRenderer.removeListener(PoeProcessChannel.Stop, listener);
   },
-  onState: (callback: (state: PoeProcessState) => void) => {
+  onSnapshot: (callback: (state: PoeProcessSnapshot) => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
-      state: PoeProcessState,
+      state: PoeProcessSnapshot,
     ) => {
       callback(state);
     };
-    ipcRenderer.on(PoeProcessChannel.GetState, listener);
+    ipcRenderer.on(PoeProcessChannel.SnapshotChanged, listener);
 
     return () =>
-      ipcRenderer.removeListener(PoeProcessChannel.GetState, listener);
+      ipcRenderer.removeListener(PoeProcessChannel.SnapshotChanged, listener);
   },
   onError: (callback: (error: PoeProcessError) => void) => {
     const listener = (

@@ -47,6 +47,7 @@ const electronMocks = vi.hoisted(() => ({
   getAllWindows: vi.fn(),
   getPath: vi.fn(),
   getPrimaryDisplay: vi.fn(),
+  ipcMainHandle: vi.fn(),
   isPackaged: false,
 }));
 
@@ -56,7 +57,7 @@ const noobsMocks = vi.hoisted(() => ({
 }));
 
 const pollerMocks = vi.hoisted(() => ({
-  detectPoeProcessState: vi.fn(),
+  refreshPoeProcessState: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -68,6 +69,9 @@ vi.mock("electron", () => ({
   },
   BrowserWindow: {
     getAllWindows: electronMocks.getAllWindows,
+  },
+  ipcMain: {
+    handle: electronMocks.ipcMainHandle,
   },
   screen: {
     getAllDisplays: electronMocks.getAllDisplays,
@@ -81,8 +85,8 @@ vi.mock("../ManagedRecorder.noobs", () => ({
 }));
 
 vi.mock("~/main/pollers", () => ({
-  detectPoeProcessState: pollerMocks.detectPoeProcessState,
-  isPoeProcessStateForGame: (
+  refreshPoeProcessState: pollerMocks.refreshPoeProcessState,
+  isProcessStateForGame: (
     state: {
       game?: GameId | null;
       isRunning: boolean;
@@ -94,13 +98,7 @@ vi.mock("~/main/pollers", () => ({
       return false;
     }
 
-    const stateGame =
-      state.game ??
-      (state.processName.toLowerCase().includes("pathofexile2")
-        ? "poe2"
-        : "poe1");
-
-    return stateGame === game;
+    return state.game === game;
   },
 }));
 
@@ -116,6 +114,7 @@ beforeEach(() => {
   electronMocks.getAllWindows.mockReturnValue([
     { isDestroyed: () => false, webContents: { send } },
   ]);
+  electronMocks.ipcMainHandle.mockReset();
   electronMocks.getPath.mockImplementation((name: string) =>
     name === "videos" ? join(directory, "videos") : directory,
   );
@@ -129,7 +128,8 @@ beforeEach(() => {
   electronMocks.isPackaged = false;
   noobsMocks.loadNoobsApi.mockReset();
   noobsMocks.importNoobsModule.mockReset();
-  pollerMocks.detectPoeProcessState.mockResolvedValue({
+  pollerMocks.refreshPoeProcessState.mockResolvedValue({
+    game: "poe1",
     isRunning: true,
     processName: "PathOfExileSteam.exe",
   });
@@ -166,7 +166,7 @@ afterEach(() => {
   electronMocks.getPrimaryDisplay.mockReset();
   noobsMocks.loadNoobsApi.mockReset();
   noobsMocks.importNoobsModule.mockReset();
-  pollerMocks.detectPoeProcessState.mockReset();
+  pollerMocks.refreshPoeProcessState.mockReset();
   vi.restoreAllMocks();
   RecordingStorageService.resetForTests();
   DatabaseService.resetForTests();
@@ -421,7 +421,7 @@ describe("ManagedRecorderService", () => {
   });
 
   it("blocks recording starts when the active game is not running", async () => {
-    pollerMocks.detectPoeProcessState.mockResolvedValue({
+    pollerMocks.refreshPoeProcessState.mockResolvedValue({
       isRunning: false,
       processName: "",
     });
@@ -440,10 +440,7 @@ describe("ManagedRecorderService", () => {
       error: "Path of Exile 1 is not running",
       runRecordingActive: false,
     });
-    expect(pollerMocks.detectPoeProcessState).toHaveBeenCalledWith(
-      null,
-      "poe1",
-    );
+    expect(pollerMocks.refreshPoeProcessState).toHaveBeenCalledWith("poe1");
     expect(internals.initialize).not.toHaveBeenCalled();
   });
 
@@ -1268,7 +1265,7 @@ describe("ManagedRecorderService", () => {
   });
 
   it("waits for an active replay save before stopping rewind when the game closes", async () => {
-    pollerMocks.detectPoeProcessState.mockResolvedValue({
+    pollerMocks.refreshPoeProcessState.mockResolvedValue({
       isRunning: false,
       processName: "",
     });
@@ -1323,7 +1320,7 @@ describe("ManagedRecorderService", () => {
   });
 
   it("stops full run recordings when the active game closes", async () => {
-    pollerMocks.detectPoeProcessState.mockResolvedValue({
+    pollerMocks.refreshPoeProcessState.mockResolvedValue({
       isRunning: false,
       processName: "",
     });
@@ -1357,7 +1354,7 @@ describe("ManagedRecorderService", () => {
 
   it("keeps the previous game-running state when the lookup fails", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    pollerMocks.detectPoeProcessState.mockRejectedValue(
+    pollerMocks.refreshPoeProcessState.mockRejectedValue(
       new Error("process check failed"),
     );
     const service = createService();
@@ -1381,7 +1378,7 @@ describe("ManagedRecorderService", () => {
   });
 
   it("clears stale game-running state when the forced direct lookup misses", async () => {
-    pollerMocks.detectPoeProcessState.mockResolvedValue({
+    pollerMocks.refreshPoeProcessState.mockResolvedValue({
       isRunning: false,
       processName: "",
     });
@@ -1401,7 +1398,7 @@ describe("ManagedRecorderService", () => {
   });
 
   it("does not carry a running state across active game changes", async () => {
-    pollerMocks.detectPoeProcessState.mockResolvedValue({
+    pollerMocks.refreshPoeProcessState.mockResolvedValue({
       game: "poe1",
       isRunning: true,
       processName: "PathOfExileSteam.exe",
@@ -1441,10 +1438,7 @@ describe("ManagedRecorderService", () => {
     settingsChangeListeners[0]!(settings);
 
     await vi.waitFor(() => {
-      expect(pollerMocks.detectPoeProcessState).toHaveBeenCalledWith(
-        null,
-        "poe2",
-      );
+      expect(pollerMocks.refreshPoeProcessState).toHaveBeenCalledWith("poe2");
     });
     await vi.waitFor(() => {
       expect(service.getStatus()).toMatchObject({ gameRunning: false });
@@ -1454,12 +1448,17 @@ describe("ManagedRecorderService", () => {
 
   it("reuses an in-flight game-running refresh", async () => {
     let resolveProcessState!: (state: {
+      game?: GameId;
       isRunning: boolean;
       processName: string;
     }) => void;
-    pollerMocks.detectPoeProcessState.mockImplementation(
+    pollerMocks.refreshPoeProcessState.mockImplementation(
       () =>
-        new Promise<{ isRunning: boolean; processName: string }>((resolve) => {
+        new Promise<{
+          game?: GameId;
+          isRunning: boolean;
+          processName: string;
+        }>((resolve) => {
           resolveProcessState = resolve;
         }),
     );
@@ -1468,7 +1467,7 @@ describe("ManagedRecorderService", () => {
     const first = service.refreshGameRunningStatus({ forceRefresh: true });
     const second = service.refreshGameRunningStatus({ forceRefresh: false });
 
-    expect(pollerMocks.detectPoeProcessState).toHaveBeenCalledTimes(1);
+    expect(pollerMocks.refreshPoeProcessState).toHaveBeenCalledTimes(1);
     resolveProcessState({ isRunning: false, processName: "" });
     await expect(first).resolves.toBe(false);
     await expect(second).resolves.toBe(false);
@@ -1476,11 +1475,19 @@ describe("ManagedRecorderService", () => {
 
   it("starts a fresh forced game-running refresh and ignores the stale earlier result", async () => {
     const resolvers: Array<
-      (state: { isRunning: boolean; processName: string }) => void
+      (state: {
+        game?: GameId;
+        isRunning: boolean;
+        processName: string;
+      }) => void
     > = [];
-    pollerMocks.detectPoeProcessState.mockImplementation(
+    pollerMocks.refreshPoeProcessState.mockImplementation(
       () =>
-        new Promise<{ isRunning: boolean; processName: string }>((resolve) => {
+        new Promise<{
+          game?: GameId;
+          isRunning: boolean;
+          processName: string;
+        }>((resolve) => {
           resolvers.push(resolve);
         }),
     );
@@ -1493,8 +1500,9 @@ describe("ManagedRecorderService", () => {
       forceRefresh: true,
     });
 
-    expect(pollerMocks.detectPoeProcessState).toHaveBeenCalledTimes(2);
+    expect(pollerMocks.refreshPoeProcessState).toHaveBeenCalledTimes(2);
     resolvers[1]!({
+      game: "poe1",
       isRunning: true,
       processName: "PathOfExileSteam.exe",
     });
@@ -1548,7 +1556,7 @@ describe("ManagedRecorderService", () => {
   });
 
   it("waits for the process monitor instead of starting on app startup when the game is missing", async () => {
-    pollerMocks.detectPoeProcessState.mockResolvedValue({
+    pollerMocks.refreshPoeProcessState.mockResolvedValue({
       isRunning: false,
       processName: "",
     });
@@ -1570,7 +1578,7 @@ describe("ManagedRecorderService", () => {
 
     service.initializeAutoStart();
     await vi.waitFor(() => {
-      expect(pollerMocks.detectPoeProcessState).toHaveBeenCalled();
+      expect(pollerMocks.refreshPoeProcessState).toHaveBeenCalled();
     });
 
     expect(startBuffer).not.toHaveBeenCalled();
@@ -2121,7 +2129,7 @@ describe("ManagedRecorderService", () => {
   });
 
   it("waits for the process monitor when automatic startup is enabled while the game is missing", async () => {
-    pollerMocks.detectPoeProcessState.mockResolvedValue({
+    pollerMocks.refreshPoeProcessState.mockResolvedValue({
       isRunning: false,
       processName: "",
     });
@@ -2154,7 +2162,7 @@ describe("ManagedRecorderService", () => {
     expect(settingsChangeListeners).toHaveLength(1);
     settingsChangeListeners[0]!(settings);
     await vi.waitFor(() => {
-      expect(pollerMocks.detectPoeProcessState).toHaveBeenCalled();
+      expect(pollerMocks.refreshPoeProcessState).toHaveBeenCalled();
     });
 
     expect(startBuffer).not.toHaveBeenCalled();

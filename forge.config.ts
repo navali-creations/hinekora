@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -18,6 +19,7 @@ const linuxIconDir = path.join(logoDir, "linux/icons");
 const linuxIcon = path.join(linuxIconDir, "512x512.png");
 const windowsIconUrl =
   "https://raw.githubusercontent.com/navali-creations/hinekora/main/renderer/assets/logo/windows/icon.ico";
+const poeProcessHelperResource = "./helpers/bin/poe-process-helper";
 
 if (process.platform === "win32") {
   process.env.GYP_MSVS_VERSION ??= "2022";
@@ -68,6 +70,22 @@ function ensurePackageLocalModule(moduleName: string): void {
   fs.symlinkSync(hoistedModulePath, localModulePath, "junction");
 }
 
+function buildPoeProcessHelper(): void {
+  const scriptPath = path.resolve(
+    __dirname,
+    "scripts",
+    "build-poe-process-helper.mjs",
+  );
+  const result = spawnSync(process.execPath, [scriptPath], {
+    cwd: __dirname,
+    stdio: "inherit",
+  });
+
+  if (result.status !== 0) {
+    throw new Error("Failed to build PoE process helper");
+  }
+}
+
 if (process.platform === "win32") {
   makers.push(
     new MakerSquirrel({
@@ -106,7 +124,11 @@ const config: ForgeConfig = {
     asar: {
       unpack: "**/node_modules/noobs/dist/**",
     },
-    extraResource: ["./renderer/assets/logo", "./CHANGELOG.md"],
+    extraResource: [
+      "./renderer/assets/logo",
+      "./CHANGELOG.md",
+      ...(process.platform === "win32" ? [poeProcessHelperResource] : []),
+    ],
     icon: resolvePackagerIcon(),
     prune: false,
     executableName: "hinekora",
@@ -149,6 +171,9 @@ const config: ForgeConfig = {
   hooks: {
     generateAssets: async () => {
       ensurePackageLocalModule("node-addon-api");
+      if (process.platform === "win32") {
+        buildPoeProcessHelper();
+      }
     },
   },
   makers,

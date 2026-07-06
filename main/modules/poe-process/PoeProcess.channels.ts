@@ -1,8 +1,8 @@
 enum PoeProcessChannel {
   Start = "poe-process:start",
   Stop = "poe-process:stop",
-  IsRunning = "poe-process:is-running",
-  GetState = "poe-process:get-state",
+  GetSnapshot = "poe-process:get-snapshot",
+  SnapshotChanged = "poe-process:snapshot-changed",
   GetError = "poe-process:get-error",
 }
 

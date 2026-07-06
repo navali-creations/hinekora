@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createStoppedPoeProcessStates } from "~/main/modules/poe-process/PoeProcess.dto";
+import {
+  createPoeProcessStatesWithState,
+  createRunningPoeProcessState,
+} from "~/main/test/poe-process";
 import type { BoundStore } from "~/renderer/store/store.types";
 import { createBoundStoreForTests } from "~/renderer/test/createBoundStoreForTests";
 
@@ -92,6 +97,7 @@ function createTestStore() {
           isRunning: false,
           processName: "",
         },
+        states: createStoppedPoeProcessStates(),
       },
       settings: {
         hydrate: vi.fn(),
@@ -208,11 +214,10 @@ describe("CapturePreview slice", () => {
     store.setState((state) => ({
       poeProcess: {
         ...state.poeProcess,
-        state: {
-          game: "poe2",
-          isRunning: true,
-          processName: "PathOfExileSteam.exe",
-        },
+        state: createRunningPoeProcessState("poe2"),
+        states: createPoeProcessStatesWithState(
+          createRunningPoeProcessState("poe2"),
+        ),
       },
     }));
     const stopListening = store.getState().capturePreview.startListening();
@@ -250,11 +255,10 @@ describe("CapturePreview slice", () => {
     store.setState((state) => ({
       poeProcess: {
         ...state.poeProcess,
-        state: {
-          game: "poe2",
-          isRunning: true,
-          processName: "PathOfExileSteam.exe",
-        },
+        state: createRunningPoeProcessState("poe2"),
+        states: createPoeProcessStatesWithState(
+          createRunningPoeProcessState("poe2"),
+        ),
       },
     }));
     const stopListening = store.getState().capturePreview.startListening();
@@ -277,11 +281,10 @@ describe("CapturePreview slice", () => {
     store.setState((state) => ({
       poeProcess: {
         ...state.poeProcess,
-        state: {
-          game: "poe2",
-          isRunning: true,
-          processName: "PathOfExileSteam.exe",
-        },
+        state: createRunningPoeProcessState("poe2"),
+        states: createPoeProcessStatesWithState(
+          createRunningPoeProcessState("poe2"),
+        ),
       },
     }));
     const stopListening = store.getState().capturePreview.startListening();
@@ -297,6 +300,7 @@ describe("CapturePreview slice", () => {
           isRunning: false,
           processName: "",
         },
+        states: createStoppedPoeProcessStates(),
       },
     }));
 
@@ -314,11 +318,10 @@ describe("CapturePreview slice", () => {
     store.setState((state) => ({
       poeProcess: {
         ...state.poeProcess,
-        state: {
-          game: "poe2",
-          isRunning: true,
-          processName: "PathOfExileSteam.exe",
-        },
+        state: createRunningPoeProcessState("poe2"),
+        states: createPoeProcessStatesWithState(
+          createRunningPoeProcessState("poe2"),
+        ),
       },
     }));
     const stopListening = store.getState().capturePreview.startListening();
@@ -347,11 +350,10 @@ describe("CapturePreview slice", () => {
     store.setState((state) => ({
       poeProcess: {
         ...state.poeProcess,
-        state: {
-          game: "poe2",
-          isRunning: true,
-          processName: "PathOfExileSteam.exe",
-        },
+        state: createRunningPoeProcessState("poe2"),
+        states: createPoeProcessStatesWithState(
+          createRunningPoeProcessState("poe2"),
+        ),
       },
     }));
     const stopListening = store.getState().capturePreview.startListening();
@@ -377,11 +379,10 @@ describe("CapturePreview slice", () => {
     store.setState((state) => ({
       poeProcess: {
         ...state.poeProcess,
-        state: {
-          game: "poe2",
-          isRunning: true,
-          processName: "PathOfExileSteam.exe",
-        },
+        state: createRunningPoeProcessState("poe2"),
+        states: createPoeProcessStatesWithState(
+          createRunningPoeProcessState("poe2"),
+        ),
       },
     }));
     const stopListening = store.getState().capturePreview.startListening();
@@ -417,11 +418,10 @@ describe("CapturePreview slice", () => {
     store.setState((state) => ({
       poeProcess: {
         ...state.poeProcess,
-        state: {
-          game: "poe2",
-          isRunning: true,
-          processName: "PathOfExileSteam.exe",
-        },
+        state: createRunningPoeProcessState("poe2"),
+        states: createPoeProcessStatesWithState(
+          createRunningPoeProcessState("poe2"),
+        ),
       },
     }));
     const stopListening = store.getState().capturePreview.startListening();
