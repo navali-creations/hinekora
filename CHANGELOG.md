@@ -1,3 +1,31 @@
+## 0.7.0
+
+### Minor Changes
+
+- [`8e62f8f`](https://github.com/navali-creations/hinekora/commit/8e62f8fc09e55aa33151601cd6594b5acfd6f836) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Bookmarks for recordings and rewind activity.
+
+  Hinekora can now track gameplay moments while recording or running rewind, then show those moments in dedicated bookmark views, recording timelines, and rewind activity sessions.
+
+  - **Bookmarks:** Adds a Bookmarks page with category filters, game and league context, manual bookmark rename/delete actions, and direct links back to the related recording or rewind moment.
+  - **Automatic tracking:** Detects location changes, deaths, towns, hideouts, maps, bosses, and manual replays from the active Path of Exile client log while capture is active.
+  - **Recording details:** Adds an editor-style bookmark timeline with colored location spans, category markers, playback controls, latest markers, and click-to-jump bookmark navigation.
+  - **Rewind activity:** Adds a Rewinds page and rewind detail view for tracked rewind sessions, with linked death clips and manual replays playable directly inside the session timeline.
+  - **Recorder overlay:** Adds a bookmark action so memorable moments can be marked during capture without opening the main app.
+
+### Patch Changes
+
+- [`e1f6693`](https://github.com/navali-creations/hinekora/commit/e1f66934a3bdebc72eeb6aa26dd67359f3bfe723) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Keep capture controls locked during active recording or rewind.
+
+  The dashboard and app bar now update their locked state as soon as session recording or rewind starts, so the active capture session cannot be changed mid-recording.
+
+  - **Capture profiles:** Disables profile switching, profile edits, and live preview source changes while recording or rewind is active.
+  - **App bar:** Keeps the recording game selected and prevents switching to the other Path of Exile game until capture stops.
+  - **Saved recordings:** Keeps the game tied to the active recording session even if dashboard settings change later.
+
 ## 0.6.1
 
 ### Patch Changes
