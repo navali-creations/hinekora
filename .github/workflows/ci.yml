@@ -208,7 +208,8 @@ jobs:
           }
 
           $failureOutput = node scripts/run-msvc-cargo.mjs run --quiet --manifest-path helpers/poe-process-helper/Cargo.toml --locked -- --parent-pid 4294967295 --title $helperTitle
-          if ($LASTEXITCODE -eq 0) {
+          $failureExitCode = $LASTEXITCODE
+          if ($failureExitCode -eq 0) {
             Write-Host "::error::PoE process helper accepted an invalid parent PID"
             exit 1
           }
@@ -222,6 +223,7 @@ jobs:
             Write-Host "::error::PoE process helper emitted an unexpected invalid parent PID error"
             exit 1
           }
+          exit 0
 
   package-windows:
     name: Windows Package Check

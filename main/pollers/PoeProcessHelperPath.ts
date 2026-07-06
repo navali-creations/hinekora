@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { win32 } from "node:path";
 
 type PathExists = (path: string) => boolean;
 
@@ -33,21 +33,25 @@ function resolveWindowsPoeProcessHelperPath(
       : options.resourcesPath;
   if (resourcesPath) {
     candidates.push(
-      join(resourcesPath, HELPER_RESOURCE_DIR, WINDOWS_HELPER_EXECUTABLE_NAME),
+      win32.join(
+        resourcesPath,
+        HELPER_RESOURCE_DIR,
+        WINDOWS_HELPER_EXECUTABLE_NAME,
+      ),
     );
   }
 
   if (developmentPathsAllowed) {
     const cwd = options.cwd ?? process.cwd();
     candidates.push(
-      join(
+      win32.join(
         cwd,
         "helpers",
         "bin",
         HELPER_RESOURCE_DIR,
         WINDOWS_HELPER_EXECUTABLE_NAME,
       ),
-      join(
+      win32.join(
         cwd,
         "helpers",
         "poe-process-helper",
@@ -55,7 +59,7 @@ function resolveWindowsPoeProcessHelperPath(
         "release",
         WINDOWS_HELPER_EXECUTABLE_NAME,
       ),
-      join(
+      win32.join(
         cwd,
         "helpers",
         "poe-process-helper",
