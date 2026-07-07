@@ -45,7 +45,7 @@ function useEditorTimelineInteraction({
   };
 
   const handleTimelineWheel = (event: WheelEvent<HTMLDivElement>) => {
-    if (isProcessing || (!event.ctrlKey && !event.metaKey)) {
+    if (isProcessing || !event.ctrlKey) {
       return;
     }
 

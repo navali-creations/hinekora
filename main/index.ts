@@ -18,6 +18,7 @@ import { DatabaseService } from "./modules/database";
 import { resolveMainDatabasePath } from "./modules/database/Database.paths";
 import { DiagLogService } from "./modules/diag-log";
 import { EditorService } from "./modules/editor";
+import { KeybindsService } from "./modules/keybinds";
 import { MainWindowService } from "./modules/main-window";
 import { ManagedRecorderService } from "./modules/managed-recorder";
 import { OverlayWindowsService } from "./modules/overlay-windows";
@@ -184,6 +185,10 @@ async function bootstrap(): Promise<void> {
 
   const bookmarks = BookmarksService.getInstance();
   logInfo("startup", "Bookmarks initialized");
+
+  const keybinds = KeybindsService.getInstance();
+  keybinds.initialize();
+  logInfo("startup", "Keybinds initialized");
 
   const overlayWindows = OverlayWindowsService.getInstance();
   logInfo("startup", "Overlay windows initialized");

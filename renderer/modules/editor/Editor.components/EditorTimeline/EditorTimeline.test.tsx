@@ -444,6 +444,25 @@ describe("EditorTimeline", () => {
     expect(storeMocks.setZoom).toHaveBeenCalledTimes(1);
   });
 
+  it("does not zoom the timeline with meta wheel", async () => {
+    await renderTimeline();
+    const scrollContainer = container.querySelector<HTMLElement>(
+      "[data-timeline-scroll]",
+    );
+
+    await act(async () => {
+      scrollContainer?.dispatchEvent(
+        new WheelEvent("wheel", {
+          bubbles: true,
+          deltaY: -100,
+          metaKey: true,
+        }),
+      );
+    });
+
+    expect(storeMocks.setZoom).not.toHaveBeenCalled();
+  });
+
   it("blocks timeline interaction while the editor is processing", async () => {
     configureEditorState({
       clipboardState: { error: null, requestId: "copy-1", status: "copying" },

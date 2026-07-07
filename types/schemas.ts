@@ -1,6 +1,10 @@
 import { z } from "zod";
 
 import {
+  keybindActionConfigs,
+  OptionalKeybindAcceleratorSchema,
+} from "./keybinds";
+import {
   defaultRewindSaveSeconds,
   maxRewindSaveSeconds,
   minRewindSaveSeconds,
@@ -496,6 +500,12 @@ export const AppSettingsSchema = z.object({
   recorderOverlayBounds: RecorderOverlayBoundsSchema.nullable().default(null),
   installedGames: z.array(GameIdSchema).min(1).max(2).default(["poe1"]),
   recordingStoragePath: z.string().max(2_048).nullable().default(null),
+  keybindManualBookmark: OptionalKeybindAcceleratorSchema.default(
+    keybindActionConfigs.manualBookmark.defaultAccelerator,
+  ),
+  keybindManualReplay: OptionalKeybindAcceleratorSchema.default(
+    keybindActionConfigs.manualReplay.defaultAccelerator,
+  ),
   ...CaptureProfileSettingsSchema.shape,
   selectedCaptureProfileId: z.string().min(1).max(128).nullable().default(null),
   selectedCaptureProfileIdsByGame: CaptureProfileSelectionMemorySchema,

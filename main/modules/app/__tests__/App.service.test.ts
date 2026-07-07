@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ClientLogService } from "~/main/modules/client-log";
 import { DatabaseService } from "~/main/modules/database";
+import { KeybindsService } from "~/main/modules/keybinds";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
 import { PoeProcessService } from "~/main/modules/poe-process";
@@ -208,6 +209,7 @@ describe("AppService", () => {
         stopBuffer: vi.fn().mockResolvedValue({}),
         stopRunRecording: vi.fn().mockResolvedValue({}),
       },
+      keybinds: { destroy: vi.fn() },
       overlayWindows: { destroyAll: vi.fn() },
       poeProcess: { stop: vi.fn() },
       updater: { destroy: vi.fn() },
@@ -233,6 +235,9 @@ describe("AppService", () => {
     vi.spyOn(UpdaterService, "getInstance").mockReturnValue(
       services.updater as unknown as UpdaterService,
     );
+    vi.spyOn(KeybindsService, "getInstance").mockReturnValue(
+      services.keybinds as unknown as KeybindsService,
+    );
     const service = new AppService();
 
     service.registerShutdownCleanup();
@@ -251,6 +256,7 @@ describe("AppService", () => {
     expect(services.managedRecorder.stopRunRecording).toHaveBeenCalledTimes(1);
     expect(services.managedRecorder.stopBuffer).toHaveBeenCalledTimes(1);
     expect(services.updater.destroy).toHaveBeenCalledTimes(1);
+    expect(services.keybinds.destroy).toHaveBeenCalledTimes(1);
     expect(services.overlayWindows.destroyAll).toHaveBeenCalledTimes(1);
     expect(services.database.close).toHaveBeenCalledTimes(1);
   });
@@ -267,6 +273,7 @@ describe("AppService", () => {
         stopBuffer: vi.fn().mockResolvedValue({}),
         stopRunRecording: vi.fn().mockResolvedValue({}),
       },
+      keybinds: { destroy: vi.fn() },
       overlayWindows: { destroyAll: vi.fn() },
       poeProcess: { stop: vi.fn() },
       updater: { destroy: vi.fn() },
@@ -289,6 +296,9 @@ describe("AppService", () => {
     vi.spyOn(UpdaterService, "getInstance").mockReturnValue(
       services.updater as unknown as UpdaterService,
     );
+    vi.spyOn(KeybindsService, "getInstance").mockReturnValue(
+      services.keybinds as unknown as KeybindsService,
+    );
     const service = new AppService();
     const internals = service as unknown as {
       handleBeforeQuit(event?: { preventDefault?(): void }): Promise<void>;
@@ -299,6 +309,7 @@ describe("AppService", () => {
     expect(services.poeProcess.stop).toHaveBeenCalledTimes(1);
     expect(services.managedRecorder.stopRunRecording).not.toHaveBeenCalled();
     expect(services.managedRecorder.stopBuffer).not.toHaveBeenCalled();
+    expect(services.keybinds.destroy).toHaveBeenCalledTimes(1);
     expect(electronMocks.quit).not.toHaveBeenCalled();
   });
 

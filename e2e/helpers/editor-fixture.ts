@@ -35,6 +35,7 @@ import {
   type E2EBridgeDomainMethods,
   e2eBridgeDomainFactorySource,
 } from "./bridge-fixture";
+import { createDefaultKeybindRegistrationStatus } from "./keybinds-fixture";
 import {
   type E2EPoeProcessSnapshotFactory,
   e2ePoeProcessSnapshotFactoryScript,
@@ -927,6 +928,13 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
             return clone(nextProject);
           },
         }),
+        keybinds: createBridgeDomain<EditorE2EElectron["keybinds"]>(
+          "keybinds",
+          {
+            getStatus: async () => createDefaultKeybindRegistrationStatus(),
+            onStatusChanged: () => unsubscribe,
+          },
+        ),
         mainWindow: createBridgeDomain<EditorE2EElectron["mainWindow"]>(
           "mainWindow",
           {

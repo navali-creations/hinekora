@@ -621,6 +621,55 @@ test("covers recorder mode, capture settings, and audio settings interactions", 
     .toEqual({ forceRefresh: true });
 });
 
+test("covers keybind settings keyboard recording", async ({ page }) => {
+  await setupDashboardE2E(page);
+  await page.goto("/#/settings?tab=keybinds");
+
+  await expect(
+    page.getByRole("heading", { exact: true, name: "Settings" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("heading", { exact: true, name: "Keybinds" }),
+  ).toBeVisible();
+  await expect(page.getByText("ALT + B")).toBeVisible();
+  await expect(page.getByText("ALT + C")).toBeVisible();
+
+  await page.getByRole("button", { name: "Edit Keybind" }).first().click();
+  await page.keyboard.press("Alt+M");
+  await expect
+    .poll(async () => {
+      const calls = await getDashboardE2ECalls(page);
+
+      return calls.settingsUpdates;
+    })
+    .toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ keybindManualBookmark: "Alt+M" }),
+      ]),
+    );
+
+  await page.getByRole("button", { name: "Edit Keybind" }).first().click();
+  const recordingPrompt = page.getByText("Press key");
+  await expect(recordingPrompt).toBeVisible();
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        button: 3,
+      }),
+    );
+  });
+  await expect(recordingPrompt).toBeVisible();
+  expect((await getDashboardE2ECalls(page)).settingsUpdates).not.toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ keybindManualBookmark: "Mouse4" }),
+    ]),
+  );
+  await page.getByRole("button", { name: "Cancel" }).click();
+
+  await expect(recordingPrompt).not.toBeVisible();
+});
+
 test("covers dashboard app shell game, overlay, and window controls", async ({
   page,
 }) => {

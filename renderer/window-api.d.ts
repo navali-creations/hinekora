@@ -30,6 +30,7 @@ import type {
   EditorWorkspace,
   EditorWorkspaceQuery,
 } from "~/main/modules/editor/Editor.dto";
+import type { KeybindRegistrationStatus } from "~/main/modules/keybinds/Keybinds.dto";
 import type {
   ManagedRecorderAudioDevices,
   ManagedRecorderCaptureMode,
@@ -211,6 +212,12 @@ declare global {
         close: () => Promise<void>;
         openEditorClip: (clipId: string) => Promise<void>;
         openDevTools: () => Promise<void>;
+      };
+      keybinds: {
+        getStatus: () => Promise<KeybindRegistrationStatus>;
+        onStatusChanged: (
+          callback: (status: KeybindRegistrationStatus) => void,
+        ) => () => void;
       };
       managedRecorder: {
         getCaptureMode: () => Promise<ManagedRecorderCaptureMode>;

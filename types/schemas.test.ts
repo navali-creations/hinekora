@@ -35,6 +35,8 @@ describe("shared schemas", () => {
       recorderOverlayBounds: null,
       installedGames: ["poe1"],
       recordingStoragePath: null,
+      keybindManualBookmark: "Alt+B",
+      keybindManualReplay: "Alt+C",
       recordingOutputResolution: "native",
       recordingFps: 30,
       recordingEncoder: "hardware_h264",
@@ -75,6 +77,7 @@ describe("shared schemas", () => {
       new Set(Object.keys(createDefaultSettings())),
     );
     expect(appSettingsKeys).toContain("recordingHideOverlaysFromRecording");
+    expect(appSettingsKeys).toContain("keybindManualBookmark");
     expect(appSettingsKeys).not.toContain("recordingHideOverlaysFromCapture");
   });
 
@@ -160,6 +163,45 @@ describe("shared schemas", () => {
     });
     expect(() =>
       AppSettingsSchema.parse({ recordingAutoStartMode: "session" }),
+    ).toThrow();
+  });
+
+  it("accepts nullable and normalized global keybind settings", () => {
+    expect(
+      AppSettingsSchema.parse({
+        keybindManualBookmark: null,
+        keybindManualReplay: "shift+alt+c",
+      }),
+    ).toMatchObject({
+      keybindManualBookmark: null,
+      keybindManualReplay: "Alt+Shift+C",
+    });
+    expect(
+      AppSettingsSchema.parse({ keybindManualBookmark: "b" }),
+    ).toMatchObject({
+      keybindManualBookmark: "B",
+    });
+    expect(
+      AppSettingsSchema.parse({ keybindManualBookmark: "alt+semicolon" }),
+    ).toMatchObject({
+      keybindManualBookmark: "Alt+;",
+    });
+    expect(
+      AppSettingsSchema.parse({ keybindManualBookmark: "alt+plus" }),
+    ).toMatchObject({
+      keybindManualBookmark: "Alt+Plus",
+    });
+    expect(() =>
+      AppSettingsSchema.parse({ keybindManualBookmark: "Mouse4" }),
+    ).toThrow();
+    expect(() =>
+      AppSettingsSchema.parse({ keybindManualBookmark: "xbutton2" }),
+    ).toThrow();
+    expect(() =>
+      AppSettingsSchema.parse({ keybindManualBookmark: "scrollclick" }),
+    ).toThrow();
+    expect(() =>
+      AppSettingsSchema.parse({ keybindManualBookmark: "MouseMiddle" }),
     ).toThrow();
   });
 

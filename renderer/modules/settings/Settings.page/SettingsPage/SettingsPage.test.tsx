@@ -15,6 +15,12 @@ vi.mock("../../Settings.components/HelpSettingsCard/HelpSettingsCard", () => ({
   HelpSettingsCard: () => <div>Help settings card</div>,
 }));
 vi.mock(
+  "../../Settings.components/KeybindsSettingsCard/KeybindsSettingsCard",
+  () => ({
+    KeybindsSettingsCard: () => <div>Keybinds settings card</div>,
+  }),
+);
+vi.mock(
   "../../Settings.components/PrivacySettingsCard/PrivacySettingsCard",
   () => ({
     PrivacySettingsCard: () => <div>Privacy settings card</div>,
@@ -123,12 +129,27 @@ describe("SettingsPage", () => {
 
     expect(onCategoryChange).toHaveBeenCalledWith("App");
     expect(container.textContent).toContain("App settings card");
+    expect(container.textContent).not.toContain("Keybinds settings card");
+  });
+
+  it("opens keybinds as a standalone settings tab", async () => {
+    await renderSettingsPage("Keybinds");
+
+    expect(container.textContent).toContain("Keybinds settings card");
+    expect(container.textContent).not.toContain("App settings card");
+    expect(
+      container
+        .querySelector("#settings-tab-keybinds")
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
   });
 
   it("maps settings categories to stable route slugs", () => {
     expect(getSettingsCategorySlug("Help")).toBe("help");
+    expect(getSettingsCategorySlug("Keybinds")).toBe("keybinds");
     expect(getSettingsCategorySlug("Data & Storage")).toBe("data-storage");
     expect(getSettingsCategoryFromSlug("help")).toBe("Help");
+    expect(getSettingsCategoryFromSlug("keybinds")).toBe("Keybinds");
     expect(getSettingsCategoryFromSlug("data-storage")).toBe("Data & Storage");
     expect(getSettingsCategoryFromSlug("missing")).toBeNull();
     expect(getSettingsCategoryFromSlug(null)).toBeNull();

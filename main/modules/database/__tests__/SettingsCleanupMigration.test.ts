@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { appSettingsKeys } from "~/types";
 import { migration_20260630_000000_settings_cleanup } from "../migrations/20260630_000000_settings_cleanup";
 import { migration_20260702_010000_bookmarks } from "../migrations/20260702_010000_bookmarks";
+import { migration_20260707_000000_keybind_settings } from "../migrations/20260707_000000_keybind_settings";
 import { insertSetting, readSettings } from "./MigrationRunner.test-utils";
 
 let database: DatabaseSync | null = null;
@@ -238,8 +239,10 @@ describe("Settings cleanup migration", () => {
 
     migration_20260630_000000_settings_cleanup.up(db);
     migration_20260702_010000_bookmarks.up(db);
+    migration_20260707_000000_keybind_settings.up(db);
     migration_20260630_000000_settings_cleanup.up(db);
     migration_20260702_010000_bookmarks.up(db);
+    migration_20260707_000000_keybind_settings.up(db);
 
     const settings = readSettings(db);
 
@@ -251,6 +254,8 @@ describe("Settings cleanup migration", () => {
       recordingAutoStartMode: "off",
       selectedCaptureProfileId: null,
       selectedProfileId: null,
+      keybindManualBookmark: "Alt+B",
+      keybindManualReplay: "Alt+C",
     });
   });
 

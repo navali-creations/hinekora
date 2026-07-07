@@ -8,6 +8,7 @@ import {
 
 import { ClientLogService } from "~/main/modules/client-log";
 import { DatabaseService } from "~/main/modules/database";
+import { KeybindsService } from "~/main/modules/keybinds";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
@@ -176,6 +177,10 @@ class AppService {
 
     await this.runShutdownStep("Stopping updater", () => {
       UpdaterService.getInstance().destroy();
+    });
+
+    await this.runShutdownStep("Unregistering keybinds", () => {
+      KeybindsService.getInstance().destroy();
     });
 
     await this.runShutdownStep("Closing overlay windows", () => {

@@ -14,6 +14,7 @@ import { ProfilesPanel } from "~/renderer/modules/profiles/Profiles.components/P
 import { AppSettingsCard } from "../../Settings.components/AppSettingsCard/AppSettingsCard";
 import { GameLogSettingsCard } from "../../Settings.components/GameLogSettingsCard/GameLogSettingsCard";
 import { HelpSettingsCard } from "../../Settings.components/HelpSettingsCard/HelpSettingsCard";
+import { KeybindsSettingsCard } from "../../Settings.components/KeybindsSettingsCard/KeybindsSettingsCard";
 import { PrivacySettingsCard } from "../../Settings.components/PrivacySettingsCard/PrivacySettingsCard";
 import { ProfileTransferSettingsCard } from "../../Settings.components/ProfileTransferSettingsCard/ProfileTransferSettingsCard";
 import { StorageSettingsCard } from "../../Settings.components/StorageSettingsCard/StorageSettingsCard";
@@ -22,6 +23,7 @@ import { TroubleshootingSettingsCard } from "../../Settings.components/Troublesh
 const settingsCategories = [
   "Game",
   "App",
+  "Keybinds",
   "Data & Storage",
   "Privacy",
   "Help",
@@ -34,6 +36,7 @@ const settingsCategoryBySlug = {
   "data-storage": "Data & Storage",
   game: "Game",
   help: "Help",
+  keybinds: "Keybinds",
   privacy: "Privacy",
   profiles: "Profiles",
   troubleshooting: "Troubleshooting",
@@ -118,6 +121,7 @@ function SettingsPage({
             >
               {activeCategory === "Game" && <GameLogSettingsCard />}
               {activeCategory === "App" && <AppSettingsCard />}
+              {activeCategory === "Keybinds" && <KeybindsSettingsCard />}
               {activeCategory === "Data & Storage" && <StorageSettingsCard />}
               {activeCategory === "Privacy" && <PrivacySettingsCard />}
               {activeCategory === "Help" && <HelpSettingsCard />}

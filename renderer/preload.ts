@@ -8,6 +8,7 @@ import { CaptureProfilesAPI } from "~/main/modules/capture-profiles/CaptureProfi
 import { ClientLogAPI } from "~/main/modules/client-log/ClientLog.api";
 import { DiagLogAPI } from "~/main/modules/diag-log/DiagLog.api";
 import { EditorAPI } from "~/main/modules/editor/Editor.api";
+import { KeybindsAPI } from "~/main/modules/keybinds/Keybinds.api";
 import { MainWindowAPI } from "~/main/modules/main-window/MainWindow.api";
 import { ManagedRecorderAPI } from "~/main/modules/managed-recorder/ManagedRecorder.api";
 import { OverlayWindowsAPI } from "~/main/modules/overlay-windows/OverlayWindows.api";
@@ -30,6 +31,7 @@ const fullApi = {
   clientLog: ClientLogAPI,
   diagLog: DiagLogAPI,
   editor: EditorAPI,
+  keybinds: KeybindsAPI,
   mainWindow: MainWindowAPI,
   managedRecorder: ManagedRecorderAPI,
   overlayWindows: OverlayWindowsAPI,
