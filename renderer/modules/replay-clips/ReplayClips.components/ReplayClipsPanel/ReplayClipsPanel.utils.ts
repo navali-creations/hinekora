@@ -3,6 +3,7 @@ import clsx from "clsx";
 import type { ReplayClipLibrarySortKey } from "~/main/modules/replay-clips";
 
 import type { ReplayClip } from "~/types";
+import { hasPlayableClip } from "../../ReplayClips.utils/ReplayClips.utils";
 
 function getHeaderClassName(columnId: string): string {
   return clsx(
@@ -25,8 +26,8 @@ function getCellClassName(columnId: string): string {
   );
 }
 
-function hasPlayableClip(clip: ReplayClip): boolean {
-  return Boolean(clip.processedClipPath || clip.originalObsPath);
+function getRowClassName(clip: ReplayClip): string {
+  return clsx(!hasPlayableClip(clip) && "text-base-content/45");
 }
 
 function resolveSortBy(columnId: string | undefined): ReplayClipLibrarySortKey {
@@ -42,4 +43,4 @@ function resolveSortBy(columnId: string | undefined): ReplayClipLibrarySortKey {
   }
 }
 
-export { getCellClassName, getHeaderClassName, hasPlayableClip, resolveSortBy };
+export { getCellClassName, getHeaderClassName, getRowClassName, resolveSortBy };

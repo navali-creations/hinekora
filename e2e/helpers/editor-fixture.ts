@@ -577,31 +577,51 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
       const listEditorMediaAssets = (query: EditorMediaAssetPageQuery) => {
         const pageIndex = query.pageIndex ?? 0;
         const pageSize = query.pageSize ?? 5;
-        const items = mediaAssets.filter((asset) => {
-          if (asset.category !== query.category) {
-            return false;
-          }
-          if (query.includeAssetKeys) {
-            return query.includeAssetKeys.includes(asset.assetKey);
-          }
-          if (asset.sourceGame !== query.game) {
-            return false;
-          }
-          if (query.league && asset.sourceLeague !== query.league) {
-            return false;
-          }
-          if (query.excludeAssetKeys?.includes(asset.assetKey)) {
-            return false;
-          }
-          if (
-            query.createdAfter &&
-            Date.parse(asset.createdAt) < Date.parse(query.createdAfter)
-          ) {
-            return false;
-          }
+        const includeAssetOrder = query.includeAssetKeys
+          ? new Map(
+              query.includeAssetKeys.map((assetKey, index) => [
+                assetKey,
+                index,
+              ]),
+            )
+          : null;
+        const items = mediaAssets
+          .filter((asset) => {
+            if (asset.category !== query.category) {
+              return false;
+            }
+            if (asset.kind === "clip" && (!asset.exists || !asset.mediaUrl)) {
+              return false;
+            }
+            if (includeAssetOrder) {
+              return includeAssetOrder.has(asset.assetKey);
+            }
+            if (asset.sourceGame !== query.game) {
+              return false;
+            }
+            if (query.league && asset.sourceLeague !== query.league) {
+              return false;
+            }
+            if (query.excludeAssetKeys?.includes(asset.assetKey)) {
+              return false;
+            }
+            if (
+              query.createdAfter &&
+              Date.parse(asset.createdAt) < Date.parse(query.createdAfter)
+            ) {
+              return false;
+            }
 
-          return true;
-        });
+            return true;
+          })
+          .sort((first, second) =>
+            includeAssetOrder
+              ? (includeAssetOrder.get(first.assetKey) ??
+                  Number.MAX_SAFE_INTEGER) -
+                (includeAssetOrder.get(second.assetKey) ??
+                  Number.MAX_SAFE_INTEGER)
+              : Date.parse(second.createdAt) - Date.parse(first.createdAt),
+          );
 
         return {
           items: clone(

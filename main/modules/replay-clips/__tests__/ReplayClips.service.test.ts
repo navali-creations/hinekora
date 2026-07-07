@@ -179,6 +179,7 @@ describe("ReplayClipsService file actions", () => {
       kind: "death",
       originalObsPath: path,
       processedClipPath: path,
+      sizeBytes: 9,
       sourceGame: "poe2",
       sourceLeague: "Standard",
       createdAt: "2026-06-12T10:00:00.000Z",
@@ -194,27 +195,34 @@ describe("ReplayClipsService file actions", () => {
       createdAt: "2026-06-12T11:00:00.000Z",
     });
     repository.upsert(missingMediaClip);
+    const staleSizeClip = createReplayClip({
+      id: "stale-size",
+      kind: "death",
+      originalObsPath: join(root, "stale-size.mp4"),
+      processedClipPath: null,
+      sizeBytes: 4096,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      createdAt: "2026-06-12T12:00:00.000Z",
+    });
+    repository.upsert(staleSizeClip);
 
-    expect(
-      service.listEditorReplayDetailPage({
-        kind: "death",
-        pageIndex: 0,
-        pageSize: 10,
-      }).items,
-    ).toEqual(
-      expect.arrayContaining([
+    const editorPage = service.listEditorReplayDetailPage({
+      kind: "death",
+      pageIndex: 0,
+      pageSize: 10,
+    });
+
+    expect(editorPage).toEqual({
+      items: [
         {
           clip: expect.objectContaining({ id: "clip-1", sizeBytes: 9 }),
           durationSeconds: null,
           mediaUrl: "hinekora-media://replay-clip/clip-1",
         },
-        {
-          clip: expect.objectContaining({ id: "missing-media", sizeBytes: 0 }),
-          durationSeconds: null,
-          mediaUrl: null,
-        },
-      ]),
-    );
+      ],
+      totalCount: 1,
+    });
     expect(
       service.listEditorReplayDetailPage({
         game: "poe2",
@@ -223,19 +231,303 @@ describe("ReplayClipsService file actions", () => {
         pageIndex: 0,
         pageSize: 10,
       }).items,
-    ).toHaveLength(2);
+    ).toHaveLength(1);
     expect(
-      service
-        .listEditorReplayDetailPage({
-          createdAfter: "2026-06-12T10:30:00.000Z",
-          excludeIds: [presentClip.id],
-          includeIds: [presentClip.id, missingMediaClip.id],
+      service.listEditorReplayDetailPage({
+        createdAfter: "2026-06-12T10:30:00.000Z",
+        excludeIds: [presentClip.id],
+        includeIds: [presentClip.id, missingMediaClip.id],
+        kind: "death",
+        pageIndex: 0,
+        pageSize: 10,
+      }),
+    ).toEqual({ items: [], totalCount: 0 });
+    expect(repository.get("missing-media")?.sizeBytes).toBe(0);
+    expect(repository.get("clip-1")?.sizeBytes).toBe(9);
+    expect(repository.get("stale-size")?.sizeBytes).toBe(0);
+  });
+
+  it("fills editor replay pages by replacing stale rows", () => {
+    for (let index = 0; index < 6; index += 1) {
+      repository.upsert(
+        createReplayClip({
+          id: `stale-${index}`,
           kind: "death",
-          pageIndex: 0,
-          pageSize: 10,
-        })
-        .items.map((detail) => detail.clip.id),
-    ).toEqual([missingMediaClip.id]);
+          processedClipPath: join(root, `stale-${index}.mp4`),
+          sizeBytes: 4096,
+          createdAt: `2026-06-12T12:0${5 - index}:00.000Z`,
+        }),
+      );
+    }
+    const availableAlphaPath = join(root, "2026-06-12_10-01-00-death-10s.mp4");
+    const availableBetaPath = join(root, "2026-06-12_10-00-00-death-10s.mp4");
+    writeFileSync(availableAlphaPath, "alpha");
+    writeFileSync(availableBetaPath, "beta");
+    repository.upsert(
+      createReplayClip({
+        id: "available-alpha",
+        kind: "death",
+        processedClipPath: availableAlphaPath,
+        sizeBytes: 5,
+        createdAt: "2026-06-12T10:01:00.000Z",
+      }),
+    );
+    repository.upsert(
+      createReplayClip({
+        id: "available-beta",
+        kind: "death",
+        processedClipPath: availableBetaPath,
+        sizeBytes: 4,
+        createdAt: "2026-06-12T10:00:00.000Z",
+      }),
+    );
+    const listLibraryPageSpy = vi.spyOn(
+      ReplayClipsRepository.prototype,
+      "listLibraryPage",
+    );
+
+    const page = service.listEditorReplayDetailPage({
+      kind: "death",
+      pageIndex: 0,
+      pageSize: 5,
+    });
+    const nextPage = service.listEditorReplayDetailPage({
+      kind: "death",
+      pageIndex: 1,
+      pageSize: 5,
+    });
+
+    expect(page.items.map((detail) => detail.clip.id)).toEqual([
+      "available-alpha",
+      "available-beta",
+    ]);
+    expect(page.totalCount).toBe(2);
+    expect(nextPage.items).toEqual([]);
+    expect(nextPage.totalCount).toBe(2);
+    expect(listLibraryPageSpy).toHaveBeenCalledTimes(3);
+    expect(listLibraryPageSpy).toHaveBeenNthCalledWith(1, {
+      filter: {
+        kind: "death",
+        mediaPathOnly: true,
+        positiveMediaOnly: true,
+      },
+      pageIndex: 0,
+      pageSize: 5,
+      sortBy: "createdAt",
+      sortDirection: "desc",
+    });
+    expect(listLibraryPageSpy).toHaveBeenNthCalledWith(2, {
+      filter: {
+        kind: "death",
+        mediaPathOnly: true,
+        positiveMediaOnly: true,
+      },
+      pageIndex: 0,
+      pageSize: 5,
+      sortBy: "createdAt",
+      sortDirection: "desc",
+    });
+    expect(listLibraryPageSpy).toHaveBeenNthCalledWith(3, {
+      filter: {
+        kind: "death",
+        mediaPathOnly: true,
+        positiveMediaOnly: true,
+      },
+      pageIndex: 1,
+      pageSize: 5,
+      sortBy: "createdAt",
+      sortDirection: "desc",
+    });
+    expect(repository.get("stale-0")?.sizeBytes).toBe(0);
+    expect(repository.get("stale-4")?.sizeBytes).toBe(0);
+    expect(repository.get("stale-5")?.sizeBytes).toBe(0);
+  });
+
+  it("stops editor replay pages at the requested page size", () => {
+    const availablePath = join(root, "2026-06-12_10-00-00-death-10s.mp4");
+    writeFileSync(availablePath, "available");
+    repository.upsert(
+      createReplayClip({
+        id: "available-page-size",
+        kind: "death",
+        processedClipPath: availablePath,
+        sizeBytes: 9,
+      }),
+    );
+
+    const page = service.listEditorReplayDetailPage({
+      kind: "death",
+      pageIndex: 0,
+      pageSize: 1,
+    });
+
+    expect(page.items.map((detail) => detail.clip.id)).toEqual([
+      "available-page-size",
+    ]);
+    expect(page.totalCount).toBe(1);
+  });
+
+  it("skips already collected editor candidates after repairing a full page", () => {
+    repository.upsert(
+      createReplayClip({
+        id: "stale-front",
+        kind: "death",
+        processedClipPath: join(root, "stale-front.mp4"),
+        sizeBytes: 4096,
+        createdAt: "2026-06-12T12:00:00.000Z",
+      }),
+    );
+    const availablePath = join(root, "2026-06-12_10-00-00-death-10s.mp4");
+    writeFileSync(availablePath, "available");
+    repository.upsert(
+      createReplayClip({
+        id: "available-after-repair",
+        kind: "death",
+        processedClipPath: availablePath,
+        sizeBytes: 9,
+        createdAt: "2026-06-12T10:00:00.000Z",
+      }),
+    );
+
+    const page = service.listEditorReplayDetailPage({
+      kind: "death",
+      pageIndex: 0,
+      pageSize: 2,
+    });
+
+    expect(page.items.map((detail) => detail.clip.id)).toEqual([
+      "available-after-repair",
+    ]);
+    expect(page.totalCount).toBe(1);
+    expect(repository.get("stale-front")?.sizeBytes).toBe(0);
+  });
+
+  it("keeps editor replay pages from landing empty after many stale rows", () => {
+    for (let index = 0; index < 55; index += 1) {
+      repository.upsert(
+        createReplayClip({
+          id: `stale-bulk-${index}`,
+          kind: "death",
+          processedClipPath: join(root, `stale-bulk-${index}.mp4`),
+          sizeBytes: 4096,
+          createdAt: new Date(
+            Date.parse("2026-06-12T12:00:00.000Z") - index * 1_000,
+          ).toISOString(),
+        }),
+      );
+    }
+    const availablePath = join(root, "2026-06-12_10-00-00-death-10s.mp4");
+    writeFileSync(availablePath, "available");
+    repository.upsert(
+      createReplayClip({
+        id: "available-after-stale",
+        kind: "death",
+        processedClipPath: availablePath,
+        sizeBytes: 9,
+        createdAt: "2026-06-12T10:00:00.000Z",
+      }),
+    );
+
+    const page = service.listEditorReplayDetailPage({
+      kind: "death",
+      pageIndex: 0,
+      pageSize: 5,
+    });
+
+    expect(page.items.map((detail) => detail.clip.id)).toEqual([
+      "available-after-stale",
+    ]);
+    expect(page.totalCount).toBe(1);
+    expect(repository.get("stale-bulk-0")?.sizeBytes).toBe(0);
+    expect(repository.get("stale-bulk-54")?.sizeBytes).toBe(0);
+  });
+
+  it("continues bounded editor replay repair after the validation window", () => {
+    for (let index = 0; index < 501; index += 1) {
+      repository.upsert(
+        createReplayClip({
+          id: `stale-window-${index}`,
+          kind: "death",
+          processedClipPath: join(root, `stale-window-${index}.mp4`),
+          sizeBytes: 4096,
+          createdAt: new Date(
+            Date.parse("2026-06-12T12:00:00.000Z") - index * 1_000,
+          ).toISOString(),
+        }),
+      );
+    }
+    const availablePath = join(root, "2026-06-12_10-00-00-death-10s.mp4");
+    writeFileSync(availablePath, "available");
+    repository.upsert(
+      createReplayClip({
+        id: "available-after-validation-window",
+        kind: "death",
+        processedClipPath: availablePath,
+        sizeBytes: 9,
+        createdAt: "2026-06-12T10:00:00.000Z",
+      }),
+    );
+
+    const firstPage = service.listEditorReplayDetailPage({
+      kind: "death",
+      pageIndex: 0,
+      pageSize: 7,
+    });
+    const repairedPage = service.listEditorReplayDetailPage({
+      kind: "death",
+      pageIndex: 0,
+      pageSize: 7,
+    });
+
+    expect(firstPage.items).toEqual([]);
+    expect(firstPage.totalCount).toBe(2);
+    expect(repairedPage.items.map((detail) => detail.clip.id)).toEqual([
+      "available-after-validation-window",
+    ]);
+    expect(repairedPage.totalCount).toBe(1);
+    expect(repository.get("stale-window-0")?.sizeBytes).toBe(0);
+    expect(repository.get("stale-window-499")?.sizeBytes).toBe(0);
+    expect(repository.get("stale-window-500")?.sizeBytes).toBe(0);
+  });
+
+  it("does not scan from the first editor replay page for high page indexes", () => {
+    for (let index = 0; index < 10; index += 1) {
+      repository.upsert(
+        createReplayClip({
+          id: `positive-candidate-${index}`,
+          kind: "death",
+          processedClipPath: join(root, `positive-candidate-${index}.mp4`),
+          sizeBytes: 4096,
+          createdAt: new Date(
+            Date.parse("2026-06-12T12:00:00.000Z") - index * 1_000,
+          ).toISOString(),
+        }),
+      );
+    }
+    const listLibraryPageSpy = vi.spyOn(
+      ReplayClipsRepository.prototype,
+      "listLibraryPage",
+    );
+
+    const page = service.listEditorReplayDetailPage({
+      kind: "death",
+      pageIndex: 1000,
+      pageSize: 5,
+    });
+
+    expect(page).toEqual({ items: [], totalCount: 10 });
+    expect(listLibraryPageSpy).toHaveBeenCalledTimes(1);
+    expect(listLibraryPageSpy).toHaveBeenCalledWith({
+      filter: {
+        kind: "death",
+        mediaPathOnly: true,
+        positiveMediaOnly: true,
+      },
+      pageIndex: 1000,
+      pageSize: 5,
+      sortBy: "createdAt",
+      sortDirection: "desc",
+    });
   });
 
   it("delegates clip library filtering to the repository", () => {
@@ -306,6 +598,50 @@ describe("ReplayClipsService file actions", () => {
       totalCount: 2,
       items: [expect.objectContaining({ id: "large", sizeBytes: 11 })],
     });
+  });
+
+  it("refreshes stale clip library sizes when media files are missing", () => {
+    const missingPath = join(root, "2026-06-12_10-32-00-death-10s.mp4");
+    repository.upsert(
+      createReplayClip({
+        id: "stale-size",
+        kind: "death",
+        processedClipPath: missingPath,
+        sizeBytes: 4096,
+      }),
+    );
+
+    const page = service.listLibrary({ kind: "death" });
+
+    expect(page.items).toEqual([
+      expect.objectContaining({ id: "stale-size", sizeBytes: 0 }),
+    ]);
+    expect(repository.get("stale-size")?.sizeBytes).toBe(0);
+  });
+
+  it("refreshes clip size from available media paths while ignoring stale alternates", () => {
+    const availablePath = join(root, "2026-06-12_10-33-00-death-10s.mp4");
+    const missingPath = join(root, "2026-06-12_10-34-00-death-10s.mp4");
+    writeFileSync(availablePath, "available");
+    repository.upsert(
+      createReplayClip({
+        id: "partially-stale-size",
+        kind: "death",
+        originalObsPath: missingPath,
+        processedClipPath: availablePath,
+        sizeBytes: 0,
+      }),
+    );
+
+    const page = service.listLibrary({ kind: "death" });
+
+    expect(page.items).toEqual([
+      expect.objectContaining({
+        id: "partially-stale-size",
+        sizeBytes: 9,
+      }),
+    ]);
+    expect(repository.get("partially-stale-size")?.sizeBytes).toBe(9);
   });
 
   it("sorts clip library rows by display fields and applies query defaults", () => {

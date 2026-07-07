@@ -67,6 +67,8 @@ interface ReplayClipEditorListFilter {
   createdAfter?: string;
   excludeIds?: string[];
   includeIds?: string[];
+  mediaPathOnly?: boolean;
+  positiveMediaOnly?: boolean;
 }
 
 type ReplayClipRepositoryListFilter = ReplayClipListFilter &
@@ -226,7 +228,7 @@ class ReplayClipsRepository {
     };
   }
 
-  count(filter: ReplayClipListFilter = {}): number {
+  count(filter: ReplayClipRepositoryListFilter = {}): number {
     const row = this.database.queryOne(
       this.createFilteredQuery(filter).select((eb) =>
         eb.fn.countAll<number>().as("count"),
@@ -394,6 +396,14 @@ class ReplayClipsRepository {
     }
     if (filter.createdAfter) {
       query = query.where("created_at", ">=", filter.createdAfter);
+    }
+    if (filter.mediaPathOnly) {
+      query = query.where(
+        sql<boolean>`coalesce(processed_clip_path, original_obs_path, '') != ''`,
+      );
+    }
+    if (filter.positiveMediaOnly) {
+      query = query.where("size_bytes", ">", 0);
     }
     if (filter.includeIds && filter.includeIds.length > 0) {
       query = query.where("id", "in", filter.includeIds);

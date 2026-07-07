@@ -134,6 +134,17 @@ describe("ReplayClipsRepository", () => {
       expect.objectContaining({ sizeBytes: 40 }),
     );
     expect(repository.listMissingSizeClips({ game: "poe2" })).toEqual([]);
+    expect(
+      repository
+        .listLibraryPage({
+          filter: { game: "poe2", mediaPathOnly: true },
+          pageIndex: 0,
+          pageSize: 2,
+          sortBy: "createdAt",
+          sortDirection: "desc",
+        })
+        .items.map((clip) => clip.id),
+    ).toEqual(["manual", "large"]);
     expect(repository.listStoragePaths()).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: "small" }),

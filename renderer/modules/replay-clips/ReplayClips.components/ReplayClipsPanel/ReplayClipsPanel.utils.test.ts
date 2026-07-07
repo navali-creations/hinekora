@@ -5,21 +5,11 @@ import { createReplayClip } from "~/main/test/factories/replayClip";
 import {
   getCellClassName,
   getHeaderClassName,
-  hasPlayableClip,
+  getRowClassName,
   resolveSortBy,
 } from "./ReplayClipsPanel.utils";
 
 describe("ReplayClipsPanel utils", () => {
-  it("detects playable clips from available media paths", () => {
-    expect(hasPlayableClip(createReplayClip())).toBe(false);
-    expect(
-      hasPlayableClip(createReplayClip({ processedClipPath: "clip.mp4" })),
-    ).toBe(true);
-    expect(
-      hasPlayableClip(createReplayClip({ originalObsPath: "original.mp4" })),
-    ).toBe(true);
-  });
-
   it("resolves supported sort keys with a created-at fallback", () => {
     expect(resolveSortBy("name")).toBe("name");
     expect(resolveSortBy("sizeBytes")).toBe("sizeBytes");
@@ -32,5 +22,16 @@ describe("ReplayClipsPanel utils", () => {
     expect(getHeaderClassName("actions")).toContain("text-right");
     expect(getCellClassName("name")).toContain("max-w-0");
     expect(getCellClassName("targetDurationSeconds")).toContain("tabular-nums");
+  });
+
+  it("dims unavailable rows", () => {
+    expect(
+      getRowClassName(
+        createReplayClip({ processedClipPath: "clip.mp4", sizeBytes: 1 }),
+      ),
+    ).toBe("");
+    expect(getRowClassName(createReplayClip())).toContain(
+      "text-base-content/45",
+    );
   });
 });

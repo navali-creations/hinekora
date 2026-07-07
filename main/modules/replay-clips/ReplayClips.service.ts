@@ -66,6 +66,7 @@ import { ReplayClipsRepository } from "./ReplayClips.repository";
 const REPLAY_CLIPS_LOG_SCOPE = "replay-clips";
 const REPLAY_CLIP_MEDIA_SCHEME = "hinekora-media";
 const defaultLibraryPageSize = 20;
+const maxEditorReplayPageValidationCandidates = 500;
 const maxLibraryPageSize = 100;
 const librarySortKeys: ReplayClipLibrarySortKey[] = [
   "createdAt",
@@ -75,6 +76,11 @@ const librarySortKeys: ReplayClipLibrarySortKey[] = [
   "sizeBytes",
 ];
 const librarySortDirections: ReplayClipLibrarySortDirection[] = ["asc", "desc"];
+
+interface AvailableReplayClip {
+  clip: ReplayClip;
+  storedClipPath: string;
+}
 
 class ReplayClipsService {
   private static instance: ReplayClipsService | null = null;
@@ -135,6 +141,8 @@ class ReplayClipsService {
       createdAfter?: string;
       excludeIds?: string[];
       includeIds?: string[];
+      mediaPathOnly?: boolean;
+      positiveMediaOnly?: boolean;
     } = {
       kind: input.kind,
       ...(input.createdAfter ? { createdAfter: input.createdAfter } : {}),
@@ -151,30 +159,70 @@ class ReplayClipsService {
     if (input.league) {
       filter.league = input.league;
     }
-    const page = this.repository.listLibraryPage({
-      filter,
-      pageIndex: input.pageIndex,
-      pageSize: input.pageSize,
-      sortBy: "createdAt",
-      sortDirection: "desc",
+
+    const candidateFilter = {
+      ...filter,
+      mediaPathOnly: true,
+      positiveMediaOnly: true,
+    };
+    const items: ReplayClipDetail[] = [];
+    const seenAvailableClipIds = new Set<string>();
+    let validatedCandidates = 0;
+
+    while (
+      items.length < input.pageSize &&
+      validatedCandidates < maxEditorReplayPageValidationCandidates
+    ) {
+      const page = this.repository.listLibraryPage({
+        filter: candidateFilter,
+        pageIndex: input.pageIndex,
+        pageSize: input.pageSize,
+        sortBy: "createdAt",
+        sortDirection: "desc",
+      });
+      if (page.items.length === 0) {
+        break;
+      }
+
+      let removedMissingCandidate = false;
+      let inspectedCandidate = false;
+      for (const clip of page.items) {
+        if (seenAvailableClipIds.has(clip.id)) {
+          continue;
+        }
+        if (validatedCandidates >= maxEditorReplayPageValidationCandidates) {
+          break;
+        }
+        inspectedCandidate = true;
+        validatedCandidates += 1;
+        const availableClip = this.resolveAvailableReplayClip(clip);
+        if (!availableClip) {
+          removedMissingCandidate = true;
+          continue;
+        }
+
+        seenAvailableClipIds.add(availableClip.clip.id);
+        items.push(this.createAvailableReplayClipDetail(availableClip));
+        if (items.length >= input.pageSize) {
+          break;
+        }
+      }
+
+      if (
+        !removedMissingCandidate ||
+        !inspectedCandidate ||
+        page.items.length < input.pageSize
+      ) {
+        break;
+      }
+    }
+    const knownAvailableCount = this.repository.count({
+      ...candidateFilter,
     });
 
     return {
-      items: page.items.map((clip) => {
-        const sizedClip = this.withClipSize(clip, true);
-        const storedClipPath = this.getStoredClipPathForClip(sizedClip);
-
-        return {
-          clip: sizedClip,
-          durationSeconds:
-            sizedClip.durationSeconds ??
-            this.readReplayClipDuration(storedClipPath),
-          mediaUrl: storedClipPath
-            ? createReplayClipMediaUrl(sizedClip.id)
-            : null,
-        };
-      }),
-      totalCount: page.totalCount,
+      items,
+      totalCount: knownAvailableCount,
     };
   }
 
@@ -747,6 +795,34 @@ class ReplayClipsService {
     );
   }
 
+  private resolveAvailableReplayClip(
+    clip: ReplayClip,
+  ): AvailableReplayClip | null {
+    const storedClipPath = this.getStoredClipPathForClip(clip);
+    if (!storedClipPath) {
+      this.repository.updateSize(clip.id, 0);
+
+      return null;
+    }
+
+    return {
+      clip,
+      storedClipPath,
+    };
+  }
+
+  private createAvailableReplayClipDetail({
+    clip,
+    storedClipPath,
+  }: AvailableReplayClip): ReplayClipDetail {
+    return {
+      clip,
+      durationSeconds:
+        clip.durationSeconds ?? this.readReplayClipDuration(storedClipPath),
+      mediaUrl: createReplayClipMediaUrl(clip.id),
+    };
+  }
+
   private readReplayClipDuration(path: string | null): number | null {
     return path ? readMp4DurationSeconds(path) : null;
   }
@@ -1006,9 +1082,21 @@ class ReplayClipsService {
   }
 
   private withClipSize(clip: ReplayClip, persist = false): ReplayClip {
+    if (!this.getStoredClipPathForClip(clip)) {
+      if (persist && clip.sizeBytes !== 0) {
+        this.repository.updateSize(clip.id, 0);
+      }
+
+      return {
+        ...clip,
+        sizeBytes: 0,
+      };
+    }
+
     if (clip.sizeBytes > 0) {
       return clip;
     }
+
     const sizeBytes = this.calculateClipSizeBytes(clip);
     if (persist && sizeBytes !== clip.sizeBytes) {
       this.repository.updateSize(clip.id, sizeBytes);

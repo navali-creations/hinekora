@@ -8,7 +8,6 @@ import {
   type SortingState,
   useReactTable,
 } from "@tanstack/react-table";
-import clsx from "clsx";
 import { useEffect, useMemo, useState } from "react";
 
 import type { ReplayClipLibraryQuery } from "~/main/modules/replay-clips";
@@ -22,11 +21,12 @@ import {
 import { useReplayClipsShallow } from "~/renderer/store";
 
 import type { ReplayClip } from "~/types";
+import { hasPlayableClip } from "../../ReplayClips.utils/ReplayClips.utils";
 import { ReplayClipTableActions } from "../ReplayClipTableActions/ReplayClipTableActions";
 import {
   getCellClassName,
   getHeaderClassName,
-  hasPlayableClip,
+  getRowClassName,
   resolveSortBy,
 } from "./ReplayClipsPanel.utils";
 
@@ -169,13 +169,12 @@ function ReplayClipsPanel({
         id: "name",
         accessorFn: (clip) => clip.processedClipPath ?? clip.originalObsPath,
         header: "Name",
-        cell: ({ row, getValue }) => {
+        cell: ({ getValue }) => {
           const path = getValue<string | null>();
-          const playable = hasPlayableClip(row.original);
 
           return (
             <span
-              className={clsx("block truncate", !playable && "opacity-60")}
+              className="block truncate"
               title={path ?? "Clip is still processing"}
             >
               {getPathFileName(path)}
@@ -212,9 +211,11 @@ function ReplayClipsPanel({
   return (
     <section className="col-span-12 flex min-h-0 flex-col overflow-hidden rounded-lg bg-base-200">
       <MediaLibraryTable
+        canRowClick={hasPlayableClip}
         emptyMessage="No clips match this page filter."
         getCellClassName={getCellClassName}
         getHeaderClassName={getHeaderClassName}
+        getRowClassName={getRowClassName}
         onRowClick={handleRowClick}
         table={table}
         totalCount={libraryPage?.totalCount ?? items.length}

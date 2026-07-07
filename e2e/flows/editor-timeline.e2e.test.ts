@@ -264,6 +264,69 @@ test("covers My Media tabs, pagination, league filters, and moving clips into an
   await expectNoTimelineOverlap(page);
 });
 
+test("keeps unavailable clip candidates out while preserving missing recordings", async ({
+  page,
+}) => {
+  const unavailableAssets = Array.from({ length: 5 }, (_, index) => ({
+    ...createEditorE2EAsset({
+      category: "death-clip",
+      createdAt: `2999-01-01T00:00:0${index}.000Z`,
+      id: `missing-candidate-${index}`,
+      kind: "clip",
+      name: `missing-candidate-${index}.mp4`,
+      subtitle: "Death clip - Standard",
+    }),
+    exists: false,
+    mediaUrl: null,
+    sizeBytes: 0,
+  }));
+  const unavailableRecording = {
+    ...createEditorE2EAsset({
+      category: "recording",
+      createdAt: "2999-01-01T00:00:10.000Z",
+      id: "missing-recording",
+      kind: "recording",
+      name: "missing-recording.mp4",
+      subtitle: "Recording - Standard",
+    }),
+    exists: false,
+    mediaUrl: null,
+    sizeBytes: 0,
+    status: "missing" as const,
+  };
+  await setupEditorE2E(page, {
+    extraAssets: [...unavailableAssets, unavailableRecording],
+  });
+  const mediaRail = page.locator("[data-onboarding='editor-my-media']");
+
+  await page.getByLabel("Media type").selectOption("death-clip");
+  await page.getByRole("tab", { name: "All" }).click();
+
+  await expect(mediaRail.getByText("6 items")).toBeVisible();
+  await expect(
+    mediaRail.getByRole("button", { name: /missing-candidate-0\.mp4/ }),
+  ).toBeHidden();
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-2\.mp4/ }),
+  ).toBeVisible();
+
+  await page.getByRole("button", { name: "Next media page" }).click();
+  await expect(mediaRail.getByText("6 items")).toBeVisible();
+  await expect(
+    mediaRail.getByRole("button", { name: /asset-7\.mp4/ }),
+  ).toBeVisible();
+  await expect(
+    mediaRail.getByRole("button", { name: /missing-candidate-4\.mp4/ }),
+  ).toBeHidden();
+
+  await page.getByLabel("Media type").selectOption("recording");
+  const missingRecordingCard = mediaRail.getByRole("button", {
+    name: /missing-recording\.mp4/,
+  });
+  await expect(missingRecordingCard).toBeVisible();
+  await expect(missingRecordingCard).toBeDisabled();
+});
+
 test("covers editor help, shortcuts, saved-edit rail, and debug actions", async ({
   page,
 }) => {
