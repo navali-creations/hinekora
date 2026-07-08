@@ -2,11 +2,14 @@ import type {
   EditorMediaAssetPageQuery,
   EditorMediaReference,
   EditorProject,
+  EditorTimelineClip,
 } from "~/main/modules/editor";
 import { trackEvent } from "~/renderer/modules/umami";
 
 import {
+  calculateTimelineDuration,
   clampEditorTimelineZoom,
+  clampTrimRange,
   roundToMilliseconds,
 } from "../Editor.utils/Editor.utils";
 import {
@@ -38,6 +41,7 @@ type EditorWorkspaceActions = Pick<
   | "createProject"
   | "deleteAllProjects"
   | "deleteProject"
+  | "applySingleClipTrimDraft"
   | "fitTimelineToEdit"
   | "hydrate"
   | "hydrateMediaAssets"
@@ -263,6 +267,89 @@ function createEditorWorkspaceActions({
           state.editor.isLoading = false;
         });
       }
+    },
+    applySingleClipTrimDraft: (draft) => {
+      updateProject(
+        (project) => {
+          const asset = project.assets.find(
+            (item) =>
+              item.id === draft.source.id && item.kind === draft.source.kind,
+          );
+          if (!asset) {
+            return project;
+          }
+
+          const clipsForAsset = project.tracks
+            .flatMap((track) => track.clips)
+            .filter((clip) => clip.assetKey === asset.assetKey);
+          if (clipsForAsset.length !== 1) {
+            return project;
+          }
+
+          const clipId = clipsForAsset[0]?.id;
+          if (!clipId) {
+            return project;
+          }
+
+          const range = clampTrimRange({
+            asset,
+            inSeconds: draft.inSeconds,
+            outSeconds: draft.outSeconds,
+          });
+          const title = draft.title?.trim();
+          let didChangeClip = false;
+          const tracks = project.tracks.map((track) => ({
+            ...track,
+            clips: track.clips.map((clip) => {
+              if (clip.id !== clipId) {
+                return clip;
+              }
+
+              didChangeClip =
+                clip.durationSeconds !== range.durationSeconds ||
+                clip.inSeconds !== range.inSeconds ||
+                clip.outSeconds !== range.outSeconds ||
+                clip.startSeconds !== 0;
+
+              if (!didChangeClip) {
+                return clip;
+              }
+
+              const nextClip: EditorTimelineClip = {
+                ...clip,
+                durationSeconds: range.durationSeconds,
+                inSeconds: range.inSeconds,
+                outSeconds: range.outSeconds,
+                sourceInSeconds: 0,
+                startSeconds: 0,
+              };
+              if (typeof asset.durationSeconds === "number") {
+                nextClip.sourceOutSeconds = asset.durationSeconds;
+              } else {
+                delete nextClip.sourceOutSeconds;
+              }
+
+              return nextClip;
+            }),
+          }));
+          const nextTitle =
+            title && project.title !== title ? title : project.title;
+          if (!didChangeClip && nextTitle === project.title) {
+            return project;
+          }
+
+          return {
+            ...project,
+            activeClipId: clipId,
+            durationSeconds: calculateTimelineDuration(tracks),
+            selectedAssetKey: asset.assetKey,
+            title: nextTitle,
+            tracks,
+            updatedAt: new Date().toISOString(),
+          };
+        },
+        { historyLabel: "Quick trim", recordHistory: false },
+      );
     },
     hydrate: async (source?: EditorMediaReference | null) => {
       const requestId = createRouteRequestId();

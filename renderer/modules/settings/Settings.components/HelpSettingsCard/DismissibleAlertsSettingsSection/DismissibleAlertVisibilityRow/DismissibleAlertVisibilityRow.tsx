@@ -9,7 +9,8 @@ import { SettingsToggleRow } from "../../../SettingsToggleRow/SettingsToggleRow"
 type DismissibleAlertSettingKey =
   | "groupPlayDeathAlertDismissed"
   | "captureModeInfoAlertDismissed"
-  | "recorderSettingsInfoAlertDismissed";
+  | "recorderSettingsInfoAlertDismissed"
+  | "clipPreviewInfoAlertDismissed";
 
 interface DismissibleAlertVisibilityRowProps {
   alertId: string;

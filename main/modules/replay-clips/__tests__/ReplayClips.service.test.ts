@@ -2,6 +2,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -19,6 +20,7 @@ import {
 } from "vitest";
 
 import { DatabaseService } from "~/main/modules/database";
+import { WindowName } from "~/main/modules/main-window";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
@@ -26,6 +28,10 @@ import { SettingsStoreService } from "~/main/modules/settings-store";
 import { createReplayClip } from "~/main/test/factories/replayClip";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
 import * as FileClipboard from "~/main/utils/file-clipboard";
+import {
+  clearIpcWindowRolesForTests,
+  registerIpcWindowRole,
+} from "~/main/utils/ipc-window-roles";
 
 import { createDefaultSettings } from "~/types";
 import { ReplayClipsChannel } from "../ReplayClips.channels";
@@ -108,6 +114,7 @@ afterEach(() => {
   electronMocks.protocolHandle.mockReset();
   electronMocks.showItemInFolder.mockReset();
   vi.restoreAllMocks();
+  clearIpcWindowRolesForTests();
   database.close();
   DatabaseService.resetForTests();
   rmSync(root, { force: true, recursive: true });
@@ -169,6 +176,46 @@ describe("ReplayClipsService file actions", () => {
       mediaUrl: null,
     });
     expect(service.getClip("missing")).toBeNull();
+  });
+
+  it("renames replay clip files and publishes refreshed metadata", async () => {
+    const directory = join(root, "Death Clips");
+    mkdirSync(directory);
+    const path = join(directory, "clip-1.mp4");
+    writeFileSync(path, "clip-data");
+    repository.upsert(
+      createReplayClip({
+        id: "clip-1",
+        originalObsPath: path,
+        processedClipPath: path,
+      }),
+    );
+
+    await expect(
+      service.updateClipFile({ id: "clip-1", name: "Boss: kill" }),
+    ).resolves.toEqual({
+      detail: {
+        clip: expect.objectContaining({
+          id: "clip-1",
+          originalObsPath: resolve(join(directory, "Boss kill.mp4")),
+          processedClipPath: resolve(join(directory, "Boss kill.mp4")),
+          sizeBytes: 9,
+        }),
+        durationSeconds: null,
+        mediaUrl: "hinekora-media://replay-clip/clip-1",
+      },
+      error: null,
+      ok: true,
+    });
+    expect(existsSync(path)).toBe(false);
+    expect(existsSync(join(directory, "Boss kill.mp4"))).toBe(true);
+    expect(send).toHaveBeenCalledWith(
+      ReplayClipsChannel.StatusChanged,
+      expect.objectContaining({
+        id: "clip-1",
+        processedClipPath: resolve(join(directory, "Boss kill.mp4")),
+      }),
+    );
   });
 
   it("lists paged replay details for the editor media rail", () => {
@@ -826,6 +873,54 @@ describe("ReplayClipsService file actions", () => {
       error: null,
     });
     expect(copyFileToClipboard).toHaveBeenCalledWith(resolve(path));
+  });
+
+  it("renders selected trim ranges before copying clips to the clipboard", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({
+        durationSeconds: 51.6,
+        processedClipPath: path,
+        targetDurationSeconds: 52,
+      }),
+    );
+    const copyFileToClipboard = vi
+      .spyOn(FileClipboard, "copyFileToClipboard")
+      .mockResolvedValue({ ok: true, error: null });
+    const renderReplayClipQuickTrim = vi
+      .spyOn(
+        service as unknown as {
+          renderReplayClipQuickTrim: (input: {
+            outputPath: string;
+            sourcePath: string;
+            trim: { inSeconds: number; outSeconds: number };
+          }) => Promise<void>;
+        },
+        "renderReplayClipQuickTrim",
+      )
+      .mockImplementation(async (input) => {
+        writeFileSync(input.outputPath, "trimmed");
+      });
+
+    await expect(
+      service.copyClipToClipboard({
+        id: "clip-1",
+        trim: { inSeconds: 14.76, outSeconds: 36.46 },
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      error: null,
+    });
+
+    expect(renderReplayClipQuickTrim).toHaveBeenCalledWith({
+      outputPath: expect.stringContaining("2026-06-12_10-30-00-"),
+      sourcePath: resolve(path),
+      trim: { inSeconds: 14.76, outSeconds: 36.46 },
+    });
+    const copiedPath = copyFileToClipboard.mock.calls[0]?.[0];
+    expect(copiedPath).not.toBe(resolve(path));
+    expect(readFileSync(copiedPath ?? "", "utf8")).toBe("trimmed");
   });
 
   it("returns safe errors when clip clipboard copy throws", async () => {
@@ -1493,6 +1588,15 @@ describe("ReplayClipsService file actions", () => {
       mediaUrl: "hinekora-media://replay-clip/clip-1",
     });
     vi.spyOn(ipcService, "saveManualReplay").mockResolvedValue(clip);
+    vi.spyOn(ipcService, "updateClipFile").mockResolvedValue({
+      detail: {
+        clip,
+        durationSeconds: null,
+        mediaUrl: "hinekora-media://replay-clip/clip-1",
+      },
+      error: null,
+      ok: true,
+    });
     vi.spyOn(ipcService, "openClip").mockResolvedValue({
       ok: true,
       error: null,
@@ -1557,6 +1661,24 @@ describe("ReplayClipsService file actions", () => {
     expect(await handlers.get(ReplayClipsChannel.SaveManualReplay)?.({})).toBe(
       clip,
     );
+    expect(
+      await handlers.get(ReplayClipsChannel.Update)?.(
+        {},
+        {
+          id: "clip-1",
+          name: "Renamed clip",
+          trim: { inSeconds: 1, outSeconds: 2 },
+        },
+      ),
+    ).toEqual({
+      detail: {
+        clip,
+        durationSeconds: null,
+        mediaUrl: "hinekora-media://replay-clip/clip-1",
+      },
+      error: null,
+      ok: true,
+    });
     expect(await handlers.get(ReplayClipsChannel.Open)?.({}, "clip-1")).toEqual(
       {
         ok: true,
@@ -1569,12 +1691,19 @@ describe("ReplayClipsService file actions", () => {
       ok: true,
       error: null,
     });
-    expect(await handlers.get(ReplayClipsChannel.Copy)?.({}, "clip-1")).toEqual(
-      {
-        ok: true,
-        error: null,
-      },
-    );
+    registerIpcWindowRole({ id: 42 }, WindowName.ClipPreviewOverlay);
+    expect(
+      await handlers.get(ReplayClipsChannel.Copy)?.(
+        { sender: { id: 42 } },
+        {
+          id: "clip-1",
+          trim: { inSeconds: 1, outSeconds: 2 },
+        },
+      ),
+    ).toEqual({
+      ok: true,
+      error: null,
+    });
     expect(
       await handlers.get(ReplayClipsChannel.Delete)?.({}, "clip-1"),
     ).toEqual({
@@ -1674,6 +1803,28 @@ describe("ReplayClipsService file actions", () => {
     expect(await handlers.get(ReplayClipsChannel.Get)?.({}, "")).toEqual({
       ok: false,
       error: "id is too short",
+    });
+    expect(await handlers.get(ReplayClipsChannel.Update)?.({}, {})).toEqual({
+      ok: false,
+      error: "id must be a string",
+    });
+    expect(
+      await handlers.get(ReplayClipsChannel.Update)?.(
+        {},
+        { id: "clip-1", trim: { inSeconds: 1, outSeconds: 1.05 } },
+      ),
+    ).toEqual({
+      ok: false,
+      error: "trim range is too short",
+    });
+    expect(
+      await handlers.get(ReplayClipsChannel.Copy)?.(
+        {},
+        { id: "clip-1", trim: { inSeconds: 1, outSeconds: 1.05 } },
+      ),
+    ).toEqual({
+      ok: false,
+      error: "trim range is too short",
     });
     expect(await handlers.get(ReplayClipsChannel.Reveal)?.({}, "")).toEqual({
       ok: false,

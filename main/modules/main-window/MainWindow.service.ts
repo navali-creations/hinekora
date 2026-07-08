@@ -8,8 +8,11 @@ import { UpdaterService } from "~/main/modules/updater";
 import { logWarn } from "~/main/utils/app-log";
 import { validateBoundsOnDisplays } from "~/main/utils/display-geometry";
 import {
+  assertNumber,
+  assertObject,
   assertString,
   handleValidationError,
+  IpcValidationError,
   safeErrorMessage,
 } from "~/main/utils/ipc-validation";
 import {
@@ -20,12 +23,17 @@ import {
 
 import { HINEKORA_DISCORD_URL, HINEKORA_GITHUB_URL } from "~/types";
 import { MainWindowChannel } from "./MainWindow.channels";
-import { WindowName } from "./MainWindow.types";
+import {
+  type MainWindowOpenEditorClipOptions,
+  WindowName,
+} from "./MainWindow.types";
 import { isAllowedExternalUrl } from "./MainWindow.utils";
 
 const currentDir = __dirname;
 const START_MINIMIZED_ARG = "--hidden";
 const MAIN_WINDOW_EDITOR_CLIP_ID_MAX_LENGTH = 128;
+const MAIN_WINDOW_EDITOR_CLIP_TITLE_MAX_LENGTH = 120;
+const MAIN_WINDOW_EDITOR_CLIP_TRIM_MAX_SECONDS = 3_600;
 const MAIN_WINDOW_LOG_SCOPE = "main-window";
 const MAIN_WINDOW_DEFAULT_WIDTH = 1200;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 800;
@@ -208,17 +216,19 @@ class MainWindowService {
     registerGuardedIpcHandler(
       MainWindowChannel.OpenEditorClip,
       [WindowName.Main, WindowName.ClipPreviewOverlay],
-      (_event, clipId: unknown) => {
+      (_event, clipId: unknown, options: unknown) => {
+        let openOptions: MainWindowOpenEditorClipOptions | null = null;
         try {
           assertString(clipId, "clip id", MainWindowChannel.OpenEditorClip, {
             min: 1,
             max: MAIN_WINDOW_EDITOR_CLIP_ID_MAX_LENGTH,
           });
+          openOptions = this.validateOpenEditorClipOptions(options);
         } catch (error) {
           return handleValidationError(error);
         }
 
-        return this.openEditorClip(clipId);
+        return this.openEditorClip(clipId, openOptions);
       },
     );
 
@@ -246,9 +256,12 @@ class MainWindowService {
     this.mainWindow?.hide();
   }
 
-  private async openEditorClip(clipId: string): Promise<void> {
+  private async openEditorClip(
+    clipId: string,
+    options: MainWindowOpenEditorClipOptions | null = null,
+  ): Promise<void> {
     const mainWindow = await this.createMainWindow();
-    await this.navigateMainWindowToEditorClip(mainWindow, clipId);
+    await this.navigateMainWindowToEditorClip(mainWindow, clipId, options);
     this.showMainWindow();
   }
 
@@ -261,15 +274,77 @@ class MainWindowService {
   private async navigateMainWindowToEditorClip(
     mainWindow: BrowserWindow,
     clipId: string,
+    options: MainWindowOpenEditorClipOptions | null = null,
   ): Promise<void> {
     if (mainWindow.isDestroyed()) {
       return;
     }
 
-    const hash = `#/editor?kind=clip&id=${encodeURIComponent(clipId)}`;
+    const params = new URLSearchParams({ kind: "clip", id: clipId });
+    if (options?.trim) {
+      params.set("trimIn", String(options.trim.inSeconds));
+      params.set("trimOut", String(options.trim.outSeconds));
+    }
+    if (options?.title) {
+      params.set("title", options.title);
+    }
+
+    const hash = `#/editor?${params.toString().replaceAll("+", "%20")}`;
     await mainWindow.webContents.executeJavaScript(
       `globalThis.location.hash = ${JSON.stringify(hash)}`,
     );
+  }
+
+  private validateOpenEditorClipOptions(
+    value: unknown,
+  ): MainWindowOpenEditorClipOptions | null {
+    if (value === undefined || value === null) {
+      return null;
+    }
+
+    assertObject(
+      value,
+      "editor clip options",
+      MainWindowChannel.OpenEditorClip,
+    );
+    const result: MainWindowOpenEditorClipOptions = {};
+    if (value.title !== undefined && value.title !== null) {
+      assertString(
+        value.title,
+        "clip title",
+        MainWindowChannel.OpenEditorClip,
+        { max: MAIN_WINDOW_EDITOR_CLIP_TITLE_MAX_LENGTH },
+      );
+      result.title = value.title;
+    }
+
+    if (value.trim !== undefined && value.trim !== null) {
+      assertObject(value.trim, "clip trim", MainWindowChannel.OpenEditorClip);
+      assertNumber(
+        value.trim.inSeconds,
+        "trim start",
+        MainWindowChannel.OpenEditorClip,
+        { min: 0, max: MAIN_WINDOW_EDITOR_CLIP_TRIM_MAX_SECONDS },
+      );
+      assertNumber(
+        value.trim.outSeconds,
+        "trim end",
+        MainWindowChannel.OpenEditorClip,
+        { min: 0.1, max: MAIN_WINDOW_EDITOR_CLIP_TRIM_MAX_SECONDS },
+      );
+      if (value.trim.outSeconds - value.trim.inSeconds < 0.1) {
+        throw new IpcValidationError(
+          MainWindowChannel.OpenEditorClip,
+          "trim range is too short",
+        );
+      }
+      result.trim = {
+        inSeconds: value.trim.inSeconds,
+        outSeconds: value.trim.outSeconds,
+      };
+    }
+
+    return result;
   }
 
   private async navigateMainWindowToSettingsHelp(

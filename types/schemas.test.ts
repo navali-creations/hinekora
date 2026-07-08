@@ -59,6 +59,7 @@ describe("shared schemas", () => {
       poe1CharacterName: "",
       poe2CharacterName: "",
       captureModeInfoAlertDismissed: false,
+      clipPreviewInfoAlertDismissed: false,
       groupPlayDeathAlertDismissed: false,
       recorderSettingsInfoAlertDismissed: false,
       activeGame: "poe1",

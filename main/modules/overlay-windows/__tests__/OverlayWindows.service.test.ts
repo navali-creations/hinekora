@@ -841,7 +841,7 @@ describe("OverlayWindowsService", () => {
         x: 20,
         y: 94,
         width: 560,
-        height: 396,
+        height: 520,
       }),
     );
   });

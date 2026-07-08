@@ -1,11 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
-import { statSync } from "node:fs";
-import { unlink } from "node:fs/promises";
+import { existsSync, statSync } from "node:fs";
+import { copyFile, rename, rm, stat, unlink } from "node:fs/promises";
+import { basename, dirname, parse, resolve } from "node:path";
 
 import { app, BrowserWindow, protocol, shell } from "electron";
 
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
+import {
+  createEditorExportSegments,
+  type EditorResolvedExportClip,
+} from "~/main/modules/editor/Editor.export";
+import { renderEditorExportWithFfmpeg } from "~/main/modules/editor/Editor.ffmpeg";
+import {
+  cleanupEditorClipboardOutputDirectory,
+  createEditorClipboardOutputPath,
+  createEditorExportTempOutputPath,
+} from "~/main/modules/editor/Editor.files";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import type { ManagedReplayKind } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
@@ -43,6 +54,7 @@ import { ReplayClipsChannel } from "./ReplayClips.channels";
 import type {
   DeathEvent,
   ReplayClipBatchFileActionResult,
+  ReplayClipCopyInput,
   ReplayClipDetail,
   ReplayClipFileActionResult,
   ReplayClipLibraryPage,
@@ -50,6 +62,9 @@ import type {
   ReplayClipLibrarySortDirection,
   ReplayClipLibrarySortKey,
   ReplayClipListFilter,
+  ReplayClipTrimInput,
+  ReplayClipUpdateInput,
+  ReplayClipUpdateResult,
 } from "./ReplayClips.dto";
 import { ReplayClipDuplicateTracker } from "./ReplayClips.duplicates";
 import {
@@ -68,6 +83,9 @@ const REPLAY_CLIP_MEDIA_SCHEME = "hinekora-media";
 const defaultLibraryPageSize = 20;
 const maxEditorReplayPageValidationCandidates = 500;
 const maxLibraryPageSize = 100;
+const maxReplayClipQuickTrimSeconds = 3_600;
+const maxReplayClipRenameLength = 120;
+const minimumReplayClipQuickTrimSeconds = 0.1;
 const librarySortKeys: ReplayClipLibrarySortKey[] = [
   "createdAt",
   "name",
@@ -508,16 +526,136 @@ class ReplayClipsService {
     }
   }
 
-  async copyClipToClipboard(id: string): Promise<ReplayClipFileActionResult> {
+  async copyClipToClipboard(
+    input: string | ReplayClipCopyInput,
+  ): Promise<ReplayClipFileActionResult> {
+    const copyInput = typeof input === "string" ? { id: input } : input;
+
     try {
-      const clipPath = this.getStoredClipPath(id);
+      const clip = this.repository.get(copyInput.id);
+      if (!clip) {
+        return { ok: false, error: "Clip was not found" };
+      }
+
+      const clipPath = this.getStoredClipPathForClip(clip);
       if (!clipPath) {
         return { ok: false, error: "Clip file path is not available" };
+      }
+
+      const durationSeconds =
+        this.readReplayClipDuration(clipPath) ??
+        clip.durationSeconds ??
+        clip.targetDurationSeconds;
+      const trim = copyInput.trim
+        ? this.resolveReplayClipQuickTrim(copyInput.trim, durationSeconds)
+        : null;
+      const didTrim = trim
+        ? !isReplayClipFullRangeTrim(trim, durationSeconds)
+        : false;
+
+      if (didTrim && trim) {
+        return await this.copyTrimmedClipToClipboard({
+          sourcePath: clipPath,
+          trim,
+        });
       }
 
       return await FileClipboard.copyFileToClipboard(clipPath);
     } catch (error) {
       return { ok: false, error: safeErrorMessage(error) };
+    }
+  }
+
+  async updateClipFile(
+    input: ReplayClipUpdateInput,
+  ): Promise<ReplayClipUpdateResult> {
+    try {
+      const clip = this.repository.get(input.id);
+      if (!clip) {
+        return { ok: false, detail: null, error: "Clip was not found" };
+      }
+
+      const sourcePath = this.getStoredClipPathForClip(clip);
+      if (!sourcePath) {
+        return {
+          ok: false,
+          detail: null,
+          error: "Clip file path is not available",
+        };
+      }
+
+      const knownDurationSeconds =
+        this.readReplayClipDuration(sourcePath) ?? clip.durationSeconds;
+      const durationSeconds =
+        knownDurationSeconds ?? clip.targetDurationSeconds;
+      const trim = input.trim
+        ? this.resolveReplayClipQuickTrim(input.trim, durationSeconds)
+        : null;
+      const targetPath = this.resolveReplayClipRenameTarget(
+        sourcePath,
+        input.name ?? null,
+      );
+      const finalPath = targetPath ?? sourcePath;
+      const didRename =
+        targetPath !== null && !arePathsEqual(sourcePath, targetPath);
+      const didTrim = trim
+        ? !isReplayClipFullRangeTrim(trim, durationSeconds)
+        : false;
+
+      if (didTrim && trim) {
+        await this.renderReplayClipQuickTrim({
+          outputPath: finalPath,
+          sourcePath,
+          trim,
+        });
+        if (didRename) {
+          await rm(sourcePath, { force: true });
+        }
+      } else if (didRename && targetPath) {
+        await rename(sourcePath, targetPath);
+      }
+
+      if (!didTrim && !didRename) {
+        return { ok: true, detail: this.getClip(clip.id), error: null };
+      }
+
+      const fileStats = await stat(finalPath);
+      let updatedClip = this.createUpdatedClipForStoredPath({
+        clip,
+        durationSeconds:
+          this.readReplayClipDuration(finalPath) ??
+          (didTrim && trim
+            ? roundReplayClipSeconds(trim.outSeconds - trim.inSeconds)
+            : clip.durationSeconds),
+        path: finalPath,
+        sizeBytes: fileStats.size,
+      });
+      updatedClip = {
+        ...updatedClip,
+        sizeBytes: this.calculateClipSizeBytes(updatedClip) || fileStats.size,
+      };
+      this.persistAndPublish(updatedClip);
+      logInfo(REPLAY_CLIPS_LOG_SCOPE, "Replay clip updated from overlay", {
+        clipId: updatedClip.id,
+        didRename,
+        didTrim,
+        durationSeconds: updatedClip.durationSeconds,
+        sizeBytes: updatedClip.sizeBytes,
+        ...createSafePathLogFields(finalPath, "clip"),
+      });
+
+      return {
+        ok: true,
+        detail: this.getClip(updatedClip.id),
+        error: null,
+      };
+    } catch (error) {
+      logError(REPLAY_CLIPS_LOG_SCOPE, "Replay clip update failed", {
+        clipId: input.id,
+        error: safeErrorMessage(error),
+      });
+
+      return { ok: false, detail: null, error: safeErrorMessage(error) };
     }
   }
 
@@ -704,6 +842,17 @@ class ReplayClipsService {
       () => this.saveManualReplay(),
     );
     registerGuardedIpcHandler(
+      ReplayClipsChannel.Update,
+      [WindowName.Main, WindowName.ClipPreviewOverlay],
+      (_event, input: unknown) => {
+        try {
+          return this.updateClipFile(this.validateUpdateInput(input));
+        } catch (error) {
+          return handleValidationError(error);
+        }
+      },
+    );
+    registerGuardedIpcHandler(
       ReplayClipsChannel.Open,
       [WindowName.Main, WindowName.ClipPreviewOverlay],
       (_event, id: unknown) => {
@@ -735,14 +884,10 @@ class ReplayClipsService {
     );
     registerGuardedIpcHandler(
       ReplayClipsChannel.Copy,
-      [WindowName.Main],
-      (_event, id: unknown) => {
+      [WindowName.Main, WindowName.ClipPreviewOverlay],
+      (_event, input: unknown) => {
         try {
-          assertString(id, "id", ReplayClipsChannel.Copy, {
-            min: 1,
-            max: 128,
-          });
-          return this.copyClipToClipboard(id);
+          return this.copyClipToClipboard(this.validateCopyInput(input));
         } catch (error) {
           return handleValidationError(error);
         }
@@ -825,6 +970,169 @@ class ReplayClipsService {
 
   private readReplayClipDuration(path: string | null): number | null {
     return path ? readMp4DurationSeconds(path) : null;
+  }
+
+  private async renderReplayClipQuickTrim(input: {
+    outputPath: string;
+    sourcePath: string;
+    trim: ReplayClipTrimInput;
+  }): Promise<void> {
+    const trimDurationSeconds = roundReplayClipSeconds(
+      input.trim.outSeconds - input.trim.inSeconds,
+    );
+    const exportClip: EditorResolvedExportClip = {
+      durationSeconds: trimDurationSeconds,
+      inSeconds: input.trim.inSeconds,
+      outSeconds: input.trim.outSeconds,
+      source: { path: input.sourcePath },
+      startSeconds: 0,
+    };
+    const segments = createEditorExportSegments(
+      [exportClip],
+      trimDurationSeconds,
+    );
+    const tempOutputPath = createEditorExportTempOutputPath(input.outputPath);
+
+    try {
+      await renderEditorExportWithFfmpeg({
+        outputPath: tempOutputPath,
+        resolution: "1080p",
+        segments,
+      });
+
+      if (arePathsEqual(input.sourcePath, input.outputPath)) {
+        await copyFile(tempOutputPath, input.outputPath);
+        await rm(tempOutputPath, { force: true });
+        return;
+      }
+
+      await rename(tempOutputPath, input.outputPath);
+    } catch (error) {
+      await rm(tempOutputPath, { force: true });
+      throw error;
+    }
+  }
+
+  private async copyTrimmedClipToClipboard(input: {
+    sourcePath: string;
+    trim: ReplayClipTrimInput;
+  }): Promise<ReplayClipFileActionResult> {
+    const outputPath = await createEditorClipboardOutputPath({
+      fileName: basename(input.sourcePath),
+      tempPath: app.getPath("temp"),
+    });
+
+    try {
+      await this.renderReplayClipQuickTrim({
+        outputPath,
+        sourcePath: input.sourcePath,
+        trim: input.trim,
+      });
+
+      const result = await FileClipboard.copyFileToClipboard(outputPath);
+      if (!result.ok) {
+        await rm(outputPath, { force: true });
+        return result;
+      }
+
+      await cleanupEditorClipboardOutputDirectory({
+        protectedPath: outputPath,
+        tempPath: app.getPath("temp"),
+      }).catch((error) => {
+        logWarn(
+          REPLAY_CLIPS_LOG_SCOPE,
+          "Replay clip clipboard cleanup failed",
+          {
+            error: safeErrorMessage(error),
+            ...createSafePathLogFields(outputPath, "clipboard"),
+          },
+        );
+      });
+
+      return result;
+    } catch (error) {
+      await rm(outputPath, { force: true });
+      throw error;
+    }
+  }
+
+  private resolveReplayClipRenameTarget(
+    sourcePath: string,
+    name: string | null,
+  ): string | null {
+    const normalizedName = normalizeReplayClipQuickName(name);
+    if (!normalizedName) {
+      return null;
+    }
+
+    const parsedSource = parse(sourcePath);
+    const extension = parsedSource.ext || ".mp4";
+    const targetDirectory = dirname(sourcePath);
+    const currentPath = resolve(sourcePath);
+    let candidate = resolve(targetDirectory, `${normalizedName}${extension}`);
+    if (arePathsEqual(currentPath, candidate)) {
+      return null;
+    }
+
+    let suffix = 2;
+    while (existsSync(candidate)) {
+      candidate = resolve(
+        targetDirectory,
+        `${normalizedName} (${suffix})${extension}`,
+      );
+      if (arePathsEqual(currentPath, candidate)) {
+        return null;
+      }
+      suffix += 1;
+    }
+
+    return candidate;
+  }
+
+  private resolveReplayClipQuickTrim(
+    trim: ReplayClipTrimInput,
+    durationSeconds: number,
+  ): ReplayClipTrimInput {
+    const duration = Number.isFinite(durationSeconds)
+      ? Math.max(durationSeconds, minimumReplayClipQuickTrimSeconds)
+      : maxReplayClipQuickTrimSeconds;
+    const inSeconds = clampReplayClipSeconds(trim.inSeconds, 0, duration);
+    const outSeconds = clampReplayClipSeconds(
+      trim.outSeconds,
+      inSeconds + Math.min(minimumReplayClipQuickTrimSeconds, duration),
+      duration,
+    );
+
+    return { inSeconds, outSeconds };
+  }
+
+  private createUpdatedClipForStoredPath(input: {
+    clip: ReplayClip;
+    durationSeconds: number | null;
+    path: string;
+    sizeBytes: number;
+  }): ReplayClip {
+    const hasProcessedPath =
+      typeof input.clip.processedClipPath === "string" &&
+      input.clip.processedClipPath.length > 0;
+    const originalMatchesProcessed =
+      input.clip.originalObsPath !== null &&
+      input.clip.processedClipPath !== null &&
+      arePathsEqual(input.clip.originalObsPath, input.clip.processedClipPath);
+
+    return {
+      ...input.clip,
+      durationSeconds: input.durationSeconds,
+      error: null,
+      originalObsPath:
+        !hasProcessedPath || originalMatchesProcessed
+          ? input.path
+          : input.clip.originalObsPath,
+      processedClipPath: hasProcessedPath ? input.path : null,
+      sizeBytes: input.sizeBytes,
+      status: "ready",
+      updatedAt: new Date().toISOString(),
+    };
   }
 
   private async deleteStoredClipFiles(clip: ReplayClip): Promise<void> {
@@ -976,6 +1284,79 @@ class ReplayClipsService {
     }
 
     return query;
+  }
+
+  private validateUpdateInput(value: unknown): ReplayClipUpdateInput {
+    assertObject(value, "clip update", ReplayClipsChannel.Update);
+    assertString(value.id, "id", ReplayClipsChannel.Update, {
+      min: 1,
+      max: 128,
+    });
+
+    const input: ReplayClipUpdateInput = { id: value.id };
+    if (value.name !== undefined && value.name !== null) {
+      assertString(value.name, "clip name", ReplayClipsChannel.Update, {
+        max: maxReplayClipRenameLength,
+      });
+      input.name = value.name;
+    }
+
+    if (value.trim !== undefined && value.trim !== null) {
+      input.trim = this.validateTrimInput(
+        value.trim,
+        ReplayClipsChannel.Update,
+      );
+    }
+
+    return input;
+  }
+
+  private validateCopyInput(value: unknown): ReplayClipCopyInput {
+    if (typeof value === "string") {
+      assertString(value, "id", ReplayClipsChannel.Copy, {
+        min: 1,
+        max: 128,
+      });
+
+      return { id: value };
+    }
+
+    assertObject(value, "clip copy", ReplayClipsChannel.Copy);
+    assertString(value.id, "id", ReplayClipsChannel.Copy, {
+      min: 1,
+      max: 128,
+    });
+
+    const input: ReplayClipCopyInput = { id: value.id };
+    if (value.trim !== undefined && value.trim !== null) {
+      input.trim = this.validateTrimInput(value.trim, ReplayClipsChannel.Copy);
+    }
+
+    return input;
+  }
+
+  private validateTrimInput(
+    value: unknown,
+    channel: ReplayClipsChannel,
+  ): ReplayClipTrimInput {
+    assertObject(value, "trim", channel);
+    assertNumber(value.inSeconds, "trim start", channel, {
+      min: 0,
+      max: maxReplayClipQuickTrimSeconds,
+    });
+    assertNumber(value.outSeconds, "trim end", channel, {
+      min: minimumReplayClipQuickTrimSeconds,
+      max: maxReplayClipQuickTrimSeconds,
+    });
+    const trim = value as { inSeconds: number; outSeconds: number };
+    if (trim.outSeconds - trim.inSeconds < minimumReplayClipQuickTrimSeconds) {
+      throw new IpcValidationError(channel, "trim range is too short");
+    }
+
+    return {
+      inSeconds: trim.inSeconds,
+      outSeconds: trim.outSeconds,
+    };
   }
 
   private validateListFilterForChannel(
@@ -1156,6 +1537,59 @@ class ReplayClipsService {
       app.getPath("videos"),
     );
   }
+}
+
+function normalizeReplayClipQuickName(name: string | null): string | null {
+  if (!name) {
+    return null;
+  }
+
+  const parsed = parse(basename(name));
+  const normalized = Array.from(
+    (parsed.name || parsed.base || "").replace(/[<>:"/\\|?*]/g, " "),
+  )
+    .map((character) => (character.charCodeAt(0) < 32 ? " " : character))
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return normalized.length > 0
+    ? normalized.slice(0, maxReplayClipRenameLength)
+    : null;
+}
+
+function isReplayClipFullRangeTrim(
+  trim: ReplayClipTrimInput,
+  durationSeconds: number,
+): boolean {
+  return (
+    trim.inSeconds <= 0.001 &&
+    Math.abs(trim.outSeconds - durationSeconds) <= 0.001
+  );
+}
+
+function clampReplayClipSeconds(
+  value: number,
+  min: number,
+  max: number,
+): number {
+  if (max < min) {
+    return roundReplayClipSeconds(min);
+  }
+
+  if (!Number.isFinite(value)) {
+    return roundReplayClipSeconds(min);
+  }
+
+  return roundReplayClipSeconds(Math.min(Math.max(value, min), max));
+}
+
+function roundReplayClipSeconds(seconds: number): number {
+  return Math.round(Math.max(seconds, 0) * 1_000) / 1_000;
+}
+
+function arePathsEqual(left: string, right: string): boolean {
+  return resolve(left).toLowerCase() === resolve(right).toLowerCase();
 }
 
 export { ReplayClipsService };

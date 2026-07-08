@@ -118,7 +118,7 @@ describe("DeathClipsOverlayService", () => {
     expect(electronMocks.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({
         width: 560,
-        height: 396,
+        height: 520,
         webPreferences: expect.objectContaining({ sandbox: true }),
       }),
     );
@@ -314,7 +314,7 @@ describe("DeathClipsOverlayService", () => {
     electronMocks.browserWindowFactory.mockReturnValueOnce(aboveWindow);
     await service.showClip(createClip({ id: "above" }));
     expect(electronMocks.BrowserWindow).toHaveBeenLastCalledWith(
-      expect.objectContaining({ x: 10, y: 96, width: 560, height: 396 }),
+      expect.objectContaining({ x: 10, y: 80, width: 560, height: 520 }),
     );
 
     service.hide();
@@ -328,7 +328,7 @@ describe("DeathClipsOverlayService", () => {
     electronMocks.browserWindowFactory.mockReturnValueOnce(clampedWindow);
     await service.showClip(createClip({ id: "clamped" }));
     expect(electronMocks.BrowserWindow).toHaveBeenLastCalledWith(
-      expect.objectContaining({ x: 240, y: 204, width: 560, height: 396 }),
+      expect.objectContaining({ x: 240, y: 80, width: 560, height: 520 }),
     );
   });
 });

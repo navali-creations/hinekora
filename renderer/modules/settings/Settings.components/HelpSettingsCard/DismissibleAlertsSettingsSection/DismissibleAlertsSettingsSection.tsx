@@ -32,6 +32,13 @@ const dismissibleAlertRows: ReadonlyArray<{
     settingKey: "recorderSettingsInfoAlertDismissed",
     title: "Recorder settings info alert",
   },
+  {
+    alertId: "clip-preview-info",
+    description:
+      "Reminds you that Manual Replays and Death Clips are available on the Clips page.",
+    settingKey: "clipPreviewInfoAlertDismissed",
+    title: "Clip preview info alert",
+  },
 ];
 
 function DismissibleAlertsSettingsSection() {
@@ -56,7 +63,9 @@ function DismissibleAlertsSettingsSection() {
 
       <section className="min-w-0 rounded-md border border-base-content/8 bg-base-300/35 p-3">
         <div className="mb-1 flex items-center justify-between gap-3">
-          <h4 className="truncate font-semibold text-sm">Dashboard</h4>
+          <h4 className="truncate font-semibold text-sm">
+            Dashboard and overlays
+          </h4>
           <span className="badge badge-ghost badge-sm shrink-0">
             {dismissedCount} / {dismissibleAlertRows.length} dismissed
           </span>

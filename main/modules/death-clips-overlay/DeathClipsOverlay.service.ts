@@ -18,7 +18,7 @@ import {
 import type { ReplayClip } from "~/types";
 
 const CLIP_PREVIEW_WIDTH = 560;
-const CLIP_PREVIEW_HEIGHT = 396;
+const CLIP_PREVIEW_HEIGHT = 520;
 const CLIP_PREVIEW_GAP = 8;
 const CLIP_PREVIEW_OVERLAY_FOCUS_ID = "clip-preview";
 const CLIP_PREVIEW_OVERLAY_SCOPE = "death-clips-overlay";

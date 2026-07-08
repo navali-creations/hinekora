@@ -199,6 +199,8 @@ describe("SettingsStoreService", () => {
           activeGame: "poe2",
           auraOverlayShowEditingFrame:
             updatedSettings.auraOverlayShowEditingFrame,
+          clipPreviewInfoAlertDismissed:
+            updatedSettings.clipPreviewInfoAlertDismissed,
           deathClipSeconds: updatedSettings.deathClipSeconds,
           selectedCaptureProfileId: updatedSettings.selectedCaptureProfileId,
           selectedCaptureProfileIdsByGame:
@@ -214,6 +216,8 @@ describe("SettingsStoreService", () => {
           activeGame: "poe2",
           auraOverlayShowEditingFrame:
             updatedSettings.auraOverlayShowEditingFrame,
+          clipPreviewInfoAlertDismissed:
+            updatedSettings.clipPreviewInfoAlertDismissed,
           deathClipSeconds: updatedSettings.deathClipSeconds,
           selectedCaptureProfileId: updatedSettings.selectedCaptureProfileId,
           selectedCaptureProfileIdsByGame:
@@ -231,7 +235,27 @@ describe("SettingsStoreService", () => {
         SettingsStoreChannel.Changed,
         expect.anything(),
       );
-      expect(clipPreviewOverlay.webContents.send).not.toHaveBeenCalled();
+      expect(clipPreviewOverlay.webContents.send).toHaveBeenCalledWith(
+        SettingsStoreChannel.OverlayChanged,
+        {
+          activeGame: "poe2",
+          auraOverlayShowEditingFrame:
+            updatedSettings.auraOverlayShowEditingFrame,
+          clipPreviewInfoAlertDismissed:
+            updatedSettings.clipPreviewInfoAlertDismissed,
+          deathClipSeconds: updatedSettings.deathClipSeconds,
+          selectedCaptureProfileId: updatedSettings.selectedCaptureProfileId,
+          selectedCaptureProfileIdsByGame:
+            updatedSettings.selectedCaptureProfileIdsByGame,
+          selectedProfileId: updatedSettings.selectedProfileId,
+          telemetryCrashReporting: updatedSettings.telemetryCrashReporting,
+          telemetryUsageAnalytics: updatedSettings.telemetryUsageAnalytics,
+        },
+      );
+      expect(clipPreviewOverlay.webContents.send).not.toHaveBeenCalledWith(
+        SettingsStoreChannel.Changed,
+        expect.anything(),
+      );
       expect(destroyedMainWindow.webContents.send).not.toHaveBeenCalled();
     } finally {
       database.close();
@@ -308,6 +332,8 @@ describe("SettingsStoreService", () => {
       );
       const expectedOverlaySnapshot = {
         activeGame: fullSettings.activeGame,
+        clipPreviewInfoAlertDismissed:
+          fullSettings.clipPreviewInfoAlertDismissed,
         deathClipSeconds: fullSettings.deathClipSeconds,
         selectedCaptureProfileId: fullSettings.selectedCaptureProfileId,
         selectedCaptureProfileIdsByGame:
@@ -329,19 +355,32 @@ describe("SettingsStoreService", () => {
       ).toThrow(
         "settings-store:get-overlay-snapshot is not available from this window",
       );
-      expect(() =>
-        handlers.get(SettingsStoreChannel.GetOverlaySnapshot)?.(
+      expect(
+        await handlers.get(SettingsStoreChannel.GetOverlaySnapshot)?.(
           clipPreviewEvent,
         ),
-      ).toThrow(
-        "settings-store:get-overlay-snapshot is not available from this window",
-      );
+      ).toMatchObject(expectedOverlaySnapshot);
       expect(
         await handlers.get(SettingsStoreChannel.Update)?.(mainEvent, {
           activeGame: "poe2",
         }),
       ).toMatchObject({
         activeGame: "poe2",
+      });
+      expect(
+        await handlers.get(SettingsStoreChannel.Update)?.(clipPreviewEvent, {
+          clipPreviewInfoAlertDismissed: true,
+        }),
+      ).toMatchObject({
+        clipPreviewInfoAlertDismissed: true,
+      });
+      expect(
+        await handlers.get(SettingsStoreChannel.Update)?.(clipPreviewEvent, {
+          activeGame: "poe1",
+        }),
+      ).toEqual({
+        ok: false,
+        error: "activeGame cannot be updated from this window",
       });
       expect(() =>
         handlers.get(SettingsStoreChannel.Update)?.(recorderEvent, {

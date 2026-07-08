@@ -1,0 +1,151 @@
+.rail {
+  display: grid;
+  gap: 0.35rem;
+  min-width: 0;
+  -webkit-app-region: no-drag;
+}
+
+.labels {
+  position: relative;
+  min-width: 0;
+  height: 0.8rem;
+  color: color-mix(in oklch, var(--color-base-content) 68%, transparent);
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.timeLabel,
+.duration {
+  position: absolute;
+  top: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeLabel {
+  max-width: 40%;
+}
+
+.startTime {
+  transform: translateX(0);
+}
+
+.endTime {
+  transform: translateX(-100%);
+}
+
+.startTimeDetached {
+  left: 0;
+  transform: none;
+}
+
+.endTimeDetached {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
+.duration {
+  max-width: 42%;
+  transform: translateX(-50%);
+  color: color-mix(in oklch, var(--color-base-content) 78%, white);
+  font-weight: 700;
+  text-align: center;
+}
+
+.track {
+  position: relative;
+  overflow: hidden;
+  height: 36px;
+  border: 1px solid
+    color-mix(in oklch, var(--color-base-content) 14%, transparent);
+  border-radius: 6px;
+  background:
+    repeating-linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--color-base-content) 11%, transparent) 0 1px,
+      transparent 1px 12px
+    ),
+    color-mix(in oklch, var(--color-neutral) 72%, black);
+  touch-action: none;
+}
+
+.shade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 10;
+  background: rgb(0 0 0 / 58%);
+}
+
+.selection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 20;
+  border: 1px solid color-mix(in oklch, var(--color-base-content) 82%, white);
+  border-radius: 6px;
+  padding: 0;
+  background: color-mix(in oklch, var(--color-primary) 13%, transparent);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 34%);
+  cursor: grab;
+  touch-action: none;
+}
+
+.selection:active {
+  cursor: grabbing;
+}
+
+.selectionDragging {
+  cursor: grabbing;
+}
+
+.playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 35;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--color-base-content);
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
+  pointer-events: none;
+}
+
+.handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 40;
+  display: grid;
+  width: 12px;
+  place-items: center;
+  border: 0;
+  background: color-mix(in oklch, var(--color-base-content) 22%, transparent);
+  color: color-mix(in oklch, var(--color-base-content) 92%, white);
+  cursor: ew-resize;
+  touch-action: none;
+}
+
+.handle::before {
+  width: 3px;
+  height: 14px;
+  border-right: 1px solid currentColor;
+  border-left: 1px solid currentColor;
+  content: "";
+  opacity: 0.9;
+}
+
+.handleStart {
+  border-right: 1px solid
+    color-mix(in oklch, var(--color-base-content) 56%, transparent);
+  border-radius: 6px 3px 3px 6px;
+}
+
+.handleEnd {
+  border-left: 1px solid
+    color-mix(in oklch, var(--color-base-content) 56%, transparent);
+  border-radius: 3px 6px 6px 3px;
+  transform: translateX(-100%);
+}

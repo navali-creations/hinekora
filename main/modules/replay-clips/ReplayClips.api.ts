@@ -6,11 +6,14 @@ import type { ReplayClip } from "~/types";
 import { ReplayClipsChannel } from "./ReplayClips.channels";
 import type {
   ReplayClipBatchFileActionResult,
+  ReplayClipCopyInput,
   ReplayClipDetail,
   ReplayClipFileActionResult,
   ReplayClipLibraryPage,
   ReplayClipLibraryQuery,
   ReplayClipListFilter,
+  ReplayClipUpdateInput,
+  ReplayClipUpdateResult,
 } from "./ReplayClips.dto";
 
 const ReplayClipsAPI = {
@@ -28,12 +31,16 @@ const ReplayClipsAPI = {
     ),
   saveManualReplay: (): Promise<ReplayClip | null> =>
     ipcRenderer.invoke(ReplayClipsChannel.SaveManualReplay),
+  update: (input: ReplayClipUpdateInput): Promise<ReplayClipUpdateResult> =>
+    ipcRenderer.invoke(ReplayClipsChannel.Update, input),
   open: (id: string): Promise<ReplayClipFileActionResult> =>
     ipcRenderer.invoke(ReplayClipsChannel.Open, id),
   reveal: (id: string): Promise<ReplayClipFileActionResult> =>
     ipcRenderer.invoke(ReplayClipsChannel.Reveal, id),
-  copy: (id: string): Promise<ReplayClipFileActionResult> =>
-    ipcRenderer.invoke(ReplayClipsChannel.Copy, id),
+  copy: (
+    input: string | ReplayClipCopyInput,
+  ): Promise<ReplayClipFileActionResult> =>
+    ipcRenderer.invoke(ReplayClipsChannel.Copy, input),
   delete: (id: string): Promise<ReplayClipFileActionResult> =>
     ipcRenderer.invoke(ReplayClipsChannel.Delete, id),
   deleteMany: (ids: string[]): Promise<ReplayClipBatchFileActionResult> =>

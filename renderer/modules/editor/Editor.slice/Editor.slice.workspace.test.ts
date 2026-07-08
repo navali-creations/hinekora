@@ -109,6 +109,40 @@ describe("Editor workspace slice", () => {
     expect(store.getState().editor.error).toBe("create failed");
   });
 
+  it("applies a single-clip route trim draft", () => {
+    vi.useFakeTimers();
+    const store = createTestStore();
+    const asset = createEditorTestAsset({ durationSeconds: 10 });
+    const project = createEditorTestProject(asset);
+    try {
+      loadEditorProject(store, project, [asset]);
+
+      store.getState().editor.applySingleClipTrimDraft({
+        inSeconds: 2,
+        outSeconds: 7,
+        source: { id: asset.id, kind: asset.kind },
+        title: "Overlay trim",
+      });
+
+      const updatedProject = store.getState().editor.project;
+      const clip = updatedProject?.tracks[0]?.clips[0];
+      expect(updatedProject).toMatchObject({
+        activeClipId: "timeline-1",
+        durationSeconds: 5,
+        selectedAssetKey: asset.assetKey,
+        title: "Overlay trim",
+      });
+      expect(clip).toMatchObject({
+        durationSeconds: 5,
+        inSeconds: 2,
+        outSeconds: 7,
+        startSeconds: 0,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("opens saved projects and saves project updates", async () => {
     const store = createTestStore();
     const editorApi = getEditorApi();

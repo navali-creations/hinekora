@@ -879,6 +879,24 @@ describe("MainWindowService", () => {
     expect(fakeWindow.focus).toHaveBeenCalled();
   });
 
+  it("opens the editor with clip preview trim options", async () => {
+    const { handlers } = mockIpcMainHandlers();
+    const fakeWindow = new FakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(fakeWindow);
+    new MainWindowService();
+
+    await expect(
+      handlers.get(MainWindowChannel.OpenEditorClip)?.({}, "clip 1", {
+        title: "Renamed clip",
+        trim: { inSeconds: 1.25, outSeconds: 4.5 },
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(fakeWindow.webContents.executeJavaScript).toHaveBeenCalledWith(
+      'globalThis.location.hash = "#/editor?kind=clip&id=clip%201&trimIn=1.25&trimOut=4.5&title=Renamed%20clip"',
+    );
+  });
+
   it("rejects invalid editor clip IPC input", async () => {
     const { handlers } = mockIpcMainHandlers();
     electronMocks.browserWindowFactory.mockReturnValue(new FakeWindow());
@@ -887,6 +905,14 @@ describe("MainWindowService", () => {
     expect(handlers.get(MainWindowChannel.OpenEditorClip)?.({}, "")).toEqual({
       ok: false,
       error: "clip id is too short",
+    });
+    expect(
+      handlers.get(MainWindowChannel.OpenEditorClip)?.({}, "clip-1", {
+        trim: { inSeconds: 2, outSeconds: 2.05 },
+      }),
+    ).toEqual({
+      ok: false,
+      error: "trim range is too short",
     });
     expect(electronMocks.BrowserWindow).not.toHaveBeenCalled();
   });

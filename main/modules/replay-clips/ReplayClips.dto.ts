@@ -27,6 +27,28 @@ export interface ReplayClipListFilter {
   league?: string;
 }
 
+export interface ReplayClipTrimInput {
+  inSeconds: number;
+  outSeconds: number;
+}
+
+export interface ReplayClipCopyInput {
+  id: string;
+  trim?: ReplayClipTrimInput | null;
+}
+
+export interface ReplayClipUpdateInput {
+  id: string;
+  name?: string | null;
+  trim?: ReplayClipTrimInput | null;
+}
+
+export interface ReplayClipUpdateResult {
+  detail: ReplayClipDetail | null;
+  error: string | null;
+  ok: boolean;
+}
+
 export type ReplayClipLibrarySortKey =
   | "createdAt"
   | "name"

@@ -209,6 +209,10 @@ describe("RecorderControlsOverlayPage", () => {
     replayClipsState = {
       activeClip: null,
       clearSelectedClips: vi.fn(),
+      copyClip: vi.fn().mockResolvedValue({
+        error: null,
+        ok: true,
+      }),
       deleteClip: vi.fn().mockResolvedValue(undefined),
       deleteSelectedClips: vi.fn().mockResolvedValue(undefined),
       error: null,
@@ -226,6 +230,11 @@ describe("RecorderControlsOverlayPage", () => {
       selectedClipIds: {},
       setSelectedClipIds: vi.fn(),
       startListening: vi.fn(() => vi.fn()),
+      updateClip: vi.fn().mockResolvedValue({
+        detail: null,
+        error: null,
+        ok: true,
+      }),
     };
     settingsState = {
       hydrate: vi.fn().mockResolvedValue(undefined),

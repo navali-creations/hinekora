@@ -31,6 +31,7 @@ import type {
   EditorWorkspaceQuery,
 } from "~/main/modules/editor/Editor.dto";
 import type { KeybindRegistrationStatus } from "~/main/modules/keybinds/Keybinds.dto";
+import type { MainWindowOpenEditorClipOptions } from "~/main/modules/main-window/MainWindow.types";
 import type {
   ManagedRecorderAudioDevices,
   ManagedRecorderCaptureMode,
@@ -59,11 +60,14 @@ import type {
 } from "~/main/modules/recording-storage/RecordingStorage.dto";
 import type {
   ReplayClipBatchFileActionResult,
+  ReplayClipCopyInput,
   ReplayClipDetail,
   ReplayClipFileActionResult,
   ReplayClipLibraryPage,
   ReplayClipLibraryQuery,
   ReplayClipListFilter,
+  ReplayClipUpdateInput,
+  ReplayClipUpdateResult,
 } from "~/main/modules/replay-clips/ReplayClips.dto";
 import type {
   SavedEditFileActionResult,
@@ -210,7 +214,10 @@ declare global {
         unmaximize: () => Promise<boolean>;
         isMaximized: () => Promise<boolean>;
         close: () => Promise<void>;
-        openEditorClip: (clipId: string) => Promise<void>;
+        openEditorClip: (
+          clipId: string,
+          options?: MainWindowOpenEditorClipOptions,
+        ) => Promise<void>;
         openDevTools: () => Promise<void>;
       };
       keybinds: {
@@ -322,9 +329,14 @@ declare global {
           query?: ReplayClipLibraryQuery,
         ) => Promise<ReplayClipLibraryPage>;
         saveManualReplay: () => Promise<ReplayClip | null>;
+        update: (
+          input: ReplayClipUpdateInput,
+        ) => Promise<ReplayClipUpdateResult>;
         open: (id: string) => Promise<ReplayClipFileActionResult>;
         reveal: (id: string) => Promise<ReplayClipFileActionResult>;
-        copy: (id: string) => Promise<ReplayClipFileActionResult>;
+        copy: (
+          input: string | ReplayClipCopyInput,
+        ) => Promise<ReplayClipFileActionResult>;
         delete: (id: string) => Promise<ReplayClipFileActionResult>;
         deleteMany: (ids: string[]) => Promise<ReplayClipBatchFileActionResult>;
         onStatusChanged: (callback: (clip: ReplayClip) => void) => () => void;

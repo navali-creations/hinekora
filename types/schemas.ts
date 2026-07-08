@@ -518,6 +518,7 @@ export const AppSettingsSchema = z.object({
   poe1CharacterName: z.string().max(80).default(""),
   poe2CharacterName: z.string().max(80).default(""),
   captureModeInfoAlertDismissed: z.boolean().default(false),
+  clipPreviewInfoAlertDismissed: z.boolean().default(false),
   groupPlayDeathAlertDismissed: z.boolean().default(false),
   recorderSettingsInfoAlertDismissed: z.boolean().default(false),
   activeGame: GameIdSchema.default("poe1"),

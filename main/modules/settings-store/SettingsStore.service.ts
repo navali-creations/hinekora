@@ -5,7 +5,9 @@ import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { logWarn } from "~/main/utils/app-log";
 import {
   assertObject,
+  assertOptionalBoolean,
   handleValidationError,
+  IpcValidationError,
   safeErrorMessage,
 } from "~/main/utils/ipc-validation";
 import {
@@ -23,7 +25,11 @@ const SETTINGS_STORE_SCOPE = "settings-store";
 const settingsStoreFullChangeWindowRoles = new Set([WindowName.Main]);
 const settingsStoreOverlayChangeWindowRoles = new Set([
   WindowName.AuraOverlay,
+  WindowName.ClipPreviewOverlay,
   WindowName.RecorderOverlay,
+]);
+const clipPreviewOverlaySettingsUpdateKeys = new Set<keyof AppSettings>([
+  "clipPreviewInfoAlertDismissed",
 ]);
 
 type SettingsStoreChangeListener = (settings: AppSettings) => void;
@@ -108,15 +114,23 @@ class SettingsStoreService {
     );
     registerGuardedIpcHandler(
       SettingsStoreChannel.GetOverlaySnapshot,
-      [WindowName.AuraOverlay, WindowName.RecorderOverlay],
+      [
+        WindowName.AuraOverlay,
+        WindowName.ClipPreviewOverlay,
+        WindowName.RecorderOverlay,
+      ],
       () => createSettingsStoreOverlaySnapshot(this.get()),
     );
     registerGuardedIpcHandler(
       SettingsStoreChannel.Update,
-      [WindowName.Main],
-      (_event, input: unknown) => {
+      [WindowName.Main, WindowName.ClipPreviewOverlay],
+      (event, input: unknown) => {
         try {
           assertObject(input, "settings", SettingsStoreChannel.Update);
+          if (getIpcWindowRole(event) === WindowName.ClipPreviewOverlay) {
+            assertClipPreviewOverlaySettingsUpdate(input);
+          }
+
           return this.update(input);
         } catch (error) {
           return handleValidationError(error);
@@ -159,6 +173,25 @@ class SettingsStoreService {
       }
     }
   }
+}
+
+function assertClipPreviewOverlaySettingsUpdate(
+  input: Record<string, unknown>,
+): void {
+  for (const key of Object.keys(input)) {
+    if (!clipPreviewOverlaySettingsUpdateKeys.has(key as keyof AppSettings)) {
+      throw new IpcValidationError(
+        SettingsStoreChannel.Update,
+        `${key} cannot be updated from this window`,
+      );
+    }
+  }
+
+  assertOptionalBoolean(
+    input.clipPreviewInfoAlertDismissed,
+    "clipPreviewInfoAlertDismissed",
+    SettingsStoreChannel.Update,
+  );
 }
 
 export { SettingsStoreService };

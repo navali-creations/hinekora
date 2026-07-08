@@ -53,6 +53,13 @@ interface HydrateMediaAssetsOptions {
   force?: boolean;
 }
 
+interface EditorSingleClipTrimDraft {
+  inSeconds: number;
+  outSeconds: number;
+  source: EditorMediaReference;
+  title?: string | null;
+}
+
 interface EditorSlice {
   editor: {
     clipboardState: EditorClipboardState;
@@ -90,6 +97,7 @@ interface EditorSlice {
     workspace: EditorWorkspace | null;
     zoom: number;
     addAssetToTimelineAt: (assetKey: string, timelineSeconds: number) => void;
+    applySingleClipTrimDraft: (draft: EditorSingleClipTrimDraft) => void;
     beginHistoryTransaction: (label?: string, subtitle?: string | null) => void;
     commitHistoryTransaction: () => void;
     copyExport: (exportId: string) => Promise<EditorExportFileActionResult>;
@@ -163,6 +171,7 @@ export type {
   EditorExportStatus,
   EditorMediaFilter,
   EditorMediaRailTab,
+  EditorSingleClipTrimDraft,
   EditorSlice,
   SaveProjectOptions,
   SetProjectOptions,

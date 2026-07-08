@@ -25,16 +25,23 @@ import {
   type EditorSidePanelKind,
 } from "../../Editor.components/EditorSidePanel/EditorSidePanel";
 import { EditorTimelineWithBookmarks } from "../../Editor.components/EditorTimelineWithBookmarks/EditorTimelineWithBookmarks";
+import type { EditorRouteTrimDraft } from "./EditorPage.utils";
 import { createExportSubtitle, createExportTitle } from "./EditorPage.utils";
 import { useEditorKeyboardShortcuts } from "./useEditorKeyboardShortcuts";
 import { useEditorRouteHydration } from "./useEditorRouteHydration";
+import { useEditorRouteTrimDraft } from "./useEditorRouteTrimDraft/useEditorRouteTrimDraft";
 
 interface EditorPageProps {
+  initialTrimDraft?: EditorRouteTrimDraft | null;
   projectId?: string | null;
   source?: EditorMediaReference | null;
 }
 
-function EditorPage({ projectId = null, source = null }: EditorPageProps) {
+function EditorPage({
+  initialTrimDraft = null,
+  projectId = null,
+  source = null,
+}: EditorPageProps) {
   const [visibleSidePanel, setVisibleSidePanel] =
     useState<EditorSidePanelKind | null>(null);
   const {
@@ -121,6 +128,11 @@ function EditorPage({ projectId = null, source = null }: EditorPageProps) {
     openProject,
     project,
     projectId,
+    source,
+  });
+  useEditorRouteTrimDraft({
+    draft: initialTrimDraft,
+    isRouteHydrated,
     source,
   });
   const isAssetRailHydrationEnabled = isMediaScopeReady && isRouteHydrated;

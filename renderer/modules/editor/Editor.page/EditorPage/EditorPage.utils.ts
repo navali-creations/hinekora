@@ -6,6 +6,12 @@ import { formatBytes } from "~/renderer/modules/media-library/MediaLibrary.utils
 
 import { formatEditorTimestamp } from "../../Editor.utils/Editor.utils";
 
+interface EditorRouteTrimDraft {
+  inSeconds: number;
+  outSeconds: number;
+  title?: string | null;
+}
+
 function createExportTitle(status: string): string {
   if (status === "ready") {
     return "Your video is ready";
@@ -103,6 +109,7 @@ function isEditorTimelineShortcutTarget(target: EventTarget | null): boolean {
 export {
   createExportSubtitle,
   createExportTitle,
+  type EditorRouteTrimDraft,
   isEditorDeleteShortcut,
   isEditorShortcutEditableTarget,
   isEditorShortcutSuppressedTarget,

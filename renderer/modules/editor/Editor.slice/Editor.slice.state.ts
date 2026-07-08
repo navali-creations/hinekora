@@ -9,6 +9,7 @@ import { createEditorRecentlyClippedSince } from "./Editor.slice.utils";
 type EditorStateFields = Omit<
   EditorSlice["editor"],
   | "addAssetToTimelineAt"
+  | "applySingleClipTrimDraft"
   | "beginHistoryTransaction"
   | "commitHistoryTransaction"
   | "copyExport"

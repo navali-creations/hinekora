@@ -13,11 +13,17 @@ describe("editor route search", () => {
         id: "clip-1",
         kind: "clip",
         projectId: "project-1",
+        title: "Quick title",
+        trimIn: "1.25",
+        trimOut: "4.5",
       }),
     ).toEqual({
       id: "clip-1",
       kind: "clip",
       projectId: "project-1",
+      title: "Quick title",
+      trimIn: 1.25,
+      trimOut: 4.5,
     });
   });
 
@@ -29,7 +35,19 @@ describe("editor route search", () => {
         id: "x".repeat(2_049),
         kind: "clip",
         projectId: "x".repeat(129),
+        title: "x".repeat(121),
+        trimIn: "5",
+        trimOut: "5.01",
       }),
     ).toEqual({});
+    expect(
+      validateEditorSearch({
+        id: "clip-1",
+        kind: "clip",
+        title: "Ignored",
+        trimIn: "4",
+        trimOut: "4.05",
+      }),
+    ).toEqual({ id: "clip-1", kind: "clip" });
   });
 });

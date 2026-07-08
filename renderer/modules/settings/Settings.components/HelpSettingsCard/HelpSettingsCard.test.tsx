@@ -170,7 +170,8 @@ describe("HelpSettingsCard", () => {
     );
 
     expect(container.textContent).toContain("Dismissible alerts");
-    expect(container.textContent).toContain("1 / 3 dismissed");
+    expect(container.textContent).toContain("1 / 4 dismissed");
+    expect(container.textContent).toContain("Clip preview info alert");
     expect(container.textContent).toContain("Dismissed");
     expect(showGroupPlayDeathAlert?.checked).toBe(false);
 
@@ -247,6 +248,40 @@ describe("HelpSettingsCard", () => {
       {
         alertId: "capture-mode-info",
         visible: true,
+      },
+    );
+  });
+
+  it("dismisses the clip preview info alert from help settings", async () => {
+    storeMocks.settingsValue = {
+      ...createDefaultSettings(),
+      clipPreviewInfoAlertDismissed: false,
+    };
+
+    await renderHelpSettings();
+    const dismissClipPreviewInfoAlert =
+      container.querySelector<HTMLInputElement>(
+        'input[aria-label="Dismiss Clip preview info alert"]',
+      );
+
+    expect(container.textContent).toContain("Clip preview info alert");
+    expect(container.textContent).toContain(
+      "Manual Replays and Death Clips are available on the Clips page.",
+    );
+    expect(dismissClipPreviewInfoAlert?.checked).toBe(true);
+
+    await act(async () => {
+      dismissClipPreviewInfoAlert?.click();
+    });
+
+    expect(storeMocks.updateSettings).toHaveBeenCalledWith({
+      clipPreviewInfoAlertDismissed: true,
+    });
+    expect(analyticsMocks.trackEvent).toHaveBeenCalledWith(
+      "dismissible-alert-visibility-toggled",
+      {
+        alertId: "clip-preview-info",
+        visible: false,
       },
     );
   });

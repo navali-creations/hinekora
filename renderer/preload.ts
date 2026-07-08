@@ -114,8 +114,17 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
       overlayWindows: {
         hideClipPreview: OverlayWindowsAPI.hideClipPreview,
       },
+      settings: {
+        scope: "overlay",
+        get: SettingsStoreAPI.getOverlaySnapshot,
+        onChanged: SettingsStoreAPI.onOverlayChanged,
+        update: SettingsStoreAPI.update,
+      },
       replayClips: {
+        copy: ReplayClipsAPI.copy,
+        get: ReplayClipsAPI.get,
         list: ReplayClipsAPI.list,
+        update: ReplayClipsAPI.update,
         open: ReplayClipsAPI.open,
         reveal: ReplayClipsAPI.reveal,
         onStatusChanged: ReplayClipsAPI.onStatusChanged,
