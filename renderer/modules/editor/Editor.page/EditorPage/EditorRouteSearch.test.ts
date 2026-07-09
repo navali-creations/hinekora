@@ -32,6 +32,13 @@ describe("editor route search", () => {
     expect(validateEditorSearch({ kind: "clip" })).toEqual({});
     expect(
       validateEditorSearch({
+        id: "clip-1",
+        kind: "clip",
+        title: "Ignored",
+      }),
+    ).toEqual({ id: "clip-1", kind: "clip" });
+    expect(
+      validateEditorSearch({
         id: "x".repeat(2_049),
         kind: "clip",
         projectId: "x".repeat(129),

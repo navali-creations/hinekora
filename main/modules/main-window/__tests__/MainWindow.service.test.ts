@@ -914,6 +914,14 @@ describe("MainWindowService", () => {
       ok: false,
       error: "trim range is too short",
     });
+    expect(
+      handlers.get(MainWindowChannel.OpenEditorClip)?.({}, "clip-1", {
+        title: "Renamed clip",
+      }),
+    ).toEqual({
+      ok: false,
+      error: "clip title requires clip trim",
+    });
     expect(electronMocks.BrowserWindow).not.toHaveBeenCalled();
   });
 

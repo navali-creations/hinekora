@@ -6,13 +6,18 @@ enum WindowName {
   CropSelectorOverlay = "crop-selector-overlay",
 }
 
-interface MainWindowOpenEditorClipOptions {
-  title?: string | null;
-  trim?: {
-    inSeconds: number;
-    outSeconds: number;
-  } | null;
-}
+type MainWindowOpenEditorClipOptions =
+  | {
+      title?: string | null;
+      trim: {
+        inSeconds: number;
+        outSeconds: number;
+      };
+    }
+  | {
+      title?: null;
+      trim?: null;
+    };
 
 export type { MainWindowOpenEditorClipOptions };
 export { WindowName };

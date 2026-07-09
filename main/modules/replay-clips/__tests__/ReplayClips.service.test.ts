@@ -937,6 +937,50 @@ describe("ReplayClipsService file actions", () => {
     expect(readFileSync(copiedPath ?? "", "utf8")).toBe("trimmed");
   });
 
+  it("clamps quick trim ranges to the actual clip duration before rendering", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({
+        durationSeconds: 10,
+        processedClipPath: path,
+        targetDurationSeconds: 10,
+      }),
+    );
+    vi.spyOn(FileClipboard, "copyFileToClipboard").mockResolvedValue({
+      ok: true,
+      error: null,
+    });
+    const renderReplayClipQuickTrim = vi
+      .spyOn(
+        service as unknown as {
+          renderReplayClipQuickTrim: (
+            input: ReplayClipQuickTrimRenderInput,
+          ) => Promise<void>;
+        },
+        "renderReplayClipQuickTrim",
+      )
+      .mockImplementation(async (input) => {
+        writeFileSync(input.outputPath, "trimmed");
+      });
+
+    await expect(
+      service.copyClipToClipboard({
+        id: "clip-1",
+        trim: { inSeconds: 10, outSeconds: 10.2 },
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      error: null,
+    });
+
+    expect(renderReplayClipQuickTrim).toHaveBeenCalledWith({
+      outputPath: expect.stringContaining("2026-06-12_10-30-00-"),
+      sourcePath: resolve(path),
+      trim: { inSeconds: 9.9, outSeconds: 10 },
+    });
+  });
+
   it("reports trimmed clipboard render progress with the operation request id", async () => {
     const path = join(root, "2026-06-12_10-30-00.mp4");
     writeFileSync(path, "video");

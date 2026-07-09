@@ -39,6 +39,8 @@ vi.mock("~/renderer/store", async (importOriginal) => {
   };
 });
 
+import { useBoundStore } from "~/renderer/store";
+
 import { ClipPreviewOverlayPage } from "./ClipPreviewOverlay.page";
 
 let container: HTMLDivElement;
@@ -539,7 +541,7 @@ describe("ClipPreviewOverlayPage", () => {
     });
     await renderPage();
     await flushPromises();
-    await markPreviewVideoReady();
+    const video = await markPreviewVideoReady();
 
     const rail = setupTrimRail();
     const endHandle = findButtonByLabel("Trim clip end");
@@ -554,7 +556,45 @@ describe("ClipPreviewOverlayPage", () => {
     });
 
     expect(requestAnimationFrameSpy).toHaveBeenCalled();
-    expect(fastSeek).toHaveBeenLastCalledWith(7);
+    expect(fastSeek).not.toHaveBeenCalled();
+    expect(video.currentTime).toBe(7);
+  });
+
+  it("scrubs the paused video frame while moving the selected trim range", async () => {
+    vi.useFakeTimers();
+    let frameCallback: FrameRequestCallback | null = null;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frameCallback = callback;
+
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
+    await renderPage();
+    await flushPromises();
+    const video = await markPreviewVideoReady();
+    await act(async () => {
+      useBoundStore
+        .getState()
+        .clipPreviewOverlay.setTrim({ inSeconds: 2, outSeconds: 5 });
+    });
+
+    await flushPromises();
+    const updatedRail = setupTrimRail();
+    const selection = findButtonByLabel("Move selected trim range");
+    await act(async () => {
+      dispatchClipPreviewPointerEvent(selection, "pointerdown", {
+        clientX: 40,
+      });
+      vi.advanceTimersByTime(250);
+      dispatchClipPreviewPointerEvent(updatedRail, "pointermove", {
+        clientX: 60,
+      });
+    });
+    await act(async () => {
+      frameCallback?.(0);
+    });
+
+    expect(video.currentTime).toBe(6);
   });
 
   it("keeps playback running when seeking with a rail marker click", async () => {
@@ -594,7 +634,14 @@ describe("ClipPreviewOverlayPage", () => {
     expect(fastSeek).toHaveBeenLastCalledWith(6);
   });
 
-  it("keeps paused seeks at the trim end instead of rewinding to trim start", async () => {
+  it("scrubs paused rail seeks at the trim end instead of rewinding to trim start", async () => {
+    let frameCallback: FrameRequestCallback | null = null;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      frameCallback = callback;
+
+      return 1;
+    });
+    vi.spyOn(window, "cancelAnimationFrame").mockImplementation(() => {});
     await renderPage();
     await flushPromises();
     const video = await markPreviewVideoReady();
@@ -613,8 +660,11 @@ describe("ClipPreviewOverlayPage", () => {
       dispatchClipPreviewPointerEvent(rail, "pointerdown", { clientX: 100 });
       video.dispatchEvent(new Event("timeupdate", { bubbles: true }));
     });
+    await act(async () => {
+      frameCallback?.(0);
+    });
 
-    expect(video.currentTime).toBe(0);
+    expect(video.currentTime).toBe(10);
     expect(container.textContent).toContain("10.00 / 10.00");
   });
 });

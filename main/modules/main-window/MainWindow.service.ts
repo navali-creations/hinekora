@@ -311,7 +311,8 @@ class MainWindowService {
       "editor clip options",
       MainWindowChannel.OpenEditorClip,
     );
-    const result: MainWindowOpenEditorClipOptions = {};
+    let trim: MainWindowOpenEditorClipOptions["trim"] = null;
+    let title: string | null = null;
     if (value.title !== undefined && value.title !== null) {
       assertString(
         value.title,
@@ -319,7 +320,7 @@ class MainWindowService {
         MainWindowChannel.OpenEditorClip,
         { max: MAIN_WINDOW_EDITOR_CLIP_TITLE_MAX_LENGTH },
       );
-      result.title = value.title;
+      title = value.title;
     }
 
     if (value.trim !== undefined && value.trim !== null) {
@@ -345,13 +346,22 @@ class MainWindowService {
           "trim range is too short",
         );
       }
-      result.trim = {
+      trim = {
         inSeconds: value.trim.inSeconds,
         outSeconds: value.trim.outSeconds,
       };
     }
 
-    return result;
+    if (title !== null) {
+      if (!trim) {
+        throw new IpcValidationError(
+          MainWindowChannel.OpenEditorClip,
+          "clip title requires clip trim",
+        );
+      }
+    }
+
+    return trim ? { trim, ...(title !== null ? { title } : {}) } : {};
   }
 
   private async navigateMainWindowToSettingsHelp(

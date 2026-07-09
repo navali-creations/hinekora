@@ -24,7 +24,6 @@ type TrimDragState =
   | { edge: TrimDragEdge; kind: "edge"; pointerId: number }
   | {
       canMove: boolean;
-      grabOffsetSeconds: number;
       hasMoved: boolean;
       initialSeconds: number;
       kind: "selection";
@@ -43,8 +42,12 @@ function useClipPreviewTrimRailDrag({
 }: UseClipPreviewTrimRailDragInput) {
   const railRef = useRef<HTMLDivElement>(null);
   const dragStateRef = useRef<TrimDragState | null>(null);
+  const durationSecondsRef = useRef(durationSeconds);
   const selectionGrabTimeoutRef = useRef<number | null>(null);
+  const trimRef = useRef(trim);
   const [isSelectionDragging, setSelectionDragging] = useState(false);
+  durationSecondsRef.current = durationSeconds;
+  trimRef.current = trim;
 
   const clearSelectionGrabTimeout = useCallback(() => {
     if (selectionGrabTimeoutRef.current === null) {
@@ -58,17 +61,18 @@ function useClipPreviewTrimRailDrag({
   const applyTrimDrag = (edge: TrimDragEdge, clientX: number) => {
     const seconds = resolveClipPreviewTimelineSeconds({
       clientX,
-      durationSeconds,
+      durationSeconds: durationSecondsRef.current,
       rail: railRef.current,
     });
     if (seconds === null) {
       return;
     }
 
+    const currentTrim = trimRef.current;
     const nextTrim = clampClipPreviewTrimRange({
-      durationSeconds,
-      inSeconds: edge === "start" ? seconds : trim.inSeconds,
-      outSeconds: edge === "end" ? seconds : trim.outSeconds,
+      durationSeconds: durationSecondsRef.current,
+      inSeconds: edge === "start" ? seconds : currentTrim.inSeconds,
+      outSeconds: edge === "end" ? seconds : currentTrim.outSeconds,
     });
     onTrimChange(nextTrim, {
       previewMedia: true,
@@ -82,7 +86,7 @@ function useClipPreviewTrimRailDrag({
   ) => {
     const seconds = resolveClipPreviewTimelineSeconds({
       clientX,
-      durationSeconds,
+      durationSeconds: durationSecondsRef.current,
       rail: railRef.current,
     });
     if (seconds === null) {
@@ -95,8 +99,8 @@ function useClipPreviewTrimRailDrag({
 
     state.hasMoved = true;
     const nextTrim = moveClipPreviewTrimRange({
-      durationSeconds,
-      inSeconds: seconds - state.grabOffsetSeconds,
+      durationSeconds: durationSecondsRef.current,
+      inSeconds: seconds,
       trimDurationSeconds: state.trimDurationSeconds,
     });
     onTrimChange(nextTrim, {
@@ -106,12 +110,13 @@ function useClipPreviewTrimRailDrag({
   };
 
   const resolveSeekSeconds = (seconds: number): number => {
-    if (seconds < trim.inSeconds) {
-      return trim.inSeconds;
+    const currentTrim = trimRef.current;
+    if (seconds < currentTrim.inSeconds) {
+      return currentTrim.inSeconds;
     }
 
-    if (seconds > trim.outSeconds) {
-      return trim.outSeconds;
+    if (seconds > currentTrim.outSeconds) {
+      return currentTrim.outSeconds;
     }
 
     return seconds;
@@ -124,7 +129,7 @@ function useClipPreviewTrimRailDrag({
 
     const seconds = resolveClipPreviewTimelineSeconds({
       clientX: event.clientX,
-      durationSeconds,
+      durationSeconds: durationSecondsRef.current,
       rail: railRef.current,
     });
     if (seconds !== null) {
@@ -208,22 +213,22 @@ function useClipPreviewTrimRailDrag({
 
     const seconds = resolveClipPreviewTimelineSeconds({
       clientX: event.clientX,
-      durationSeconds,
+      durationSeconds: durationSecondsRef.current,
       rail: railRef.current,
     });
     if (seconds === null) {
       return;
     }
 
+    const currentTrim = trimRef.current;
     railRef.current?.setPointerCapture(event.pointerId);
     dragStateRef.current = {
       canMove: false,
-      grabOffsetSeconds: seconds - trim.inSeconds,
       hasMoved: false,
       initialSeconds: seconds,
       kind: "selection",
       pointerId: event.pointerId,
-      trimDurationSeconds: trim.outSeconds - trim.inSeconds,
+      trimDurationSeconds: currentTrim.outSeconds - currentTrim.inSeconds,
     };
     selectionGrabTimeoutRef.current = window.setTimeout(() => {
       const dragState = dragStateRef.current;

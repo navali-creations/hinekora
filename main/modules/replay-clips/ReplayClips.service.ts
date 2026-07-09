@@ -1199,12 +1199,20 @@ class ReplayClipsService {
     durationSeconds: number,
   ): ReplayClipTrimInput {
     const duration = Number.isFinite(durationSeconds)
-      ? Math.max(durationSeconds, quickClipTrimMinimumSeconds)
+      ? Math.max(
+          roundReplayClipSeconds(durationSeconds),
+          quickClipTrimMinimumSeconds,
+        )
       : quickClipTrimMaximumSeconds;
-    const inSeconds = clampReplayClipSeconds(trim.inSeconds, 0, duration);
+    const minimumTrimSeconds = Math.min(quickClipTrimMinimumSeconds, duration);
+    const inSeconds = clampReplayClipSeconds(
+      trim.inSeconds,
+      0,
+      Math.max(0, duration - minimumTrimSeconds),
+    );
     const outSeconds = clampReplayClipSeconds(
       trim.outSeconds,
-      inSeconds + Math.min(quickClipTrimMinimumSeconds, duration),
+      inSeconds + minimumTrimSeconds,
       duration,
     );
 

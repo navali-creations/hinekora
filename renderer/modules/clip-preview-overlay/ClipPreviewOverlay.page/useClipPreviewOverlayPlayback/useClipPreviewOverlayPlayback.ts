@@ -62,6 +62,18 @@ function seekVideo(
   video.currentTime = seconds;
 }
 
+function clearPendingSeek(
+  pendingSeekSecondsRef: RefObject<number | null>,
+  seconds: number,
+): void {
+  if (
+    pendingSeekSecondsRef.current !== null &&
+    Math.abs(pendingSeekSecondsRef.current - seconds) < 0.01
+  ) {
+    pendingSeekSecondsRef.current = null;
+  }
+}
+
 function useClipPreviewOverlayPlayback({
   canUseClip,
   clipId,
@@ -89,19 +101,23 @@ function useClipPreviewOverlayPlayback({
     const nextSeconds = mediaPreviewSecondsRef.current;
     mediaPreviewSecondsRef.current = null;
     const video = videoRef.current;
-    if (
-      nextSeconds === null ||
-      !video ||
-      video.readyState < HTMLMediaElement.HAVE_METADATA
-    ) {
+    if (nextSeconds === null || !video) {
+      if (nextSeconds !== null) {
+        clearPendingSeek(pendingSeekSecondsRef, nextSeconds);
+      }
+      return;
+    }
+    if (video.readyState < HTMLMediaElement.HAVE_METADATA) {
+      clearPendingSeek(pendingSeekSecondsRef, nextSeconds);
       return;
     }
 
     if (Math.abs(video.currentTime - nextSeconds) < 0.01) {
+      clearPendingSeek(pendingSeekSecondsRef, nextSeconds);
       return;
     }
 
-    seekVideo(video, nextSeconds, { fast: true });
+    seekVideo(video, nextSeconds);
   };
 
   const scheduleMediaPreviewSeek = (seconds: number) => {
@@ -256,8 +272,10 @@ function useClipPreviewOverlayPlayback({
       video.pause();
     }
     stopPlaybackClock(nextSeconds);
-    if (options?.previewMedia === true && video && canUseClip) {
+    if (video && canUseClip) {
       scheduleMediaPreviewSeek(nextSeconds);
+    } else {
+      clearPendingSeek(pendingSeekSecondsRef, nextSeconds);
     }
     setPlaying(false);
   };
