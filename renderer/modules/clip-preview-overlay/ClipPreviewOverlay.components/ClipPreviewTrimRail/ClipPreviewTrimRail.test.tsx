@@ -134,10 +134,10 @@ describe("ClipPreviewTrimRail", () => {
 
     expect(onTrimChange).toHaveBeenLastCalledWith(
       {
-        inSeconds: 6,
-        outSeconds: 9,
+        inSeconds: 5,
+        outSeconds: 8,
       },
-      { previewMedia: true, previewSeconds: 6 },
+      { previewMedia: true, previewSeconds: 5 },
     );
   });
 
@@ -168,10 +168,10 @@ describe("ClipPreviewTrimRail", () => {
 
     expect(onTrimChange).toHaveBeenLastCalledWith(
       {
-        inSeconds: 6,
-        outSeconds: 9,
+        inSeconds: 5,
+        outSeconds: 8,
       },
-      { previewMedia: true, previewSeconds: 6 },
+      { previewMedia: true, previewSeconds: 5 },
     );
   });
 

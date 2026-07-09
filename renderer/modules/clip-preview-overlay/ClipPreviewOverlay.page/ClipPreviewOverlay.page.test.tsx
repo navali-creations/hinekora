@@ -594,7 +594,7 @@ describe("ClipPreviewOverlayPage", () => {
       frameCallback?.(0);
     });
 
-    expect(video.currentTime).toBe(6);
+    expect(video.currentTime).toBe(4);
   });
 
   it("keeps playback running when seeking with a rail marker click", async () => {

@@ -63,7 +63,12 @@ function ClipPreviewTrimRail({
   const trimCenterPercent = trimStartPercent + trimWidthPercent / 2;
 
   return (
-    <div className={styles.rail}>
+    <div
+      className={clsx(
+        styles.rail,
+        isSelectionDragging && styles.railSelectionDragging,
+      )}
+    >
       <div className={styles.labels}>
         <span
           className={clsx(

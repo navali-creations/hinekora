@@ -113,6 +113,11 @@
   cursor: grabbing;
 }
 
+.railSelectionDragging,
+.railSelectionDragging * {
+  cursor: grabbing;
+}
+
 .playheadLayer {
   position: absolute;
   top: 0;

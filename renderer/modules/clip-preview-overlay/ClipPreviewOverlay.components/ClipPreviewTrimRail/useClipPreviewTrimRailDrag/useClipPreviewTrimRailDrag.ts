@@ -24,6 +24,7 @@ type TrimDragState =
   | { edge: TrimDragEdge; kind: "edge"; pointerId: number }
   | {
       canMove: boolean;
+      grabOffsetSeconds: number;
       hasMoved: boolean;
       initialSeconds: number;
       kind: "selection";
@@ -100,7 +101,7 @@ function useClipPreviewTrimRailDrag({
     state.hasMoved = true;
     const nextTrim = moveClipPreviewTrimRange({
       durationSeconds: durationSecondsRef.current,
-      inSeconds: seconds,
+      inSeconds: seconds - state.grabOffsetSeconds,
       trimDurationSeconds: state.trimDurationSeconds,
     });
     onTrimChange(nextTrim, {
@@ -224,6 +225,7 @@ function useClipPreviewTrimRailDrag({
     railRef.current?.setPointerCapture(event.pointerId);
     dragStateRef.current = {
       canMove: false,
+      grabOffsetSeconds: seconds - currentTrim.inSeconds,
       hasMoved: false,
       initialSeconds: seconds,
       kind: "selection",
