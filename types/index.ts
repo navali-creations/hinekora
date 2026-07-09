@@ -1,3 +1,4 @@
+export * from "./clip-trim";
 export * from "./editor-timeline";
 export * from "./external-links";
 export * from "./keybinds";

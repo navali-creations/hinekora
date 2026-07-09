@@ -1,3 +1,5 @@
+import clsx from "clsx";
+
 import {
   type ClipPreviewTrimRange,
   calculateClipPreviewTimelinePercent,
@@ -10,15 +12,20 @@ interface ClipPreviewTrimRailProps {
   disabled: boolean;
   durationSeconds: number;
   playbackSeconds: number;
+  playheadRef?: (element: HTMLSpanElement | null) => void;
   trim: ClipPreviewTrimRange;
-  onSeek: (seconds: number) => void;
-  onTrimChange: (trim: ClipPreviewTrimRange) => void;
+  onSeek: (seconds: number, options?: { preservePlayback?: boolean }) => void;
+  onTrimChange: (
+    trim: ClipPreviewTrimRange,
+    options?: { previewMedia?: boolean; previewSeconds: number },
+  ) => void;
 }
 
 function ClipPreviewTrimRail({
   disabled,
   durationSeconds,
   playbackSeconds,
+  playheadRef,
   trim,
   onSeek,
   onTrimChange,
@@ -59,9 +66,11 @@ function ClipPreviewTrimRail({
     <div className={styles.rail}>
       <div className={styles.labels}>
         <span
-          className={`${styles.timeLabel} ${styles.startTime} ${
-            useDetachedEdgeLabels ? styles.startTimeDetached : ""
-          }`}
+          className={clsx(
+            styles.timeLabel,
+            styles.startTime,
+            useDetachedEdgeLabels && styles.startTimeDetached,
+          )}
           style={
             useDetachedEdgeLabels ? undefined : { left: `${trimStartPercent}%` }
           }
@@ -75,9 +84,11 @@ function ClipPreviewTrimRail({
           {formatClipPreviewTimestamp(trim.outSeconds - trim.inSeconds)}
         </span>
         <span
-          className={`${styles.timeLabel} ${styles.endTime} ${
-            useDetachedEdgeLabels ? styles.endTimeDetached : ""
-          }`}
+          className={clsx(
+            styles.timeLabel,
+            styles.endTime,
+            useDetachedEdgeLabels && styles.endTimeDetached,
+          )}
           style={
             useDetachedEdgeLabels ? undefined : { left: `${trimEndPercent}%` }
           }
@@ -107,9 +118,10 @@ function ClipPreviewTrimRail({
         />
         <button
           aria-label="Move selected trim range"
-          className={`${styles.selection} ${
-            isSelectionDragging ? styles.selectionDragging : ""
-          }`}
+          className={clsx(
+            styles.selection,
+            isSelectionDragging && styles.selectionDragging,
+          )}
           disabled={disabled}
           style={{
             left: `${trimStartPercent}%`,
@@ -119,12 +131,15 @@ function ClipPreviewTrimRail({
           onPointerDown={handleSelectionPointerDown}
         />
         <span
-          className={styles.playhead}
-          style={{ left: `${playbackPercent}%` }}
-        />
+          className={styles.playheadLayer}
+          ref={playheadRef}
+          style={{ transform: `translate3d(${playbackPercent}%, 0, 0)` }}
+        >
+          <span className={styles.playhead} />
+        </span>
         <button
           aria-label="Trim clip start"
-          className={`${styles.handle} ${styles.handleStart}`}
+          className={clsx(styles.handle, styles.handleStart)}
           disabled={disabled}
           style={{ left: `${trimStartPercent}%` }}
           type="button"
@@ -132,7 +147,7 @@ function ClipPreviewTrimRail({
         />
         <button
           aria-label="Trim clip end"
-          className={`${styles.handle} ${styles.handleEnd}`}
+          className={clsx(styles.handle, styles.handleEnd)}
           disabled={disabled}
           style={{ left: `${trimEndPercent}%` }}
           type="button"

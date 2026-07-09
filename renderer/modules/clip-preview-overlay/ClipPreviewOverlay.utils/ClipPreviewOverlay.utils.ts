@@ -1,3 +1,5 @@
+import { quickClipTrimMinimumSeconds } from "~/types";
+
 export function createClipPreviewMediaUrl(clipId: string): string {
   return `hinekora-media://replay-clip/${encodeURIComponent(clipId)}`;
 }
@@ -6,8 +8,6 @@ export interface ClipPreviewTrimRange {
   inSeconds: number;
   outSeconds: number;
 }
-
-export const clipPreviewMinimumTrimSeconds = 0.1;
 
 export function resolveClipPreviewRouteClipId(hash: string): string | null {
   const [, query = ""] = hash.split("?");
@@ -34,17 +34,17 @@ export function clampClipPreviewTrimRange(input: {
   outSeconds: number;
 }): ClipPreviewTrimRange {
   const durationSeconds = Math.max(
-    clipPreviewMinimumTrimSeconds,
+    quickClipTrimMinimumSeconds,
     roundClipPreviewSeconds(input.durationSeconds),
   );
   const inSeconds = clampClipPreviewSeconds(
     input.inSeconds,
     0,
-    durationSeconds - clipPreviewMinimumTrimSeconds,
+    durationSeconds - quickClipTrimMinimumSeconds,
   );
   const outSeconds = clampClipPreviewSeconds(
     input.outSeconds,
-    inSeconds + clipPreviewMinimumTrimSeconds,
+    inSeconds + quickClipTrimMinimumSeconds,
     durationSeconds,
   );
 
@@ -57,12 +57,12 @@ export function moveClipPreviewTrimRange(input: {
   trimDurationSeconds: number;
 }): ClipPreviewTrimRange {
   const durationSeconds = Math.max(
-    clipPreviewMinimumTrimSeconds,
+    quickClipTrimMinimumSeconds,
     roundClipPreviewSeconds(input.durationSeconds),
   );
   const trimDurationSeconds = clampClipPreviewSeconds(
     input.trimDurationSeconds,
-    clipPreviewMinimumTrimSeconds,
+    quickClipTrimMinimumSeconds,
     durationSeconds,
   );
   const inSeconds = clampClipPreviewSeconds(

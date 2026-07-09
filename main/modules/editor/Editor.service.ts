@@ -28,6 +28,7 @@ import {
   safeErrorMessage,
 } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
+import { copyRenderedFileToClipboard } from "~/main/utils/rendered-file-clipboard";
 
 import {
   calculateTimelineProjectDuration,
@@ -401,59 +402,59 @@ class EditorService {
     }
 
     const segments = createEditorExportSegments(clips, input.durationSeconds);
-    const outputPath = await createEditorClipboardOutputPath({
-      fileName: input.fileName,
-      tempPath: app.getPath("temp"),
-    });
+    const tempPath = app.getPath("temp");
 
-    try {
-      logInfo(editorLogScope, "Rendering editor clipboard video", {
-        clipCount: clips.length,
-        durationSeconds: calculateEditorExportDuration(segments),
-        resolution: input.resolution,
-        ...createEditorSegmentDiagnostics(segments),
-        ...createSafePathLogFields(outputPath, "clipboard"),
-      });
-
-      await this.renderExportWithFfmpeg({
-        muteAudio: input.muteAudio === true,
-        outputPath,
-        resolution: input.resolution,
-        segments,
-      });
-
-      const result = await FileClipboard.copyFileToClipboard(outputPath);
-      if (!result.ok) {
+    return copyRenderedFileToClipboard({
+      cleanup: (outputPath) =>
+        cleanupEditorClipboardOutputDirectory({
+          protectedPath: outputPath,
+          tempPath,
+        }),
+      createOutputPath: () =>
+        createEditorClipboardOutputPath({
+          fileName: input.fileName,
+          tempPath,
+        }),
+      onCleanupError: (error, outputPath) => {
+        logWarn(editorLogScope, "Editor clipboard cleanup failed", {
+          error: safeErrorMessage(error),
+          ...createSafePathLogFields(outputPath, "clipboard"),
+        });
+      },
+      onCopyFailed: (result, outputPath) => {
         logWarn(editorLogScope, "Editor clipboard copy failed", {
           error: result.error,
           ...createSafePathLogFields(outputPath, "clipboard"),
         });
-        await rm(outputPath, { force: true });
-      } else {
+      },
+      onCopySucceeded: (outputPath) => {
         logInfo(editorLogScope, "Editor clipboard video copied", {
           ...createSafePathLogFields(outputPath, "clipboard"),
         });
-        await cleanupEditorClipboardOutputDirectory({
-          protectedPath: outputPath,
-          tempPath: app.getPath("temp"),
-        }).catch((error) => {
-          logWarn(editorLogScope, "Editor clipboard cleanup failed", {
-            error: safeErrorMessage(error),
-            ...createSafePathLogFields(outputPath, "clipboard"),
-          });
+      },
+      onRenderFailed: (error, outputPath) => {
+        logError(editorLogScope, "Editor clipboard copy crashed", {
+          error: safeErrorMessage(error),
+          ...createSafePathLogFields(outputPath, "clipboard"),
         });
-      }
-
-      return result;
-    } catch (error) {
-      logError(editorLogScope, "Editor clipboard copy crashed", {
-        error: safeErrorMessage(error),
-        ...createSafePathLogFields(outputPath, "clipboard"),
-      });
-      await rm(outputPath, { force: true });
-
-      return { ok: false, error: safeErrorMessage(error) };
-    }
+      },
+      onRenderReady: (outputPath) => {
+        logInfo(editorLogScope, "Rendering editor clipboard video", {
+          clipCount: clips.length,
+          durationSeconds: calculateEditorExportDuration(segments),
+          resolution: input.resolution,
+          ...createEditorSegmentDiagnostics(segments),
+          ...createSafePathLogFields(outputPath, "clipboard"),
+        });
+      },
+      render: (outputPath) =>
+        this.renderExportWithFfmpeg({
+          muteAudio: input.muteAudio === true,
+          outputPath,
+          resolution: input.resolution,
+          segments,
+        }),
+    });
   }
 
   private listEditorMediaAssetPage(

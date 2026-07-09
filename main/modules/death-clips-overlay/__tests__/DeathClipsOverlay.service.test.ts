@@ -171,10 +171,23 @@ describe("DeathClipsOverlayService", () => {
     coordinator.setPoeFocusActive(true);
 
     expect(service.hide()).toBe(false);
-    await service.showClip(
-      createClip({ originalObsPath: null, processedClipPath: null }),
+    const pendingPreviewWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValueOnce(
+      pendingPreviewWindow,
     );
-    expect(electronMocks.BrowserWindow).not.toHaveBeenCalled();
+    await service.showClip(
+      createClip({
+        id: "clip-pending",
+        originalObsPath: null,
+        processedClipPath: null,
+        status: "saving_replay",
+      }),
+    );
+    expect(pendingPreviewWindow.loadFile).toHaveBeenCalledWith(
+      expect.any(String),
+      { hash: `/${WindowName.ClipPreviewOverlay}?clipId=clip-pending` },
+    );
+    service.hide();
 
     const existingPreviewWindow = createFakeWindow();
     Object.assign(service, {

@@ -17,7 +17,10 @@ import {
 
 import { type AppSettings, AppSettingsSchema } from "~/types";
 import { SettingsStoreChannel } from "./SettingsStore.channels";
-import { createSettingsStoreOverlaySnapshot } from "./SettingsStore.dto";
+import {
+  createSettingsStoreClipPreviewOverlaySnapshot,
+  createSettingsStoreOverlaySnapshot,
+} from "./SettingsStore.dto";
 import { SettingsStoreRepository } from "./SettingsStore.repository";
 
 const START_MINIMIZED_ARG = "--hidden";
@@ -25,7 +28,6 @@ const SETTINGS_STORE_SCOPE = "settings-store";
 const settingsStoreFullChangeWindowRoles = new Set([WindowName.Main]);
 const settingsStoreOverlayChangeWindowRoles = new Set([
   WindowName.AuraOverlay,
-  WindowName.ClipPreviewOverlay,
   WindowName.RecorderOverlay,
 ]);
 const clipPreviewOverlaySettingsUpdateKeys = new Set<keyof AppSettings>([
@@ -114,12 +116,13 @@ class SettingsStoreService {
     );
     registerGuardedIpcHandler(
       SettingsStoreChannel.GetOverlaySnapshot,
-      [
-        WindowName.AuraOverlay,
-        WindowName.ClipPreviewOverlay,
-        WindowName.RecorderOverlay,
-      ],
+      [WindowName.AuraOverlay, WindowName.RecorderOverlay],
       () => createSettingsStoreOverlaySnapshot(this.get()),
+    );
+    registerGuardedIpcHandler(
+      SettingsStoreChannel.GetClipPreviewOverlaySnapshot,
+      [WindowName.ClipPreviewOverlay],
+      () => createSettingsStoreClipPreviewOverlaySnapshot(this.get()),
     );
     registerGuardedIpcHandler(
       SettingsStoreChannel.Update,
@@ -127,11 +130,15 @@ class SettingsStoreService {
       (event, input: unknown) => {
         try {
           assertObject(input, "settings", SettingsStoreChannel.Update);
-          if (getIpcWindowRole(event) === WindowName.ClipPreviewOverlay) {
+          const role = getIpcWindowRole(event);
+          if (role === WindowName.ClipPreviewOverlay) {
             assertClipPreviewOverlaySettingsUpdate(input);
           }
 
-          return this.update(input);
+          const settings = this.update(input);
+          return role === WindowName.ClipPreviewOverlay
+            ? createSettingsStoreClipPreviewOverlaySnapshot(settings)
+            : settings;
         } catch (error) {
           return handleValidationError(error);
         }
@@ -169,6 +176,12 @@ class SettingsStoreService {
         window.webContents.send(
           SettingsStoreChannel.OverlayChanged,
           createSettingsStoreOverlaySnapshot(settings),
+        );
+      }
+      if (role === WindowName.ClipPreviewOverlay) {
+        window.webContents.send(
+          SettingsStoreChannel.ClipPreviewOverlayChanged,
+          createSettingsStoreClipPreviewOverlaySnapshot(settings),
         );
       }
     }

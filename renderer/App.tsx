@@ -63,8 +63,8 @@ function App() {
         startSettingsListener(),
       );
     } else if (isClipPreviewOverlay) {
-      void hydrateReplayClips();
-      unsubscribers.push(startReplayClipsListener());
+      void hydrateSettings();
+      unsubscribers.push(startSettingsListener());
     } else if (isAuraOverlay) {
       void (async () => {
         await hydrateSettings();

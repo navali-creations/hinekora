@@ -38,6 +38,13 @@ import { ReplayClipsChannel } from "../ReplayClips.channels";
 import { ReplayClipsRepository } from "../ReplayClips.repository";
 import { ReplayClipsService } from "../ReplayClips.service";
 
+interface ReplayClipQuickTrimRenderInput {
+  onProgress?: (progress: number) => void;
+  outputPath: string;
+  sourcePath: string;
+  trim: { inSeconds: number; outSeconds: number };
+}
+
 const electronMocks = vi.hoisted(() => ({
   getAllWindows: vi.fn(),
   getPath: vi.fn(),
@@ -70,6 +77,15 @@ let service: ReplayClipsService;
 let root: string;
 let outsideRoot: string;
 let openPath: Mock<(path: string) => Promise<string>>;
+
+function createDeferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((nextResolve) => {
+    resolve = nextResolve;
+  });
+
+  return { promise, resolve };
+}
 let send: Mock<(channel: string, payload: unknown) => void>;
 let showItemInFolder: Mock<(path: string) => void>;
 
@@ -891,11 +907,9 @@ describe("ReplayClipsService file actions", () => {
     const renderReplayClipQuickTrim = vi
       .spyOn(
         service as unknown as {
-          renderReplayClipQuickTrim: (input: {
-            outputPath: string;
-            sourcePath: string;
-            trim: { inSeconds: number; outSeconds: number };
-          }) => Promise<void>;
+          renderReplayClipQuickTrim: (
+            input: ReplayClipQuickTrimRenderInput,
+          ) => Promise<void>;
         },
         "renderReplayClipQuickTrim",
       )
@@ -921,6 +935,316 @@ describe("ReplayClipsService file actions", () => {
     const copiedPath = copyFileToClipboard.mock.calls[0]?.[0];
     expect(copiedPath).not.toBe(resolve(path));
     expect(readFileSync(copiedPath ?? "", "utf8")).toBe("trimmed");
+  });
+
+  it("reports trimmed clipboard render progress with the operation request id", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({
+        durationSeconds: 20,
+        processedClipPath: path,
+        targetDurationSeconds: 20,
+      }),
+    );
+    vi.spyOn(FileClipboard, "copyFileToClipboard").mockResolvedValue({
+      ok: true,
+      error: null,
+    });
+    vi.spyOn(
+      service as unknown as {
+        renderReplayClipQuickTrim: (
+          input: ReplayClipQuickTrimRenderInput,
+        ) => Promise<void>;
+      },
+      "renderReplayClipQuickTrim",
+    ).mockImplementation(async (input) => {
+      input.onProgress?.(0.42);
+      writeFileSync(input.outputPath, "trimmed");
+    });
+    const onProgress = vi.fn();
+
+    await expect(
+      service.copyClipToClipboard(
+        {
+          id: "clip-1",
+          operationRequestId: "copy-request-1",
+          trim: { inSeconds: 2, outSeconds: 8 },
+        },
+        { onProgress },
+      ),
+    ).resolves.toEqual({
+      ok: true,
+      error: null,
+    });
+
+    expect(onProgress).toHaveBeenCalledWith({
+      operationRequestId: "copy-request-1",
+      progress: 0.42,
+    });
+  });
+
+  it("removes trimmed clipboard renders when clipboard copy fails", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    let outputPath = "";
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({
+        durationSeconds: 20,
+        processedClipPath: path,
+        targetDurationSeconds: 20,
+      }),
+    );
+    vi.spyOn(FileClipboard, "copyFileToClipboard").mockResolvedValue({
+      ok: false,
+      error: "copy failed",
+    });
+    vi.spyOn(
+      service as unknown as {
+        renderReplayClipQuickTrim: (
+          input: ReplayClipQuickTrimRenderInput,
+        ) => Promise<void>;
+      },
+      "renderReplayClipQuickTrim",
+    ).mockImplementation(async (input) => {
+      outputPath = input.outputPath;
+      writeFileSync(input.outputPath, "trimmed");
+    });
+
+    await expect(
+      service.copyClipToClipboard({
+        id: "clip-1",
+        trim: { inSeconds: 2, outSeconds: 8 },
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: "copy failed",
+    });
+
+    expect(outputPath).not.toBe("");
+    expect(existsSync(outputPath)).toBe(false);
+  });
+
+  it("returns safe errors and removes trimmed clipboard renders when render fails", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    let outputPath = "";
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({
+        durationSeconds: 20,
+        processedClipPath: path,
+        targetDurationSeconds: 20,
+      }),
+    );
+    vi.spyOn(FileClipboard, "copyFileToClipboard");
+    vi.spyOn(
+      service as unknown as {
+        renderReplayClipQuickTrim: (
+          input: ReplayClipQuickTrimRenderInput,
+        ) => Promise<void>;
+      },
+      "renderReplayClipQuickTrim",
+    ).mockImplementation(async (input) => {
+      outputPath = input.outputPath;
+      writeFileSync(input.outputPath, "partial");
+      throw new Error("render failed");
+    });
+
+    await expect(
+      service.copyClipToClipboard({
+        id: "clip-1",
+        trim: { inSeconds: 2, outSeconds: 8 },
+      }),
+    ).resolves.toEqual({
+      ok: false,
+      error: "render failed",
+    });
+
+    expect(outputPath).not.toBe("");
+    expect(existsSync(outputPath)).toBe(false);
+    expect(FileClipboard.copyFileToClipboard).not.toHaveBeenCalled();
+  });
+
+  it("queues copy and update operations for the same clip", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    const updateRender = createDeferred();
+    const renderOrder: string[] = [];
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({
+        durationSeconds: 20,
+        processedClipPath: path,
+        targetDurationSeconds: 20,
+      }),
+    );
+    vi.spyOn(FileClipboard, "copyFileToClipboard").mockResolvedValue({
+      ok: true,
+      error: null,
+    });
+    vi.spyOn(
+      service as unknown as {
+        renderReplayClipQuickTrim: (
+          input: ReplayClipQuickTrimRenderInput,
+        ) => Promise<void>;
+      },
+      "renderReplayClipQuickTrim",
+    ).mockImplementation(async (input) => {
+      renderOrder.push(input.trim.inSeconds === 1 ? "update" : "copy");
+      if (input.trim.inSeconds === 1) {
+        await updateRender.promise;
+      }
+      writeFileSync(input.outputPath, "trimmed");
+    });
+
+    const updatePromise = service.updateClipFile({
+      id: "clip-1",
+      trim: { inSeconds: 1, outSeconds: 10 },
+    });
+    await Promise.resolve();
+    const copyPromise = service.copyClipToClipboard({
+      id: "clip-1",
+      trim: { inSeconds: 2, outSeconds: 6 },
+    });
+    await Promise.resolve();
+
+    expect(renderOrder).toEqual(["update"]);
+    updateRender.resolve();
+    await expect(updatePromise).resolves.toMatchObject({ ok: true });
+    await expect(copyPromise).resolves.toEqual({ ok: true, error: null });
+    expect(renderOrder).toEqual(["update", "copy"]);
+  });
+
+  it("queues delete operations behind updates for the same clip", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    const updateRender = createDeferred();
+    const renderOrder: string[] = [];
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({
+        durationSeconds: 20,
+        processedClipPath: path,
+        targetDurationSeconds: 20,
+      }),
+    );
+    vi.spyOn(
+      service as unknown as {
+        renderReplayClipQuickTrim: (
+          input: ReplayClipQuickTrimRenderInput,
+        ) => Promise<void>;
+      },
+      "renderReplayClipQuickTrim",
+    ).mockImplementation(async (input) => {
+      renderOrder.push("update");
+      await updateRender.promise;
+      writeFileSync(input.outputPath, "trimmed");
+    });
+
+    const updatePromise = service.updateClipFile({
+      id: "clip-1",
+      trim: { inSeconds: 1, outSeconds: 10 },
+    });
+    await Promise.resolve();
+    const deletePromise = service.deleteClip("clip-1");
+    await Promise.resolve();
+
+    expect(renderOrder).toEqual(["update"]);
+    expect(repository.get("clip-1")).not.toBeNull();
+    expect(existsSync(path)).toBe(true);
+    updateRender.resolve();
+    await expect(updatePromise).resolves.toMatchObject({ ok: true });
+    await expect(deletePromise).resolves.toEqual({ ok: true, error: null });
+    expect(repository.get("clip-1")).toBeNull();
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("keeps in-place trim updates successful when temp cleanup fails", async () => {
+    vi.resetModules();
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    let resetDynamicDatabase: () => void = () => {};
+    let renderedTempOutputPath = "";
+    writeFileSync(path, "video");
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
+
+      return {
+        ...actual,
+        rm: vi.fn(
+          async (
+            targetPath: Parameters<typeof actual.rm>[0],
+            options?: Parameters<typeof actual.rm>[1],
+          ) => {
+            if (
+              renderedTempOutputPath &&
+              resolve(String(targetPath)) === resolve(renderedTempOutputPath)
+            ) {
+              throw new Error("temp cleanup failed");
+            }
+
+            return actual.rm(targetPath, options);
+          },
+        ),
+      };
+    });
+    vi.doMock("~/main/modules/editor/Editor.ffmpeg", () => ({
+      renderEditorExportWithFfmpeg: vi.fn(
+        async (input: { outputPath: string }) => {
+          renderedTempOutputPath = input.outputPath;
+          writeFileSync(input.outputPath, "trimmed");
+        },
+      ),
+    }));
+
+    try {
+      const { DatabaseService: MockedDatabaseService } = await import(
+        "~/main/modules/database"
+      );
+      resetDynamicDatabase = () => MockedDatabaseService.resetForTests();
+      const { mockIpcMainHandlers: mockDynamicIpcMainHandlers } = await import(
+        "~/main/test/ipc"
+      );
+      const { SettingsStoreService: MockedSettingsStoreService } = await import(
+        "~/main/modules/settings-store"
+      );
+      const { ReplayClipsRepository: MockedReplayClipsRepository } =
+        await import("../ReplayClips.repository");
+      const { ReplayClipsService: MockedReplayClipsService } = await import(
+        "../ReplayClips.service"
+      );
+      mockDynamicIpcMainHandlers();
+      const mockedDatabase = MockedDatabaseService.getInstance(":memory:");
+      const mockedRepository = new MockedReplayClipsRepository(mockedDatabase);
+      vi.spyOn(MockedSettingsStoreService, "getInstance").mockReturnValue({
+        get: () => ({
+          ...createDefaultSettings(),
+          recordingStoragePath: root,
+        }),
+      } as unknown as typeof MockedSettingsStoreService.prototype);
+      mockedRepository.upsert(
+        createReplayClip({
+          durationSeconds: 20,
+          processedClipPath: path,
+          targetDurationSeconds: 20,
+        }),
+      );
+      const mockedService = new MockedReplayClipsService();
+
+      await expect(
+        mockedService.updateClipFile({
+          id: "clip-1",
+          trim: { inSeconds: 1, outSeconds: 7 },
+        }),
+      ).resolves.toMatchObject({ error: null, ok: true });
+      expect(readFileSync(path, "utf8")).toBe("trimmed");
+      expect(renderedTempOutputPath).not.toBe("");
+      expect(mockedRepository.get("clip-1")).toMatchObject({
+        durationSeconds: 6,
+      });
+    } finally {
+      resetDynamicDatabase();
+      vi.doUnmock("node:fs/promises");
+      vi.doUnmock("~/main/modules/editor/Editor.ffmpeg");
+      vi.resetModules();
+    }
   });
 
   it("returns safe errors when clip clipboard copy throws", async () => {
@@ -1473,7 +1797,7 @@ describe("ReplayClipsService file actions", () => {
     });
   });
 
-  it("skips previews for failed clips and destroyed windows", async () => {
+  it("opens pending previews for failed clips and skips destroyed window broadcasts", async () => {
     const showClipPreviewOverlay = vi.fn();
     vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
       showClipPreviewOverlay,
@@ -1528,7 +1852,9 @@ describe("ReplayClipsService file actions", () => {
         detectedAt: "2026-06-12T10:00:00.000Z",
       }),
     ).resolves.toMatchObject({ status: "failed" });
-    expect(showClipPreviewOverlay).not.toHaveBeenCalled();
+    expect(showClipPreviewOverlay).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "saving_replay" }),
+    );
     expect(destroyedSend).not.toHaveBeenCalled();
   });
 
@@ -1692,14 +2018,25 @@ describe("ReplayClipsService file actions", () => {
       error: null,
     });
     registerIpcWindowRole({ id: 42 }, WindowName.ClipPreviewOverlay);
+    const clipPreviewEvent = { sender: { id: 42 } };
     expect(
-      await handlers.get(ReplayClipsChannel.Copy)?.(
-        { sender: { id: 42 } },
-        {
-          id: "clip-1",
-          trim: { inSeconds: 1, outSeconds: 2 },
-        },
-      ),
+      await handlers.get(ReplayClipsChannel.Get)?.(clipPreviewEvent, "clip-1"),
+    ).toEqual({
+      clip,
+      durationSeconds: null,
+      mediaUrl: "hinekora-media://replay-clip/clip-1",
+    });
+    expect(() =>
+      handlers.get(ReplayClipsChannel.List)?.(clipPreviewEvent),
+    ).toThrow(`${ReplayClipsChannel.List} is not available from this window`);
+    expect(() =>
+      handlers.get(ReplayClipsChannel.Open)?.(clipPreviewEvent, "clip-1"),
+    ).toThrow(`${ReplayClipsChannel.Open} is not available from this window`);
+    expect(
+      await handlers.get(ReplayClipsChannel.Copy)?.(clipPreviewEvent, {
+        id: "clip-1",
+        trim: { inSeconds: 1, outSeconds: 2 },
+      }),
     ).toEqual({
       ok: true,
       error: null,
@@ -2239,7 +2576,7 @@ describe("ReplayClipsService death-event workflow", () => {
     });
   });
 
-  it("saves a ready managed replay, shows the preview, cleans storage, and ignores duplicates", async () => {
+  it("saves a ready managed replay, opens the pending preview, cleans storage, and ignores duplicates", async () => {
     const replayPath = join(root, "2026-06-12_10-30-00.mp4");
     writeFileSync(replayPath, "video");
     const showClipPreviewOverlay = vi.fn().mockResolvedValue(undefined);
@@ -2313,7 +2650,7 @@ describe("ReplayClipsService death-event workflow", () => {
     });
     expect(duplicate.id).toBe(ready.id);
     expect(showClipPreviewOverlay).toHaveBeenCalledWith(
-      expect.objectContaining({ id: ready.id, status: "ready" }),
+      expect.objectContaining({ id: ready.id, status: "saving_replay" }),
     );
     expect(cleanup).toHaveBeenCalledWith({
       protectedPaths: [resolve(replayPath), resolve(replayPath)],

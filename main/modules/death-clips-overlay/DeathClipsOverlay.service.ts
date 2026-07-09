@@ -41,11 +41,6 @@ class DeathClipsOverlayService {
   }
 
   async showClip(clip: ReplayClip): Promise<void> {
-    const clipPath = clip.processedClipPath ?? clip.originalObsPath;
-    if (!clipPath) {
-      return;
-    }
-
     const wasRequested = this.clipPreviewOverlayRequested;
     const bounds = this.createWindowBounds();
     if (!this.clipPreviewWindow || this.clipPreviewWindow.isDestroyed()) {

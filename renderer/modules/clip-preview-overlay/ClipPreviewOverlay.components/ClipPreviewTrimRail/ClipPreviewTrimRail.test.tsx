@@ -2,28 +2,15 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  dispatchClipPreviewPointerEvent,
+  getClipPreviewTrimRail,
+} from "../../ClipPreviewOverlay.test-utils";
 import type { ClipPreviewTrimRange } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { ClipPreviewTrimRail } from "./ClipPreviewTrimRail";
 
 let container: HTMLDivElement;
 let root: Root;
-
-function dispatchPointerEvent(
-  target: Element,
-  type: string,
-  input: { clientX: number; pointerId?: number },
-) {
-  const event = new Event(type, {
-    bubbles: true,
-    cancelable: true,
-  }) as PointerEvent;
-  Object.defineProperties(event, {
-    button: { value: 0 },
-    clientX: { value: input.clientX },
-    pointerId: { value: input.pointerId ?? 1 },
-  });
-  target.dispatchEvent(event);
-}
 
 function findLabel(text: string): HTMLSpanElement {
   const label = Array.from(container.querySelectorAll("span")).find(
@@ -54,24 +41,7 @@ async function renderRail(
     );
   });
 
-  const rail = container.querySelector('[aria-label="Clip trim timeline"]');
-  if (!(rail instanceof HTMLElement)) {
-    throw new Error("Expected trim timeline");
-  }
-  rail.getBoundingClientRect = () =>
-    ({
-      bottom: 36,
-      height: 36,
-      left: 0,
-      right: 100,
-      top: 0,
-      width: 100,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    }) as DOMRect;
-
-  return rail;
+  return getClipPreviewTrimRail(container);
 }
 
 describe("ClipPreviewTrimRail", () => {
@@ -90,6 +60,7 @@ describe("ClipPreviewTrimRail", () => {
     });
     container.remove();
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("renders a lightweight rail without thumbnails", async () => {
@@ -109,15 +80,23 @@ describe("ClipPreviewTrimRail", () => {
     }
 
     await act(async () => {
-      dispatchPointerEvent(rail, "pointerdown", { clientX: 10 });
-      dispatchPointerEvent(selection, "pointerdown", { clientX: 40 });
-      dispatchPointerEvent(rail, "pointerup", { clientX: 40 });
-      dispatchPointerEvent(rail, "pointerdown", { clientX: 80 });
+      dispatchClipPreviewPointerEvent(rail, "pointerdown", { clientX: 10 });
+      dispatchClipPreviewPointerEvent(selection, "pointerdown", {
+        clientX: 40,
+      });
+      dispatchClipPreviewPointerEvent(rail, "pointerup", { clientX: 40 });
+      dispatchClipPreviewPointerEvent(rail, "pointerdown", { clientX: 80 });
     });
 
-    expect(onSeek).toHaveBeenNthCalledWith(1, 2);
-    expect(onSeek).toHaveBeenNthCalledWith(2, 4);
-    expect(onSeek).toHaveBeenNthCalledWith(3, 5);
+    expect(onSeek).toHaveBeenNthCalledWith(1, 2, {
+      preservePlayback: true,
+    });
+    expect(onSeek).toHaveBeenNthCalledWith(2, 4, {
+      preservePlayback: true,
+    });
+    expect(onSeek).toHaveBeenNthCalledWith(3, 5, {
+      preservePlayback: true,
+    });
   });
 
   it("attaches timers to trim edges until the range is tight", async () => {
@@ -135,9 +114,9 @@ describe("ClipPreviewTrimRail", () => {
   });
 
   it("moves the selected trim range as a fixed duration", async () => {
+    vi.useFakeTimers();
     const onTrimChange = vi.fn();
-    const onSeek = vi.fn();
-    const rail = await renderRail(onTrimChange, undefined, onSeek);
+    const rail = await renderRail(onTrimChange);
     const selection = container.querySelector(
       '[aria-label="Move selected trim range"]',
     );
@@ -146,14 +125,77 @@ describe("ClipPreviewTrimRail", () => {
     }
 
     await act(async () => {
-      dispatchPointerEvent(selection, "pointerdown", { clientX: 30 });
-      dispatchPointerEvent(rail, "pointermove", { clientX: 60 });
+      dispatchClipPreviewPointerEvent(selection, "pointerdown", {
+        clientX: 30,
+      });
+      vi.advanceTimersByTime(250);
+      dispatchClipPreviewPointerEvent(rail, "pointermove", { clientX: 60 });
     });
 
-    expect(onSeek).toHaveBeenLastCalledWith(5);
-    expect(onTrimChange).toHaveBeenLastCalledWith({
-      inSeconds: 5,
-      outSeconds: 8,
+    expect(onTrimChange).toHaveBeenLastCalledWith(
+      {
+        inSeconds: 5,
+        outSeconds: 8,
+      },
+      { previewMedia: true, previewSeconds: 5 },
+    );
+  });
+
+  it("waits for a hold before moving the selected trim range", async () => {
+    vi.useFakeTimers();
+    const onTrimChange = vi.fn();
+    const rail = await renderRail(onTrimChange);
+    const selection = container.querySelector(
+      '[aria-label="Move selected trim range"]',
+    );
+    if (!(selection instanceof HTMLElement)) {
+      throw new Error("Expected trim selection");
+    }
+
+    await act(async () => {
+      dispatchClipPreviewPointerEvent(selection, "pointerdown", {
+        clientX: 30,
+      });
+      vi.advanceTimersByTime(249);
+      dispatchClipPreviewPointerEvent(rail, "pointermove", { clientX: 60 });
     });
+    expect(onTrimChange).not.toHaveBeenCalled();
+
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+      dispatchClipPreviewPointerEvent(rail, "pointermove", { clientX: 60 });
+    });
+
+    expect(onTrimChange).toHaveBeenLastCalledWith(
+      {
+        inSeconds: 5,
+        outSeconds: 8,
+      },
+      { previewMedia: true, previewSeconds: 5 },
+    );
+  });
+
+  it("previews the active trim edge while dragging handles", async () => {
+    const onTrimChange = vi.fn();
+    const rail = await renderRail(onTrimChange);
+    const endHandle = container.querySelector('[aria-label="Trim clip end"]');
+    if (!(endHandle instanceof HTMLElement)) {
+      throw new Error("Expected trim end handle");
+    }
+
+    await act(async () => {
+      dispatchClipPreviewPointerEvent(endHandle, "pointerdown", {
+        clientX: 80,
+      });
+      dispatchClipPreviewPointerEvent(rail, "pointermove", { clientX: 70 });
+    });
+
+    expect(onTrimChange).toHaveBeenLastCalledWith(
+      {
+        inSeconds: 2,
+        outSeconds: 7,
+      },
+      { previewMedia: true, previewSeconds: 7 },
+    );
   });
 });

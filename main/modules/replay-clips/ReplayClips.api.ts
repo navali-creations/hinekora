@@ -12,6 +12,7 @@ import type {
   ReplayClipLibraryPage,
   ReplayClipLibraryQuery,
   ReplayClipListFilter,
+  ReplayClipOperationProgress,
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
 } from "./ReplayClips.dto";
@@ -53,6 +54,23 @@ const ReplayClipsAPI = {
 
     return () =>
       ipcRenderer.removeListener(ReplayClipsChannel.StatusChanged, listener);
+  },
+  onOperationProgress: (
+    callback: (progress: ReplayClipOperationProgress) => void,
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      progress: ReplayClipOperationProgress,
+    ) => {
+      callback(progress);
+    };
+    ipcRenderer.on(ReplayClipsChannel.OperationProgress, listener);
+
+    return () =>
+      ipcRenderer.removeListener(
+        ReplayClipsChannel.OperationProgress,
+        listener,
+      );
   },
 };
 

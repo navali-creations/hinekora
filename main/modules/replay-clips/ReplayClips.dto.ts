@@ -34,13 +34,20 @@ export interface ReplayClipTrimInput {
 
 export interface ReplayClipCopyInput {
   id: string;
+  operationRequestId?: string | null;
   trim?: ReplayClipTrimInput | null;
 }
 
 export interface ReplayClipUpdateInput {
   id: string;
   name?: string | null;
+  operationRequestId?: string | null;
   trim?: ReplayClipTrimInput | null;
+}
+
+export interface ReplayClipOperationProgress {
+  operationRequestId: string;
+  progress: number;
 }
 
 export interface ReplayClipUpdateResult {

@@ -1,4 +1,4 @@
-import type { SettingsStoreOverlaySnapshot } from "~/main/modules/settings-store/SettingsStore.dto";
+import type { SettingsStoreScopedSnapshot } from "~/main/modules/settings-store/SettingsStore.dto";
 import { pickCaptureProfileSettingsUpdate } from "~/renderer/modules/capture-profiles/CaptureProfiles.utils/CaptureProfiles.utils";
 import { isManagedRecorderStatusActive } from "~/renderer/modules/managed-recorder/ManagedRecorder.utils/ManagedRecorder.utils";
 import { trackEvent } from "~/renderer/modules/umami";
@@ -114,7 +114,7 @@ export const createSettingsSlice: BoundStoreStateCreator<SettingsSlice> = (
 
 async function syncSelectedCaptureProfileFromSettingsUpdate(
   input: Partial<AppSettings>,
-  settings: SettingsStoreOverlaySnapshot,
+  settings: SettingsStoreScopedSnapshot,
   set: Parameters<BoundStoreStateCreator<SettingsSlice>>[0],
   get: () => BoundStore,
   isCurrentRequest: () => boolean,
@@ -177,8 +177,8 @@ async function syncSelectedCaptureProfileFromSettingsUpdate(
 }
 
 function createCaptureSettingsUpdateDelta(
-  previous: SettingsStoreOverlaySnapshot | null,
-  next: SettingsStoreOverlaySnapshot,
+  previous: SettingsStoreScopedSnapshot | null,
+  next: SettingsStoreScopedSnapshot,
 ): Partial<AppSettings> {
   const input: Partial<AppSettings> = {};
 

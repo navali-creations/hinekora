@@ -21,7 +21,12 @@ import {
   unregisterIpcWindowRole,
 } from "~/main/utils/ipc-window-roles";
 
-import { HINEKORA_DISCORD_URL, HINEKORA_GITHUB_URL } from "~/types";
+import {
+  HINEKORA_DISCORD_URL,
+  HINEKORA_GITHUB_URL,
+  quickClipTrimMaximumSeconds,
+  quickClipTrimMinimumSeconds,
+} from "~/types";
 import { MainWindowChannel } from "./MainWindow.channels";
 import {
   type MainWindowOpenEditorClipOptions,
@@ -33,7 +38,6 @@ const currentDir = __dirname;
 const START_MINIMIZED_ARG = "--hidden";
 const MAIN_WINDOW_EDITOR_CLIP_ID_MAX_LENGTH = 128;
 const MAIN_WINDOW_EDITOR_CLIP_TITLE_MAX_LENGTH = 120;
-const MAIN_WINDOW_EDITOR_CLIP_TRIM_MAX_SECONDS = 3_600;
 const MAIN_WINDOW_LOG_SCOPE = "main-window";
 const MAIN_WINDOW_DEFAULT_WIDTH = 1200;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 800;
@@ -324,15 +328,18 @@ class MainWindowService {
         value.trim.inSeconds,
         "trim start",
         MainWindowChannel.OpenEditorClip,
-        { min: 0, max: MAIN_WINDOW_EDITOR_CLIP_TRIM_MAX_SECONDS },
+        { min: 0, max: quickClipTrimMaximumSeconds },
       );
       assertNumber(
         value.trim.outSeconds,
         "trim end",
         MainWindowChannel.OpenEditorClip,
-        { min: 0.1, max: MAIN_WINDOW_EDITOR_CLIP_TRIM_MAX_SECONDS },
+        { min: quickClipTrimMinimumSeconds, max: quickClipTrimMaximumSeconds },
       );
-      if (value.trim.outSeconds - value.trim.inSeconds < 0.1) {
+      if (
+        value.trim.outSeconds - value.trim.inSeconds <
+        quickClipTrimMinimumSeconds
+      ) {
         throw new IpcValidationError(
           MainWindowChannel.OpenEditorClip,
           "trim range is too short",

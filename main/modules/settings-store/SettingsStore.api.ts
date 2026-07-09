@@ -3,13 +3,18 @@ import { ipcRenderer } from "electron";
 import type { AppSettings } from "~/types";
 import { SettingsStoreChannel } from "./SettingsStore.channels";
 import type {
+  SettingsStoreClipPreviewOverlaySnapshot,
   SettingsStoreOverlaySnapshot,
+  SettingsStoreScopedSnapshot,
   SettingsUpdateInput,
 } from "./SettingsStore.dto";
 
 const SettingsStoreAPI = {
   scope: "full" as const,
   get: (): Promise<AppSettings> => ipcRenderer.invoke(SettingsStoreChannel.Get),
+  getClipPreviewOverlaySnapshot:
+    (): Promise<SettingsStoreClipPreviewOverlaySnapshot> =>
+      ipcRenderer.invoke(SettingsStoreChannel.GetClipPreviewOverlaySnapshot),
   getOverlaySnapshot: (): Promise<SettingsStoreOverlaySnapshot> =>
     ipcRenderer.invoke(SettingsStoreChannel.GetOverlaySnapshot),
   onChanged: (callback: (settings: AppSettings) => void): (() => void) => {
@@ -24,6 +29,24 @@ const SettingsStoreAPI = {
 
     return () =>
       ipcRenderer.removeListener(SettingsStoreChannel.Changed, listener);
+  },
+  onClipPreviewOverlayChanged: (
+    callback: (settings: SettingsStoreClipPreviewOverlaySnapshot) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      settings: SettingsStoreClipPreviewOverlaySnapshot,
+    ) => {
+      callback(settings);
+    };
+
+    ipcRenderer.on(SettingsStoreChannel.ClipPreviewOverlayChanged, listener);
+
+    return () =>
+      ipcRenderer.removeListener(
+        SettingsStoreChannel.ClipPreviewOverlayChanged,
+        listener,
+      );
   },
   onOverlayChanged: (
     callback: (settings: SettingsStoreOverlaySnapshot) => void,
@@ -40,7 +63,9 @@ const SettingsStoreAPI = {
     return () =>
       ipcRenderer.removeListener(SettingsStoreChannel.OverlayChanged, listener);
   },
-  update: (input: SettingsUpdateInput): Promise<AppSettings> =>
+  update: (
+    input: SettingsUpdateInput,
+  ): Promise<AppSettings | SettingsStoreScopedSnapshot> =>
     ipcRenderer.invoke(SettingsStoreChannel.Update, input),
 };
 

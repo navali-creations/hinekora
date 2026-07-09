@@ -5,7 +5,6 @@ type SettingsStoreOverlaySnapshot = Partial<AppSettings> &
     AppSettings,
     | "activeGame"
     | "auraOverlayShowEditingFrame"
-    | "clipPreviewInfoAlertDismissed"
     | "deathClipSeconds"
     | "selectedCaptureProfileId"
     | "selectedCaptureProfileIdsByGame"
@@ -13,9 +12,23 @@ type SettingsStoreOverlaySnapshot = Partial<AppSettings> &
     | "telemetryCrashReporting"
     | "telemetryUsageAnalytics"
   >;
+type SettingsStoreClipPreviewOverlaySnapshot = Partial<AppSettings> &
+  Pick<
+    AppSettings,
+    | "clipPreviewInfoAlertDismissed"
+    | "telemetryCrashReporting"
+    | "telemetryUsageAnalytics"
+  >;
+type SettingsStoreScopedSnapshot =
+  | SettingsStoreClipPreviewOverlaySnapshot
+  | SettingsStoreOverlaySnapshot;
 
 export type SettingsUpdateInput = Partial<AppSettings>;
-export type { SettingsStoreOverlaySnapshot };
+export type {
+  SettingsStoreClipPreviewOverlaySnapshot,
+  SettingsStoreOverlaySnapshot,
+  SettingsStoreScopedSnapshot,
+};
 
 export function createSettingsStoreOverlaySnapshot(
   settings: AppSettings,
@@ -23,11 +36,20 @@ export function createSettingsStoreOverlaySnapshot(
   return {
     activeGame: settings.activeGame,
     auraOverlayShowEditingFrame: settings.auraOverlayShowEditingFrame,
-    clipPreviewInfoAlertDismissed: settings.clipPreviewInfoAlertDismissed,
     deathClipSeconds: settings.deathClipSeconds,
     selectedCaptureProfileId: settings.selectedCaptureProfileId,
     selectedCaptureProfileIdsByGame: settings.selectedCaptureProfileIdsByGame,
     selectedProfileId: settings.selectedProfileId,
+    telemetryCrashReporting: settings.telemetryCrashReporting,
+    telemetryUsageAnalytics: settings.telemetryUsageAnalytics,
+  };
+}
+
+export function createSettingsStoreClipPreviewOverlaySnapshot(
+  settings: AppSettings,
+): SettingsStoreClipPreviewOverlaySnapshot {
+  return {
+    clipPreviewInfoAlertDismissed: settings.clipPreviewInfoAlertDismissed,
     telemetryCrashReporting: settings.telemetryCrashReporting,
     telemetryUsageAnalytics: settings.telemetryUsageAnalytics,
   };

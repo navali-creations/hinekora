@@ -82,6 +82,10 @@ export const useCapturePreviewShallow = <T>(
   selector: (capturePreview: BoundStore["capturePreview"]) => T,
 ) => useBoundStore(useShallow((state) => selector(state.capturePreview)));
 
+export const useClipPreviewOverlayShallow = <T>(
+  selector: (clipPreviewOverlay: BoundStore["clipPreviewOverlay"]) => T,
+) => useBoundStore(useShallow((state) => selector(state.clipPreviewOverlay)));
+
 export const useManagedRecorderSelector = <T>(
   selector: (managedRecorder: BoundStore["managedRecorder"]) => T,
 ) => useBoundStore((state) => selector(state.managedRecorder));

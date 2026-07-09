@@ -66,6 +66,7 @@ import type {
   ReplayClipLibraryPage,
   ReplayClipLibraryQuery,
   ReplayClipListFilter,
+  ReplayClipOperationProgress,
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
 } from "~/main/modules/replay-clips/ReplayClips.dto";
@@ -74,7 +75,7 @@ import type {
   SavedEditsLibraryPage,
   SavedEditsLibraryQuery,
 } from "~/main/modules/saved-edits/SavedEdits.dto";
-import type { SettingsStoreOverlaySnapshot } from "~/main/modules/settings-store/SettingsStore.dto";
+import type { SettingsStoreScopedSnapshot } from "~/main/modules/settings-store/SettingsStore.dto";
 import type {
   StateImportResult,
   StateTransferResult,
@@ -337,6 +338,9 @@ declare global {
         copy: (
           input: string | ReplayClipCopyInput,
         ) => Promise<ReplayClipFileActionResult>;
+        onOperationProgress: (
+          callback: (progress: ReplayClipOperationProgress) => void,
+        ) => () => void;
         delete: (id: string) => Promise<ReplayClipFileActionResult>;
         deleteMany: (ids: string[]) => Promise<ReplayClipBatchFileActionResult>;
         onStatusChanged: (callback: (clip: ReplayClip) => void) => () => void;
@@ -353,13 +357,15 @@ declare global {
       };
       settings: {
         scope: "full" | "overlay";
-        get: () => Promise<AppSettings | SettingsStoreOverlaySnapshot>;
+        get: () => Promise<AppSettings | SettingsStoreScopedSnapshot>;
         onChanged: (
           callback: (
-            settings: AppSettings | SettingsStoreOverlaySnapshot,
+            settings: AppSettings | SettingsStoreScopedSnapshot,
           ) => void,
         ) => () => void;
-        update?: (input: Partial<AppSettings>) => Promise<AppSettings>;
+        update?: (
+          input: Partial<AppSettings>,
+        ) => Promise<AppSettings | SettingsStoreScopedSnapshot>;
       };
       storage: {
         getInfo: () => Promise<StorageInfo>;

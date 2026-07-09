@@ -7,27 +7,10 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
-import { initUmami, trackPageView } from "./modules/umami";
+import { trackPageView } from "./modules/umami";
 import { routeTree } from "./routeTree.gen";
-import { initSentry } from "./sentry";
 import "./styles.css";
-
-async function initTelemetry(): Promise<void> {
-  if (!window.electron.settings?.get) {
-    return;
-  }
-
-  try {
-    const settings = await window.electron.settings.get();
-    initSentry(settings.telemetryCrashReporting);
-    initUmami(settings.telemetryUsageAnalytics);
-  } catch (error) {
-    console.warn(
-      "[Renderer] Could not load telemetry settings, skipping telemetry init:",
-      error,
-    );
-  }
-}
+import { initTelemetry } from "./telemetry";
 
 void initTelemetry();
 

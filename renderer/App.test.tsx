@@ -244,4 +244,27 @@ describe("App overlay bootstrap", () => {
     expect(storeMocks.hydrateProfiles).toHaveBeenCalledTimes(1);
     expect(storeMocks.hydrateReplayClips).toHaveBeenCalledTimes(1);
   });
+
+  it("hydrates only settings for the clip preview overlay", async () => {
+    window.location.hash = "#/clip-preview-overlay?clipId=clip-1";
+    const stopSettingsListener = vi.fn();
+    storeMocks.startSettingsListener.mockReturnValue(stopSettingsListener);
+    const { container, root } = renderApp();
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    expect(container.textContent).toContain("Clip preview overlay");
+    expect(storeMocks.hydrateSettings).toHaveBeenCalledTimes(1);
+    expect(storeMocks.startSettingsListener).toHaveBeenCalledTimes(1);
+    expect(storeMocks.hydrateReplayClips).not.toHaveBeenCalled();
+    expect(storeMocks.startReplayClipsListener).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
+
+    expect(stopSettingsListener).toHaveBeenCalledTimes(1);
+  });
 });

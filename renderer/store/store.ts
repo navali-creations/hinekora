@@ -11,6 +11,7 @@ import { createCapturePreviewSlice } from "~/renderer/modules/capture-preview/Ca
 import { createCaptureProfilesSlice } from "~/renderer/modules/capture-profiles/CaptureProfiles.slice/CaptureProfiles.slice";
 import { createChangelogSlice } from "~/renderer/modules/changelog/Changelog.slice/Changelog.slice";
 import { createClientLogSlice } from "~/renderer/modules/client-log/ClientLog.slice/ClientLog.slice";
+import { createClipPreviewOverlaySlice } from "~/renderer/modules/clip-preview-overlay/ClipPreviewOverlay.slice/ClipPreviewOverlay.slice";
 import { createCropEditorSlice } from "~/renderer/modules/crop-editor/CropEditor.slice/CropEditor.slice";
 import { createEditorSlice } from "~/renderer/modules/editor/Editor.slice/Editor.slice";
 import { createManagedRecorderSlice } from "~/renderer/modules/managed-recorder/ManagedRecorder.slice/ManagedRecorder.slice";
@@ -52,6 +53,7 @@ export const useBoundStore = create<BoundStore>()(
       const onboardingSlice = createOnboardingSlice(...args);
       const editorSlice = createEditorSlice(...args);
       const capturePreviewSlice = createCapturePreviewSlice(...args);
+      const clipPreviewOverlaySlice = createClipPreviewOverlaySlice(...args);
       const managedRecorderSlice = createManagedRecorderSlice(...args);
       const poeProcessSlice = createPoeProcessSlice(...args);
       const settingsSlice = createSettingsSlice(...args);
@@ -76,6 +78,7 @@ export const useBoundStore = create<BoundStore>()(
         ...onboardingSlice,
         ...editorSlice,
         ...capturePreviewSlice,
+        ...clipPreviewOverlaySlice,
         ...managedRecorderSlice,
         ...poeProcessSlice,
         ...settingsSlice,

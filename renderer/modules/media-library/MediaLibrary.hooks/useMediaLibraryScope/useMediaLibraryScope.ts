@@ -54,41 +54,53 @@ function syncMediaLibraryScopeWithSettings(
   };
 }
 
+function hasMediaLibrarySettings(
+  settings: Partial<AppSettings> | null,
+): settings is Partial<AppSettings> & Pick<AppSettings, "activeGame"> {
+  return settings?.activeGame === "poe1" || settings?.activeGame === "poe2";
+}
+
 function useMediaLibraryScope(): {
   isReady: boolean;
   scope: MediaLibraryScope;
   setLeague: (league: string) => void;
 } {
   const settings = useSettingsSelector((settingsSlice) => settingsSlice.value);
+  const mediaLibrarySettings = hasMediaLibrarySettings(settings)
+    ? settings
+    : null;
   const [scope, setScope] = useState<MediaLibraryScope>(() =>
-    createMediaLibraryScopeFromSettings(settings),
+    createMediaLibraryScopeFromSettings(mediaLibrarySettings),
   );
   const [syncedSettingsGame, setSyncedSettingsGame] = useState<GameId | null>(
-    () => settings?.activeGame ?? null,
+    () => mediaLibrarySettings?.activeGame ?? null,
   );
 
   useEffect(() => {
-    if (!settings) {
+    if (!mediaLibrarySettings) {
       return;
     }
 
-    setScope((current) => syncMediaLibraryScopeWithSettings(settings, current));
-    setSyncedSettingsGame(settings.activeGame);
-  }, [settings]);
+    setScope((current) =>
+      syncMediaLibraryScopeWithSettings(mediaLibrarySettings, current),
+    );
+    setSyncedSettingsGame(mediaLibrarySettings.activeGame);
+  }, [mediaLibrarySettings]);
 
   const setLeague = useCallback((league: string) => {
     setScope((current) => ({ ...current, league }));
   }, []);
 
   const isSyncedWithSettings =
-    settings !== null && syncedSettingsGame === settings.activeGame;
+    mediaLibrarySettings !== null &&
+    syncedSettingsGame === mediaLibrarySettings.activeGame;
   const renderedScope =
-    settings && !isSyncedWithSettings
-      ? syncMediaLibraryScopeWithSettings(settings, scope)
+    mediaLibrarySettings && !isSyncedWithSettings
+      ? syncMediaLibraryScopeWithSettings(mediaLibrarySettings, scope)
       : scope;
 
   return {
-    isReady: settings !== null,
+    isReady: mediaLibrarySettings !== null,
     scope: renderedScope,
     setLeague,
   };

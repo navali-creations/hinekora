@@ -3,6 +3,7 @@ import { existsSync, statSync } from "node:fs";
 import { copyFile, rename, rm, stat, unlink } from "node:fs/promises";
 import { basename, dirname, parse, resolve } from "node:path";
 
+import type { WebContents } from "electron";
 import { app, BrowserWindow, protocol, shell } from "electron";
 
 import { BookmarksService } from "~/main/modules/bookmarks";
@@ -42,10 +43,13 @@ import {
 } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 import { readMp4DurationSeconds } from "~/main/utils/media-metadata";
+import { copyRenderedFileToClipboard } from "~/main/utils/rendered-file-clipboard";
 
 import {
   type GameId,
   GameIdSchema,
+  quickClipTrimMaximumSeconds,
+  quickClipTrimMinimumSeconds,
   type ReplayClip,
   type ReplayClipKind,
   ReplayClipKindSchema,
@@ -62,6 +66,7 @@ import type {
   ReplayClipLibrarySortDirection,
   ReplayClipLibrarySortKey,
   ReplayClipListFilter,
+  ReplayClipOperationProgress,
   ReplayClipTrimInput,
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
@@ -83,9 +88,7 @@ const REPLAY_CLIP_MEDIA_SCHEME = "hinekora-media";
 const defaultLibraryPageSize = 20;
 const maxEditorReplayPageValidationCandidates = 500;
 const maxLibraryPageSize = 100;
-const maxReplayClipQuickTrimSeconds = 3_600;
 const maxReplayClipRenameLength = 120;
-const minimumReplayClipQuickTrimSeconds = 0.1;
 const librarySortKeys: ReplayClipLibrarySortKey[] = [
   "createdAt",
   "name",
@@ -100,9 +103,14 @@ interface AvailableReplayClip {
   storedClipPath: string;
 }
 
+interface ReplayClipOperationProgressOptions {
+  onProgress?: (progress: ReplayClipOperationProgress) => void;
+}
+
 class ReplayClipsService {
   private static instance: ReplayClipsService | null = null;
 
+  private readonly clipFileOperationQueues = new Map<string, Promise<void>>();
   private readonly duplicateTracker = new ReplayClipDuplicateTracker();
   private readonly repository: ReplayClipsRepository;
 
@@ -346,6 +354,7 @@ class ReplayClipsService {
 
     try {
       clip = this.updateClip(clip, { status: "saving_replay" });
+      this.showClipPreviewOverlay(clip);
       logInfo(REPLAY_CLIPS_LOG_SCOPE, "Saving replay for death event", {
         clipId: clip.id,
         backend: "managed",
@@ -528,9 +537,19 @@ class ReplayClipsService {
 
   async copyClipToClipboard(
     input: string | ReplayClipCopyInput,
+    options: ReplayClipOperationProgressOptions = {},
   ): Promise<ReplayClipFileActionResult> {
     const copyInput = typeof input === "string" ? { id: input } : input;
 
+    return this.queueClipFileOperation(copyInput.id, () =>
+      this.copyClipToClipboardQueued(copyInput, options),
+    );
+  }
+
+  private async copyClipToClipboardQueued(
+    copyInput: ReplayClipCopyInput,
+    options: ReplayClipOperationProgressOptions,
+  ): Promise<ReplayClipFileActionResult> {
     try {
       const clip = this.repository.get(copyInput.id);
       if (!clip) {
@@ -554,7 +573,13 @@ class ReplayClipsService {
         : false;
 
       if (didTrim && trim) {
+        const onProgress = createReplayClipOperationProgressHandler(
+          copyInput.operationRequestId,
+          options,
+        );
+
         return await this.copyTrimmedClipToClipboard({
+          ...(onProgress ? { onProgress } : {}),
           sourcePath: clipPath,
           trim,
         });
@@ -568,6 +593,16 @@ class ReplayClipsService {
 
   async updateClipFile(
     input: ReplayClipUpdateInput,
+    options: ReplayClipOperationProgressOptions = {},
+  ): Promise<ReplayClipUpdateResult> {
+    return this.queueClipFileOperation(input.id, () =>
+      this.updateClipFileQueued(input, options),
+    );
+  }
+
+  private async updateClipFileQueued(
+    input: ReplayClipUpdateInput,
+    options: ReplayClipOperationProgressOptions,
   ): Promise<ReplayClipUpdateResult> {
     try {
       const clip = this.repository.get(input.id);
@@ -603,7 +638,13 @@ class ReplayClipsService {
         : false;
 
       if (didTrim && trim) {
+        const onProgress = createReplayClipOperationProgressHandler(
+          input.operationRequestId,
+          options,
+        );
+
         await this.renderReplayClipQuickTrim({
+          ...(onProgress ? { onProgress } : {}),
           outputPath: finalPath,
           sourcePath,
           trim,
@@ -660,6 +701,12 @@ class ReplayClipsService {
   }
 
   async deleteClip(id: string): Promise<ReplayClipFileActionResult> {
+    return this.queueClipFileOperation(id, () => this.deleteClipQueued(id));
+  }
+
+  private async deleteClipQueued(
+    id: string,
+  ): Promise<ReplayClipFileActionResult> {
     try {
       const clip = this.repository.get(id);
       if (!clip) {
@@ -753,17 +800,26 @@ class ReplayClipsService {
       updatedAt: new Date().toISOString(),
     };
     this.persistAndPublish(updated);
-    this.showReadyClipPreview(updated);
 
     return updated;
   }
 
-  private showReadyClipPreview(clip: ReplayClip): void {
-    if (clip.status !== "ready") {
-      return;
+  private showClipPreviewOverlay(clip: ReplayClip): void {
+    try {
+      void OverlayWindowsService.getInstance()
+        .showClipPreviewOverlay(clip)
+        .catch((error: unknown) => {
+          logWarn(REPLAY_CLIPS_LOG_SCOPE, "Replay clip overlay failed", {
+            clipId: clip.id,
+            error: safeErrorMessage(error),
+          });
+        });
+    } catch (error) {
+      logWarn(REPLAY_CLIPS_LOG_SCOPE, "Replay clip overlay failed", {
+        clipId: clip.id,
+        error: safeErrorMessage(error),
+      });
     }
-
-    void OverlayWindowsService.getInstance().showClipPreviewOverlay(clip);
   }
 
   private cleanupRecordingStorageForClip(clip: ReplayClip): void {
@@ -797,7 +853,7 @@ class ReplayClipsService {
   private setupHandlers(): void {
     registerGuardedIpcHandler(
       ReplayClipsChannel.Get,
-      [WindowName.Main],
+      [WindowName.Main, WindowName.ClipPreviewOverlay],
       (_event, id: unknown) => {
         try {
           assertString(id, "id", ReplayClipsChannel.Get, {
@@ -812,11 +868,7 @@ class ReplayClipsService {
     );
     registerGuardedIpcHandler(
       ReplayClipsChannel.List,
-      [
-        WindowName.Main,
-        WindowName.RecorderOverlay,
-        WindowName.ClipPreviewOverlay,
-      ],
+      [WindowName.Main, WindowName.RecorderOverlay],
       (_event, filter: unknown) => {
         try {
           return this.list(this.validateListFilter(filter));
@@ -844,9 +896,15 @@ class ReplayClipsService {
     registerGuardedIpcHandler(
       ReplayClipsChannel.Update,
       [WindowName.Main, WindowName.ClipPreviewOverlay],
-      (_event, input: unknown) => {
+      (event, input: unknown) => {
         try {
-          return this.updateClipFile(this.validateUpdateInput(input));
+          const sender = (event as { sender?: WebContents }).sender;
+
+          return this.updateClipFile(this.validateUpdateInput(input), {
+            onProgress: (progress) => {
+              this.sendOperationProgress(sender, progress);
+            },
+          });
         } catch (error) {
           return handleValidationError(error);
         }
@@ -854,7 +912,7 @@ class ReplayClipsService {
     );
     registerGuardedIpcHandler(
       ReplayClipsChannel.Open,
-      [WindowName.Main, WindowName.ClipPreviewOverlay],
+      [WindowName.Main],
       (_event, id: unknown) => {
         try {
           assertString(id, "id", ReplayClipsChannel.Open, {
@@ -885,9 +943,15 @@ class ReplayClipsService {
     registerGuardedIpcHandler(
       ReplayClipsChannel.Copy,
       [WindowName.Main, WindowName.ClipPreviewOverlay],
-      (_event, input: unknown) => {
+      (event, input: unknown) => {
         try {
-          return this.copyClipToClipboard(this.validateCopyInput(input));
+          const sender = (event as { sender?: WebContents }).sender;
+
+          return this.copyClipToClipboard(this.validateCopyInput(input), {
+            onProgress: (progress) => {
+              this.sendOperationProgress(sender, progress);
+            },
+          });
         } catch (error) {
           return handleValidationError(error);
         }
@@ -919,6 +983,23 @@ class ReplayClipsService {
         }
       },
     );
+  }
+
+  private sendOperationProgress(
+    sender: WebContents | undefined,
+    progress: ReplayClipOperationProgress,
+  ): void {
+    try {
+      if (!sender || sender.isDestroyed()) {
+        return;
+      }
+
+      sender.send(ReplayClipsChannel.OperationProgress, progress);
+    } catch (error) {
+      logWarn(REPLAY_CLIPS_LOG_SCOPE, "Failed to send replay clip progress", {
+        error: safeErrorMessage(error),
+      });
+    }
   }
 
   private getStoredClipPath(id: string): string | null {
@@ -973,6 +1054,7 @@ class ReplayClipsService {
   }
 
   private async renderReplayClipQuickTrim(input: {
+    onProgress?: (progress: number) => void;
     outputPath: string;
     sourcePath: string;
     trim: ReplayClipTrimInput;
@@ -995,6 +1077,7 @@ class ReplayClipsService {
 
     try {
       await renderEditorExportWithFfmpeg({
+        ...(input.onProgress ? { onProgress: input.onProgress } : {}),
         outputPath: tempOutputPath,
         resolution: "1080p",
         segments,
@@ -1002,7 +1085,12 @@ class ReplayClipsService {
 
       if (arePathsEqual(input.sourcePath, input.outputPath)) {
         await copyFile(tempOutputPath, input.outputPath);
-        await rm(tempOutputPath, { force: true });
+        await rm(tempOutputPath, { force: true }).catch((error: unknown) => {
+          logWarn(REPLAY_CLIPS_LOG_SCOPE, "Replay trim temp cleanup failed", {
+            error: safeErrorMessage(error),
+            ...createSafePathLogFields(tempOutputPath, "temp"),
+          });
+        });
         return;
       }
 
@@ -1014,31 +1102,24 @@ class ReplayClipsService {
   }
 
   private async copyTrimmedClipToClipboard(input: {
+    onProgress?: (progress: number) => void;
     sourcePath: string;
     trim: ReplayClipTrimInput;
   }): Promise<ReplayClipFileActionResult> {
-    const outputPath = await createEditorClipboardOutputPath({
-      fileName: basename(input.sourcePath),
-      tempPath: app.getPath("temp"),
-    });
+    const tempPath = app.getPath("temp");
 
-    try {
-      await this.renderReplayClipQuickTrim({
-        outputPath,
-        sourcePath: input.sourcePath,
-        trim: input.trim,
-      });
-
-      const result = await FileClipboard.copyFileToClipboard(outputPath);
-      if (!result.ok) {
-        await rm(outputPath, { force: true });
-        return result;
-      }
-
-      await cleanupEditorClipboardOutputDirectory({
-        protectedPath: outputPath,
-        tempPath: app.getPath("temp"),
-      }).catch((error) => {
+    return copyRenderedFileToClipboard({
+      cleanup: (outputPath) =>
+        cleanupEditorClipboardOutputDirectory({
+          protectedPath: outputPath,
+          tempPath,
+        }),
+      createOutputPath: () =>
+        createEditorClipboardOutputPath({
+          fileName: basename(input.sourcePath),
+          tempPath,
+        }),
+      onCleanupError: (error, outputPath) => {
         logWarn(
           REPLAY_CLIPS_LOG_SCOPE,
           "Replay clip clipboard cleanup failed",
@@ -1047,12 +1128,36 @@ class ReplayClipsService {
             ...createSafePathLogFields(outputPath, "clipboard"),
           },
         );
-      });
+      },
+      render: (outputPath) =>
+        this.renderReplayClipQuickTrim({
+          ...(input.onProgress ? { onProgress: input.onProgress } : {}),
+          outputPath,
+          sourcePath: input.sourcePath,
+          trim: input.trim,
+        }),
+    });
+  }
 
-      return result;
-    } catch (error) {
-      await rm(outputPath, { force: true });
-      throw error;
+  private async queueClipFileOperation<T>(
+    clipId: string,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const previous =
+      this.clipFileOperationQueues.get(clipId) ?? Promise.resolve();
+    const run = previous.catch(() => undefined).then(operation);
+    const queued = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.clipFileOperationQueues.set(clipId, queued);
+
+    try {
+      return await run;
+    } finally {
+      if (this.clipFileOperationQueues.get(clipId) === queued) {
+        this.clipFileOperationQueues.delete(clipId);
+      }
     }
   }
 
@@ -1094,12 +1199,12 @@ class ReplayClipsService {
     durationSeconds: number,
   ): ReplayClipTrimInput {
     const duration = Number.isFinite(durationSeconds)
-      ? Math.max(durationSeconds, minimumReplayClipQuickTrimSeconds)
-      : maxReplayClipQuickTrimSeconds;
+      ? Math.max(durationSeconds, quickClipTrimMinimumSeconds)
+      : quickClipTrimMaximumSeconds;
     const inSeconds = clampReplayClipSeconds(trim.inSeconds, 0, duration);
     const outSeconds = clampReplayClipSeconds(
       trim.outSeconds,
-      inSeconds + Math.min(minimumReplayClipQuickTrimSeconds, duration),
+      inSeconds + Math.min(quickClipTrimMinimumSeconds, duration),
       duration,
     );
 
@@ -1301,6 +1406,19 @@ class ReplayClipsService {
       input.name = value.name;
     }
 
+    if (
+      value.operationRequestId !== undefined &&
+      value.operationRequestId !== null
+    ) {
+      assertString(
+        value.operationRequestId,
+        "operation request id",
+        ReplayClipsChannel.Update,
+        { min: 1, max: 128 },
+      );
+      input.operationRequestId = value.operationRequestId;
+    }
+
     if (value.trim !== undefined && value.trim !== null) {
       input.trim = this.validateTrimInput(
         value.trim,
@@ -1328,6 +1446,19 @@ class ReplayClipsService {
     });
 
     const input: ReplayClipCopyInput = { id: value.id };
+    if (
+      value.operationRequestId !== undefined &&
+      value.operationRequestId !== null
+    ) {
+      assertString(
+        value.operationRequestId,
+        "operation request id",
+        ReplayClipsChannel.Copy,
+        { min: 1, max: 128 },
+      );
+      input.operationRequestId = value.operationRequestId;
+    }
+
     if (value.trim !== undefined && value.trim !== null) {
       input.trim = this.validateTrimInput(value.trim, ReplayClipsChannel.Copy);
     }
@@ -1342,14 +1473,14 @@ class ReplayClipsService {
     assertObject(value, "trim", channel);
     assertNumber(value.inSeconds, "trim start", channel, {
       min: 0,
-      max: maxReplayClipQuickTrimSeconds,
+      max: quickClipTrimMaximumSeconds,
     });
     assertNumber(value.outSeconds, "trim end", channel, {
-      min: minimumReplayClipQuickTrimSeconds,
-      max: maxReplayClipQuickTrimSeconds,
+      min: quickClipTrimMinimumSeconds,
+      max: quickClipTrimMaximumSeconds,
     });
     const trim = value as { inSeconds: number; outSeconds: number };
-    if (trim.outSeconds - trim.inSeconds < minimumReplayClipQuickTrimSeconds) {
+    if (trim.outSeconds - trim.inSeconds < quickClipTrimMinimumSeconds) {
       throw new IpcValidationError(channel, "trim range is too short");
     }
 
@@ -1566,6 +1697,22 @@ function isReplayClipFullRangeTrim(
     trim.inSeconds <= 0.001 &&
     Math.abs(trim.outSeconds - durationSeconds) <= 0.001
   );
+}
+
+function createReplayClipOperationProgressHandler(
+  operationRequestId: string | null | undefined,
+  options: ReplayClipOperationProgressOptions,
+): ((progress: number) => void) | undefined {
+  if (!operationRequestId || !options.onProgress) {
+    return undefined;
+  }
+
+  return (progress) => {
+    options.onProgress?.({
+      operationRequestId,
+      progress: Math.min(Math.max(progress, 0), 1),
+    });
+  };
 }
 
 function clampReplayClipSeconds(

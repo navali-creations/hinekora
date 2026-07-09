@@ -32,7 +32,7 @@ import type {
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
 } from "~/main/modules/replay-clips";
-import type { SettingsStoreOverlaySnapshot } from "~/main/modules/settings-store/SettingsStore.dto";
+import type { SettingsStoreScopedSnapshot } from "~/main/modules/settings-store/SettingsStore.dto";
 import type { AppMenuSlice } from "~/renderer/modules/app-menu/AppMenu.slice/AppMenu.slice";
 import type { AuraOverlaySlice } from "~/renderer/modules/aura-overlay/AuraOverlay.slice/AuraOverlay.slice";
 import type {
@@ -40,6 +40,7 @@ import type {
   defaultRewindTimelineMarkerFilterValue,
 } from "~/renderer/modules/bookmarks/Bookmarks.utils";
 import type { ChangelogSlice } from "~/renderer/modules/changelog/Changelog.slice/Changelog.slice";
+import type { ClipPreviewOverlaySlice } from "~/renderer/modules/clip-preview-overlay/ClipPreviewOverlay.slice/ClipPreviewOverlay.slice";
 import type { CropEditorSlice } from "~/renderer/modules/crop-editor/CropEditor.slice/CropEditor.slice";
 import type { EditorSlice } from "~/renderer/modules/editor/Editor.slice/Editor.slice.types";
 import type { OnboardingSlice } from "~/renderer/modules/onboarding";
@@ -155,7 +156,7 @@ export interface ManagedRecorderSlice {
 
 export interface SettingsSlice {
   settings: {
-    value: AppSettings | SettingsStoreOverlaySnapshot | null;
+    value: AppSettings | SettingsStoreScopedSnapshot | null;
     hydrate: () => Promise<void>;
     startListening: () => () => void;
     update: (input: Partial<AppSettings>) => Promise<void>;
@@ -347,6 +348,7 @@ export type BoundStore = AppMenuSlice &
   OnboardingSlice &
   EditorSlice &
   CapturePreviewSlice &
+  ClipPreviewOverlaySlice &
   ManagedRecorderSlice &
   SettingsSlice &
   ClientLogSlice &

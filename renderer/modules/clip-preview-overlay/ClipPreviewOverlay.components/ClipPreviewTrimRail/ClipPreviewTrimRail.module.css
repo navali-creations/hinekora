@@ -101,16 +101,27 @@
   cursor: grabbing;
 }
 
+.playheadLayer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 35;
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
 .playhead {
   position: absolute;
   top: 0;
   bottom: 0;
-  z-index: 35;
+  left: 0;
   width: 2px;
   border-radius: 999px;
   background: var(--color-base-content);
   box-shadow: 0 0 0 1px rgb(0 0 0 / 35%);
-  pointer-events: none;
 }
 
 .handle {

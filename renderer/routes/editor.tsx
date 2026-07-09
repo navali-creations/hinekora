@@ -7,6 +7,11 @@ import type {
 import { EditorPage } from "~/renderer/modules/editor/Editor.page/EditorPage/EditorPage";
 import type { EditorRouteTrimDraft } from "~/renderer/modules/editor/Editor.page/EditorPage/EditorPage.utils";
 
+import {
+  quickClipTrimMaximumSeconds,
+  quickClipTrimMinimumSeconds,
+} from "~/types";
+
 interface EditorSearch {
   id?: string;
   kind?: EditorMediaKind;
@@ -19,8 +24,6 @@ interface EditorSearch {
 const editorRouteMaxMediaIdLength = 2_048;
 const editorRouteMaxProjectIdLength = 128;
 const editorRouteMaxTitleLength = 120;
-const editorRouteMaxTrimSeconds = 3_600;
-const editorRouteMinimumTrimSeconds = 0.1;
 
 function validateEditorSearch(search: Record<string, unknown>): EditorSearch {
   const kind: EditorMediaKind | null =
@@ -45,8 +48,8 @@ function validateEditorSearch(search: Record<string, unknown>): EditorSearch {
       trimIn !== null &&
       trimOut !== null &&
       trimIn >= 0 &&
-      trimOut <= editorRouteMaxTrimSeconds &&
-      trimOut - trimIn >= editorRouteMinimumTrimSeconds
+      trimOut <= quickClipTrimMaximumSeconds &&
+      trimOut - trimIn >= quickClipTrimMinimumSeconds
     ) {
       result.trimIn = trimIn;
       result.trimOut = trimOut;

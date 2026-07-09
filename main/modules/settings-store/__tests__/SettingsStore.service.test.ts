@@ -199,8 +199,6 @@ describe("SettingsStoreService", () => {
           activeGame: "poe2",
           auraOverlayShowEditingFrame:
             updatedSettings.auraOverlayShowEditingFrame,
-          clipPreviewInfoAlertDismissed:
-            updatedSettings.clipPreviewInfoAlertDismissed,
           deathClipSeconds: updatedSettings.deathClipSeconds,
           selectedCaptureProfileId: updatedSettings.selectedCaptureProfileId,
           selectedCaptureProfileIdsByGame:
@@ -216,8 +214,6 @@ describe("SettingsStoreService", () => {
           activeGame: "poe2",
           auraOverlayShowEditingFrame:
             updatedSettings.auraOverlayShowEditingFrame,
-          clipPreviewInfoAlertDismissed:
-            updatedSettings.clipPreviewInfoAlertDismissed,
           deathClipSeconds: updatedSettings.deathClipSeconds,
           selectedCaptureProfileId: updatedSettings.selectedCaptureProfileId,
           selectedCaptureProfileIdsByGame:
@@ -236,21 +232,17 @@ describe("SettingsStoreService", () => {
         expect.anything(),
       );
       expect(clipPreviewOverlay.webContents.send).toHaveBeenCalledWith(
-        SettingsStoreChannel.OverlayChanged,
+        SettingsStoreChannel.ClipPreviewOverlayChanged,
         {
-          activeGame: "poe2",
-          auraOverlayShowEditingFrame:
-            updatedSettings.auraOverlayShowEditingFrame,
           clipPreviewInfoAlertDismissed:
             updatedSettings.clipPreviewInfoAlertDismissed,
-          deathClipSeconds: updatedSettings.deathClipSeconds,
-          selectedCaptureProfileId: updatedSettings.selectedCaptureProfileId,
-          selectedCaptureProfileIdsByGame:
-            updatedSettings.selectedCaptureProfileIdsByGame,
-          selectedProfileId: updatedSettings.selectedProfileId,
           telemetryCrashReporting: updatedSettings.telemetryCrashReporting,
           telemetryUsageAnalytics: updatedSettings.telemetryUsageAnalytics,
         },
+      );
+      expect(clipPreviewOverlay.webContents.send).not.toHaveBeenCalledWith(
+        SettingsStoreChannel.OverlayChanged,
+        expect.anything(),
       );
       expect(clipPreviewOverlay.webContents.send).not.toHaveBeenCalledWith(
         SettingsStoreChannel.Changed,
@@ -332,8 +324,6 @@ describe("SettingsStoreService", () => {
       );
       const expectedOverlaySnapshot = {
         activeGame: fullSettings.activeGame,
-        clipPreviewInfoAlertDismissed:
-          fullSettings.clipPreviewInfoAlertDismissed,
         deathClipSeconds: fullSettings.deathClipSeconds,
         selectedCaptureProfileId: fullSettings.selectedCaptureProfileId,
         selectedCaptureProfileIdsByGame:
@@ -355,11 +345,23 @@ describe("SettingsStoreService", () => {
       ).toThrow(
         "settings-store:get-overlay-snapshot is not available from this window",
       );
-      expect(
-        await handlers.get(SettingsStoreChannel.GetOverlaySnapshot)?.(
+      expect(() =>
+        handlers.get(SettingsStoreChannel.GetOverlaySnapshot)?.(
           clipPreviewEvent,
         ),
-      ).toMatchObject(expectedOverlaySnapshot);
+      ).toThrow(
+        "settings-store:get-overlay-snapshot is not available from this window",
+      );
+      expect(
+        await handlers.get(
+          SettingsStoreChannel.GetClipPreviewOverlaySnapshot,
+        )?.(clipPreviewEvent),
+      ).toEqual({
+        clipPreviewInfoAlertDismissed:
+          fullSettings.clipPreviewInfoAlertDismissed,
+        telemetryCrashReporting: fullSettings.telemetryCrashReporting,
+        telemetryUsageAnalytics: fullSettings.telemetryUsageAnalytics,
+      });
       expect(
         await handlers.get(SettingsStoreChannel.Update)?.(mainEvent, {
           activeGame: "poe2",
@@ -371,8 +373,10 @@ describe("SettingsStoreService", () => {
         await handlers.get(SettingsStoreChannel.Update)?.(clipPreviewEvent, {
           clipPreviewInfoAlertDismissed: true,
         }),
-      ).toMatchObject({
+      ).toEqual({
         clipPreviewInfoAlertDismissed: true,
+        telemetryCrashReporting: fullSettings.telemetryCrashReporting,
+        telemetryUsageAnalytics: fullSettings.telemetryUsageAnalytics,
       });
       expect(
         await handlers.get(SettingsStoreChannel.Update)?.(clipPreviewEvent, {

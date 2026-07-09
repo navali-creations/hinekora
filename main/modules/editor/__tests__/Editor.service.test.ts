@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import {
   mkdir,
   mkdtemp,
@@ -1685,8 +1686,9 @@ describe("EditorService IPC", () => {
           resolution: "1080p",
         }),
       ).resolves.toEqual({ ok: false, error: "render crashed" });
+      const clipboardDirectory = join(tempPath, "Hinekora", "Editor Clipboard");
       expect(
-        await readdir(join(tempPath, "Hinekora", "Editor Clipboard")),
+        existsSync(clipboardDirectory) ? await readdir(clipboardDirectory) : [],
       ).toEqual([]);
     } finally {
       await rm(tempPath, { force: true, recursive: true });
