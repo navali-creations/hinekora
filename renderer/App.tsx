@@ -21,9 +21,6 @@ function App() {
   const startManagedRecorderListener = useBoundStore(
     (state) => state.managedRecorder.startListening,
   );
-  const hydrateReplayClips = useBoundStore(
-    (state) => state.replayClips.hydrate,
-  );
   const startReplayClipsListener = useBoundStore(
     (state) => state.replayClips.startListening,
   );
@@ -50,11 +47,7 @@ function App() {
     if (isRecorderOverlay) {
       void (async () => {
         await hydrateSettings();
-        await Promise.all([
-          hydrateManagedRecorder(),
-          hydrateProfiles(),
-          hydrateReplayClips(),
-        ]);
+        await Promise.all([hydrateManagedRecorder(), hydrateProfiles()]);
       })();
       unsubscribers.push(
         startManagedRecorderListener(),
@@ -94,7 +87,6 @@ function App() {
     hydrateManagedRecorder,
     hydrateProfiles,
     hydratePoeProcess,
-    hydrateReplayClips,
     hydrateSettings,
     isClipPreviewOverlay,
     isAuraOverlay,

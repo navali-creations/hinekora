@@ -297,7 +297,7 @@ describe("EditorService IPC", () => {
     const { handlers } = mockIpcMainHandlers();
     const service = new EditorService();
     vi.spyOn(service, "getWorkspace").mockReturnValue(emptyWorkspace);
-    vi.spyOn(service, "listMediaAssets").mockReturnValue({
+    vi.spyOn(service, "listMediaAssets").mockResolvedValue({
       items: [],
       pageCount: 1,
       pageIndex: 0,
@@ -453,7 +453,7 @@ describe("EditorService IPC", () => {
     });
   });
 
-  it("builds workspaces from clips and recordings", () => {
+  it("builds workspaces from clips and recordings", async () => {
     mockEditorLibraries({
       clips: {
         "clip-death": createReplayClipDetail({
@@ -508,38 +508,38 @@ describe("EditorService IPC", () => {
       assetKeys: ["clip:missing"],
     });
 
-    const deathAssets = service.listMediaAssets({
+    const deathAssets = await service.listMediaAssets({
       category: "death-clip",
       game: "poe2",
       pageSize: 5,
     });
-    const manualAssets = service.listMediaAssets({
+    const manualAssets = await service.listMediaAssets({
       category: "manual-replay",
       game: "poe2",
       pageSize: 5,
     });
-    const recordingAssets = service.listMediaAssets({
+    const recordingAssets = await service.listMediaAssets({
       category: "recording",
       game: "poe1",
       pageSize: 5,
     });
-    const scopedDeathAssets = service.listMediaAssets({
+    const scopedDeathAssets = await service.listMediaAssets({
       category: "death-clip",
       game: "poe2",
       league: "Standard",
       pageSize: 5,
     });
-    const scopedRecordingAssets = service.listMediaAssets({
+    const scopedRecordingAssets = await service.listMediaAssets({
       category: "recording",
       game: "poe1",
       league: "Standard",
       pageSize: 5,
     });
-    const defaultSizedAssets = service.listMediaAssets({
+    const defaultSizedAssets = await service.listMediaAssets({
       category: "death-clip",
       game: "poe2",
     });
-    const includedTimelineAssets = service.listMediaAssets({
+    const includedTimelineAssets = await service.listMediaAssets({
       category: "manual-replay",
       game: "poe2",
       includeAssetKeys: [
@@ -552,19 +552,19 @@ describe("EditorService IPC", () => {
       league: "Different League",
       pageSize: 5,
     });
-    const includedRecordingAssets = service.listMediaAssets({
+    const includedRecordingAssets = await service.listMediaAssets({
       category: "recording",
       game: "poe2",
       includeAssetKeys: ["clip:clip-manual", "recording:recording-1"],
       pageSize: 5,
     });
-    const emptyIncludedRecordingAssets = service.listMediaAssets({
+    const emptyIncludedRecordingAssets = await service.listMediaAssets({
       category: "recording",
       game: "poe2",
       includeAssetKeys: ["clip:clip-manual"],
       pageSize: 5,
     });
-    const excludedDeathAssets = service.listMediaAssets({
+    const excludedDeathAssets = await service.listMediaAssets({
       category: "death-clip",
       excludeAssetKeys: [
         "bad-key",
@@ -576,13 +576,13 @@ describe("EditorService IPC", () => {
       game: "poe2",
       pageSize: 5,
     });
-    const recentDeathAssets = service.listMediaAssets({
+    const recentDeathAssets = await service.listMediaAssets({
       category: "death-clip",
       createdAfter: "2026-06-12T09:30:00.000Z",
       game: "poe2",
       pageSize: 5,
     });
-    const recentRecordingAssets = service.listMediaAssets({
+    const recentRecordingAssets = await service.listMediaAssets({
       category: "recording",
       createdAfter: "2026-06-12T08:30:00.000Z",
       game: "poe1",

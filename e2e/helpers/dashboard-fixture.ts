@@ -1188,10 +1188,6 @@ async function setupDashboardE2E(
 
               return clone(replayClipDetails[id] ?? null);
             },
-            list: async () =>
-              clone(
-                Object.values(replayClipDetails).map((detail) => detail.clip),
-              ),
             listLibrary: async () => ({
               availableLeagues: ["Standard", "Runes of Aldur"],
               items: clone(

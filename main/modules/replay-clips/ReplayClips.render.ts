@@ -19,6 +19,7 @@ import type {
   ReplayClipFileActionResult,
   ReplayClipTrimInput,
 } from "./ReplayClips.dto";
+import { roundReplayClipSeconds } from "./ReplayClips.utils";
 
 interface ReplayClipQuickTrimRenderInput {
   muteAudio?: boolean;
@@ -93,10 +94,6 @@ async function copyTrimmedReplayClipToClipboard(input: {
             trim: input.trim,
           }),
   });
-}
-
-function roundReplayClipSeconds(seconds: number): number {
-  return Math.round(seconds * 1000) / 1000;
 }
 
 export type { ReplayClipQuickTrimRenderInput };

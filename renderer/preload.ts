@@ -103,7 +103,6 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
         onChanged: SettingsStoreAPI.onOverlayChanged,
       },
       replayClips: {
-        list: ReplayClipsAPI.list,
         saveManualReplay: ReplayClipsAPI.saveManualReplay,
         onStatusChanged: ReplayClipsAPI.onStatusChanged,
       },

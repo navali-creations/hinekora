@@ -1,11 +1,23 @@
 import clsx from "clsx";
 
+import { useClipPreviewOverlayShallow } from "~/renderer/store";
+
 import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.css";
 import { useClipPreviewOverlayControlsContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
 
 function ClipPreviewOverlaySaveMessage() {
-  const { canOpenSavedClip, handleOpenSavedClipInEditor, saveMessage } =
+  const { handleOpenSavedClipInEditor } =
     useClipPreviewOverlayControlsContext();
+  const { detail, hasSavedClip, isCopying, isSaving, saveMessage } =
+    useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
+      detail: clipPreviewOverlay.detail,
+      hasSavedClip: clipPreviewOverlay.hasSavedClip,
+      isCopying: clipPreviewOverlay.isCopying,
+      isSaving: clipPreviewOverlay.isSaving,
+      saveMessage: clipPreviewOverlay.saveMessage,
+    }));
+  const canOpenSavedClip =
+    Boolean(detail?.clip) && hasSavedClip && !isCopying && !isSaving;
 
   if (!saveMessage) {
     return null;

@@ -34,15 +34,6 @@ const librarySortKeys: ReplayClipLibrarySortKey[] = [
 ];
 const librarySortDirections: ReplayClipLibrarySortDirection[] = ["asc", "desc"];
 
-function validateReplayClipListFilter(value: unknown): ReplayClipListFilter {
-  if (value === undefined) {
-    return {};
-  }
-
-  assertObject(value, "clip list filter", ReplayClipsChannel.List);
-  return validateListFilterForChannel(value, ReplayClipsChannel.List);
-}
-
 function validateReplayClipLibraryQuery(
   value: unknown,
 ): ReplayClipLibraryQuery {
@@ -271,6 +262,5 @@ export {
   validateReplayClipCopyInput,
   validateReplayClipIdList,
   validateReplayClipLibraryQuery,
-  validateReplayClipListFilter,
   validateReplayClipUpdateInput,
 };

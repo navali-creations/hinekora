@@ -6,7 +6,14 @@ import {
   FiSave as Save,
 } from "react-icons/fi";
 
+import { useClipPreviewOverlayShallow } from "~/renderer/store";
+
 import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.css";
+import {
+  getClipPreviewFileTitle,
+  resolveClipPreviewDetail,
+  resolveClipPreviewOperationState,
+} from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { useClipPreviewOverlayControlsContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
 
 type ProcessingButtonStyle = CSSProperties & {
@@ -15,8 +22,47 @@ type ProcessingButtonStyle = CSSProperties & {
 
 function ClipPreviewOverlayActionsBar() {
   const workflow = useClipPreviewOverlayControlsContext();
+  const {
+    detail,
+    durationOverrideSeconds,
+    hasCopied,
+    hasSavedClip,
+    isCopying,
+    isMuted,
+    isSaving,
+    operationProgress,
+    titleDraft,
+    trim,
+  } = useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
+    detail: clipPreviewOverlay.detail,
+    durationOverrideSeconds: clipPreviewOverlay.durationOverrideSeconds,
+    hasCopied: clipPreviewOverlay.hasCopied,
+    hasSavedClip: clipPreviewOverlay.hasSavedClip,
+    isCopying: clipPreviewOverlay.isCopying,
+    isMuted: clipPreviewOverlay.isMuted,
+    isSaving: clipPreviewOverlay.isSaving,
+    operationProgress: clipPreviewOverlay.operationProgress,
+    titleDraft: clipPreviewOverlay.titleDraft,
+    trim: clipPreviewOverlay.trim,
+  }));
+  const { clip, clipFileName, durationSeconds } = resolveClipPreviewDetail(
+    detail,
+    durationOverrideSeconds,
+  );
+  const { canCopy, canSave, isProcessing, titlePlaceholder } =
+    resolveClipPreviewOperationState({
+      clip,
+      durationSeconds,
+      fileTitle: getClipPreviewFileTitle(clipFileName),
+      hasSavedClip,
+      isCopying,
+      isMuted,
+      isSaving,
+      titleDraft,
+      trim,
+    });
   const processingProgress = `${Math.round(
-    Math.min(Math.max(workflow.operationProgress, 0), 1) * 100,
+    Math.min(Math.max(operationProgress, 0), 1) * 100,
   )}%`;
   const processingStyle: ProcessingButtonStyle = {
     "--clip-processing-progress": processingProgress,
@@ -29,11 +75,11 @@ function ClipPreviewOverlayActionsBar() {
         <div className="join w-full">
           <input
             className="input input-bordered input-sm join-item min-w-0 flex-1"
-            disabled={workflow.isProcessing}
+            disabled={isProcessing}
             maxLength={120}
-            placeholder={workflow.titlePlaceholder}
+            placeholder={titlePlaceholder}
             type="text"
-            value={workflow.titleDraft}
+            value={titleDraft}
             onChange={workflow.handleTitleChange}
           />
           <span className={`${styles.fileExtension} join-item`}>.mp4</span>
@@ -44,42 +90,42 @@ function ClipPreviewOverlayActionsBar() {
         <button
           className={clsx(
             styles.actionButton,
-            workflow.isSaving && styles.processingButton,
+            isSaving && styles.processingButton,
             "btn btn-primary btn-sm",
           )}
-          disabled={!workflow.canSave}
-          style={workflow.isSaving ? processingStyle : undefined}
+          disabled={!canSave}
+          style={isSaving ? processingStyle : undefined}
           type="button"
           onClick={workflow.handleSaveClip}
         >
-          {workflow.isSaving ? (
+          {isSaving ? (
             <span className="loading loading-spinner loading-xs" />
           ) : (
             <Save size={15} />
           )}
-          {workflow.isSaving ? "Processing..." : "Save clip"}
+          {isSaving ? "Processing..." : "Save clip"}
         </button>
         <button
           className={clsx(
             styles.actionButton,
-            workflow.isCopying && styles.processingButton,
+            isCopying && styles.processingButton,
             "btn btn-primary btn-sm",
           )}
-          disabled={!workflow.canCopy}
-          style={workflow.isCopying ? processingStyle : undefined}
+          disabled={!canCopy}
+          style={isCopying ? processingStyle : undefined}
           type="button"
           onClick={workflow.handleCopyClip}
         >
-          {workflow.isCopying ? (
+          {isCopying ? (
             <span className="loading loading-spinner loading-xs" />
-          ) : workflow.hasCopied ? (
+          ) : hasCopied ? (
             <Check size={15} />
           ) : (
             <Copy size={15} />
           )}
-          {workflow.isCopying
+          {isCopying
             ? "Processing..."
-            : workflow.hasCopied
+            : hasCopied
               ? "Copied successfully!"
               : "Copy to clipboard"}
         </button>

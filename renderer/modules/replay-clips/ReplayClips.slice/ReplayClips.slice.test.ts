@@ -33,7 +33,6 @@ function createTestStore() {
 }
 
 describe("ReplayClips slice", () => {
-  const list = vi.fn();
   const listLibrary = vi.fn();
   const saveManualReplay = vi.fn();
   const open = vi.fn();
@@ -47,7 +46,6 @@ describe("ReplayClips slice", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     statusChangedListener = null;
-    list.mockResolvedValue([]);
     listLibrary.mockResolvedValue(createLibraryPage());
     saveManualReplay.mockResolvedValue(null);
     open.mockResolvedValue({ ok: true, error: null });
@@ -70,7 +68,6 @@ describe("ReplayClips slice", () => {
       configurable: true,
       value: {
         replayClips: {
-          list,
           listLibrary,
           saveManualReplay,
           open,
@@ -92,16 +89,14 @@ describe("ReplayClips slice", () => {
     await store.getState().replayClips.deleteClip("clip-1");
 
     expect(store.getState().replayClips.error).toBe("Clip delete failed");
-    expect(list).not.toHaveBeenCalled();
+    expect(listLibrary).not.toHaveBeenCalled();
   });
 
   it("hydrates and refreshes the clip library", async () => {
     const clip = createReplayClipView({ id: "clip-1" });
-    list.mockResolvedValue([clip]);
     listLibrary.mockResolvedValue(createLibraryPage([clip]));
     const store = createTestStore();
 
-    await store.getState().replayClips.hydrate();
     await store.getState().replayClips.refreshLibrary();
     expect(listLibrary).not.toHaveBeenCalled();
 
@@ -110,7 +105,6 @@ describe("ReplayClips slice", () => {
 
     expect(store.getState().replayClips).toMatchObject({
       error: null,
-      items: [clip],
       libraryItems: [clip],
       libraryLeagues: ["Standard"],
       selectedClipIds: {},
@@ -121,7 +115,6 @@ describe("ReplayClips slice", () => {
   it("saves manual replays and keeps the previous active clip when none is returned", async () => {
     const activeClip = createReplayClipView({ id: "active-clip" });
     const savedClip = createReplayClipView({ id: "saved-clip" });
-    list.mockResolvedValue([activeClip, savedClip]);
     saveManualReplay
       .mockResolvedValueOnce(savedClip)
       .mockResolvedValueOnce(null);
@@ -160,7 +153,7 @@ describe("ReplayClips slice", () => {
 
     await store.getState().replayClips.deleteClip("clip-1");
 
-    expect(list).toHaveBeenCalledTimes(1);
+    expect(listLibrary).not.toHaveBeenCalled();
     expect(store.getState().replayClips.error).toBe("unlink failed");
   });
 
@@ -250,7 +243,6 @@ describe("ReplayClips slice", () => {
 
   it("sets, clears, and listens for selected clip state", async () => {
     const clip = createReplayClipView({ id: "clip-1" });
-    list.mockResolvedValue([clip]);
     const store = createTestStore();
 
     store.getState().replayClips.setSelectedClipIds({ [clip.id]: true });
@@ -263,8 +255,50 @@ describe("ReplayClips slice", () => {
 
     expect(store.getState().replayClips.selectedClipIds).toEqual({});
     expect(store.getState().replayClips.activeClip).toBe(clip);
-    expect(store.getState().replayClips.items).toEqual([clip]);
-    expect(list).not.toHaveBeenCalled();
     expect(unsubscribe).toHaveBeenCalled();
+  });
+
+  it("keeps the newest library response when requests resolve out of order", async () => {
+    const deathClip = createReplayClipView({ id: "death-clip" });
+    const manualClip = createReplayClipView({ id: "manual-clip" });
+    let resolveDeathPage!: (page: ReplayClipLibraryPage) => void;
+    let resolveManualPage!: (page: ReplayClipLibraryPage) => void;
+    listLibrary
+      .mockReturnValueOnce(
+        new Promise<ReplayClipLibraryPage>((resolve) => {
+          resolveDeathPage = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise<ReplayClipLibraryPage>((resolve) => {
+          resolveManualPage = resolve;
+        }),
+      );
+    const store = createTestStore();
+
+    const deathRequest = store
+      .getState()
+      .replayClips.hydrateLibrary({ kind: "death" });
+    const manualRequest = store
+      .getState()
+      .replayClips.hydrateLibrary({ kind: "manual" });
+    resolveManualPage(createLibraryPage([manualClip]));
+    await manualRequest;
+    resolveDeathPage(createLibraryPage([deathClip]));
+    await deathRequest;
+
+    expect(store.getState().replayClips.libraryQuery).toEqual({
+      kind: "manual",
+    });
+    expect(store.getState().replayClips.libraryItems).toEqual([manualClip]);
+  });
+
+  it("surfaces library request failures", async () => {
+    listLibrary.mockRejectedValueOnce(new Error("Library unavailable"));
+    const store = createTestStore();
+
+    await store.getState().replayClips.hydrateLibrary({ game: "poe2" });
+
+    expect(store.getState().replayClips.error).toBe("Library unavailable");
   });
 });

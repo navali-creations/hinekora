@@ -159,10 +159,12 @@ class EditorService {
     };
   }
 
-  listMediaAssets(query: EditorMediaAssetPageQuery): EditorMediaAssetPage {
+  async listMediaAssets(
+    query: EditorMediaAssetPageQuery,
+  ): Promise<EditorMediaAssetPage> {
     const pageIndex = query.pageIndex ?? 0;
     const pageSize = query.pageSize ?? defaultEditorMediaAssetPageSize;
-    const page = this.listEditorMediaAssetPage({
+    const page = await this.listEditorMediaAssetPage({
       ...query,
       pageIndex,
       pageSize,
@@ -457,7 +459,7 @@ class EditorService {
     });
   }
 
-  private listEditorMediaAssetPage(
+  private async listEditorMediaAssetPage(
     query: Required<
       Pick<
         EditorMediaAssetPageQuery,
@@ -468,7 +470,7 @@ class EditorService {
         EditorMediaAssetPageQuery,
         "createdAfter" | "excludeAssetKeys" | "includeAssetKeys" | "league"
       >,
-  ): EditorMediaAssetPage {
+  ): Promise<EditorMediaAssetPage> {
     if (query.includeAssetKeys) {
       return this.listIncludedEditorMediaAssetPage({
         ...query,
@@ -499,15 +501,16 @@ class EditorService {
     }
 
     const clipKind = toReplayClipKind(query.category);
-    const page = ReplayClipsService.getInstance().listEditorReplayDetailPage({
-      excludeIds: assetKeyIds.clipIds,
-      game: query.game,
-      kind: clipKind,
-      ...(query.createdAfter ? { createdAfter: query.createdAfter } : {}),
-      ...(query.league ? { league: query.league } : {}),
-      pageIndex: query.pageIndex,
-      pageSize: query.pageSize,
-    });
+    const page =
+      await ReplayClipsService.getInstance().listEditorReplayDetailPage({
+        excludeIds: assetKeyIds.clipIds,
+        game: query.game,
+        kind: clipKind,
+        ...(query.createdAfter ? { createdAfter: query.createdAfter } : {}),
+        ...(query.league ? { league: query.league } : {}),
+        pageIndex: query.pageIndex,
+        pageSize: query.pageSize,
+      });
 
     return createEditorMediaAssetPage({
       items: page.items.map((detail) =>
@@ -519,12 +522,12 @@ class EditorService {
     });
   }
 
-  private listIncludedEditorMediaAssetPage(
+  private async listIncludedEditorMediaAssetPage(
     query: Required<
       Pick<EditorMediaAssetPageQuery, "category" | "pageIndex" | "pageSize">
     > &
       Required<Pick<EditorMediaAssetPageQuery, "includeAssetKeys">>,
-  ): EditorMediaAssetPage {
+  ): Promise<EditorMediaAssetPage> {
     const assetKeyIds = splitEditorMediaAssetKeys(query.includeAssetKeys);
     const includedIds =
       query.category === "recording"
@@ -548,14 +551,14 @@ class EditorService {
               pageSize: includedIds.length,
             })
             .items.map((detail) => createEditorAssetFromRecording(detail))
-        : ReplayClipsService.getInstance()
-            .listEditorReplayDetailPage({
+        : (
+            await ReplayClipsService.getInstance().listEditorReplayDetailPage({
               includeIds: includedIds,
               kind: toReplayClipKind(query.category),
               pageIndex: 0,
               pageSize: includedIds.length,
             })
-            .items.map((detail) => createEditorAssetFromReplayClip(detail));
+          ).items.map((detail) => createEditorAssetFromReplayClip(detail));
     const assetOrderByKey = new Map<string, number>();
     for (const [index, assetKey] of query.includeAssetKeys.entries()) {
       if (!assetOrderByKey.has(assetKey)) {
@@ -873,9 +876,11 @@ class EditorService {
     registerGuardedIpcHandler(
       EditorChannel.ListMediaAssets,
       [WindowName.Main],
-      (_event, query: unknown) => {
+      async (_event, query: unknown) => {
         try {
-          return this.listMediaAssets(validateEditorMediaAssetPageQuery(query));
+          return await this.listMediaAssets(
+            validateEditorMediaAssetPageQuery(query),
+          );
         } catch (error) {
           return handleValidationError(error);
         }

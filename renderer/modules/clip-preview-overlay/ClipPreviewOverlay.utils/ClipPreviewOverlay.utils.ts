@@ -1,4 +1,7 @@
-import type { ReplayClipDetail } from "~/main/modules/replay-clips";
+import type {
+  ReplayClipDetail,
+  ReplayClipView,
+} from "~/main/modules/replay-clips";
 
 import { type QuickClipTrimRange, quickClipTrimMinimumSeconds } from "~/types";
 
@@ -125,6 +128,123 @@ export function resolveClipPreviewDetail(
       clip?.hasMediaFile && mediaUrl && durationSeconds > 0,
     ),
     mediaUrl,
+  };
+}
+
+export function resolveClipPreviewHeaderState(input: {
+  detail: ReplayClipDetail | null;
+  detailError: string | null;
+  durationOverrideSeconds: number | null;
+}): { subtitle: string; title: string } {
+  const { clip } = resolveClipPreviewDetail(
+    input.detail,
+    input.durationOverrideSeconds,
+  );
+  if (!clip) {
+    return {
+      subtitle: input.detailError || "Waiting for clip metadata",
+      title: "Loading Replay",
+    };
+  }
+  if (clip.status === "failed") {
+    return {
+      subtitle: clip.error ?? "Replay save failed",
+      title: "Replay Failed",
+    };
+  }
+
+  const isClipReady = clip.hasMediaFile;
+  return {
+    subtitle: isClipReady
+      ? `${clip.sourceGame.toUpperCase()} - ${new Date(clip.createdAt).toLocaleTimeString()}`
+      : "Saving replay file",
+    title: isClipReady ? "Replay Ready" : "Preparing Replay",
+  };
+}
+
+export function resolveClipPreviewMediaState(input: {
+  detail: ReplayClipDetail | null;
+  durationOverrideSeconds: number | null;
+  isCopying: boolean;
+  isMediaReady: boolean;
+  isSaving: boolean;
+  mediaError: string | null;
+  mediaVersion: number;
+}) {
+  const detail = resolveClipPreviewDetail(
+    input.detail,
+    input.durationOverrideSeconds,
+  );
+  const baseVideoSrc = detail.mediaUrl;
+  const separator = baseVideoSrc?.includes("?") ? "&" : "?";
+  const videoSrc = baseVideoSrc
+    ? `${baseVideoSrc}${separator}v=${input.mediaVersion}`
+    : null;
+  const isProcessing = input.isCopying || input.isSaving;
+  const canUseClip =
+    detail.hasPlayableClipFile && Boolean(videoSrc) && input.isMediaReady;
+  const isPreparingClip = Boolean(
+    (detail.clip &&
+      !detail.hasPlayableClipFile &&
+      detail.clip.status !== "failed" &&
+      (detail.clip.status === "death_detected" ||
+        detail.clip.status === "saving_replay" ||
+        detail.clip.status === "processing")) ||
+      (detail.hasPlayableClipFile &&
+        !input.mediaError &&
+        (!videoSrc || !input.isMediaReady)),
+  );
+
+  return {
+    ...detail,
+    canUseClip,
+    isPreparingClip,
+    isProcessing,
+    videoSrc,
+  };
+}
+
+export function resolveClipPreviewOperationState(input: {
+  clip: ReplayClipView | null;
+  durationSeconds: number;
+  fileTitle: string;
+  hasSavedClip: boolean;
+  isCopying: boolean;
+  isMuted: boolean;
+  isSaving: boolean;
+  titleDraft: string;
+  trim: ClipPreviewTrimRange;
+}) {
+  const hasTrimChanges =
+    input.durationSeconds > 0 &&
+    (Math.abs(input.trim.inSeconds) > 0.001 ||
+      Math.abs(input.trim.outSeconds - input.durationSeconds) > 0.001);
+  const trimmedTitle = input.titleDraft.trim();
+  const hasTitleChange =
+    trimmedTitle.length > 0 && trimmedTitle !== input.fileTitle.trim();
+  const canUseClip = Boolean(
+    input.clip?.hasMediaFile && input.durationSeconds > 0,
+  );
+  const isProcessing = input.isCopying || input.isSaving;
+
+  return {
+    canCopy: Boolean(input.clip?.hasMediaFile) && !isProcessing,
+    canEdit: canUseClip && !isProcessing,
+    canOpenSavedClip:
+      Boolean(input.clip) && input.hasSavedClip && !isProcessing,
+    canSave:
+      canUseClip &&
+      (hasTrimChanges || hasTitleChange || input.isMuted) &&
+      !isProcessing,
+    canUseClip,
+    clip: input.clip,
+    durationSeconds: input.durationSeconds,
+    fileTitle: input.fileTitle,
+    hasTitleChange,
+    hasTrimChanges,
+    isProcessing,
+    titlePlaceholder: input.fileTitle || "2026-07-08 01-18-40",
+    trimmedTitle,
   };
 }
 

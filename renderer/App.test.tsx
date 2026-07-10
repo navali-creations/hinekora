@@ -6,7 +6,6 @@ const storeMocks = vi.hoisted(() => ({
   hydrateManagedRecorder: vi.fn(),
   hydratePoeProcess: vi.fn(),
   hydrateProfiles: vi.fn(),
-  hydrateReplayClips: vi.fn(),
   hydrateSettings: vi.fn(),
   startCapturePreviewListener: vi.fn(),
   startManagedRecorderListener: vi.fn(),
@@ -72,7 +71,6 @@ describe("App overlay bootstrap", () => {
     storeMocks.hydrateManagedRecorder.mockResolvedValue(undefined);
     storeMocks.hydratePoeProcess.mockResolvedValue(undefined);
     storeMocks.hydrateProfiles.mockResolvedValue(undefined);
-    storeMocks.hydrateReplayClips.mockResolvedValue(undefined);
     storeMocks.hydrateSettings.mockResolvedValue(undefined);
     storeMocks.startCapturePreviewListener.mockReturnValue(vi.fn());
     storeMocks.startManagedRecorderListener.mockReturnValue(vi.fn());
@@ -98,7 +96,6 @@ describe("App overlay bootstrap", () => {
           startListening: storeMocks.startProfilesListener,
         },
         replayClips: {
-          hydrate: storeMocks.hydrateReplayClips,
           startListening: storeMocks.startReplayClipsListener,
         },
         settings: {
@@ -228,7 +225,6 @@ describe("App overlay bootstrap", () => {
     expect(storeMocks.hydrateSettings).toHaveBeenCalledTimes(1);
     expect(storeMocks.hydrateManagedRecorder).not.toHaveBeenCalled();
     expect(storeMocks.hydrateProfiles).not.toHaveBeenCalled();
-    expect(storeMocks.hydrateReplayClips).not.toHaveBeenCalled();
     expect(storeMocks.startManagedRecorderListener).toHaveBeenCalledTimes(1);
     expect(storeMocks.startProfilesListener).toHaveBeenCalledTimes(1);
     expect(storeMocks.startReplayClipsListener).toHaveBeenCalledTimes(1);
@@ -242,7 +238,6 @@ describe("App overlay bootstrap", () => {
 
     expect(storeMocks.hydrateManagedRecorder).toHaveBeenCalledTimes(1);
     expect(storeMocks.hydrateProfiles).toHaveBeenCalledTimes(1);
-    expect(storeMocks.hydrateReplayClips).toHaveBeenCalledTimes(1);
   });
 
   it("hydrates only settings for the clip preview overlay", async () => {
@@ -258,7 +253,6 @@ describe("App overlay bootstrap", () => {
     expect(container.textContent).toContain("Clip preview overlay");
     expect(storeMocks.hydrateSettings).toHaveBeenCalledTimes(1);
     expect(storeMocks.startSettingsListener).toHaveBeenCalledTimes(1);
-    expect(storeMocks.hydrateReplayClips).not.toHaveBeenCalled();
     expect(storeMocks.startReplayClipsListener).not.toHaveBeenCalled();
 
     await act(async () => {

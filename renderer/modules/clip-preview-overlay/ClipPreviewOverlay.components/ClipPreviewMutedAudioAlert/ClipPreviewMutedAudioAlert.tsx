@@ -1,11 +1,13 @@
 import { FiVolumeX } from "react-icons/fi";
 
-import { useClipPreviewOverlayMediaContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
+import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
 function ClipPreviewMutedAudioAlert() {
-  const workflow = useClipPreviewOverlayMediaContext();
+  const isMuted = useClipPreviewOverlayShallow(
+    (clipPreviewOverlay) => clipPreviewOverlay.isMuted,
+  );
 
-  if (!workflow.isMuted) {
+  if (!isMuted) {
     return null;
   }
 

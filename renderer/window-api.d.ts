@@ -68,7 +68,6 @@ import type {
   ReplayClipFileActionResult,
   ReplayClipLibraryPage,
   ReplayClipLibraryQuery,
-  ReplayClipListFilter,
   ReplayClipOperationProgress,
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
@@ -330,7 +329,6 @@ declare global {
       };
       replayClips: {
         get: (id: string) => Promise<ReplayClipDetail | null>;
-        list: (filter?: ReplayClipListFilter) => Promise<ReplayClipView[]>;
         listLibrary: (
           query?: ReplayClipLibraryQuery,
         ) => Promise<ReplayClipLibraryPage>;

@@ -10,7 +10,6 @@ import type {
   ReplayClipFileActionResult,
   ReplayClipLibraryPage,
   ReplayClipLibraryQuery,
-  ReplayClipListFilter,
   ReplayClipOperationProgress,
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
@@ -20,10 +19,6 @@ import type {
 const ReplayClipsAPI = {
   get: async (id: string): Promise<ReplayClipDetail | null> =>
     unwrapIpcResult(await ipcRenderer.invoke(ReplayClipsChannel.Get, id)),
-  list: async (filter?: ReplayClipListFilter): Promise<ReplayClipView[]> =>
-    unwrapIpcResult<ReplayClipView[]>(
-      await ipcRenderer.invoke(ReplayClipsChannel.List, filter),
-    ),
   listLibrary: async (
     query?: ReplayClipLibraryQuery,
   ): Promise<ReplayClipLibraryPage> =>

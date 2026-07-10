@@ -118,12 +118,16 @@ class ReplayClipsRepository {
     return rows.map(mapReplayClipRow);
   }
 
-  listMissingSizeClips(filter: ReplayClipListFilter = {}): ReplayClip[] {
+  listMissingSizeClips(
+    filter: ReplayClipListFilter = {},
+    limit = 50,
+  ): ReplayClip[] {
     const rows = this.database.queryAll(
       this.createFilteredQuery(filter)
         .selectAll()
         .where("size_bytes", "<=", 0)
-        .orderBy("created_at", "desc"),
+        .orderBy("created_at", "desc")
+        .limit(limit),
     );
 
     return rows.map(mapReplayClipRow);
@@ -299,7 +303,10 @@ class ReplayClipsRepository {
           conflict.column("id").doUpdateSet({
             kind: clip.kind,
             status: clip.status,
+            source_game: clip.sourceGame,
             source_league: clip.sourceLeague,
+            death_timestamp: clip.deathTimestamp,
+            trigger_line_hash: clip.triggerLineHash,
             original_obs_path: clip.originalObsPath,
             processed_clip_path: clip.processedClipPath,
             duration_seconds:
@@ -323,6 +330,22 @@ class ReplayClipsRepository {
           updated_at: new Date().toISOString(),
         })
         .where("id", "=", id),
+    );
+  }
+
+  updateSizes(ids: string[], sizeBytes: number): void {
+    if (ids.length === 0) {
+      return;
+    }
+
+    this.database.runQuery(
+      this.database.kysely
+        .updateTable("replay_clips")
+        .set({
+          size_bytes: sizeBytes,
+          updated_at: new Date().toISOString(),
+        })
+        .where("id", "in", ids),
     );
   }
 

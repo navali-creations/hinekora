@@ -3,34 +3,45 @@ import { createContext, useContext } from "react";
 import type { ClipPreviewOverlayMediaWorkflow } from "../../ClipPreviewOverlay.page/useClipPreviewOverlayMediaWorkflow/useClipPreviewOverlayMediaWorkflow";
 import type { ClipPreviewOverlayWorkflow } from "../../ClipPreviewOverlay.page/useClipPreviewOverlayWorkflow/useClipPreviewOverlayWorkflow";
 
-type ClipPreviewOverlayControlsWorkflow = Pick<
+type ClipPreviewOverlayControlsCommands = Pick<
   ClipPreviewOverlayWorkflow,
-  | "canCopy"
-  | "canOpenSavedClip"
-  | "canEdit"
-  | "canSave"
   | "handleClose"
   | "handleCopyClip"
   | "handleEditClip"
   | "handleOpenSavedClipInEditor"
   | "handleSaveClip"
   | "handleTitleChange"
-  | "hasCopied"
-  | "isCopying"
-  | "isProcessing"
-  | "isSaving"
-  | "operationProgress"
-  | "saveMessage"
-  | "subtitle"
-  | "title"
-  | "titleDraft"
-  | "titlePlaceholder"
+>;
+
+type ClipPreviewOverlayMediaCommands = Pick<
+  ClipPreviewOverlayMediaWorkflow,
+  | "handleCanPlay"
+  | "handleCanPlayThrough"
+  | "handleEnterFullscreen"
+  | "handleLoadedData"
+  | "handleLoadedMetadata"
+  | "handleLoadStart"
+  | "handlePause"
+  | "handlePlay"
+  | "handleRevealClip"
+  | "handleRetryMedia"
+  | "handleSeeked"
+  | "handleSeeking"
+  | "handleTimeUpdate"
+  | "handleToggleMuted"
+  | "handleTogglePlayback"
+  | "handleTrimChange"
+  | "handleVideoError"
+  | "seekPreview"
+  | "setPlaybackTimeElement"
+  | "setPlayheadElement"
+  | "videoRef"
 >;
 
 const ClipPreviewOverlayControlsContext =
-  createContext<ClipPreviewOverlayControlsWorkflow | null>(null);
+  createContext<ClipPreviewOverlayControlsCommands | null>(null);
 const ClipPreviewOverlayMediaContext =
-  createContext<ClipPreviewOverlayMediaWorkflow | null>(null);
+  createContext<ClipPreviewOverlayMediaCommands | null>(null);
 
 function useClipPreviewOverlayControlsContext() {
   const workflow = useContext(ClipPreviewOverlayControlsContext);
@@ -54,7 +65,10 @@ function useClipPreviewOverlayMediaContext() {
   return workflow;
 }
 
-export type { ClipPreviewOverlayControlsWorkflow };
+export type {
+  ClipPreviewOverlayControlsCommands,
+  ClipPreviewOverlayMediaCommands,
+};
 export {
   ClipPreviewOverlayControlsContext,
   ClipPreviewOverlayMediaContext,

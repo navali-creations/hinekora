@@ -1,6 +1,5 @@
 enum ReplayClipsChannel {
   Get = "replay-clips:get",
-  List = "replay-clips:list",
   ListLibrary = "replay-clips:list-library",
   SaveManualReplay = "replay-clips:save-manual-replay",
   Update = "replay-clips:update",

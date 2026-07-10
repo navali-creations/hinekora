@@ -1,12 +1,8 @@
-import type { RefObject, SyntheticEvent } from "react";
+import type { RefObject } from "react";
 import { useEffect, useRef } from "react";
 
-import { trackEvent } from "~/renderer/modules/umami";
-
-import {
-  type ClipPreviewTrimRange,
-  roundClipPreviewSeconds,
-} from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+import type { ClipPreviewTrimRange } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+import { useClipPreviewOverlayMediaEvents } from "../useClipPreviewOverlayMediaEvents/useClipPreviewOverlayMediaEvents";
 import { useClipPreviewOverlaySeek } from "../useClipPreviewOverlaySeek/useClipPreviewOverlaySeek";
 import {
   type ClipPreviewPlaybackPresentationMetrics,
@@ -32,247 +28,67 @@ interface UseClipPreviewOverlayPlaybackInput {
   videoSrc: string | null;
 }
 
-function seekVideo(video: HTMLVideoElement, seconds: number): void {
-  video.currentTime = seconds;
-}
-
-function useClipPreviewOverlayPlayback({
-  canUseClip,
-  clipId,
-  durationSeconds,
-  hasUserAdjustedTrimRef,
-  isMuted,
-  isPlaying,
-  setDurationOverrideSeconds,
-  setMediaReady,
-  setMediaError,
-  setMuted,
-  setPlaying,
-  setTrim,
-  syncPlaybackPresentation,
-  trim,
-  updatePlaybackFrame,
-  videoSrc,
-}: UseClipPreviewOverlayPlaybackInput) {
+function useClipPreviewOverlayPlayback(
+  input: UseClipPreviewOverlayPlaybackInput,
+) {
   const pendingSeekSecondsRef = useRef<number | null>(null);
   const resumePlaybackAfterSeekRef = useRef(false);
-  const videoSrcRef = useRef(videoSrc);
+  const videoSrcRef = useRef(input.videoSrc);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoSrcRef.current === videoSrc) {
+    if (videoSrcRef.current === input.videoSrc) {
       return;
     }
-
-    videoSrcRef.current = videoSrc;
+    videoSrcRef.current = input.videoSrc;
     pendingSeekSecondsRef.current = null;
     resumePlaybackAfterSeekRef.current = false;
-  }, [videoSrc]);
+  }, [input.videoSrc]);
 
   const { consumePlaybackPresentationMetrics } =
     useClipPreviewOverlayVideoFrames({
-      durationSeconds,
-      isPlaying,
+      durationSeconds: input.durationSeconds,
+      isPlaying: input.isPlaying,
       pendingSeekSecondsRef,
-      setPlaying,
-      trimOutSeconds: trim.outSeconds,
-      updatePlaybackFrame,
+      setPlaying: input.setPlaying,
+      trimOutSeconds: input.trim.outSeconds,
+      updatePlaybackFrame: input.updatePlaybackFrame,
       videoRef,
     });
   const { handleSeeked, handleSeeking, seekPreview } =
     useClipPreviewOverlaySeek({
-      canUseClip,
-      durationSeconds,
+      canUseClip: input.canUseClip,
+      durationSeconds: input.durationSeconds,
       pendingSeekSecondsRef,
       resumePlaybackAfterSeekRef,
-      setPlaying,
-      syncPlaybackPresentation,
+      setPlaying: input.setPlaying,
+      syncPlaybackPresentation: input.syncPlaybackPresentation,
       videoRef,
     });
-
-  const handleEnterFullscreen = () => {
-    const video = videoRef.current;
-    if (!video || !canUseClip) {
-      return;
-    }
-
-    void video
-      .requestFullscreen()
-      .then(() => {
-        trackEvent("clip-preview-overlay-fullscreen-opened");
-      })
-      .catch((error: unknown) => {
-        console.warn("[clip-preview] Could not enter fullscreen", { error });
-      });
-  };
-
-  const handleTogglePlayback = () => {
-    const video = videoRef.current;
-    if (!video || !canUseClip) {
-      return;
-    }
-
-    if (!video.paused) {
-      resumePlaybackAfterSeekRef.current = false;
-      video.pause();
-      const pendingSeconds = pendingSeekSecondsRef.current;
-      syncPlaybackPresentation(
-        pendingSeconds ?? roundClipPreviewSeconds(video.currentTime),
-      );
-      setPlaying(false);
-      return;
-    }
-
-    const pendingSeconds = pendingSeekSecondsRef.current;
-    const shouldStartAtTrimStart =
-      video.currentTime < trim.inSeconds ||
-      video.currentTime >= trim.outSeconds;
-    const nextStartSeconds =
-      pendingSeconds ?? (shouldStartAtTrimStart ? trim.inSeconds : null);
-    if (nextStartSeconds !== null) {
-      pendingSeekSecondsRef.current = nextStartSeconds;
-      seekVideo(video, nextStartSeconds);
-      syncPlaybackPresentation(nextStartSeconds);
-    }
-    resumePlaybackAfterSeekRef.current = false;
-    void video.play().catch((error: unknown) => {
-      console.warn("[clip-preview] Could not play preview", { error });
-      setPlaying(false);
-    });
-  };
-
-  const handleToggleMuted = () => {
-    const nextMuted = !isMuted;
-    if (videoRef.current) {
-      videoRef.current.muted = nextMuted;
-    }
-    setMuted(nextMuted);
-  };
-
-  const handleLoadedMetadata = () => {
-    const video = videoRef.current;
-    if (!video || !Number.isFinite(video.duration) || video.duration <= 0) {
-      return;
-    }
-
-    const nextDurationSeconds = roundClipPreviewSeconds(video.duration);
-    setDurationOverrideSeconds(nextDurationSeconds);
-    if (!hasUserAdjustedTrimRef.current) {
-      setTrim({ inSeconds: 0, outSeconds: nextDurationSeconds });
-    }
-  };
-
-  const handleLoadStart = () => {
-    setMediaError(null);
-    setMediaReady(false);
-  };
-
-  const handleLoadedData = () => {
-    setMediaReady(true);
-  };
-
-  const handleCanPlayThrough = () => {
-    setMediaReady(true);
-  };
-
-  const handlePause = () => {
-    setPlaying(false);
-    const video = videoRef.current;
-    if (video) {
-      const pendingSeconds = pendingSeekSecondsRef.current;
-      syncPlaybackPresentation(
-        pendingSeconds ??
-          roundClipPreviewSeconds(
-            Math.min(
-              Math.max(video.currentTime, trim.inSeconds),
-              trim.outSeconds,
-            ),
-          ),
-      );
-    }
-  };
-
-  const handlePlay = () => {
-    const video = videoRef.current;
-    const pendingSeconds = pendingSeekSecondsRef.current;
-    if (pendingSeconds !== null) {
-      syncPlaybackPresentation(pendingSeconds);
-    } else if (video && !video.seeking) {
-      syncPlaybackPresentation(
-        roundClipPreviewSeconds(
-          Math.min(
-            Math.max(video.currentTime, trim.inSeconds),
-            trim.outSeconds,
-          ),
-        ),
-      );
-    }
-    setPlaying(true);
-  };
-
-  const handleCanPlay = () => {
-    setMediaReady(true);
-  };
-
-  const handleTimeUpdate = () => {
-    const video = videoRef.current;
-    if (!video) {
-      return;
-    }
-
-    const pendingSeconds = pendingSeekSecondsRef.current;
-    if (pendingSeconds !== null) {
-      syncPlaybackPresentation(pendingSeconds);
-      return;
-    }
-
-    const clampedSeconds = roundClipPreviewSeconds(
-      Math.min(Math.max(video.currentTime, trim.inSeconds), trim.outSeconds),
-    );
-    if (video.currentTime >= trim.outSeconds) {
-      syncPlaybackPresentation(trim.outSeconds);
-      video.pause();
-      setPlaying(false);
-      return;
-    }
-    if (video.paused || typeof video.requestVideoFrameCallback !== "function") {
-      syncPlaybackPresentation(clampedSeconds);
-    }
-  };
-
-  const handleVideoError = (event: SyntheticEvent<HTMLVideoElement>) => {
-    pendingSeekSecondsRef.current = null;
-    resumePlaybackAfterSeekRef.current = false;
-    const mediaError = event.currentTarget.error;
-    setMediaReady(false);
-    setPlaying(false);
-    setMediaError(
-      mediaError?.message || "The replay preview could not be loaded.",
-    );
-    console.warn("[clip-preview] Replay video failed to load", {
-      clipId,
-      code: mediaError?.code ?? null,
-      message: mediaError?.message ?? null,
-      src: videoSrc,
-    });
-  };
+  const mediaEvents = useClipPreviewOverlayMediaEvents({
+    canUseClip: input.canUseClip,
+    clipId: input.clipId,
+    hasUserAdjustedTrimRef: input.hasUserAdjustedTrimRef,
+    isMuted: input.isMuted,
+    pendingSeekSecondsRef,
+    resumePlaybackAfterSeekRef,
+    setDurationOverrideSeconds: input.setDurationOverrideSeconds,
+    setMediaError: input.setMediaError,
+    setMediaReady: input.setMediaReady,
+    setMuted: input.setMuted,
+    setPlaying: input.setPlaying,
+    setTrim: input.setTrim,
+    syncPlaybackPresentation: input.syncPlaybackPresentation,
+    trim: input.trim,
+    videoRef,
+    videoSrc: input.videoSrc,
+  });
 
   return {
     consumePlaybackPresentationMetrics,
-    handleEnterFullscreen,
-    handleCanPlay,
-    handleCanPlayThrough,
-    handleLoadedData,
-    handleLoadedMetadata,
-    handleLoadStart,
-    handlePause,
-    handlePlay,
+    ...mediaEvents,
     handleSeeked,
     handleSeeking,
-    handleTimeUpdate,
-    handleToggleMuted,
-    handleTogglePlayback,
-    handleVideoError,
     seekPreview,
     videoRef,
   };

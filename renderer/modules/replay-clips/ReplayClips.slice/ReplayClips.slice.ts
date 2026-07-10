@@ -14,74 +14,10 @@ interface ReplayClipRefreshOptions {
   deletedIds?: string[];
 }
 
-const MAX_RECENT_REPLAY_CLIPS = 200;
 const REPLAY_CLIP_LIBRARY_REFRESH_DELAY_MS = 200;
 
-function getReplayClipSortValue(
-  clip: ReplayClipView,
-  sortBy: ReplayClipLibraryQuery["sortBy"] = "createdAt",
-): number | string {
-  switch (sortBy) {
-    case "name":
-      return clip.fileName ?? "";
-    case "sourceLeague":
-      return clip.sourceLeague;
-    case "targetDurationSeconds":
-      return clip.durationSeconds ?? clip.targetDurationSeconds;
-    case "sizeBytes":
-      return clip.sizeBytes;
-    default:
-      return clip.createdAt;
-  }
-}
-
-function compareReplayClips(
-  left: ReplayClipView,
-  right: ReplayClipView,
-  query: ReplayClipLibraryQuery,
-): number {
-  const sortDirection = query.sortDirection ?? "desc";
-  const leftValue = getReplayClipSortValue(left, query.sortBy);
-  const rightValue = getReplayClipSortValue(right, query.sortBy);
-  const sortMultiplier = sortDirection === "asc" ? 1 : -1;
-
-  if (typeof leftValue === "number" && typeof rightValue === "number") {
-    const result = leftValue - rightValue;
-    if (result !== 0) {
-      return result * sortMultiplier;
-    }
-  } else {
-    const result = String(leftValue).localeCompare(String(rightValue));
-    if (result !== 0) {
-      return result * sortMultiplier;
-    }
-  }
-
-  return right.createdAt.localeCompare(left.createdAt);
-}
-
-function upsertReplayClip(
-  items: ReplayClipView[],
-  clip: ReplayClipView,
-  query?: ReplayClipLibraryQuery,
-): ReplayClipView[] {
-  const nextItems = [...items];
-  const index = nextItems.findIndex((item) => item.id === clip.id);
-  if (index >= 0) {
-    nextItems[index] = clip;
-  } else {
-    nextItems.push(clip);
-  }
-
-  if (query) {
-    nextItems.sort((left, right) => compareReplayClips(left, right, query));
-    return nextItems;
-  }
-
-  nextItems.sort((left, right) =>
-    right.createdAt.localeCompare(left.createdAt),
-  );
-  return nextItems.slice(0, MAX_RECENT_REPLAY_CLIPS);
+function getReplayClipsError(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? error.message : fallback;
 }
 
 function replayClipMatchesLibraryQuery(
@@ -103,6 +39,48 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
   ReplayClipsSlice
 > = (set, get) => {
   let libraryRefreshTimer: number | null = null;
+  let libraryRequestGeneration = 0;
+
+  const requestLibraryPage = async (
+    query: ReplayClipLibraryQuery,
+    options: { activateQuery?: boolean; clearSelection?: boolean } = {},
+  ): Promise<boolean> => {
+    const requestGeneration = ++libraryRequestGeneration;
+    if (options.activateQuery) {
+      set((state) => {
+        state.replayClips.libraryQuery = query;
+        if (options.clearSelection) {
+          state.replayClips.selectedClipIds = {};
+        }
+        state.replayClips.error = null;
+      });
+    }
+
+    try {
+      const libraryPage = await window.electron.replayClips.listLibrary(query);
+      if (requestGeneration !== libraryRequestGeneration) {
+        return false;
+      }
+
+      set((state) => {
+        state.replayClips.libraryPage = libraryPage;
+        state.replayClips.libraryItems = libraryPage.items;
+        state.replayClips.libraryLeagues = libraryPage.availableLeagues;
+        state.replayClips.error = null;
+      });
+      return true;
+    } catch (error) {
+      if (requestGeneration === libraryRequestGeneration) {
+        set((state) => {
+          state.replayClips.error = getReplayClipsError(
+            error,
+            "Could not load clips.",
+          );
+        });
+      }
+      return false;
+    }
+  };
 
   const scheduleLibraryRefresh = () => {
     if (libraryRefreshTimer !== null) {
@@ -121,7 +99,6 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
 
     set((state) => {
       state.replayClips.activeClip = clip;
-      state.replayClips.items = upsertReplayClip(state.replayClips.items, clip);
       state.replayClips.error = null;
 
       if (!query || !state.replayClips.libraryPage) {
@@ -133,12 +110,7 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
       );
       const matchesLibrary = replayClipMatchesLibraryQuery(clip, query);
       if (libraryIndex >= 0 && matchesLibrary) {
-        state.replayClips.libraryItems = upsertReplayClip(
-          state.replayClips.libraryItems,
-          clip,
-          query,
-        );
-        return;
+        state.replayClips.libraryItems[libraryIndex] = clip;
       }
 
       if (libraryIndex >= 0 || matchesLibrary) {
@@ -153,12 +125,8 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
 
   const refreshReplayClipState = async (
     options: ReplayClipRefreshOptions = {},
-  ) => {
+  ): Promise<boolean> => {
     const query = get().replayClips.libraryQuery;
-    const [items, libraryPage] = await Promise.all([
-      window.electron.replayClips.list(),
-      query ? window.electron.replayClips.listLibrary(query) : null,
-    ]);
     const deletedIds = new Set(options.deletedIds ?? []);
 
     set((state) => {
@@ -177,20 +145,13 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
           : state.replayClips.activeClip;
 
       state.replayClips.activeClip = nextActiveClip;
-      state.replayClips.items = items;
-      state.replayClips.libraryItems =
-        libraryPage?.items ?? state.replayClips.libraryItems;
-      state.replayClips.libraryLeagues =
-        libraryPage?.availableLeagues ?? state.replayClips.libraryLeagues;
-      state.replayClips.libraryPage =
-        libraryPage ?? state.replayClips.libraryPage;
-      state.replayClips.error = null;
     });
+
+    return query ? requestLibraryPage(query) : true;
   };
 
   return {
     replayClips: {
-      items: [],
       libraryQuery: null,
       libraryPage: null,
       libraryItems: [],
@@ -198,23 +159,10 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
       activeClip: null,
       selectedClipIds: {},
       error: null,
-      hydrate: async () => {
-        const items = await window.electron.replayClips.list();
-        set((state) => {
-          state.replayClips.items = items;
-          state.replayClips.error = null;
-        });
-      },
       hydrateLibrary: async (query) => {
-        const libraryPage =
-          await window.electron.replayClips.listLibrary(query);
-        set((state) => {
-          state.replayClips.libraryQuery = query;
-          state.replayClips.libraryPage = libraryPage;
-          state.replayClips.libraryItems = libraryPage.items;
-          state.replayClips.libraryLeagues = libraryPage.availableLeagues;
-          state.replayClips.selectedClipIds = {};
-          state.replayClips.error = null;
+        await requestLibraryPage(query, {
+          activateQuery: true,
+          clearSelection: true,
         });
       },
       refreshLibrary: async () => {
@@ -223,14 +171,7 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
           return;
         }
 
-        const libraryPage =
-          await window.electron.replayClips.listLibrary(query);
-        set((state) => {
-          state.replayClips.libraryPage = libraryPage;
-          state.replayClips.libraryItems = libraryPage.items;
-          state.replayClips.libraryLeagues = libraryPage.availableLeagues;
-          state.replayClips.error = null;
-        });
+        await requestLibraryPage(query);
       },
       saveManualReplay: async () => {
         const clip = await window.electron.replayClips.saveManualReplay();
@@ -256,9 +197,10 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
           return;
         }
 
-        await refreshReplayClipState({ deletedIds: [id] });
+        const refreshed = await refreshReplayClipState({ deletedIds: [id] });
         set((state) => {
-          state.replayClips.error = result.cleanupError ?? null;
+          state.replayClips.error =
+            result.cleanupError ?? (refreshed ? null : state.replayClips.error);
         });
         trackEvent("clip-deleted");
       },
@@ -273,14 +215,18 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
 
         const result =
           await window.electron.replayClips.deleteMany(selectedIds);
-        await refreshReplayClipState({
+        const refreshed = await refreshReplayClipState({
           clearSelection: true,
           deletedIds: result.deletedIds,
         });
         set((state) => {
           state.replayClips.error =
             result.cleanupErrors?.[0]?.error ??
-            (result.ok ? null : result.error);
+            (result.ok
+              ? refreshed
+                ? null
+                : state.replayClips.error
+              : result.error);
         });
         trackEvent("clips-deleted");
       },

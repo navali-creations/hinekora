@@ -24,9 +24,6 @@ function createTestStore() {
         profiles: {
           hydrate: vi.fn().mockResolvedValue(undefined),
         },
-        replayClips: {
-          hydrate: vi.fn().mockResolvedValue(undefined),
-        },
         settings: {
           hydrate: vi.fn().mockResolvedValue(undefined),
         },
@@ -76,7 +73,6 @@ describe("StateTransfer slice", () => {
     expect(store.getState().settings.hydrate).toHaveBeenCalled();
     expect(store.getState().profiles.hydrate).toHaveBeenCalled();
     expect(store.getState().captureProfiles.hydrate).toHaveBeenCalled();
-    expect(store.getState().replayClips.hydrate).toHaveBeenCalled();
     expect(store.getState().stateTransfer.preview).toBeNull();
     expect(store.getState().stateTransfer.lastMessage).toBe("Import applied");
   });

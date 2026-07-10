@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { trackEvent } from "~/renderer/modules/umami";
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
 import type { ClipPreviewTrimRange } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
-import { resolveClipPreviewDetail } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+import { resolveClipPreviewMediaState } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { useClipPreviewOverlayDiagnostics } from "../useClipPreviewOverlayDiagnostics/useClipPreviewOverlayDiagnostics";
 import { useClipPreviewOverlayPlayback } from "../useClipPreviewOverlayPlayback/useClipPreviewOverlayPlayback";
 import { useClipPreviewOverlayPlaybackPresentation } from "../useClipPreviewOverlayPlaybackPresentation/useClipPreviewOverlayPlaybackPresentation";
@@ -22,7 +22,6 @@ function useClipPreviewOverlayMediaWorkflow() {
     incrementMediaVersion,
     mediaError,
     mediaVersion,
-    operationProgress,
     setCopied,
     setHasSavedClip,
     setDurationOverrideSeconds,
@@ -44,7 +43,6 @@ function useClipPreviewOverlayMediaWorkflow() {
     incrementMediaVersion: clipPreviewOverlay.incrementMediaVersion,
     mediaError: clipPreviewOverlay.mediaError,
     mediaVersion: clipPreviewOverlay.mediaVersion,
-    operationProgress: clipPreviewOverlay.operationProgress,
     setCopied: clipPreviewOverlay.setCopied,
     setHasSavedClip: clipPreviewOverlay.setHasSavedClip,
     setDurationOverrideSeconds: clipPreviewOverlay.setDurationOverrideSeconds,
@@ -57,31 +55,21 @@ function useClipPreviewOverlayMediaWorkflow() {
     trim: clipPreviewOverlay.trim,
   }));
   const {
+    canUseClip,
     clip,
-    clipFileName,
     durationSeconds,
-    hasPlayableClipFile,
-    mediaUrl: baseVideoSrc,
-  } = resolveClipPreviewDetail(detail, durationOverrideSeconds);
-  const videoSrc = useMemo(() => {
-    if (!baseVideoSrc) {
-      return null;
-    }
-
-    const separator = baseVideoSrc.includes("?") ? "&" : "?";
-    return `${baseVideoSrc}${separator}v=${mediaVersion}`;
-  }, [baseVideoSrc, mediaVersion]);
-  const isProcessing = isCopying || isSaving;
-  const canUseClip = hasPlayableClipFile && Boolean(videoSrc) && isMediaReady;
-  const isPreparingClip = Boolean(
-    (clip &&
-      !hasPlayableClipFile &&
-      clip.status !== "failed" &&
-      (clip.status === "death_detected" ||
-        clip.status === "saving_replay" ||
-        clip.status === "processing")) ||
-      (hasPlayableClipFile && !mediaError && (!videoSrc || !isMediaReady)),
-  );
+    isPreparingClip,
+    isProcessing,
+    videoSrc,
+  } = resolveClipPreviewMediaState({
+    detail,
+    durationOverrideSeconds,
+    isCopying,
+    isMediaReady,
+    isSaving,
+    mediaError,
+    mediaVersion,
+  });
   const {
     getPlaybackSeconds,
     setPlaybackTimeElement,
@@ -221,9 +209,6 @@ function useClipPreviewOverlayMediaWorkflow() {
   );
 
   return {
-    canUseClip,
-    clipFileName,
-    durationSeconds,
     handleCanPlay,
     handleCanPlayThrough,
     handleEnterFullscreen,
@@ -241,18 +226,10 @@ function useClipPreviewOverlayMediaWorkflow() {
     handleTogglePlayback,
     handleTrimChange,
     handleVideoError,
-    isMuted,
-    isPlaying,
-    mediaError,
-    isPreparingClip,
-    isProcessing,
-    operationProgress,
     seekPreview,
     setPlaybackTimeElement,
     setPlayheadElement,
-    trim,
     videoRef,
-    videoSrc,
   };
 }
 

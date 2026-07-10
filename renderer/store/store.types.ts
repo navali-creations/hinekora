@@ -187,7 +187,6 @@ export interface PoeProcessSlice {
 
 export interface ReplayClipsSlice {
   replayClips: {
-    items: ReplayClipView[];
     libraryQuery: ReplayClipLibraryQuery | null;
     libraryPage: ReplayClipLibraryPage | null;
     libraryItems: ReplayClipView[];
@@ -195,7 +194,6 @@ export interface ReplayClipsSlice {
     activeClip: ReplayClipView | null;
     selectedClipIds: Record<string, boolean>;
     error: string | null;
-    hydrate: () => Promise<void>;
     hydrateLibrary: (query: ReplayClipLibraryQuery) => Promise<void>;
     refreshLibrary: () => Promise<void>;
     saveManualReplay: () => Promise<void>;

@@ -9,26 +9,60 @@ import {
   FiVolumeX as VolumeMuted,
 } from "react-icons/fi";
 
+import { useClipPreviewOverlayShallow } from "~/renderer/store";
+
 import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.css";
+import { resolveClipPreviewMediaState } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { useClipPreviewOverlayMediaContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
 
 function ClipPreviewOverlayVideo() {
   const workflow = useClipPreviewOverlayMediaContext();
-  const muteLabel = workflow.isMuted ? "Unmute replay" : "Mute replay";
-  const playbackLabel = workflow.isPlaying ? "Pause replay" : "Play replay";
+  const {
+    detail,
+    durationOverrideSeconds,
+    isCopying,
+    isMediaReady,
+    isMuted,
+    isPlaying,
+    isSaving,
+    mediaError,
+    mediaVersion,
+  } = useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
+    detail: clipPreviewOverlay.detail,
+    durationOverrideSeconds: clipPreviewOverlay.durationOverrideSeconds,
+    isCopying: clipPreviewOverlay.isCopying,
+    isMediaReady: clipPreviewOverlay.isMediaReady,
+    isMuted: clipPreviewOverlay.isMuted,
+    isPlaying: clipPreviewOverlay.isPlaying,
+    isSaving: clipPreviewOverlay.isSaving,
+    mediaError: clipPreviewOverlay.mediaError,
+    mediaVersion: clipPreviewOverlay.mediaVersion,
+  }));
+  const { canUseClip, clipFileName, isPreparingClip, isProcessing, videoSrc } =
+    resolveClipPreviewMediaState({
+      detail,
+      durationOverrideSeconds,
+      isCopying,
+      isMediaReady,
+      isSaving,
+      mediaError,
+      mediaVersion,
+    });
+  const muteLabel = isMuted ? "Unmute replay" : "Mute replay";
+  const playbackLabel = isPlaying ? "Pause replay" : "Play replay";
 
   return (
     <div
       className={clsx(
         styles.videoShell,
-        workflow.isPreparingClip && styles.videoShellPreparing,
+        isPreparingClip && styles.videoShellPreparing,
       )}
       data-clip-preview-video-shell=""
     >
-      {workflow.mediaError ? (
+      {mediaError ? (
         <div className={styles.empty}>
           <strong>Preview unavailable</strong>
-          <span>{workflow.mediaError}</span>
+          <span>{mediaError}</span>
           <div className={styles.previewErrorActions}>
             <button
               className="btn btn-primary btn-sm"
@@ -40,7 +74,7 @@ function ClipPreviewOverlayVideo() {
             </button>
             <button
               className="btn btn-ghost btn-sm"
-              disabled={!workflow.clipFileName}
+              disabled={!clipFileName}
               type="button"
               onClick={workflow.handleRevealClip}
             >
@@ -49,16 +83,16 @@ function ClipPreviewOverlayVideo() {
             </button>
           </div>
         </div>
-      ) : workflow.videoSrc ? (
+      ) : videoSrc ? (
         <>
           <video
             autoPlay
             className={styles.video}
-            muted={workflow.isMuted}
+            muted={isMuted}
             playsInline
             preload="auto"
             ref={workflow.videoRef}
-            src={workflow.videoSrc}
+            src={videoSrc}
             onCanPlay={workflow.handleCanPlay}
             onCanPlayThrough={workflow.handleCanPlayThrough}
             onError={workflow.handleVideoError}
@@ -78,29 +112,25 @@ function ClipPreviewOverlayVideo() {
                 styles.videoIconButton,
                 styles.muteButton,
                 styles.videoSecondaryButton,
-                workflow.isMuted && styles.videoSecondaryButtonActive,
+                isMuted && styles.videoSecondaryButtonActive,
                 "tooltip tooltip-right btn btn-circle btn-sm",
               )}
-              data-tip={workflow.isMuted ? "Unmute" : "Mute"}
-              disabled={!workflow.canUseClip || workflow.isProcessing}
+              data-tip={isMuted ? "Unmute" : "Mute"}
+              disabled={!canUseClip || isProcessing}
               type="button"
               onClick={workflow.handleToggleMuted}
             >
-              {workflow.isMuted ? (
-                <VolumeMuted size={16} />
-              ) : (
-                <Volume size={16} />
-              )}
+              {isMuted ? <VolumeMuted size={16} /> : <Volume size={16} />}
             </button>
             <div className={styles.playbackRow}>
               <button
                 aria-label={playbackLabel}
                 className={`${styles.playButton} btn btn-primary btn-circle btn-sm`}
-                disabled={!workflow.canUseClip}
+                disabled={!canUseClip}
                 type="button"
                 onClick={workflow.handleTogglePlayback}
               >
-                {workflow.isPlaying ? <Pause size={16} /> : <Play size={16} />}
+                {isPlaying ? <Pause size={16} /> : <Play size={16} />}
               </button>
               <span
                 className={styles.videoTime}
@@ -117,7 +147,7 @@ function ClipPreviewOverlayVideo() {
                 "tooltip tooltip-left btn btn-circle btn-sm",
               )}
               data-tip="Show in Explorer"
-              disabled={!workflow.clipFileName}
+              disabled={!clipFileName}
               type="button"
               onClick={workflow.handleRevealClip}
             >
@@ -131,7 +161,7 @@ function ClipPreviewOverlayVideo() {
                 "tooltip tooltip-left btn btn-circle btn-sm",
               )}
               data-tip="Fullscreen"
-              disabled={!workflow.canUseClip}
+              disabled={!canUseClip}
               type="button"
               onClick={workflow.handleEnterFullscreen}
             >
@@ -143,7 +173,7 @@ function ClipPreviewOverlayVideo() {
         <div
           className={clsx(
             styles.empty,
-            workflow.isPreparingClip && styles.emptyPreparing,
+            isPreparingClip && styles.emptyPreparing,
           )}
         >
           Preparing preview

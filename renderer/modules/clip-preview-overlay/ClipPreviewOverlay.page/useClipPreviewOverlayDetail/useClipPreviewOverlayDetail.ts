@@ -5,6 +5,7 @@ import { useClipPreviewOverlayShallow } from "~/renderer/store";
 import {
   getClipPreviewFileTitle,
   resolveClipPreviewDetail,
+  resolveClipPreviewHeaderState,
   resolveClipPreviewRouteClipId,
   roundClipPreviewSeconds,
 } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
@@ -121,20 +122,11 @@ function useClipPreviewOverlayDetail() {
     setHasSavedClip,
   ]);
 
-  const isClipReady = clip?.hasMediaFile === true;
-  let title = "Loading Replay";
-  let subtitle = detailError || "Waiting for clip metadata";
-  if (clip) {
-    if (clip.status === "failed") {
-      title = "Replay Failed";
-      subtitle = clip.error ?? "Replay save failed";
-    } else {
-      title = isClipReady ? "Replay Ready" : "Preparing Replay";
-      subtitle = isClipReady
-        ? `${clip.sourceGame.toUpperCase()} - ${new Date(clip.createdAt).toLocaleTimeString()}`
-        : "Saving replay file";
-    }
-  }
+  const { subtitle, title } = resolveClipPreviewHeaderState({
+    detail,
+    detailError,
+    durationOverrideSeconds,
+  });
 
   return {
     clip,

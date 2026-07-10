@@ -33,7 +33,6 @@ export const createStateTransferSlice: BoundStoreStateCreator<
           get().settings.hydrate(),
           get().profiles.hydrate(),
           get().captureProfiles.hydrate(),
-          get().replayClips.hydrate(),
         ]);
       }
       set((state) => {

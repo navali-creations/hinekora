@@ -4,6 +4,7 @@ import { useCallback } from "react";
 import { trackEvent } from "~/renderer/modules/umami";
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
+import { resolveClipPreviewOperationState } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { useClipPreviewOverlayCopyOperation } from "../useClipPreviewOverlayCopyOperation/useClipPreviewOverlayCopyOperation";
 import type { ClipPreviewOverlayDetail } from "../useClipPreviewOverlayDetail/useClipPreviewOverlayDetail";
 import { useClipPreviewOverlaySaveOperation } from "../useClipPreviewOverlaySaveOperation/useClipPreviewOverlaySaveOperation";
@@ -38,22 +39,28 @@ function useClipPreviewOverlayOperations({
     titleDraft: clipPreviewOverlay.titleDraft,
     trim: clipPreviewOverlay.trim,
   }));
-  const hasTrimChanges =
-    durationSeconds > 0 &&
-    (Math.abs(trim.inSeconds) > 0.001 ||
-      Math.abs(trim.outSeconds - durationSeconds) > 0.001);
-  const trimmedTitle = titleDraft.trim();
-  const hasTitleChange =
-    trimmedTitle.length > 0 && trimmedTitle !== fileTitle.trim();
-  const canUseClip = Boolean(clip?.hasMediaFile && durationSeconds > 0);
-  const isProcessing = isCopying || isSaving;
-  const canCopy = Boolean(clip?.hasMediaFile) && !isProcessing;
-  const canEdit = canUseClip && !isProcessing;
-  const canSave =
-    canUseClip &&
-    (hasTrimChanges || hasTitleChange || isMuted) &&
-    !isProcessing;
-  const canOpenSavedClip = Boolean(clip) && hasSavedClip && !isProcessing;
+  const {
+    canCopy,
+    canEdit,
+    canOpenSavedClip,
+    canSave,
+    canUseClip,
+    hasTitleChange,
+    hasTrimChanges,
+    isProcessing,
+    titlePlaceholder,
+    trimmedTitle,
+  } = resolveClipPreviewOperationState({
+    clip,
+    durationSeconds,
+    fileTitle,
+    hasSavedClip,
+    isCopying,
+    isMuted,
+    isSaving,
+    titleDraft,
+    trim,
+  });
   const { handleCopyClip, hasCopied, resetCopiedState } =
     useClipPreviewOverlayCopyOperation({
       canCopy,
@@ -162,7 +169,7 @@ function useClipPreviewOverlayOperations({
     operationProgress,
     saveMessage,
     titleDraft,
-    titlePlaceholder: fileTitle || "2026-07-08 01-18-40",
+    titlePlaceholder,
     trim,
   };
 }

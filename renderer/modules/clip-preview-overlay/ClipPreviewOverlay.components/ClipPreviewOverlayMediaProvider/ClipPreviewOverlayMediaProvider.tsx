@@ -1,9 +1,7 @@
 import { type ReactNode, useMemo } from "react";
 
-import {
-  type ClipPreviewOverlayMediaWorkflow,
-  useClipPreviewOverlayMediaWorkflow,
-} from "../../ClipPreviewOverlay.page/useClipPreviewOverlayMediaWorkflow/useClipPreviewOverlayMediaWorkflow";
+import { useClipPreviewOverlayMediaWorkflow } from "../../ClipPreviewOverlay.page/useClipPreviewOverlayMediaWorkflow/useClipPreviewOverlayMediaWorkflow";
+import type { ClipPreviewOverlayMediaCommands } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider.context";
 import { ClipPreviewOverlayMediaContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider.context";
 
 interface ClipPreviewOverlayMediaProviderProps {
@@ -14,11 +12,8 @@ function ClipPreviewOverlayMediaProvider({
   children,
 }: ClipPreviewOverlayMediaProviderProps) {
   const workflow = useClipPreviewOverlayMediaWorkflow();
-  const mediaWorkflow = useMemo<ClipPreviewOverlayMediaWorkflow>(
+  const mediaCommands = useMemo<ClipPreviewOverlayMediaCommands>(
     () => ({
-      canUseClip: workflow.canUseClip,
-      clipFileName: workflow.clipFileName,
-      durationSeconds: workflow.durationSeconds,
       handleCanPlay: workflow.handleCanPlay,
       handleCanPlayThrough: workflow.handleCanPlayThrough,
       handleLoadedData: workflow.handleLoadedData,
@@ -36,23 +31,12 @@ function ClipPreviewOverlayMediaProvider({
       handleTogglePlayback: workflow.handleTogglePlayback,
       handleTrimChange: workflow.handleTrimChange,
       handleVideoError: workflow.handleVideoError,
-      isMuted: workflow.isMuted,
-      isPlaying: workflow.isPlaying,
-      mediaError: workflow.mediaError,
-      isPreparingClip: workflow.isPreparingClip,
-      isProcessing: workflow.isProcessing,
-      operationProgress: workflow.operationProgress,
       seekPreview: workflow.seekPreview,
       setPlaybackTimeElement: workflow.setPlaybackTimeElement,
       setPlayheadElement: workflow.setPlayheadElement,
-      trim: workflow.trim,
       videoRef: workflow.videoRef,
-      videoSrc: workflow.videoSrc,
     }),
     [
-      workflow.canUseClip,
-      workflow.clipFileName,
-      workflow.durationSeconds,
       workflow.handleCanPlay,
       workflow.handleCanPlayThrough,
       workflow.handleLoadedData,
@@ -70,23 +54,15 @@ function ClipPreviewOverlayMediaProvider({
       workflow.handleTogglePlayback,
       workflow.handleTrimChange,
       workflow.handleVideoError,
-      workflow.isMuted,
-      workflow.isPlaying,
-      workflow.mediaError,
-      workflow.isPreparingClip,
-      workflow.isProcessing,
-      workflow.operationProgress,
       workflow.seekPreview,
       workflow.setPlaybackTimeElement,
       workflow.setPlayheadElement,
-      workflow.trim,
       workflow.videoRef,
-      workflow.videoSrc,
     ],
   );
 
   return (
-    <ClipPreviewOverlayMediaContext.Provider value={mediaWorkflow}>
+    <ClipPreviewOverlayMediaContext.Provider value={mediaCommands}>
       {children}
     </ClipPreviewOverlayMediaContext.Provider>
   );

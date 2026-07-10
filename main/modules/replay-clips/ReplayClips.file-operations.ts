@@ -189,10 +189,11 @@ async function cleanupReplayClipFile(
 }
 
 function areReplayClipPathsEqual(left: string, right: string): boolean {
-  return (
-    normalize(resolve(left)).toLowerCase() ===
-    normalize(resolve(right)).toLowerCase()
-  );
+  return createReplayClipPathKey(left) === createReplayClipPathKey(right);
+}
+
+function createReplayClipPathKey(path: string): string {
+  return normalize(resolve(path)).toLowerCase();
 }
 
 async function resolveReplayClipRenameTarget(
@@ -240,5 +241,6 @@ async function replayClipPathExists(path: string): Promise<boolean> {
 export {
   areReplayClipPathsEqual,
   commitReplayClipFileUpdate,
+  createReplayClipPathKey,
   resolveReplayClipRenameTarget,
 };

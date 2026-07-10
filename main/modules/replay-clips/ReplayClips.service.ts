@@ -2,15 +2,12 @@ import { createHash, randomUUID } from "node:crypto";
 import { rm, stat, unlink } from "node:fs/promises";
 import { basename } from "node:path";
 
-import type { WebContents } from "electron";
 import { app, BrowserWindow, shell } from "electron";
 
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
-import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import type { ManagedReplayKind } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
-import { normalizeMediaLibraryPageQuery } from "~/main/modules/media-library/MediaLibrary.utils";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { resolveRecordingStorageRoot } from "~/main/modules/recording-storage/RecordingStorage.utils";
@@ -22,16 +19,10 @@ import {
   logWarn,
 } from "~/main/utils/app-log";
 import * as FileClipboard from "~/main/utils/file-clipboard";
-import {
-  assertString,
-  handleValidationError,
-  safeErrorMessage,
-} from "~/main/utils/ipc-validation";
-import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
+import { safeErrorMessage } from "~/main/utils/ipc-validation";
 import { readMp4DurationSeconds } from "~/main/utils/media-metadata";
 
 import {
-  type GameId,
   quickClipTrimMaximumSeconds,
   quickClipTrimMinimumSeconds,
   type ReplayClip,
@@ -59,12 +50,18 @@ import { ReplayClipDuplicateTracker } from "./ReplayClips.duplicates";
 import {
   areReplayClipPathsEqual as arePathsEqual,
   commitReplayClipFileUpdate,
+  createReplayClipPathKey,
   resolveReplayClipRenameTarget,
 } from "./ReplayClips.file-operations";
 import {
   resolveReplayClipFilePath,
   sanitizeReplayClipStoragePathList,
 } from "./ReplayClips.files";
+import { setupReplayClipsIpcHandlers } from "./ReplayClips.ipc";
+import {
+  type EditorReplayDetailPageInput,
+  ReplayClipLibraryService,
+} from "./ReplayClips.library";
 import { createReplayClipMediaUrl } from "./ReplayClips.media";
 import { setupReplayClipMediaProtocol } from "./ReplayClips.protocol";
 import {
@@ -72,22 +69,9 @@ import {
   renderReplayClipQuickTrim,
 } from "./ReplayClips.render";
 import { ReplayClipsRepository } from "./ReplayClips.repository";
-import {
-  validateReplayClipCopyInput,
-  validateReplayClipIdList,
-  validateReplayClipLibraryQuery,
-  validateReplayClipListFilter,
-  validateReplayClipUpdateInput,
-} from "./ReplayClips.validation";
+import { roundReplayClipSeconds } from "./ReplayClips.utils";
 
 const REPLAY_CLIPS_LOG_SCOPE = "replay-clips";
-const defaultLibraryPageSize = 20;
-const maxEditorReplayPageValidationCandidates = 500;
-
-interface AvailableReplayClip {
-  clip: ReplayClip;
-  storedClipPath: string;
-}
 
 interface ReplayClipOperationProgressOptions {
   onProgress?: (progress: ReplayClipOperationProgress) => void;
@@ -98,7 +82,9 @@ class ReplayClipsService {
 
   private readonly clipFileOperationQueues = new Map<string, Promise<void>>();
   private readonly duplicateTracker = new ReplayClipDuplicateTracker();
+  private readonly libraryService: ReplayClipLibraryService;
   private readonly repository: ReplayClipsRepository;
+  private activeReplayTriggerEvents: ReplayTriggerEvent[] | null = null;
   private activeReplayTriggerRequest: Promise<ReplayClip | null> | null = null;
   private storedFileMutationQueue: Promise<void> = Promise.resolve();
 
@@ -116,7 +102,27 @@ class ReplayClipsService {
 
   constructor() {
     this.repository = new ReplayClipsRepository(DatabaseService.getInstance());
-    this.setupHandlers();
+    this.libraryService = new ReplayClipLibraryService({
+      createReplayClipView: (clip) => this.createReplayClipView(clip),
+      readReplayClipDuration: (path) => this.readReplayClipDuration(path),
+      repository: this.repository,
+      resolveClipFilePath: (path, options) =>
+        this.resolveClipFilePath(path, options),
+      withClipSize: (clip, persist) => this.withClipSizeAsync(clip, persist),
+    });
+    setupReplayClipsIpcHandlers({
+      copyClipToClipboard: (input, options) =>
+        this.copyClipToClipboard(input, options),
+      createReplayClipView: (clip) => this.createReplayClipView(clip),
+      deleteClip: (id) => this.deleteClip(id),
+      deleteManyClips: (ids) => this.deleteManyClips(ids),
+      getClipView: (id) => this.getClipView(id),
+      listLibrary: (query) => this.listLibrary(query),
+      openClip: (id) => this.openClip(id),
+      revealClip: (id) => this.revealClip(id),
+      saveManualReplay: () => this.saveManualReplay(),
+      updateClipFile: (input, options) => this.updateClipFile(input, options),
+    });
     setupReplayClipMediaProtocol({
       resolveReplayClipPath: (id) => this.getStoredClipMediaPath(id),
       resolveRunRecordingPath: (id) =>
@@ -164,142 +170,16 @@ class ReplayClipsService {
     };
   }
 
-  listEditorReplayDetailPage(input: {
-    createdAfter?: string;
-    excludeIds?: string[];
-    game?: GameId;
-    includeIds?: string[];
-    kind: ReplayClipKind;
-    league?: string;
-    pageIndex: number;
-    pageSize: number;
-  }): { items: ReplayClipSourceDetail[]; totalCount: number } {
-    const filter: ReplayClipListFilter & {
-      createdAfter?: string;
-      excludeIds?: string[];
-      includeIds?: string[];
-      mediaPathOnly?: boolean;
-      positiveMediaOnly?: boolean;
-    } = {
-      kind: input.kind,
-      ...(input.createdAfter ? { createdAfter: input.createdAfter } : {}),
-      ...(input.excludeIds && input.excludeIds.length > 0
-        ? { excludeIds: input.excludeIds }
-        : {}),
-      ...(input.includeIds && input.includeIds.length > 0
-        ? { includeIds: input.includeIds }
-        : {}),
-    };
-    if (input.game) {
-      filter.game = input.game;
-    }
-    if (input.league) {
-      filter.league = input.league;
-    }
-
-    const candidateFilter = {
-      ...filter,
-      mediaPathOnly: true,
-      positiveMediaOnly: true,
-    };
-    const items: ReplayClipSourceDetail[] = [];
-    const seenAvailableClipIds = new Set<string>();
-    let validatedCandidates = 0;
-
-    while (
-      items.length < input.pageSize &&
-      validatedCandidates < maxEditorReplayPageValidationCandidates
-    ) {
-      const page = this.repository.listLibraryPage({
-        filter: candidateFilter,
-        pageIndex: input.pageIndex,
-        pageSize: input.pageSize,
-        sortBy: "createdAt",
-        sortDirection: "desc",
-      });
-      if (page.items.length === 0) {
-        break;
-      }
-
-      let removedMissingCandidate = false;
-      let inspectedCandidate = false;
-      for (const clip of page.items) {
-        if (seenAvailableClipIds.has(clip.id)) {
-          continue;
-        }
-        if (validatedCandidates >= maxEditorReplayPageValidationCandidates) {
-          break;
-        }
-        inspectedCandidate = true;
-        validatedCandidates += 1;
-        const availableClip = this.resolveAvailableReplayClip(clip);
-        if (!availableClip) {
-          removedMissingCandidate = true;
-          continue;
-        }
-
-        seenAvailableClipIds.add(availableClip.clip.id);
-        items.push(this.createAvailableReplayClipDetail(availableClip));
-        if (items.length >= input.pageSize) {
-          break;
-        }
-      }
-
-      if (
-        !removedMissingCandidate ||
-        !inspectedCandidate ||
-        page.items.length < input.pageSize
-      ) {
-        break;
-      }
-    }
-    const knownAvailableCount = this.repository.count({
-      ...candidateFilter,
-    });
-
-    return {
-      items,
-      totalCount: knownAvailableCount,
-    };
+  async listEditorReplayDetailPage(
+    input: EditorReplayDetailPageInput,
+  ): Promise<{ items: ReplayClipSourceDetail[]; totalCount: number }> {
+    return this.libraryService.listEditorReplayDetailPage(input);
   }
 
   async listLibrary(
     query: ReplayClipLibraryQuery = {},
   ): Promise<ReplayClipLibraryPage> {
-    const normalizedQuery = this.normalizeLibraryQuery(query);
-    const filter = this.libraryQueryToListFilter(normalizedQuery);
-    if (normalizedQuery.sortBy === "sizeBytes") {
-      await Promise.all(
-        this.repository
-          .listAll(filter)
-          .map((clip) => this.withClipSizeAsync(clip, true)),
-      );
-    }
-    const page = this.repository.listLibraryPage({
-      filter,
-      pageIndex: normalizedQuery.pageIndex,
-      pageSize: normalizedQuery.pageSize,
-      sortBy: normalizedQuery.sortBy,
-      sortDirection: normalizedQuery.sortDirection,
-    });
-
-    const items = await Promise.all(
-      page.items.map((clip) => this.withClipSizeAsync(clip, true)),
-    );
-
-    return {
-      items: items.map((clip) => this.createReplayClipView(clip)),
-      availableLeagues: this.listLibraryLeagues(normalizedQuery),
-      pageIndex: normalizedQuery.pageIndex,
-      pageSize: normalizedQuery.pageSize,
-      pageCount: Math.max(
-        1,
-        Math.ceil(page.totalCount / normalizedQuery.pageSize),
-      ),
-      totalCount: page.totalCount,
-      sortBy: normalizedQuery.sortBy,
-      sortDirection: normalizedQuery.sortDirection,
-    };
+    return this.libraryService.listLibrary(query);
   }
 
   replaceAll(
@@ -335,6 +215,13 @@ class ReplayClipsService {
     event: ReplayTriggerEvent,
   ): Promise<ReplayClip | null> {
     if (this.activeReplayTriggerRequest) {
+      this.activeReplayTriggerEvents!.push(event);
+      if (event.kind === "death") {
+        BookmarksService.getInstance().rememberReplayClipSession({
+          game: event.game,
+          triggerLineHash: event.lineHash,
+        });
+      }
       logInfo(REPLAY_CLIPS_LOG_SCOPE, "Replay trigger coalesced", {
         game: event.game,
         kind: event.kind,
@@ -343,14 +230,42 @@ class ReplayClipsService {
       return this.activeReplayTriggerRequest;
     }
 
-    const request = this.handleReplayTriggerExclusive(event).finally(() => {
+    const events = [event];
+    this.activeReplayTriggerEvents = events;
+    const request = this.handleReplayTriggerBatch(event, events).finally(() => {
       if (this.activeReplayTriggerRequest === request) {
         this.activeReplayTriggerRequest = null;
+        this.activeReplayTriggerEvents = null;
       }
     });
     this.activeReplayTriggerRequest = request;
 
     return request;
+  }
+
+  private async handleReplayTriggerBatch(
+    firstEvent: ReplayTriggerEvent,
+    events: ReplayTriggerEvent[],
+  ): Promise<ReplayClip | null> {
+    const clip = await this.handleReplayTriggerExclusive(firstEvent);
+    if (clip?.status !== "ready") {
+      return clip;
+    }
+
+    const deathEvent = events.find((event) => event.kind === "death");
+    const resolvedClip =
+      deathEvent && clip.kind !== "death"
+        ? this.updateClip(clip, {
+            deathTimestamp: deathEvent.detectedAt,
+            kind: "death",
+            sourceGame: deathEvent.game,
+            triggerLineHash: deathEvent.lineHash,
+          })
+        : clip;
+
+    BookmarksService.getInstance().linkReplayClip(resolvedClip);
+    this.cleanupRecordingStorageForClip(resolvedClip);
+    return resolvedClip;
   }
 
   private async handleReplayTriggerExclusive(
@@ -371,7 +286,6 @@ class ReplayClipsService {
           lineHash: event.lineHash,
           clipId: existing.id,
         });
-        BookmarksService.getInstance().linkReplayClip(existing);
         return existing;
       }
     }
@@ -437,9 +351,6 @@ class ReplayClipsService {
       logInfo(REPLAY_CLIPS_LOG_SCOPE, "Replay clip ready", {
         clipId: readyClip.id,
       });
-      BookmarksService.getInstance().linkReplayClip(readyClip);
-      this.cleanupRecordingStorageForClip(readyClip);
-
       return readyClip;
     } catch (error) {
       logError(REPLAY_CLIPS_LOG_SCOPE, "Replay clip creation failed", {
@@ -754,6 +665,7 @@ class ReplayClipsService {
 
   private async deleteClipQueued(
     id: string,
+    pathReferenceCounts?: Map<string, number>,
   ): Promise<ReplayClipFileActionResult> {
     try {
       const clip = this.repository.get(id);
@@ -763,8 +675,18 @@ class ReplayClipsService {
 
       BookmarksService.getInstance().deleteReplayClipLinks(id);
       this.repository.delete(id);
+      if (pathReferenceCounts) {
+        this.removeClipPathReferences(clip, pathReferenceCounts);
+      }
       try {
-        await this.deleteStoredClipFiles(clip);
+        await this.deleteStoredClipFiles(
+          clip,
+          pathReferenceCounts
+            ? (path) =>
+                (pathReferenceCounts.get(createReplayClipPathKey(path)) ?? 0) >
+                0
+            : undefined,
+        );
       } catch (error) {
         const cleanupError = safeErrorMessage(error);
         logWarn(REPLAY_CLIPS_LOG_SCOPE, "Replay clip file cleanup failed", {
@@ -784,12 +706,19 @@ class ReplayClipsService {
   async deleteManyClips(
     ids: string[],
   ): Promise<ReplayClipBatchFileActionResult> {
+    return this.queueStoredFileMutation(() => this.deleteManyClipsQueued(ids));
+  }
+
+  private async deleteManyClipsQueued(
+    ids: string[],
+  ): Promise<ReplayClipBatchFileActionResult> {
     const deletedIds: string[] = [];
     const failed: Array<{ id: string; error: string }> = [];
     const cleanupErrors: Array<{ id: string; error: string }> = [];
 
+    const pathReferenceCounts = this.createStoredPathReferenceCounts();
     for (const id of ids) {
-      const result = await this.deleteClip(id);
+      const result = await this.deleteClipQueued(id, pathReferenceCounts);
       if (result.ok) {
         deletedIds.push(id);
         if (result.cleanupError) {
@@ -899,163 +828,6 @@ class ReplayClipsService {
     }
   }
 
-  private setupHandlers(): void {
-    registerGuardedIpcHandler(
-      ReplayClipsChannel.Get,
-      [WindowName.Main, WindowName.ClipPreviewOverlay],
-      (_event, id: unknown) => {
-        try {
-          assertString(id, "id", ReplayClipsChannel.Get, {
-            min: 1,
-            max: 128,
-          });
-          return this.getClipView(id);
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      ReplayClipsChannel.List,
-      [WindowName.Main, WindowName.RecorderOverlay],
-      (_event, filter: unknown) => {
-        try {
-          return this.list(this.validateListFilter(filter)).then((clips) =>
-            clips.map((clip) => this.createReplayClipView(clip)),
-          );
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      ReplayClipsChannel.ListLibrary,
-      [WindowName.Main],
-      (_event, query: unknown) => {
-        try {
-          return this.listLibrary(this.validateLibraryQuery(query));
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      ReplayClipsChannel.SaveManualReplay,
-      [WindowName.Main, WindowName.RecorderOverlay],
-      async () => {
-        const clip = await this.saveManualReplay();
-        return clip ? this.createReplayClipView(clip) : null;
-      },
-    );
-    registerGuardedIpcHandler(
-      ReplayClipsChannel.Update,
-      [WindowName.Main, WindowName.ClipPreviewOverlay],
-      (event, input: unknown) => {
-        try {
-          const sender = (event as { sender?: WebContents }).sender;
-
-          return this.updateClipFile(this.validateUpdateInput(input), {
-            onProgress: (progress) => {
-              this.sendOperationProgress(sender, progress);
-            },
-          });
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      ReplayClipsChannel.Open,
-      [WindowName.Main],
-      (_event, id: unknown) => {
-        try {
-          assertString(id, "id", ReplayClipsChannel.Open, {
-            min: 1,
-            max: 128,
-          });
-          return this.openClip(id);
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      ReplayClipsChannel.Reveal,
-      [WindowName.Main, WindowName.ClipPreviewOverlay],
-      (_event, id: unknown) => {
-        try {
-          assertString(id, "id", ReplayClipsChannel.Reveal, {
-            min: 1,
-            max: 128,
-          });
-          return this.revealClip(id);
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      ReplayClipsChannel.Copy,
-      [WindowName.Main, WindowName.ClipPreviewOverlay],
-      (event, input: unknown) => {
-        try {
-          const sender = (event as { sender?: WebContents }).sender;
-
-          return this.copyClipToClipboard(this.validateCopyInput(input), {
-            onProgress: (progress) => {
-              this.sendOperationProgress(sender, progress);
-            },
-          });
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      ReplayClipsChannel.Delete,
-      [WindowName.Main],
-      (_event, id: unknown) => {
-        try {
-          assertString(id, "id", ReplayClipsChannel.Delete, {
-            min: 1,
-            max: 128,
-          });
-          return this.deleteClip(id);
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      ReplayClipsChannel.DeleteMany,
-      [WindowName.Main],
-      (_event, ids: unknown) => {
-        try {
-          return this.deleteManyClips(this.validateIdList(ids));
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-  }
-
-  private sendOperationProgress(
-    sender: WebContents | undefined,
-    progress: ReplayClipOperationProgress,
-  ): void {
-    try {
-      if (!sender || sender.isDestroyed()) {
-        return;
-      }
-
-      sender.send(ReplayClipsChannel.OperationProgress, progress);
-    } catch (error) {
-      logWarn(REPLAY_CLIPS_LOG_SCOPE, "Failed to send replay clip progress", {
-        error: safeErrorMessage(error),
-      });
-    }
-  }
-
   private getStoredClipPath(id: string): string | null {
     const clip = this.repository.get(id);
     if (!clip) {
@@ -1085,34 +857,6 @@ class ReplayClipsService {
         requireNonEmptyFile: true,
       },
     );
-  }
-
-  private resolveAvailableReplayClip(
-    clip: ReplayClip,
-  ): AvailableReplayClip | null {
-    const storedClipPath = this.getStoredClipPathForClip(clip);
-    if (!storedClipPath) {
-      this.repository.updateSize(clip.id, 0);
-
-      return null;
-    }
-
-    return {
-      clip,
-      storedClipPath,
-    };
-  }
-
-  private createAvailableReplayClipDetail({
-    clip,
-    storedClipPath,
-  }: AvailableReplayClip): ReplayClipSourceDetail {
-    return {
-      clip,
-      durationSeconds:
-        clip.durationSeconds ?? this.readReplayClipDuration(storedClipPath),
-      mediaUrl: createReplayClipMediaUrl(clip.id, clip.updatedAt),
-    };
   }
 
   private getClipView(id: string): ReplayClipDetail | null {
@@ -1263,7 +1007,11 @@ class ReplayClipsService {
     };
   }
 
-  private async deleteStoredClipFiles(clip: ReplayClip): Promise<void> {
+  private async deleteStoredClipFiles(
+    clip: ReplayClip,
+    isReferenced: (path: string) => boolean = (path) =>
+      this.isStoredPathReferenced(path),
+  ): Promise<void> {
     const paths = new Set(
       [clip.processedClipPath, clip.originalObsPath].filter(
         (path): path is string => typeof path === "string" && path.length > 0,
@@ -1278,7 +1026,7 @@ class ReplayClipsService {
         continue;
       }
 
-      if (this.isStoredPathReferenced(storedPath)) {
+      if (isReferenced(storedPath)) {
         logInfo(REPLAY_CLIPS_LOG_SCOPE, "Replay clip file retained", {
           clipId: clip.id,
           reason: "shared-path",
@@ -1316,6 +1064,40 @@ class ReplayClipsService {
       );
   }
 
+  private createStoredPathReferenceCounts(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const clip of this.repository.listStoragePaths()) {
+      const paths = new Set(
+        [clip.processedClipPath, clip.originalObsPath]
+          .filter((path): path is string => path !== null)
+          .map(createReplayClipPathKey),
+      );
+      for (const path of paths) {
+        counts.set(path, (counts.get(path) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }
+
+  private removeClipPathReferences(
+    clip: ReplayClip,
+    counts: Map<string, number>,
+  ): void {
+    const paths = new Set(
+      [clip.processedClipPath, clip.originalObsPath]
+        .filter((path): path is string => path !== null)
+        .map(createReplayClipPathKey),
+    );
+    for (const path of paths) {
+      const nextCount = Math.max(0, counts.get(path)! - 1);
+      if (nextCount === 0) {
+        counts.delete(path);
+      } else {
+        counts.set(path, nextCount);
+      }
+    }
+  }
+
   private hashLine(line: string): string {
     return createHash("sha256").update(line).digest("hex").slice(0, 32);
   }
@@ -1325,67 +1107,6 @@ class ReplayClipsService {
     storageRoot: string,
   ): ReplayClip[] {
     return sanitizeReplayClipStoragePathList(clips, storageRoot);
-  }
-
-  private validateListFilter(value: unknown): ReplayClipListFilter {
-    return validateReplayClipListFilter(value);
-  }
-
-  private validateLibraryQuery(value: unknown): ReplayClipLibraryQuery {
-    return validateReplayClipLibraryQuery(value);
-  }
-
-  private validateUpdateInput(value: unknown): ReplayClipUpdateInput {
-    return validateReplayClipUpdateInput(value);
-  }
-
-  private validateCopyInput(value: unknown): ReplayClipCopyInput {
-    return validateReplayClipCopyInput(value);
-  }
-
-  private validateIdList(value: unknown): string[] {
-    return validateReplayClipIdList(value);
-  }
-
-  private normalizeLibraryQuery(
-    query: ReplayClipLibraryQuery,
-  ): Required<ReplayClipLibraryQuery> {
-    const pageQuery = normalizeMediaLibraryPageQuery(query, {
-      pageIndex: 0,
-      pageSize: defaultLibraryPageSize,
-      sortBy: "createdAt",
-      sortDirection: "desc",
-    });
-
-    return {
-      game: query.game ?? "poe1",
-      kind: query.kind ?? "death",
-      league: query.league ?? "",
-      pageIndex: pageQuery.pageIndex,
-      pageSize: pageQuery.pageSize,
-      sortBy: pageQuery.sortBy,
-      sortDirection: pageQuery.sortDirection,
-    };
-  }
-
-  private libraryQueryToListFilter(
-    query: Required<ReplayClipLibraryQuery>,
-  ): ReplayClipListFilter {
-    const filter: ReplayClipListFilter = {
-      game: query.game,
-      kind: query.kind,
-    };
-    if (query.league.length > 0) {
-      filter.league = query.league;
-    }
-
-    return filter;
-  }
-
-  private listLibraryLeagues(
-    query: Required<ReplayClipLibraryQuery>,
-  ): string[] {
-    return this.repository.listLeagues({ game: query.game, kind: query.kind });
   }
 
   private async withClipSizeAsync(
@@ -1483,10 +1204,6 @@ function clampReplayClipSeconds(
   }
 
   return roundReplayClipSeconds(Math.min(Math.max(value, min), max));
-}
-
-function roundReplayClipSeconds(seconds: number): number {
-  return Math.round(Math.max(seconds, 0) * 1_000) / 1_000;
 }
 
 export { ReplayClipsService };
