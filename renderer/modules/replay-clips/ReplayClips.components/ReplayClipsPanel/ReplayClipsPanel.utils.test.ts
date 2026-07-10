@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createReplayClip } from "~/main/test/factories/replayClip";
+import { createReplayClipView } from "~/main/test/factories/replayClip";
 
 import {
   getCellClassName,
@@ -27,10 +27,10 @@ describe("ReplayClipsPanel utils", () => {
   it("dims unavailable rows", () => {
     expect(
       getRowClassName(
-        createReplayClip({ processedClipPath: "clip.mp4", sizeBytes: 1 }),
+        createReplayClipView({ hasMediaFile: true, sizeBytes: 1 }),
       ),
     ).toBe("");
-    expect(getRowClassName(createReplayClip())).toContain(
+    expect(getRowClassName(createReplayClipView())).toContain(
       "text-base-content/45",
     );
   });

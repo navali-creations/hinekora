@@ -18,10 +18,11 @@ import { DatabaseService } from "~/main/modules/database";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import type { RunRecordingDetail } from "~/main/modules/recording-storage";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
-import type { ReplayClipDetail } from "~/main/modules/replay-clips";
+import type { ReplayClipSourceDetail } from "~/main/modules/replay-clips";
 import { ReplayClipsService } from "~/main/modules/replay-clips";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
+import { fetchLocalFileForTests } from "~/main/test/local-file-fetch";
 import * as FileClipboard from "~/main/utils/file-clipboard";
 import {
   clearIpcWindowRolesForTests,
@@ -40,12 +41,16 @@ const electronMocks = vi.hoisted(() => ({
   getPath: vi.fn(() => process.cwd()),
   handleProtocol: vi.fn(),
   isProtocolHandled: vi.fn(() => false),
+  netFetch: vi.fn(),
   showItemInFolder: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
   app: {
     getPath: electronMocks.getPath,
+  },
+  net: {
+    fetch: electronMocks.netFetch,
   },
   protocol: {
     handle: electronMocks.handleProtocol,
@@ -91,8 +96,8 @@ const emptyWorkspace: EditorWorkspace = {
 };
 
 function createReplayClipDetail(
-  overrides: Partial<ReplayClipDetail["clip"]> = {},
-): ReplayClipDetail {
+  overrides: Partial<ReplayClipSourceDetail["clip"]> = {},
+): ReplayClipSourceDetail {
   const id = overrides.id ?? "clip-1";
 
   return {
@@ -146,15 +151,15 @@ function createRecordingDetail(
 
 function mockEditorLibraries(
   input: {
-    clips?: Record<string, ReplayClipDetail | null>;
+    clips?: Record<string, ReplayClipSourceDetail | null>;
     editorAutoPruneProjects?: boolean;
-    leakedIncludedClips?: ReplayClipDetail[];
+    leakedIncludedClips?: ReplayClipSourceDetail[];
     recordings?: Record<string, RunRecordingDetail | null>;
     storageRoot?: string | null;
   } = {},
 ) {
   const clipDetails = Object.values(input.clips ?? {}).filter(
-    (detail): detail is ReplayClipDetail => detail !== null,
+    (detail): detail is ReplayClipSourceDetail => detail !== null,
   );
   const recordingItems = Object.values(input.recordings ?? {})
     .filter((detail): detail is RunRecordingDetail => detail !== null)
@@ -247,6 +252,8 @@ describe("EditorService IPC", () => {
     electronMocks.handleProtocol.mockClear();
     electronMocks.isProtocolHandled.mockReset();
     electronMocks.isProtocolHandled.mockReturnValue(false);
+    electronMocks.netFetch.mockReset();
+    electronMocks.netFetch.mockImplementation(fetchLocalFileForTests);
     electronMocks.showItemInFolder.mockClear();
   });
 
@@ -265,7 +272,7 @@ describe("EditorService IPC", () => {
     expect(EditorService.getInstance()).not.toBe(first);
   });
 
-  it("does not register an export media protocol twice and logs registration failures", () => {
+  it("does not register an export media protocol twice and logs registration failures", async () => {
     electronMocks.isProtocolHandled.mockReturnValueOnce(true);
     new EditorService();
     expect(electronMocks.handleProtocol).not.toHaveBeenCalled();
@@ -273,10 +280,11 @@ describe("EditorService IPC", () => {
     electronMocks.handleProtocol.mockClear();
     new EditorService();
     const protocolHandler = electronMocks.handleProtocol.mock.calls[0]?.[1] as
-      | ((request: Request) => Response)
+      | ((request: Request) => Promise<Response>)
       | undefined;
     expect(
-      protocolHandler?.(new Request("hinekora-editor-export://export/")).status,
+      (await protocolHandler?.(new Request("hinekora-editor-export://export/")))
+        ?.status,
     ).toBe(404);
 
     electronMocks.isProtocolHandled.mockImplementationOnce(() => {
@@ -1248,7 +1256,7 @@ describe("EditorService IPC", () => {
         startSeconds: number;
       }>;
       exportPaths: Map<string, string>;
-      handleExportMediaRequest: (request: Request) => Response;
+      handleExportMediaRequest: (request: Request) => Promise<Response>;
     };
     vi.spyOn(internals, "createExportClips").mockReturnValue([
       {
@@ -1295,8 +1303,10 @@ describe("EditorService IPC", () => {
         expect.objectContaining({ muteAudio: true }),
       );
       expect(
-        internals.handleExportMediaRequest(
-          new Request((result.mediaUrl ?? "").replace("://export/", ":///")),
+        (
+          await internals.handleExportMediaRequest(
+            new Request((result.mediaUrl ?? "").replace("://export/", ":///")),
+          )
         ).status,
       ).toBe(200);
     } finally {
@@ -1421,7 +1431,7 @@ describe("EditorService IPC", () => {
         startSeconds: number;
       }>;
       exportPaths: Map<string, string>;
-      handleExportMediaRequest: (request: Request) => Response;
+      handleExportMediaRequest: (request: Request) => Promise<Response>;
       rememberExportPath: (exportId: string, outputPath: string) => void;
       resolveExportMediaRequestId: (url: string) => string | null;
     };
@@ -1490,18 +1500,24 @@ describe("EditorService IPC", () => {
         error: "copy crashed",
       });
       expect(
-        internals.handleExportMediaRequest(
-          new Request("hinekora-editor-export://export/"),
+        (
+          await internals.handleExportMediaRequest(
+            new Request("hinekora-editor-export://export/"),
+          )
         ).status,
       ).toBe(404);
       expect(
-        internals.handleExportMediaRequest(
-          new Request("hinekora-editor-export://export/export-1"),
+        (
+          await internals.handleExportMediaRequest(
+            new Request("hinekora-editor-export://export/export-1"),
+          )
         ).status,
       ).toBe(404);
       expect(
-        internals.handleExportMediaRequest(
-          new Request("https://example.test/export-2"),
+        (
+          await internals.handleExportMediaRequest(
+            new Request("https://example.test/export-2"),
+          )
         ).status,
       ).toBe(404);
       expect(internals.resolveExportMediaRequestId("not a url")).toBeNull();
@@ -1648,7 +1664,9 @@ describe("EditorService IPC", () => {
   });
 
   it("survives clipboard cleanup failures during copy", async () => {
-    const tempPath = await mkdtemp(join(tmpdir(), "hinekora-editor-copy-cleanup-"));
+    const tempPath = await mkdtemp(
+      join(tmpdir(), "hinekora-editor-copy-cleanup-"),
+    );
     const cleanupEditorClipboardOutputDirectory = vi
       .spyOn(EditorFiles, "cleanupEditorClipboardOutputDirectory")
       .mockRejectedValue(new Error("cleanup crashed"));

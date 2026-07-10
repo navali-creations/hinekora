@@ -1,8 +1,10 @@
 import clsx from "clsx";
 
-import type { ReplayClipLibrarySortKey } from "~/main/modules/replay-clips";
+import type {
+  ReplayClipLibrarySortKey,
+  ReplayClipView,
+} from "~/main/modules/replay-clips";
 
-import type { ReplayClip } from "~/types";
 import { hasPlayableClip } from "../../ReplayClips.utils/ReplayClips.utils";
 
 function getHeaderClassName(columnId: string): string {
@@ -26,7 +28,7 @@ function getCellClassName(columnId: string): string {
   );
 }
 
-function getRowClassName(clip: ReplayClip): string {
+function getRowClassName(clip: ReplayClipView): string {
   return clsx(!hasPlayableClip(clip) && "text-base-content/45");
 }
 

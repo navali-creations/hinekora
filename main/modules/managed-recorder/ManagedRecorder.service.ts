@@ -80,7 +80,7 @@ const currentDir = __dirname;
 
 const MANAGED_RUNTIME = "packaged_obs";
 const MANAGED_RECORDING_CONTAINER = "mp4";
-const MANAGED_DEFAULT_ENCODER = "hardware_h264";
+const REPLAY_BUFFER_PLAYBACK_ENCODER = "hardware_h264";
 const MANAGED_AUDIO_SOURCE_TYPES: Record<
   ManagedRecorderAudioDeviceKind,
   string
@@ -119,6 +119,11 @@ const FALLBACK_RECORDING_RESOLUTION: ManagedRecorderResolution = {
   width: 1920,
   height: 1080,
 };
+const REPLAY_CLIP_OUTPUT_RESOLUTION: ManagedRecorderResolution = {
+  width: 1920,
+  height: 1080,
+};
+const REPLAY_CLIP_MAX_FPS = 60;
 const MANAGED_RECORDER_LOG_SCOPE = "managed-recorder";
 type ManagedRecordingMode = "buffer" | "run";
 
@@ -176,7 +181,7 @@ class ManagedRecorderService {
     outputDirectory: null,
     outputResolution: NATIVE_RECORDING_RESOLUTION,
     fps: 30,
-    encoder: MANAGED_DEFAULT_ENCODER,
+    encoder: REPLAY_BUFFER_PLAYBACK_ENCODER,
     lastRecordingPath: null,
     runRecordingPath: null,
     activeSessionDirectory: null,
@@ -1158,17 +1163,22 @@ class ManagedRecorderService {
     mode: ManagedRecordingMode,
   ): ManagedRecorderResolution {
     const settings = SettingsStoreService.getInstance().get();
-    const outputResolution = this.resolveRecordingResolution(
-      settings.recordingOutputResolution,
-    );
+    const outputResolution =
+      mode === "buffer"
+        ? REPLAY_CLIP_OUTPUT_RESOLUTION
+        : this.resolveRecordingResolution(settings.recordingOutputResolution);
+    const outputFps =
+      mode === "buffer"
+        ? Math.min(settings.recordingFps, REPLAY_CLIP_MAX_FPS)
+        : settings.recordingFps;
 
     logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.ResetVideoContext", {
-      fps: settings.recordingFps,
+      fps: outputFps,
       width: outputResolution.width,
       height: outputResolution.height,
     });
     this.noobs?.ResetVideoContext?.(
-      settings.recordingFps,
+      outputFps,
       outputResolution.width,
       outputResolution.height,
     );
@@ -1182,7 +1192,13 @@ class ManagedRecorderService {
     });
     this.noobs?.SetRecordingCfg?.(outputDirectory, MANAGED_RECORDING_CONTAINER);
     logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.SetRecordingCfg returned");
-    const requestedVideoEncoder = settings.recordingEncoder;
+    const configuredVideoEncoder = settings.recordingEncoder;
+    const encoderPolicy =
+      mode === "buffer" ? "clip-preview-h264" : "user-configured";
+    const requestedVideoEncoder =
+      mode === "buffer"
+        ? REPLAY_BUFFER_PLAYBACK_ENCODER
+        : configuredVideoEncoder;
     const availableVideoEncoders = this.listAvailableVideoEncoders();
     const videoEncoder = resolveManagedVideoEncoder(
       requestedVideoEncoder,
@@ -1197,6 +1213,7 @@ class ManagedRecorderService {
     logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "Calling noobs.SetVideoEncoder", {
       requestedEncoder: requestedVideoEncoder,
       encoder: videoEncoder,
+      encoderPolicy,
       rateControl: videoEncoderSettings.rate_control,
       crf: videoEncoderSettings.crf ?? null,
       cqp: videoEncoderSettings.cqp ?? null,
@@ -1205,10 +1222,12 @@ class ManagedRecorderService {
       ...videoEncoderSettings,
     });
     logInfoSync(MANAGED_RECORDER_LOG_SCOPE, "noobs.SetVideoEncoder returned");
-    this.setStatus({ encoder: videoEncoder });
+    this.setStatus({ encoder: videoEncoder, fps: outputFps });
     logInfo(MANAGED_RECORDER_LOG_SCOPE, "Configured video encoder", {
+      configuredEncoder: configuredVideoEncoder,
       requestedEncoder: requestedVideoEncoder,
       encoder: videoEncoder,
+      encoderPolicy,
       mode,
       quality:
         mode === "run"
@@ -1217,7 +1236,7 @@ class ManagedRecorderService {
       rateControl: videoEncoderSettings.rate_control,
       crf: videoEncoderSettings.crf ?? null,
       cqp: videoEncoderSettings.cqp ?? null,
-      fps: settings.recordingFps,
+      fps: outputFps,
       width: outputResolution.width,
       height: outputResolution.height,
     });

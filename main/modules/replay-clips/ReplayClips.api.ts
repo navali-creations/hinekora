@@ -2,7 +2,6 @@ import { ipcRenderer } from "electron";
 
 import { unwrapIpcResult } from "~/main/utils/ipc-api";
 
-import type { ReplayClip } from "~/types";
 import { ReplayClipsChannel } from "./ReplayClips.channels";
 import type {
   ReplayClipBatchFileActionResult,
@@ -15,13 +14,14 @@ import type {
   ReplayClipOperationProgress,
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
+  ReplayClipView,
 } from "./ReplayClips.dto";
 
 const ReplayClipsAPI = {
   get: async (id: string): Promise<ReplayClipDetail | null> =>
     unwrapIpcResult(await ipcRenderer.invoke(ReplayClipsChannel.Get, id)),
-  list: async (filter?: ReplayClipListFilter): Promise<ReplayClip[]> =>
-    unwrapIpcResult<ReplayClip[]>(
+  list: async (filter?: ReplayClipListFilter): Promise<ReplayClipView[]> =>
+    unwrapIpcResult<ReplayClipView[]>(
       await ipcRenderer.invoke(ReplayClipsChannel.List, filter),
     ),
   listLibrary: async (
@@ -30,7 +30,7 @@ const ReplayClipsAPI = {
     unwrapIpcResult(
       await ipcRenderer.invoke(ReplayClipsChannel.ListLibrary, query),
     ),
-  saveManualReplay: (): Promise<ReplayClip | null> =>
+  saveManualReplay: (): Promise<ReplayClipView | null> =>
     ipcRenderer.invoke(ReplayClipsChannel.SaveManualReplay),
   update: (input: ReplayClipUpdateInput): Promise<ReplayClipUpdateResult> =>
     ipcRenderer.invoke(ReplayClipsChannel.Update, input),
@@ -46,8 +46,11 @@ const ReplayClipsAPI = {
     ipcRenderer.invoke(ReplayClipsChannel.Delete, id),
   deleteMany: (ids: string[]): Promise<ReplayClipBatchFileActionResult> =>
     ipcRenderer.invoke(ReplayClipsChannel.DeleteMany, ids),
-  onStatusChanged: (callback: (clip: ReplayClip) => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, clip: ReplayClip) => {
+  onStatusChanged: (callback: (clip: ReplayClipView) => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      clip: ReplayClipView,
+    ) => {
       callback(clip);
     };
     ipcRenderer.on(ReplayClipsChannel.StatusChanged, listener);

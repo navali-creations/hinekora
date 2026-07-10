@@ -11,9 +11,12 @@ export type {
   ReplayClipLibraryQuery,
   ReplayClipLibrarySortKey,
   ReplayClipListFilter,
+  ReplayClipSourceDetail,
   ReplayClipTrimInput,
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
+  ReplayClipView,
+  ReplayTriggerEvent,
 } from "./ReplayClips.dto";
 export { ReplayClipsRepository } from "./ReplayClips.repository";
 export { ReplayClipsService } from "./ReplayClips.service";

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { RunRecordingDetail } from "~/main/modules/recording-storage";
-import type { ReplayClipDetail } from "~/main/modules/replay-clips";
+import type { ReplayClipSourceDetail } from "~/main/modules/replay-clips";
 
 import {
   createEditorAssetFromRecording,
@@ -13,7 +13,7 @@ import {
 
 describe("Editor mapper", () => {
   it("maps replay clips and recordings into editor assets", () => {
-    const clipDetail: ReplayClipDetail = {
+    const clipDetail: ReplayClipSourceDetail = {
       durationSeconds: 7.25,
       mediaUrl: "hinekora-media://replay-clip/clip-1",
       clip: {
@@ -73,7 +73,7 @@ describe("Editor mapper", () => {
   });
 
   it("maps replay status fallbacks and clip labels", () => {
-    const failedClip: ReplayClipDetail = {
+    const failedClip: ReplayClipSourceDetail = {
       durationSeconds: null,
       mediaUrl: null,
       clip: {
@@ -94,7 +94,7 @@ describe("Editor mapper", () => {
         updatedAt: "2026-06-12T10:01:00.000Z",
       },
     };
-    const processingClip: ReplayClipDetail = {
+    const processingClip: ReplayClipSourceDetail = {
       ...failedClip,
       clip: {
         ...failedClip.clip,
@@ -102,7 +102,7 @@ describe("Editor mapper", () => {
         status: "processing",
       },
     };
-    const missingReadyClip: ReplayClipDetail = {
+    const missingReadyClip: ReplayClipSourceDetail = {
       ...failedClip,
       clip: {
         ...failedClip.clip,
@@ -127,7 +127,7 @@ describe("Editor mapper", () => {
   });
 
   it("keeps path labels when a path has no basename", () => {
-    const clipDetail: ReplayClipDetail = {
+    const clipDetail: ReplayClipSourceDetail = {
       durationSeconds: null,
       mediaUrl: "hinekora-media://replay-clip/root-path",
       clip: {

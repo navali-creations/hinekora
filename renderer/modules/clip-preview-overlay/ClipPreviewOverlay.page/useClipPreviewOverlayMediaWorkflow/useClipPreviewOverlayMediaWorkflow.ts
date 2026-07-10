@@ -1,45 +1,62 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
 import { trackEvent } from "~/renderer/modules/umami";
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
 import type { ClipPreviewTrimRange } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+import { resolveClipPreviewDetail } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+import { useClipPreviewOverlayDiagnostics } from "../useClipPreviewOverlayDiagnostics/useClipPreviewOverlayDiagnostics";
 import { useClipPreviewOverlayPlayback } from "../useClipPreviewOverlayPlayback/useClipPreviewOverlayPlayback";
 import { useClipPreviewOverlayPlaybackPresentation } from "../useClipPreviewOverlayPlaybackPresentation/useClipPreviewOverlayPlaybackPresentation";
 
 function useClipPreviewOverlayMediaWorkflow() {
   const hasUserAdjustedTrimRef = useRef(false);
-  const [isMediaReady, setMediaReady] = useState(false);
-  const [isMuted, setMuted] = useState(false);
-  const [isPlaying, setPlaying] = useState(false);
   const {
     detail,
     durationOverrideSeconds,
     isCopying,
+    isMediaReady,
+    isMuted,
+    isPlaying,
     isSaving,
     mediaVersion,
     operationProgress,
     setCopied,
+    setHasSavedClip,
     setDurationOverrideSeconds,
+    setMediaReady,
     setSaveMessage,
+    setMuted,
+    setPlaying,
     setTrim,
     trim,
   } = useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
     detail: clipPreviewOverlay.detail,
     durationOverrideSeconds: clipPreviewOverlay.durationOverrideSeconds,
     isCopying: clipPreviewOverlay.isCopying,
+    isMediaReady: clipPreviewOverlay.isMediaReady,
+    isMuted: clipPreviewOverlay.isMuted,
+    isPlaying: clipPreviewOverlay.isPlaying,
     isSaving: clipPreviewOverlay.isSaving,
     mediaVersion: clipPreviewOverlay.mediaVersion,
     operationProgress: clipPreviewOverlay.operationProgress,
     setCopied: clipPreviewOverlay.setCopied,
+    setHasSavedClip: clipPreviewOverlay.setHasSavedClip,
     setDurationOverrideSeconds: clipPreviewOverlay.setDurationOverrideSeconds,
+    setMediaReady: clipPreviewOverlay.setMediaReady,
+    setMuted: clipPreviewOverlay.setMuted,
     setSaveMessage: clipPreviewOverlay.setSaveMessage,
+    setPlaying: clipPreviewOverlay.setPlaying,
     setTrim: clipPreviewOverlay.setTrim,
     trim: clipPreviewOverlay.trim,
   }));
-  const clip = detail?.clip ?? null;
-  const clipPath = clip?.processedClipPath ?? clip?.originalObsPath ?? null;
-  const baseVideoSrc = detail?.mediaUrl ?? null;
+  const {
+    clip,
+    clipFileName,
+    durationSeconds,
+    hasPlayableClipFile,
+    mediaUrl: baseVideoSrc,
+  } = resolveClipPreviewDetail(detail, durationOverrideSeconds);
   const videoSrc = useMemo(() => {
     if (!baseVideoSrc) {
       return null;
@@ -48,18 +65,7 @@ function useClipPreviewOverlayMediaWorkflow() {
     const separator = baseVideoSrc.includes("?") ? "&" : "?";
     return `${baseVideoSrc}${separator}v=${mediaVersion}`;
   }, [baseVideoSrc, mediaVersion]);
-  const durationSeconds = Math.max(
-    0,
-    detail?.durationSeconds ??
-      durationOverrideSeconds ??
-      clip?.durationSeconds ??
-      clip?.targetDurationSeconds ??
-      0,
-  );
   const isProcessing = isCopying || isSaving;
-  const hasPlayableClipFile = Boolean(
-    clip && baseVideoSrc && durationSeconds > 0,
-  );
   const canUseClip = hasPlayableClipFile && Boolean(videoSrc) && isMediaReady;
   const isPreparingClip = Boolean(
     (clip &&
@@ -72,13 +78,21 @@ function useClipPreviewOverlayMediaWorkflow() {
   );
   const {
     getPlaybackSeconds,
-    playbackSeconds,
     setPlaybackTimeElement,
     setPlayheadElement,
-    startPlaybackClock,
-    stopPlaybackClock,
+    syncPlaybackPresentation,
+    updatePlaybackFrame,
   } = useClipPreviewOverlayPlaybackPresentation(durationSeconds);
+
+  const syncMuteState = useCallback(
+    (nextMuted: boolean) => {
+      setMuted(nextMuted);
+    },
+    [setMuted],
+  );
+
   const {
+    consumePlaybackPresentationMetrics,
     handleCanPlay,
     handleCanPlayThrough,
     handleEnterFullscreen,
@@ -88,11 +102,10 @@ function useClipPreviewOverlayMediaWorkflow() {
     handlePause,
     handlePlay,
     handleTimeUpdate,
-    handleToggleMuted,
+    handleToggleMuted: handlePlaybackToggleMuted,
     handleTogglePlayback,
     handleSeeked,
     handleSeeking,
-    handleWaiting,
     handleVideoError,
     seekPreview,
     videoRef,
@@ -105,29 +118,46 @@ function useClipPreviewOverlayMediaWorkflow() {
     isPlaying,
     setDurationOverrideSeconds,
     setMediaReady,
-    setMuted,
+    setMuted: syncMuteState,
     setPlaying,
     setTrim,
-    startPlaybackClock,
-    stopPlaybackClock,
+    syncPlaybackPresentation,
     trim,
+    updatePlaybackFrame,
     videoSrc,
   });
+
+  useClipPreviewOverlayDiagnostics({
+    clipId: clip?.id ?? null,
+    clipKind: clip?.kind ?? null,
+    clipStatus: clip?.status ?? null,
+    consumePlaybackPresentationMetrics,
+    durationSeconds,
+    hasMediaSource: Boolean(videoSrc),
+    isMediaReady,
+    isPlaying,
+    isPreparingClip,
+    isProcessing,
+    trim,
+    videoRef,
+  });
+
+  const handleToggleMuted = handlePlaybackToggleMuted;
 
   useEffect(() => {
     if (!videoSrc) {
       hasUserAdjustedTrimRef.current = false;
       setMediaReady(false);
-      stopPlaybackClock(0);
+      syncPlaybackPresentation(0);
       setPlaying(false);
       return;
     }
 
     hasUserAdjustedTrimRef.current = false;
     setMediaReady(false);
-    stopPlaybackClock(0);
+    syncPlaybackPresentation(0);
     setPlaying(false);
-  }, [stopPlaybackClock, videoSrc]);
+  }, [setMediaReady, setPlaying, syncPlaybackPresentation, videoSrc]);
 
   const handleRevealClip = useCallback(() => {
     if (clip) {
@@ -147,6 +177,7 @@ function useClipPreviewOverlayMediaWorkflow() {
 
       hasUserAdjustedTrimRef.current = true;
       setCopied(false);
+      setHasSavedClip(false);
       setTrim(nextTrim);
       setSaveMessage(null);
       const currentPlaybackSeconds = getPlaybackSeconds();
@@ -162,6 +193,7 @@ function useClipPreviewOverlayMediaWorkflow() {
       getPlaybackSeconds,
       isProcessing,
       seekPreview,
+      setHasSavedClip,
       setCopied,
       setSaveMessage,
       setTrim,
@@ -170,7 +202,7 @@ function useClipPreviewOverlayMediaWorkflow() {
 
   return {
     canUseClip,
-    clipPath,
+    clipFileName,
     durationSeconds,
     handleCanPlay,
     handleCanPlayThrough,
@@ -187,14 +219,12 @@ function useClipPreviewOverlayMediaWorkflow() {
     handleToggleMuted,
     handleTogglePlayback,
     handleTrimChange,
-    handleWaiting,
     handleVideoError,
     isMuted,
     isPlaying,
     isPreparingClip,
     isProcessing,
     operationProgress,
-    playbackSeconds,
     seekPreview,
     setPlaybackTimeElement,
     setPlayheadElement,

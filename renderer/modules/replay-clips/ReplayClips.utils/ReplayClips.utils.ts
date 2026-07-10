@@ -1,9 +1,7 @@
-import type { ReplayClip } from "~/types";
+import type { ReplayClipView } from "~/main/modules/replay-clips";
 
-function hasPlayableClip(clip: ReplayClip): boolean {
-  return Boolean(
-    (clip.processedClipPath || clip.originalObsPath) && clip.sizeBytes > 0,
-  );
+function hasPlayableClip(clip: ReplayClipView): boolean {
+  return clip.hasMediaFile && clip.sizeBytes > 0;
 }
 
 export { hasPlayableClip };

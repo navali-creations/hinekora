@@ -97,6 +97,64 @@ describe("DiagLogService", () => {
     expect(electronMocks.showItemInFolder).toHaveBeenCalledWith(logPath);
   });
 
+  it("records bounded clip preview renderer diagnostics", async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    setIpcMainHandleForTests((channel, listener) => {
+      handlers.set(channel, listener as (...args: unknown[]) => unknown);
+    });
+    DiagLogService.getInstance();
+
+    const handler = handlers.get(DiagLogChannel.ClipPreviewEvent);
+    expect(
+      await handler?.(
+        {},
+        {
+          event: "playback-health",
+          fields: {
+            clipId: "clip-1",
+            droppedFrames: 3,
+            paused: false,
+          },
+        },
+      ),
+    ).toEqual({ success: true });
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("INFO [clip-preview-renderer] playback-health"),
+      {
+        clipId: "clip-1",
+        droppedFrames: 3,
+        paused: false,
+      },
+    );
+  });
+
+  it("rejects unsupported or nested clip preview diagnostics", async () => {
+    const handlers = new Map<string, (...args: unknown[]) => unknown>();
+    setIpcMainHandleForTests((channel, listener) => {
+      handlers.set(channel, listener as (...args: unknown[]) => unknown);
+    });
+    DiagLogService.getInstance();
+
+    const handler = handlers.get(DiagLogChannel.ClipPreviewEvent);
+    expect(await handler?.({}, { event: "arbitrary-event" })).toEqual({
+      error: "event is not supported",
+      ok: false,
+    });
+    expect(
+      await handler?.(
+        {},
+        {
+          event: "media-event",
+          fields: { nested: { value: true } },
+        },
+      ),
+    ).toEqual({
+      error: "nested must be a primitive log value",
+      ok: false,
+    });
+  });
+
   it("falls back to the default logs directory when app logging is not configured", () => {
     expect(resolveDiagnosticLogPath()).toBe(join(directory, "main.log"));
   });

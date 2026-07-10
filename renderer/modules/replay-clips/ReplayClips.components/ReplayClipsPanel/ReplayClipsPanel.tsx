@@ -10,7 +10,10 @@ import {
 } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 
-import type { ReplayClipLibraryQuery } from "~/main/modules/replay-clips";
+import type {
+  ReplayClipLibraryQuery,
+  ReplayClipView,
+} from "~/main/modules/replay-clips";
 import { MediaLibraryTable } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable";
 import {
   formatBytes,
@@ -20,7 +23,6 @@ import {
 } from "~/renderer/modules/media-library/MediaLibrary.utils/MediaLibrary.utils";
 import { useReplayClipsShallow } from "~/renderer/store";
 
-import type { ReplayClip } from "~/types";
 import { hasPlayableClip } from "../../ReplayClips.utils/ReplayClips.utils";
 import { ReplayClipTableActions } from "../ReplayClipTableActions/ReplayClipTableActions";
 import {
@@ -112,12 +114,12 @@ function ReplayClipsPanel({
     );
   };
 
-  const handleRowClick = (clip: ReplayClip) => {
+  const handleRowClick = (clip: ReplayClipView) => {
     void navigate({ to: "/clip/$clipId", params: { clipId: clip.id } });
   };
 
-  const columns = useMemo<ColumnDef<ReplayClip>[]>(() => {
-    const tableColumns: ColumnDef<ReplayClip>[] = [
+  const columns = useMemo<ColumnDef<ReplayClipView>[]>(() => {
+    const tableColumns: ColumnDef<ReplayClipView>[] = [
       {
         id: "select",
         enableSorting: false,
@@ -167,7 +169,7 @@ function ReplayClipsPanel({
       },
       {
         id: "name",
-        accessorFn: (clip) => clip.processedClipPath ?? clip.originalObsPath,
+        accessorFn: (clip) => clip.fileName,
         header: "Name",
         cell: ({ getValue }) => {
           const path = getValue<string | null>();

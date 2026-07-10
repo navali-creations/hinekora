@@ -47,7 +47,7 @@ describe("copyRenderedFileToClipboard", () => {
     const onCleanupError = vi.fn();
     const onCopySucceeded = vi.fn();
     const render = vi.fn().mockResolvedValue(undefined);
-    const copyFileToClipboard = vi
+    const _copyFileToClipboard = vi
       .spyOn(FileClipboard, "copyFileToClipboard")
       .mockResolvedValue({ ok: true, error: null });
     const cleanup = vi.fn().mockRejectedValue(new Error("cleanup failed"));
@@ -68,10 +68,7 @@ describe("copyRenderedFileToClipboard", () => {
     expect(onCopyFailed).not.toHaveBeenCalled();
     expect(onCopySucceeded).toHaveBeenCalledWith(outputPath);
     expect(onRenderFailed).not.toHaveBeenCalled();
-    expect(onCleanupError).toHaveBeenCalledWith(
-      expect.any(Error),
-      outputPath,
-    );
+    expect(onCleanupError).toHaveBeenCalledWith(expect.any(Error), outputPath);
     expect(cleanup).toHaveBeenCalledWith(outputPath);
   });
 
@@ -83,9 +80,9 @@ describe("copyRenderedFileToClipboard", () => {
     const render = vi.fn().mockImplementation(async () => {
       throw new Error("render failed");
     });
-    const nodeFsPromises = (await import("node:fs/promises")) as {
-      rm: ReturnType<typeof vi.fn>;
-    };
+    const nodeFsPromises = (await import(
+      "node:fs/promises"
+    )) as typeof import("node:fs/promises");
     const rm = vi.mocked(nodeFsPromises.rm);
     rm.mockRejectedValueOnce(new Error("cleanup failed"));
 
@@ -102,7 +99,10 @@ describe("copyRenderedFileToClipboard", () => {
     expect(result).toEqual({ ok: false, error: "render failed" });
     expect(onRenderFailed).toHaveBeenCalledWith(expect.any(Error), outputPath);
     expect(onRenderReady).toHaveBeenCalledWith(outputPath);
-    expect(rm).toHaveBeenCalledWith(outputPath, expect.objectContaining({ force: true }));
+    expect(rm).toHaveBeenCalledWith(
+      outputPath,
+      expect.objectContaining({ force: true }),
+    );
     expect(rm).toHaveBeenCalled();
   });
 });

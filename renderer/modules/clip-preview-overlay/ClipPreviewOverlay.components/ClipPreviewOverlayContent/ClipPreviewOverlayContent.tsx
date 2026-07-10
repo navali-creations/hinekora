@@ -1,5 +1,6 @@
 import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.css";
 import { ClipPreviewInfoAlert } from "../ClipPreviewInfoAlert/ClipPreviewInfoAlert";
+import { ClipPreviewMutedAudioAlert } from "../ClipPreviewMutedAudioAlert/ClipPreviewMutedAudioAlert";
 import { ClipPreviewOverlayActionsBar } from "../ClipPreviewOverlayActionsBar/ClipPreviewOverlayActionsBar";
 import { ClipPreviewOverlayHeader } from "../ClipPreviewOverlayHeader/ClipPreviewOverlayHeader";
 import { ClipPreviewOverlaySaveMessage } from "../ClipPreviewOverlaySaveMessage/ClipPreviewOverlaySaveMessage";
@@ -13,6 +14,7 @@ function ClipPreviewOverlayContent() {
       <ClipPreviewOverlayVideo />
       <ClipPreviewOverlayTrimRail />
       <ClipPreviewOverlayActionsBar />
+      <ClipPreviewMutedAudioAlert />
       <ClipPreviewInfoAlert />
       <ClipPreviewOverlaySaveMessage />
     </main>

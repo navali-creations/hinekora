@@ -10,7 +10,6 @@ import type {
   ManagedRecorderCaptureMode,
   ManagedRecorderStatus,
 } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
-import { ManualReplaysOverlayService } from "~/main/modules/manual-replays-overlay";
 import {
   ProfilesService,
   resolveRenderableProfileForGame,
@@ -112,9 +111,7 @@ class OverlayWindowsService {
     this.coordinator,
     () => this.recordingControlsOverlay.createAnchorBounds(),
     this.getOverlayCaptureProtectionEnabled,
-  );
-  private readonly manualReplaysOverlay = new ManualReplaysOverlayService(
-    this.deathClipsOverlay,
+    () => this.restoreClipPreviewResources(),
   );
   private readonly gridLinesOverlay = new GridLinesOverlayService(
     this.coordinator,
@@ -132,6 +129,8 @@ class OverlayWindowsService {
   );
   private gameRunningActive = false;
   private persistentAuraOverlayRequested = false;
+  private clipPreviewResourcesSuspended = false;
+  private clipPreviewResourceRestoreEnabled = true;
   private activeGameFocusHandoffTimer: NodeJS.Timeout | null = null;
 
   static getInstance(): OverlayWindowsService {
@@ -218,16 +217,14 @@ class OverlayWindowsService {
     }
   }
 
-  showClipPreviewOverlay(clip: ReplayClip): Promise<void> {
-    return this.showDeathClipPreviewOverlay(clip);
-  }
-
-  showDeathClipPreviewOverlay(clip: ReplayClip): Promise<void> {
-    return this.deathClipsOverlay.showClip(clip);
-  }
-
-  showManualReplayPreviewOverlay(clip: ReplayClip): Promise<void> {
-    return this.manualReplaysOverlay.showClip(clip);
+  async showClipPreviewOverlay(clip: ReplayClip): Promise<void> {
+    this.suspendClipPreviewResources();
+    try {
+      await this.deathClipsOverlay.showClip(clip);
+    } catch (error) {
+      this.restoreClipPreviewResources();
+      throw error;
+    }
   }
 
   hideClipPreviewOverlay(): void {
@@ -277,23 +274,57 @@ class OverlayWindowsService {
     this.managedRecorderChangeUnsubscribe?.();
     this.managedRecorderChangeUnsubscribe = null;
     this.endActiveGameFocusHandoff("destroy");
+    this.clipPreviewResourceRestoreEnabled = false;
     this.recordingControlsOverlay.destroy();
     this.deathClipsOverlay.destroy();
     this.gridLinesOverlay.destroy();
+    this.auraManagerOverlays.setClipPreviewSuspended(false);
     this.auraManagerOverlays.destroy();
   }
 
   suspendForSystem(): void {
     this.setPoeFocusActive(false);
     this.endActiveGameFocusHandoff("system-suspend");
+    this.clipPreviewResourceRestoreEnabled = false;
     this.recordingControlsOverlay.suspendForSystem();
     this.deathClipsOverlay.destroy();
     this.gridLinesOverlay.destroy();
+    this.auraManagerOverlays.setClipPreviewSuspended(false);
     this.auraManagerOverlays.suspendForSystem();
+    this.clipPreviewResourceRestoreEnabled = true;
   }
 
   restoreRequestedOverlays(): Promise<void> {
     return this.coordinator.applyFocusGateToGameOverlays();
+  }
+
+  private suspendClipPreviewResources(): void {
+    if (this.clipPreviewResourcesSuspended) {
+      return;
+    }
+
+    this.clipPreviewResourcesSuspended = true;
+    this.auraManagerOverlays.setClipPreviewSuspended(true);
+    logInfo(OVERLAY_WINDOWS_SCOPE, "Clip preview resources suspended", {
+      auraCaptureSuspended: true,
+    });
+  }
+
+  private restoreClipPreviewResources(): void {
+    if (!this.clipPreviewResourcesSuspended) {
+      return;
+    }
+
+    this.clipPreviewResourcesSuspended = false;
+    this.auraManagerOverlays.setClipPreviewSuspended(false);
+    if (!this.clipPreviewResourceRestoreEnabled) {
+      return;
+    }
+
+    logInfo(OVERLAY_WINDOWS_SCOPE, "Clip preview resources restored", {
+      auraCaptureSuspended: false,
+    });
+    void this.auraManagerOverlays.restoreRequestedOverlay();
   }
 
   selectCropRegion(

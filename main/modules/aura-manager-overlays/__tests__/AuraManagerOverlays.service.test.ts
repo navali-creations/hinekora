@@ -815,6 +815,37 @@ describe("AuraManagerOverlaysService", () => {
     );
   });
 
+  it("releases aura capture while clip preview is active and restores it afterward", async () => {
+    const profile = createAuraProfile();
+    vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+      list: () => [profile],
+      update: vi.fn(),
+    } as unknown as ProfilesService);
+    const firstAuraWindow = createFakeWindow();
+    const restoredAuraWindow = createFakeWindow();
+    electronMocks.browserWindowFactory
+      .mockReturnValueOnce(firstAuraWindow)
+      .mockReturnValueOnce(restoredAuraWindow);
+    const coordinator = new GameOverlayCoordinator();
+    const service = new AuraManagerOverlaysService(coordinator);
+    coordinator.setGameRunningActive(true);
+    service.setGameRunningActive(true);
+    coordinator.setPoeFocusActive(true);
+
+    await service.show(profile.id);
+    service.setClipPreviewSuspended(true);
+    await service.show(profile.id);
+
+    expect(firstAuraWindow.close).toHaveBeenCalledTimes(1);
+    expect(electronMocks.BrowserWindow).toHaveBeenCalledTimes(1);
+
+    service.setClipPreviewSuspended(false);
+    await service.restoreRequestedOverlay();
+
+    expect(electronMocks.BrowserWindow).toHaveBeenCalledTimes(2);
+    expect(restoredAuraWindow.showInactive).toHaveBeenCalled();
+  });
+
   it("does not close already destroyed aura windows", async () => {
     const profile = createAuraProfile();
     vi.spyOn(ProfilesService, "getInstance").mockReturnValue({

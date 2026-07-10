@@ -4,7 +4,7 @@ import { copyFile, rename, rm, stat } from "node:fs/promises";
 import { basename } from "node:path";
 
 import type { WebContents } from "electron";
-import { app, protocol, shell } from "electron";
+import { app, net, protocol, shell } from "electron";
 
 import { DatabaseService } from "~/main/modules/database";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
@@ -975,21 +975,25 @@ class EditorService {
     }
   }
 
-  private handleExportMediaRequest(request: Request): Response {
+  private async handleExportMediaRequest(request: Request): Promise<Response> {
     const exportId = this.resolveExportMediaRequestId(request.url);
     if (!exportId) {
       return new Response(null, { status: 404 });
     }
 
     const exportPath = this.exportPaths.get(exportId);
-    if (!exportPath || !existsSync(exportPath)) {
+    if (!exportPath) {
       return new Response(null, { status: 404 });
     }
 
     try {
-      return createReplayClipMediaFileResponse(exportPath, request);
+      return await createReplayClipMediaFileResponse(
+        exportPath,
+        request,
+        (url, init) => net.fetch(url, init),
+      );
     } catch {
-      /* v8 ignore next -- Race where file disappears after existsSync and before statSync. */
+      /* v8 ignore next -- Native file fetch failures are surfaced as protocol errors. */
       return new Response(null, { status: 500 });
     }
   }

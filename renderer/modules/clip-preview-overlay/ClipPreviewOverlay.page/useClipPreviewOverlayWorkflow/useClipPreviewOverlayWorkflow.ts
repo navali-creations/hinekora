@@ -6,6 +6,7 @@ import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
 import {
   getClipPreviewFileTitle,
+  resolveClipPreviewDetail,
   resolveClipPreviewRouteClipId,
   roundClipPreviewSeconds,
 } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
@@ -21,8 +22,10 @@ function useClipPreviewOverlayWorkflow() {
   const {
     detail,
     detailError,
+    isMuted,
     durationOverrideSeconds,
     hasCopied,
+    hasSavedClip,
     incrementMediaVersion,
     isCopying,
     isSaving,
@@ -31,6 +34,7 @@ function useClipPreviewOverlayWorkflow() {
     resetLoadedClipState,
     saveMessage,
     setCopied,
+    setHasSavedClip,
     setCopying,
     setDetail,
     setDetailError,
@@ -44,8 +48,10 @@ function useClipPreviewOverlayWorkflow() {
   } = useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
     detail: clipPreviewOverlay.detail,
     detailError: clipPreviewOverlay.detailError,
+    isMuted: clipPreviewOverlay.isMuted,
     durationOverrideSeconds: clipPreviewOverlay.durationOverrideSeconds,
     hasCopied: clipPreviewOverlay.hasCopied,
+    hasSavedClip: clipPreviewOverlay.hasSavedClip,
     incrementMediaVersion: clipPreviewOverlay.incrementMediaVersion,
     isCopying: clipPreviewOverlay.isCopying,
     isSaving: clipPreviewOverlay.isSaving,
@@ -54,6 +60,7 @@ function useClipPreviewOverlayWorkflow() {
     resetLoadedClipState: clipPreviewOverlay.resetLoadedClipState,
     saveMessage: clipPreviewOverlay.saveMessage,
     setCopied: clipPreviewOverlay.setCopied,
+    setHasSavedClip: clipPreviewOverlay.setHasSavedClip,
     setCopying: clipPreviewOverlay.setCopying,
     setDetail: clipPreviewOverlay.setDetail,
     setDetailError: clipPreviewOverlay.setDetailError,
@@ -65,21 +72,15 @@ function useClipPreviewOverlayWorkflow() {
     titleDraft: clipPreviewOverlay.titleDraft,
     trim: clipPreviewOverlay.trim,
   }));
-  const clip = detail?.clip ?? null;
-  const clipPath = clip?.processedClipPath ?? clip?.originalObsPath ?? null;
+  const { clip, clipFileName, durationSeconds } = resolveClipPreviewDetail(
+    detail,
+    durationOverrideSeconds,
+  );
   const fileTitle = useMemo(
-    () => getClipPreviewFileTitle(clipPath),
-    [clipPath],
+    () => getClipPreviewFileTitle(clipFileName),
+    [clipFileName],
   );
-  const durationSeconds = Math.max(
-    0,
-    detail?.durationSeconds ??
-      durationOverrideSeconds ??
-      clip?.durationSeconds ??
-      clip?.targetDurationSeconds ??
-      0,
-  );
-  const isClipReady = Boolean(clip?.processedClipPath ?? clip?.originalObsPath);
+  const isClipReady = clip?.hasMediaFile === true;
   let title = "Loading Replay";
   let subtitle = detailError || "Waiting for clip metadata";
   if (clip) {
@@ -101,11 +102,12 @@ function useClipPreviewOverlayWorkflow() {
   const hasTitleChange =
     trimmedTitle.length > 0 && trimmedTitle !== fileTitle.trim();
   const hasChanges = hasTrimChanges || hasTitleChange;
-  const canUseClip = Boolean(clip && clipPath && durationSeconds > 0);
+  const canUseClip = Boolean(clip?.hasMediaFile && durationSeconds > 0);
   const isProcessing = isCopying || isSaving;
-  const canCopy = Boolean(clip && clipPath) && !isProcessing;
+  const canCopy = Boolean(clip?.hasMediaFile) && !isProcessing;
   const canEdit = canUseClip && !isProcessing;
   const canSave = canUseClip && hasChanges && !isProcessing;
+  const canOpenSavedClip = Boolean(clip) && hasSavedClip && !isProcessing;
 
   const resetCopiedState = useCallback(() => {
     if (copiedTimeoutRef.current !== null) {
@@ -147,7 +149,7 @@ function useClipPreviewOverlayWorkflow() {
           return;
         }
 
-        if (nextClip.processedClipPath ?? nextClip.originalObsPath) {
+        if (nextClip.hasMediaFile) {
           void loadClipDetail();
           return;
         }
@@ -186,12 +188,19 @@ function useClipPreviewOverlayWorkflow() {
     }
 
     initializedClipIdRef.current = clip.id;
+    setHasSavedClip(false);
     resetLoadedClipState({
       inSeconds: 0,
       outSeconds: roundClipPreviewSeconds(durationSeconds),
     });
     resetCopiedState();
-  }, [clip?.id, durationSeconds, resetCopiedState, resetLoadedClipState]);
+  }, [
+    clip?.id,
+    durationSeconds,
+    resetCopiedState,
+    resetLoadedClipState,
+    setHasSavedClip,
+  ]);
 
   const handleClose = useCallback(() => {
     trackEvent("clip-preview-overlay-closed");
@@ -258,6 +267,7 @@ function useClipPreviewOverlayWorkflow() {
       .copy({
         id: clip.id,
         operationRequestId: requestId,
+        ...(isMuted ? { muteAudio: true } : {}),
         ...(hasTrimChanges
           ? {
               trim: {
@@ -308,6 +318,7 @@ function useClipPreviewOverlayWorkflow() {
   }, [
     canCopy,
     clip,
+    isMuted,
     hasTrimChanges,
     resetCopiedState,
     setCopied,
@@ -325,10 +336,17 @@ function useClipPreviewOverlayWorkflow() {
       }
 
       setTitleDraft(event.currentTarget.value.replace(/\.mp4$/i, ""));
+      setHasSavedClip(false);
       resetCopiedState();
       setSaveMessage(null);
     },
-    [isProcessing, resetCopiedState, setSaveMessage, setTitleDraft],
+    [
+      isProcessing,
+      resetCopiedState,
+      setHasSavedClip,
+      setSaveMessage,
+      setTitleDraft,
+    ],
   );
 
   const handleSaveClip = useCallback(() => {
@@ -354,6 +372,7 @@ function useClipPreviewOverlayWorkflow() {
       .update({
         id: clip.id,
         operationRequestId: requestId,
+        ...(isMuted ? { muteAudio: true } : {}),
         ...(hasTitleChange ? { name: trimmedTitle } : {}),
         ...(hasTrimChanges
           ? {
@@ -382,6 +401,7 @@ function useClipPreviewOverlayWorkflow() {
         );
         trackEvent("clip-updated");
         setOperationProgress(1);
+        setHasSavedClip(true);
         setDetail(result.detail);
         setDurationOverrideSeconds(result.detail.durationSeconds);
         incrementMediaVersion();
@@ -409,6 +429,7 @@ function useClipPreviewOverlayWorkflow() {
   }, [
     canSave,
     clip,
+    isMuted,
     durationSeconds,
     hasTitleChange,
     hasTrimChanges,
@@ -417,6 +438,7 @@ function useClipPreviewOverlayWorkflow() {
     resetLoadedClipState,
     setDetail,
     setDurationOverrideSeconds,
+    setHasSavedClip,
     setOperationProgress,
     setSaveMessage,
     setSaving,
@@ -425,14 +447,35 @@ function useClipPreviewOverlayWorkflow() {
     trimmedTitle,
   ]);
 
+  const handleOpenSavedClipInEditor = useCallback(() => {
+    if (!clip || !canOpenSavedClip) {
+      return;
+    }
+
+    void window.electron.mainWindow
+      .openClip(clip.id)
+      .then(async () => {
+        trackEvent("clip-preview-overlay-edit-saved-opened");
+        await window.electron.overlayWindows.hideClipPreview();
+      })
+      .catch((error: unknown) => {
+        console.warn("[clip-preview] Could not open saved clip in clips view", {
+          clipId: clip.id,
+          error,
+        });
+      });
+  }, [canOpenSavedClip, clip]);
+
   return {
     canCopy,
+    canOpenSavedClip,
     canEdit,
     canSave,
     canUseClip,
     handleClose,
     handleCopyClip,
     handleEditClip,
+    handleOpenSavedClipInEditor,
     handleSaveClip,
     handleTitleChange,
     hasCopied,

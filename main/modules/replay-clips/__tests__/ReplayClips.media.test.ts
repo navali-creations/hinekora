@@ -2,15 +2,20 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { fetchLocalFileForTests } from "~/main/test/local-file-fetch";
 
 import {
-  createReplayClipMediaFileResponse,
+  createReplayClipMediaFileResponse as createMediaFileResponse,
   createReplayClipMediaUrl,
   createRunRecordingMediaUrl,
   resolveHinekoraMediaRequestTarget,
-  resolveReplayClipMediaRequestId,
 } from "../ReplayClips.media";
+
+function createReplayClipMediaFileResponse(path: string, request: Request) {
+  return createMediaFileResponse(path, request, fetchLocalFileForTests);
+}
 
 let root: string;
 
@@ -37,7 +42,7 @@ describe("ReplayClips.media", () => {
     ).toEqual({ id: "recording-1", kind: "run-recording" });
     expect(
       resolveHinekoraMediaRequestTarget(
-        `hinekora-media://run-recording/${"x".repeat(2049)}`,
+        `hinekora-media://run-recording/${"x".repeat(129)}`,
       ),
     ).toBe(null);
     expect(
@@ -45,37 +50,11 @@ describe("ReplayClips.media", () => {
     ).toBe(null);
   });
 
-  it("resolves replay media clip ids from safe protocol URLs", () => {
-    expect(
-      resolveReplayClipMediaRequestId("hinekora-media://replay-clip/clip-1"),
-    ).toBe("clip-1");
-    expect(
-      resolveReplayClipMediaRequestId(
-        "hinekora-media://replay-clip/clip%20one",
-      ),
-    ).toBe("clip one");
-    expect(resolveReplayClipMediaRequestId("https://example.test/clip-1")).toBe(
-      null,
-    );
-    expect(
-      resolveReplayClipMediaRequestId("hinekora-media://other/clip-1"),
-    ).toBe(null);
-    expect(
-      resolveReplayClipMediaRequestId("hinekora-media://replay-clip/"),
-    ).toBe(null);
-    expect(
-      resolveReplayClipMediaRequestId(
-        `hinekora-media://replay-clip/${"x".repeat(129)}`,
-      ),
-    ).toBe(null);
-    expect(resolveReplayClipMediaRequestId("not a url")).toBe(null);
-  });
-
   it("serves media responses for full, head, and byte-range requests", async () => {
     const path = join(root, "clip.mp4");
     writeFileSync(path, "abcdef");
 
-    const fullResponse = createReplayClipMediaFileResponse(
+    const fullResponse = await createReplayClipMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1"),
     );
@@ -85,14 +64,14 @@ describe("ReplayClips.media", () => {
     expect(fullResponse.headers.get("Content-Type")).toBe("video/mp4");
     await expect(fullResponse.text()).resolves.toBe("abcdef");
 
-    const headResponse = createReplayClipMediaFileResponse(
+    const headResponse = await createReplayClipMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1", { method: "HEAD" }),
     );
     expect(headResponse.status).toBe(200);
     expect(headResponse.body).toBeNull();
 
-    const rangeResponse = createReplayClipMediaFileResponse(
+    const rangeResponse = await createReplayClipMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1", {
         headers: { range: "bytes=1-3" },
@@ -103,7 +82,7 @@ describe("ReplayClips.media", () => {
     expect(rangeResponse.headers.get("Content-Range")).toBe("bytes 1-3/6");
     await expect(rangeResponse.text()).resolves.toBe("bcd");
 
-    const suffixResponse = createReplayClipMediaFileResponse(
+    const suffixResponse = await createReplayClipMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1", {
         headers: { range: "bytes=-2" },
@@ -113,7 +92,7 @@ describe("ReplayClips.media", () => {
     expect(suffixResponse.headers.get("Content-Range")).toBe("bytes 4-5/6");
     await expect(suffixResponse.text()).resolves.toBe("ef");
 
-    const openEndedResponse = createReplayClipMediaFileResponse(
+    const openEndedResponse = await createReplayClipMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1", {
         headers: { range: "bytes=3-" },
@@ -123,7 +102,7 @@ describe("ReplayClips.media", () => {
     expect(openEndedResponse.headers.get("Content-Range")).toBe("bytes 3-5/6");
     await expect(openEndedResponse.text()).resolves.toBe("def");
 
-    const clippedEndResponse = createReplayClipMediaFileResponse(
+    const clippedEndResponse = await createReplayClipMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1", {
         headers: { range: "bytes=2-99" },
@@ -134,7 +113,7 @@ describe("ReplayClips.media", () => {
     await expect(clippedEndResponse.text()).resolves.toBe("cdef");
   });
 
-  it("rejects empty, directory, and invalid range media requests", () => {
+  it("rejects empty, directory, and invalid range media requests", async () => {
     const emptyPath = join(root, "empty.mp4");
     const directoryPath = join(root, "directory.mp4");
     const path = join(root, "clip.mp4");
@@ -143,15 +122,19 @@ describe("ReplayClips.media", () => {
     writeFileSync(path, "abcdef");
 
     expect(
-      createReplayClipMediaFileResponse(
-        emptyPath,
-        new Request("hinekora-media://replay-clip/clip-1"),
+      (
+        await createReplayClipMediaFileResponse(
+          emptyPath,
+          new Request("hinekora-media://replay-clip/clip-1"),
+        )
       ).status,
     ).toBe(404);
     expect(
-      createReplayClipMediaFileResponse(
-        directoryPath,
-        new Request("hinekora-media://replay-clip/clip-1"),
+      (
+        await createReplayClipMediaFileResponse(
+          directoryPath,
+          new Request("hinekora-media://replay-clip/clip-1"),
+        )
       ).status,
     ).toBe(404);
 
@@ -162,7 +145,7 @@ describe("ReplayClips.media", () => {
       "bytes=5-4",
       "bytes=6-",
     ]) {
-      const response = createReplayClipMediaFileResponse(
+      const response = await createReplayClipMediaFileResponse(
         path,
         new Request("hinekora-media://replay-clip/clip-1", {
           headers: { range },
@@ -174,7 +157,7 @@ describe("ReplayClips.media", () => {
     }
   });
 
-  it("maps known media extensions to browser content types", () => {
+  it("maps known media extensions to browser content types", async () => {
     const cases = [
       ["clip.mov", "video/quicktime"],
       ["clip.webm", "video/webm"],
@@ -187,13 +170,79 @@ describe("ReplayClips.media", () => {
       writeFileSync(path, "video");
 
       expect(
-        createReplayClipMediaFileResponse(
-          path,
-          new Request("hinekora-media://replay-clip/clip-1", {
-            method: "HEAD",
-          }),
+        (
+          await createReplayClipMediaFileResponse(
+            path,
+            new Request("hinekora-media://replay-clip/clip-1", {
+              method: "HEAD",
+            }),
+          )
         ).headers.get("Content-Type"),
       ).toBe(contentType);
     }
+  });
+
+  it("forwards ranges through the native file fetch and restricts CORS origins", async () => {
+    const path = join(root, "clip.mp4");
+    writeFileSync(path, "0123456789abcdefghijklmnopqrstuvwxyz");
+    const fetchFile = vi.fn<
+      (url: string, init: RequestInit) => Promise<Response>
+    >(async () => new Response("abcdefghijk", { status: 200 }));
+    const allowedResponse = await createMediaFileResponse(
+      path,
+      new Request("hinekora-media://replay-clip/clip-1", {
+        headers: {
+          origin: "http://localhost:5173",
+          range: "bytes=10-20",
+        },
+      }),
+      fetchFile,
+    );
+
+    expect(fetchFile).toHaveBeenCalledWith(
+      expect.stringMatching(/^file:/),
+      expect.objectContaining({ method: "GET" }),
+    );
+    const fetchHeaders = new Headers(fetchFile.mock.calls[0]?.[1]?.headers);
+    expect(fetchHeaders.get("Range")).toBe("bytes=10-20");
+    expect(allowedResponse.status).toBe(206);
+    expect(allowedResponse.headers.get("Content-Length")).toBe("11");
+    expect(allowedResponse.headers.get("Content-Range")).toBe("bytes 10-20/36");
+    await expect(allowedResponse.text()).resolves.toBe("abcdefghijk");
+    expect(allowedResponse.headers.get("Access-Control-Allow-Origin")).toBe(
+      "http://localhost:5173",
+    );
+
+    const blockedResponse = await createMediaFileResponse(
+      path,
+      new Request("hinekora-media://replay-clip/clip-1", {
+        headers: { origin: "https://example.test" },
+      }),
+      fetchFile,
+    );
+    expect(blockedResponse.status).toBe(403);
+
+    const methodResponse = await createMediaFileResponse(
+      path,
+      new Request("hinekora-media://replay-clip/clip-1", { method: "POST" }),
+      fetchFile,
+    );
+    expect(methodResponse.status).toBe(405);
+  });
+
+  it("propagates response-body cancellation to the native file stream", async () => {
+    const path = join(root, "clip.mp4");
+    writeFileSync(path, "video");
+    const cancel = vi.fn();
+    const stream = new ReadableStream<Uint8Array>({ cancel });
+    const response = await createMediaFileResponse(
+      path,
+      new Request("hinekora-media://replay-clip/clip-1"),
+      async () => new Response(stream),
+    );
+
+    await response.body?.cancel("preview-closed");
+
+    expect(cancel).toHaveBeenCalledWith("preview-closed");
   });
 });

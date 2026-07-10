@@ -2,9 +2,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createReplayClip } from "~/main/test/factories/replayClip";
-
-import type { ReplayClip } from "~/types";
+import type { ReplayClipView } from "~/main/modules/replay-clips";
+import { createReplayClipView } from "~/main/test/factories/replayClip";
 
 const routerMocks = vi.hoisted(() => ({
   navigate: vi.fn(),
@@ -30,7 +29,7 @@ import { ReplayClipsPanel } from "./ReplayClipsPanel";
 let container: HTMLDivElement;
 let root: Root;
 
-function configureReplayClipsStore(items: ReplayClip[]) {
+function configureReplayClipsStore(items: ReplayClipView[]) {
   storeMocks.useReplayClipsShallow.mockImplementation((selector) =>
     selector({
       clearSelectedClips: storeMocks.clearSelectedClips,
@@ -90,14 +89,16 @@ describe("ReplayClipsPanel", () => {
 
   it("disables row navigation and dims unavailable clips", async () => {
     configureReplayClipsStore([
-      createReplayClip({
+      createReplayClipView({
         id: "playable",
-        processedClipPath: "C:\\clips\\playable.mp4",
+        fileName: "playable.mp4",
+        hasMediaFile: true,
         sizeBytes: 1024,
       }),
-      createReplayClip({
+      createReplayClipView({
         id: "missing",
-        processedClipPath: "C:\\clips\\missing.mp4",
+        fileName: "missing.mp4",
+        hasMediaFile: false,
         sizeBytes: 0,
       }),
     ]);

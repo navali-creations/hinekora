@@ -23,6 +23,14 @@ const CLIP_PREVIEW_GAP = 8;
 const CLIP_PREVIEW_OVERLAY_FOCUS_ID = "clip-preview";
 const CLIP_PREVIEW_OVERLAY_SCOPE = "death-clips-overlay";
 
+function createClipPreviewRoute(clipId: string): string {
+  const diagnosticsQuery =
+    process.env.HINEKORA_CLIP_PREVIEW_DIAGNOSTICS === "1"
+      ? "&diagnostics=1"
+      : "";
+  return `#/${WindowName.ClipPreviewOverlay}?clipId=${encodeURIComponent(clipId)}${diagnosticsQuery}`;
+}
+
 type ClipPreviewOverlayCloseReason =
   | "destroy"
   | "hide-requested"
@@ -36,13 +44,25 @@ class DeathClipsOverlayService {
     private readonly coordinator: GameOverlayCoordinator,
     private readonly createAnchorBounds: () => Electron.Rectangle,
     private readonly getContentProtectionEnabled = () => false,
+    private readonly onClosed = () => {},
   ) {
     this.coordinator.register(this);
   }
 
   async showClip(clip: ReplayClip): Promise<void> {
+    const showStartedAt = Date.now();
     const wasRequested = this.clipPreviewOverlayRequested;
     const bounds = this.createWindowBounds();
+    const reusedWindow = Boolean(
+      this.clipPreviewWindow && !this.clipPreviewWindow.isDestroyed(),
+    );
+    logInfo(CLIP_PREVIEW_OVERLAY_SCOPE, "Replay clip overlay requested", {
+      clipId: clip.id,
+      kind: clip.kind,
+      reusedWindow,
+      status: clip.status,
+      wasRequested,
+    });
     if (!this.clipPreviewWindow || this.clipPreviewWindow.isDestroyed()) {
       await this.createWindow(bounds);
     } else {
@@ -56,8 +76,13 @@ class DeathClipsOverlayService {
     try {
       await loadOverlayRenderer(
         this.clipPreviewWindow,
-        `#/${WindowName.ClipPreviewOverlay}?clipId=${encodeURIComponent(clip.id)}`,
+        createClipPreviewRoute(clip.id),
       );
+      logInfo(CLIP_PREVIEW_OVERLAY_SCOPE, "Replay clip renderer loaded", {
+        clipId: clip.id,
+        elapsedMs: Date.now() - showStartedAt,
+        reusedWindow,
+      });
     } catch (error) {
       if (!wasRequested) {
         this.closeWindow("hide-requested");
@@ -71,6 +96,11 @@ class DeathClipsOverlayService {
 
     this.clipPreviewOverlayRequested = true;
     this.coordinator.showOrHideGameOverlayWindow(this.clipPreviewWindow);
+    logInfo(CLIP_PREVIEW_OVERLAY_SCOPE, "Replay clip overlay presented", {
+      canShowGameOverlays: this.coordinator.canShowGameOverlays(),
+      clipId: clip.id,
+      elapsedMs: Date.now() - showStartedAt,
+    });
     if (!wasRequested && this.coordinator.canShowGameOverlays()) {
       logInfo(CLIP_PREVIEW_OVERLAY_SCOPE, "Replay clip overlay opened", {
         clipId: clip.id,
@@ -104,6 +134,7 @@ class DeathClipsOverlayService {
   }
 
   private async createWindow(bounds: Electron.Rectangle): Promise<void> {
+    const contentProtection = this.getContentProtectionEnabled();
     this.clipPreviewWindow = new BrowserWindow({
       ...bounds,
       minWidth: 320,
@@ -127,15 +158,28 @@ class DeathClipsOverlayService {
       WindowName.ClipPreviewOverlay,
     );
     configureGameOverlayWindow(clipPreviewWindow, {
-      contentProtection: this.getContentProtectionEnabled(),
+      contentProtection,
+    });
+    logInfo(CLIP_PREVIEW_OVERLAY_SCOPE, "Replay clip window created", {
+      contentProtection,
+      height: bounds.height,
+      width: bounds.width,
+      x: bounds.x,
+      y: bounds.y,
     });
     clipPreviewWindow.on("focus", () => {
+      logInfo(CLIP_PREVIEW_OVERLAY_SCOPE, "Replay clip window focus changed", {
+        focused: true,
+      });
       this.coordinator.setOverlayFocusActive(
         CLIP_PREVIEW_OVERLAY_FOCUS_ID,
         true,
       );
     });
     clipPreviewWindow.on("blur", () => {
+      logInfo(CLIP_PREVIEW_OVERLAY_SCOPE, "Replay clip window focus changed", {
+        focused: false,
+      });
       this.coordinator.setOverlayFocusActive(
         CLIP_PREVIEW_OVERLAY_FOCUS_ID,
         false,
@@ -153,12 +197,14 @@ class DeathClipsOverlayService {
         });
         this.clipPreviewOverlayRequested = false;
         this.clipPreviewWindow = null;
+        this.onClosed();
       }
     });
   }
 
   private closeWindow(reason: ClipPreviewOverlayCloseReason): boolean {
     const window = this.clipPreviewWindow;
+    const hadOpenWindow = Boolean(window && !window.isDestroyed());
     const wasRequested = this.clipPreviewOverlayRequested;
     const didCloseRequestedWindow =
       Boolean(window && !window.isDestroyed()) && wasRequested;
@@ -174,6 +220,9 @@ class DeathClipsOverlayService {
       });
     }
     closeOverlayWindow(window);
+    if (hadOpenWindow) {
+      this.onClosed();
+    }
 
     return didCloseRequestedWindow;
   }

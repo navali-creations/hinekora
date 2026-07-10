@@ -475,9 +475,23 @@ describe("ManagedRecorderService", () => {
     });
   });
 
-  it("starts replay buffers with configured output and encoder settings", async () => {
+  it("starts replay buffers at 1080p H.264 instead of the run recording format", async () => {
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: directory,
+        recordingFps: 60,
+        recordingOutputResolution: "2560x1440",
+        recordingEncoder: "hardware_av1",
+      }),
+    } as unknown as SettingsStoreService);
     const service = createService();
     const noobs = createNoobsApi();
+    noobs.ListVideoEncoders.mockReturnValue([
+      "obs_nvenc_av1_tex",
+      "h264_texture_amf",
+      "obs_x264",
+    ]);
     const internals = service as unknown as {
       initialize(): Promise<void>;
       noobs: ReturnType<typeof createNoobsApi>;
@@ -503,17 +517,20 @@ describe("ManagedRecorderService", () => {
       join(directory, "Death Clips"),
       "mp4",
     );
-    expect(noobs.SetVideoEncoder).toHaveBeenCalled();
+    expect(noobs.SetVideoEncoder).toHaveBeenCalledWith(
+      "h264_texture_amf",
+      expect.objectContaining({ rate_control: "CQP" }),
+    );
   });
 
-  it("configures software x264 encoder settings", async () => {
+  it("falls back to software x264 when hardware H.264 is unavailable", async () => {
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
       get: () => ({
         ...createDefaultSettings(),
         recordingStoragePath: directory,
         recordingFps: 30,
         recordingOutputResolution: "1280x720",
-        recordingEncoder: "obs_x264",
+        recordingEncoder: "hardware_av1",
         recordingClipQuality: "high",
       }),
     } as unknown as SettingsStoreService);
@@ -523,6 +540,7 @@ describe("ManagedRecorderService", () => {
     } as unknown as BookmarksService);
     const service = createService();
     const noobs = createNoobsApi();
+    noobs.ListVideoEncoders.mockReturnValue(["obs_x264"]);
     const internals = service as unknown as {
       initialize(): Promise<void>;
       noobs: ReturnType<typeof createNoobsApi>;
@@ -979,8 +997,22 @@ describe("ManagedRecorderService", () => {
 
   it("starts and stops full run recordings while registering saved runs", async () => {
     const savedPath = join(directory, "run.mp4");
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: directory,
+        recordingFps: 60,
+        recordingOutputResolution: "2560x1440",
+        recordingEncoder: "hardware_av1",
+      }),
+    } as unknown as SettingsStoreService);
     const service = createService();
     const noobs = createNoobsApi();
+    noobs.ListVideoEncoders.mockReturnValue([
+      "obs_nvenc_av1_tex",
+      "h264_texture_amf",
+      "obs_x264",
+    ]);
     noobs.GetLastRecording.mockReturnValue(savedPath);
     const registeredRecording = {
       createdAt: "2026-07-03T20:00:00.000Z",
@@ -1030,8 +1062,15 @@ describe("ManagedRecorderService", () => {
       bufferActive: false,
       activeGame: "poe1",
       activeSessionDirectory: join(directory, "Full Recordings"),
+      outputResolution: "2560x1440",
+      encoder: "obs_nvenc_av1_tex",
       error: null,
     });
+    expect(noobs.ResetVideoContext).toHaveBeenCalledWith(60, 2560, 1440);
+    expect(noobs.SetVideoEncoder).toHaveBeenCalledWith(
+      "obs_nvenc_av1_tex",
+      expect.objectContaining({ rate_control: "CQP" }),
+    );
     const runStartedAt = service.getStatus().runRecordingStartedAt;
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
       get: () => ({

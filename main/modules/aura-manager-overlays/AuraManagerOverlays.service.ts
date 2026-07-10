@@ -29,6 +29,7 @@ const AURA_OVERLAY_SCOPE = "aura-manager-overlays";
 const AURA_OVERLAY_FOCUS_ID = "aura-overlay";
 
 type AuraOverlayCloseReason =
+  | "clip-preview"
   | "destroy"
   | "game-not-running"
   | "game-stopped"
@@ -54,6 +55,7 @@ class AuraManagerOverlaysService {
   private addAuraRequestId = 0;
   private inputPassthroughActive = false;
   private auraOverlayFocused = false;
+  private clipPreviewSuspended = false;
 
   constructor(
     private readonly coordinator: GameOverlayCoordinator,
@@ -69,6 +71,11 @@ class AuraManagerOverlaysService {
   ): Promise<void> {
     this.auraOverlayRequested = true;
     this.auraOverlayProfileId = profileId;
+
+    if (this.clipPreviewSuspended) {
+      this.closeWindow("clip-preview");
+      return;
+    }
 
     if (!this.gameRunningActive) {
       this.closeWindow("game-not-running");
@@ -141,7 +148,11 @@ class AuraManagerOverlaysService {
   }
 
   async restoreRequestedOverlay(): Promise<void> {
-    if (!this.auraOverlayRequested || !this.gameRunningActive) {
+    if (
+      this.clipPreviewSuspended ||
+      !this.auraOverlayRequested ||
+      !this.gameRunningActive
+    ) {
       return;
     }
 
@@ -154,6 +165,17 @@ class AuraManagerOverlaysService {
   suspendForSystem(): void {
     if (this.auraOverlayRequested) {
       this.closeWindow("system-suspend");
+    }
+  }
+
+  setClipPreviewSuspended(suspended: boolean): void {
+    if (this.clipPreviewSuspended === suspended) {
+      return;
+    }
+
+    this.clipPreviewSuspended = suspended;
+    if (suspended) {
+      this.closeWindow("clip-preview");
     }
   }
 

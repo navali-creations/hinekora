@@ -1,14 +1,15 @@
-import type { ReplayClipLibraryQuery } from "~/main/modules/replay-clips/ReplayClips.dto";
+import type {
+  ReplayClipLibraryQuery,
+  ReplayClipView,
+} from "~/main/modules/replay-clips/ReplayClips.dto";
 import { trackEvent } from "~/renderer/modules/umami";
 import type {
   BoundStoreStateCreator,
   ReplayClipsSlice,
 } from "~/renderer/store/store.types";
 
-import type { ReplayClip } from "~/types";
-
 interface ReplayClipRefreshOptions {
-  activeClip?: ReplayClip | null;
+  activeClip?: ReplayClipView | null;
   clearSelection?: boolean;
   deletedIds?: string[];
 }
@@ -17,12 +18,12 @@ const MAX_RECENT_REPLAY_CLIPS = 200;
 const REPLAY_CLIP_LIBRARY_REFRESH_DELAY_MS = 200;
 
 function getReplayClipSortValue(
-  clip: ReplayClip,
+  clip: ReplayClipView,
   sortBy: ReplayClipLibraryQuery["sortBy"] = "createdAt",
 ): number | string {
   switch (sortBy) {
     case "name":
-      return clip.processedClipPath ?? clip.originalObsPath ?? "";
+      return clip.fileName ?? "";
     case "sourceLeague":
       return clip.sourceLeague;
     case "targetDurationSeconds":
@@ -35,8 +36,8 @@ function getReplayClipSortValue(
 }
 
 function compareReplayClips(
-  left: ReplayClip,
-  right: ReplayClip,
+  left: ReplayClipView,
+  right: ReplayClipView,
   query: ReplayClipLibraryQuery,
 ): number {
   const sortDirection = query.sortDirection ?? "desc";
@@ -60,10 +61,10 @@ function compareReplayClips(
 }
 
 function upsertReplayClip(
-  items: ReplayClip[],
-  clip: ReplayClip,
+  items: ReplayClipView[],
+  clip: ReplayClipView,
   query?: ReplayClipLibraryQuery,
-): ReplayClip[] {
+): ReplayClipView[] {
   const nextItems = [...items];
   const index = nextItems.findIndex((item) => item.id === clip.id);
   if (index >= 0) {
@@ -84,7 +85,7 @@ function upsertReplayClip(
 }
 
 function replayClipMatchesLibraryQuery(
-  clip: ReplayClip,
+  clip: ReplayClipView,
   query: ReplayClipLibraryQuery | null,
 ): boolean {
   if (!query) {
@@ -114,7 +115,7 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
     }, REPLAY_CLIP_LIBRARY_REFRESH_DELAY_MS);
   };
 
-  const patchReplayClipState = (clip: ReplayClip) => {
+  const patchReplayClipState = (clip: ReplayClipView) => {
     const query = get().replayClips.libraryQuery;
     let shouldRefreshLibrary = false;
 

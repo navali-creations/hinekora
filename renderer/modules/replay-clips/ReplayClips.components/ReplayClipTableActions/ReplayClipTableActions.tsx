@@ -6,13 +6,13 @@ import {
 } from "react-icons/fi";
 import { TbMovieOff as MovieOff } from "react-icons/tb";
 
+import type { ReplayClipView } from "~/main/modules/replay-clips";
 import { useReplayClipsShallow } from "~/renderer/store";
 
-import type { ReplayClip } from "~/types";
 import { hasPlayableClip } from "../../ReplayClips.utils/ReplayClips.utils";
 
 interface ReplayClipTableActionsProps {
-  clip: ReplayClip;
+  clip: ReplayClipView;
 }
 
 const missingClipTooltip =

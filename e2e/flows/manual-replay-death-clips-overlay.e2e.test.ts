@@ -25,9 +25,8 @@ function createReplayClipDetail(
       error: null,
       id,
       kind: "manual",
-      originalObsPath: null,
-      processedClipPath:
-        status === "ready" ? `C:\\Hinekora\\Replays\\${id}.mp4` : null,
+      fileName: status === "ready" ? `${id}.mp4` : null,
+      hasMediaFile: status === "ready",
       sizeBytes: 2048,
       sourceGame: "poe2",
       sourceLeague: "Runes of Aldur",
@@ -58,7 +57,19 @@ async function markVideoReady(page: Page, duration: number) {
       configurable: true,
       value: HTMLMediaElement.HAVE_ENOUGH_DATA,
     });
-    nextVideo.currentTime = 0;
+    let currentTime = 0;
+    Object.defineProperty(nextVideo, "currentTime", {
+      configurable: true,
+      get: () => currentTime,
+      set: (seconds: number) => {
+        currentTime = seconds;
+        queueMicrotask(() => {
+          nextVideo.dispatchEvent(new Event("seeking", { bubbles: true }));
+          nextVideo.dispatchEvent(new Event("seeked", { bubbles: true }));
+          nextVideo.dispatchEvent(new Event("timeupdate", { bubbles: true }));
+        });
+      },
+    });
 
     nextVideo.dispatchEvent(new Event("loadstart", { bubbles: true }));
     nextVideo.dispatchEvent(new Event("loadedmetadata", { bubbles: true }));
@@ -315,6 +326,17 @@ test("covers manual replay and death clip overlay actions", async ({
       return state.playCalls;
     })
     .toBe(1);
+
+  await clickTimelineAtPercent(page, 0.5);
+  await expectPlaybackTimestamp(page, "06.00 / 12.00");
+  await expect
+    .poll(async () => {
+      const state = await getClipPreviewVideoState(page);
+
+      return { pauseCalls: state.pauseCalls, playCalls: state.playCalls };
+    })
+    .toEqual({ pauseCalls: 1, playCalls: 2 });
+
   await page.getByLabel("Pause replay").click();
   await expect(page.getByLabel("Play replay")).toBeVisible();
   await expect

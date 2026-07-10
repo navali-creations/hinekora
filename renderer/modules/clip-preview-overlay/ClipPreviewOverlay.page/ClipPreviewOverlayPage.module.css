@@ -12,9 +12,8 @@
     color-mix(in oklch, var(--color-primary) 34%, var(--color-neutral));
   border-radius: var(--radius-box);
   padding: 0.5rem;
-  background: color-mix(in oklch, var(--color-neutral) 92%, transparent);
+  background: color-mix(in oklch, var(--color-neutral) 96%, black);
   box-shadow: 0 18px 44px rgb(0 0 0 / 42%);
-  backdrop-filter: blur(12px);
 }
 
 .header {
@@ -181,10 +180,13 @@
 .videoTime {
   overflow: hidden;
   min-width: 0;
+  contain: layout paint;
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 700;
+  font-variant-numeric: tabular-nums;
   font-size: 0.75rem;
+  transform: translateZ(0);
 }
 
 .empty {

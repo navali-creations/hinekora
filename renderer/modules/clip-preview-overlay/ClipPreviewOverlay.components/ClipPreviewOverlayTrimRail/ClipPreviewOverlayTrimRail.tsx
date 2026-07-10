@@ -12,7 +12,6 @@ function ClipPreviewOverlayTrimRail() {
         workflow.isPreparingClip
       }
       durationSeconds={workflow.durationSeconds}
-      playbackSeconds={workflow.playbackSeconds}
       playheadRef={workflow.setPlayheadElement}
       trim={workflow.trim}
       onSeek={workflow.seekPreview}

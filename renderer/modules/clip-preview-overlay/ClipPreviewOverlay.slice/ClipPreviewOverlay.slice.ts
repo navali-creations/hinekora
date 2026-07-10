@@ -12,7 +12,11 @@ interface ClipPreviewOverlayState {
   detail: ReplayClipDetail | null;
   detailError: string | null;
   durationOverrideSeconds: number | null;
+  isMediaReady: boolean;
+  isMuted: boolean;
+  isPlaying: boolean;
   hasCopied: boolean;
+  hasSavedClip: boolean;
   isCopying: boolean;
   isSaving: boolean;
   mediaVersion: number;
@@ -28,9 +32,13 @@ interface ClipPreviewOverlaySlice {
     reset: () => void;
     resetLoadedClipState: (trim: ClipPreviewTrimRange) => void;
     setCopied: (hasCopied: boolean) => void;
+    setHasSavedClip: (hasSavedClip: boolean) => void;
     setCopying: (isCopying: boolean) => void;
     setDetail: (detail: ReplayClipDetail | null) => void;
     setDetailError: (detailError: string | null) => void;
+    setMediaReady: (isMediaReady: boolean) => void;
+    setMuted: (isMuted: boolean) => void;
+    setPlaying: (isPlaying: boolean) => void;
     setDurationOverrideSeconds: (
       durationOverrideSeconds: number | null,
     ) => void;
@@ -51,7 +59,11 @@ const createInitialClipPreviewOverlayState = (): ClipPreviewOverlayState => ({
   detail: null,
   detailError: null,
   durationOverrideSeconds: null,
+  isMediaReady: false,
+  isMuted: false,
+  isPlaying: false,
   hasCopied: false,
+  hasSavedClip: false,
   isCopying: false,
   isSaving: false,
   mediaVersion: 0,
@@ -84,6 +96,9 @@ const createClipPreviewOverlaySlice: BoundStoreStateCreator<
         state.clipPreviewOverlay.hasCopied = false;
         state.clipPreviewOverlay.operationProgress = 0;
         state.clipPreviewOverlay.saveMessage = null;
+        state.clipPreviewOverlay.isMediaReady = false;
+        state.clipPreviewOverlay.isMuted = false;
+        state.clipPreviewOverlay.isPlaying = false;
         state.clipPreviewOverlay.titleDraft = "";
         state.clipPreviewOverlay.trim = trim;
       });
@@ -91,6 +106,11 @@ const createClipPreviewOverlaySlice: BoundStoreStateCreator<
     setCopied: (hasCopied) => {
       set((state) => {
         state.clipPreviewOverlay.hasCopied = hasCopied;
+      });
+    },
+    setHasSavedClip: (hasSavedClip) => {
+      set((state) => {
+        state.clipPreviewOverlay.hasSavedClip = hasSavedClip;
       });
     },
     setCopying: (isCopying) => {
@@ -106,6 +126,21 @@ const createClipPreviewOverlaySlice: BoundStoreStateCreator<
     setDetailError: (detailError) => {
       set((state) => {
         state.clipPreviewOverlay.detailError = detailError;
+      });
+    },
+    setMediaReady: (isMediaReady) => {
+      set((state) => {
+        state.clipPreviewOverlay.isMediaReady = isMediaReady;
+      });
+    },
+    setMuted: (isMuted) => {
+      set((state) => {
+        state.clipPreviewOverlay.isMuted = isMuted;
+      });
+    },
+    setPlaying: (isPlaying) => {
+      set((state) => {
+        state.clipPreviewOverlay.isPlaying = isPlaying;
       });
     },
     setDurationOverrideSeconds: (durationOverrideSeconds) => {

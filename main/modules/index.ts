@@ -11,7 +11,6 @@ export * from "./editor";
 export * from "./grid-lines-overlay";
 export * from "./main-window";
 export * from "./managed-recorder";
-export * from "./manual-replays-overlay";
 export * from "./overlay-windows";
 export * from "./poe-process";
 export * from "./profiles";

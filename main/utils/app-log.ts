@@ -33,6 +33,7 @@ const knownScopeColorFormats: Readonly<Record<string, InspectColor>> = {
   "aura-manager-overlays": "magentaBright",
   "capture-preview": "yellowBright",
   "client-log": "greenBright",
+  "clip-preview-renderer": "magenta",
   "death-clips-overlay": "redBright",
   "diag-log": "cyan",
   editor: "magenta",

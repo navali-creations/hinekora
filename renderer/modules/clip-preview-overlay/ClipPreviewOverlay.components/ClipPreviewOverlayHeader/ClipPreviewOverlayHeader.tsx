@@ -30,6 +30,7 @@ function ClipPreviewOverlayHeader() {
         <button
           aria-label="Close replay preview"
           className={`${styles.closeButton} btn btn-primary btn-square btn-sm`}
+          disabled={workflow.isProcessing}
           type="button"
           onClick={workflow.handleClose}
         >

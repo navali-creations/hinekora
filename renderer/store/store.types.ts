@@ -31,6 +31,7 @@ import type {
   ReplayClipLibraryQuery,
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
+  ReplayClipView,
 } from "~/main/modules/replay-clips";
 import type { SettingsStoreScopedSnapshot } from "~/main/modules/settings-store/SettingsStore.dto";
 import type { AppMenuSlice } from "~/renderer/modules/app-menu/AppMenu.slice/AppMenu.slice";
@@ -59,7 +60,6 @@ import type {
   ManagedRecorderStatus,
   Profile,
   ProfileUpdateInput,
-  ReplayClip,
   StateImportPreview,
 } from "~/types";
 
@@ -191,12 +191,12 @@ export interface PoeProcessSlice {
 
 export interface ReplayClipsSlice {
   replayClips: {
-    items: ReplayClip[];
+    items: ReplayClipView[];
     libraryQuery: ReplayClipLibraryQuery | null;
     libraryPage: ReplayClipLibraryPage | null;
-    libraryItems: ReplayClip[];
+    libraryItems: ReplayClipView[];
     libraryLeagues: string[];
-    activeClip: ReplayClip | null;
+    activeClip: ReplayClipView | null;
     selectedClipIds: Record<string, boolean>;
     error: string | null;
     hydrate: () => Promise<void>;

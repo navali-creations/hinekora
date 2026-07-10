@@ -1,3 +1,5 @@
+import type { ReplayClipView } from "~/main/modules/replay-clips";
+
 import type { ReplayClip } from "~/types";
 
 function createReplayClip(overrides: Partial<ReplayClip> = {}): ReplayClip {
@@ -23,4 +25,19 @@ function createReplayClip(overrides: Partial<ReplayClip> = {}): ReplayClip {
   };
 }
 
-export { createReplayClip };
+function createReplayClipView(
+  overrides: Partial<ReplayClipView> = {},
+): ReplayClipView {
+  const { originalObsPath, processedClipPath, ...clip } = createReplayClip();
+  void originalObsPath;
+  void processedClipPath;
+
+  return {
+    ...clip,
+    fileName: null,
+    hasMediaFile: false,
+    ...overrides,
+  };
+}
+
+export { createReplayClip, createReplayClipView };

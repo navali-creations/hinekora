@@ -237,6 +237,23 @@ class MainWindowService {
     );
 
     registerGuardedIpcHandler(
+      MainWindowChannel.OpenClip,
+      [WindowName.Main, WindowName.ClipPreviewOverlay],
+      (_event, clipId: unknown) => {
+        try {
+          assertString(clipId, "clip id", MainWindowChannel.OpenClip, {
+            min: 1,
+            max: 128,
+          });
+        } catch (error) {
+          return handleValidationError(error);
+        }
+
+        return this.openClip(clipId);
+      },
+    );
+
+    registerGuardedIpcHandler(
       MainWindowChannel.OpenDevTools,
       [WindowName.Main],
       () => {
@@ -269,6 +286,12 @@ class MainWindowService {
     this.showMainWindow();
   }
 
+  private async openClip(clipId: string): Promise<void> {
+    const mainWindow = await this.createMainWindow();
+    await this.navigateMainWindowToClip(mainWindow, clipId);
+    this.showMainWindow();
+  }
+
   private async openSettingsHelp(): Promise<void> {
     const mainWindow = await this.createMainWindow();
     await this.navigateMainWindowToSettingsHelp(mainWindow);
@@ -294,6 +317,20 @@ class MainWindowService {
     }
 
     const hash = `#/editor?${params.toString().replaceAll("+", "%20")}`;
+    await mainWindow.webContents.executeJavaScript(
+      `globalThis.location.hash = ${JSON.stringify(hash)}`,
+    );
+  }
+
+  private async navigateMainWindowToClip(
+    mainWindow: BrowserWindow,
+    clipId: string,
+  ): Promise<void> {
+    if (mainWindow.isDestroyed()) {
+      return;
+    }
+
+    const hash = `#/clip/${encodeURIComponent(clipId)}`;
     await mainWindow.webContents.executeJavaScript(
       `globalThis.location.hash = ${JSON.stringify(hash)}`,
     );

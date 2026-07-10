@@ -897,6 +897,25 @@ describe("MainWindowService", () => {
     );
   });
 
+  it("opens clip detail from the clip preview overlay", async () => {
+    const { handlers } = mockIpcMainHandlers();
+    const fakeWindow = new FakeWindow();
+    fakeWindow.minimized = true;
+    electronMocks.browserWindowFactory.mockReturnValue(fakeWindow);
+    new MainWindowService();
+
+    await expect(
+      handlers.get(MainWindowChannel.OpenClip)?.({}, "clip 1"),
+    ).resolves.toBeUndefined();
+
+    expect(fakeWindow.webContents.executeJavaScript).toHaveBeenCalledWith(
+      'globalThis.location.hash = "#/clip/clip%201"',
+    );
+    expect(fakeWindow.restore).toHaveBeenCalled();
+    expect(fakeWindow.show).toHaveBeenCalled();
+    expect(fakeWindow.focus).toHaveBeenCalled();
+  });
+
   it("rejects invalid editor clip IPC input", async () => {
     const { handlers } = mockIpcMainHandlers();
     electronMocks.browserWindowFactory.mockReturnValue(new FakeWindow());
@@ -925,12 +944,24 @@ describe("MainWindowService", () => {
     expect(electronMocks.BrowserWindow).not.toHaveBeenCalled();
   });
 
+  it("rejects invalid clip detail IPC input", async () => {
+    const { handlers } = mockIpcMainHandlers();
+    electronMocks.browserWindowFactory.mockReturnValue(new FakeWindow());
+    new MainWindowService();
+
+    expect(handlers.get(MainWindowChannel.OpenClip)?.({}, "")).toEqual({
+      ok: false,
+      error: "clip id is too short",
+    });
+  });
+
   it("validates editor clip options with title and trim combinations", () => {
     const service = new MainWindowService();
     const internals = service as unknown as {
-      validateOpenEditorClipOptions: (
-        value: unknown,
-      ) => { trim?: { inSeconds: number; outSeconds: number }; title?: string } | null;
+      validateOpenEditorClipOptions: (value: unknown) => {
+        trim?: { inSeconds: number; outSeconds: number };
+        title?: string;
+      } | null;
     };
 
     expect(internals.validateOpenEditorClipOptions(undefined)).toBeNull();
@@ -992,4 +1023,3 @@ describe("MainWindowService", () => {
     expect(fakeWindow.webContents.executeJavaScript).not.toHaveBeenCalled();
   });
 });
-

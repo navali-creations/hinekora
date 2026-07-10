@@ -1,5 +1,5 @@
 import type { RunRecordingDetail } from "~/main/modules/recording-storage";
-import type { ReplayClipDetail } from "~/main/modules/replay-clips";
+import type { ReplayClipSourceDetail } from "~/main/modules/replay-clips";
 
 import type {
   EditorMediaAsset,
@@ -12,7 +12,7 @@ const fallbackClipDurationSeconds = 10;
 const videoTrackId = "video-track";
 
 function createEditorAssetFromReplayClip(
-  detail: ReplayClipDetail,
+  detail: ReplayClipSourceDetail,
 ): EditorMediaAsset {
   const path = detail.clip.processedClipPath ?? detail.clip.originalObsPath;
   const clipLabel =

@@ -15,7 +15,10 @@ import type {
   RecordingBookmarksPage,
   RecordingBookmarksQuery,
 } from "~/main/modules/bookmarks";
-import type { DiagLogRevealResult } from "~/main/modules/diag-log/DiagLog.dto";
+import type {
+  ClipPreviewDiagnosticInput,
+  DiagLogRevealResult,
+} from "~/main/modules/diag-log/DiagLog.dto";
 import type {
   EditorCopyToClipboardInput,
   EditorCreateProjectInput,
@@ -69,6 +72,7 @@ import type {
   ReplayClipOperationProgress,
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
+  ReplayClipView,
 } from "~/main/modules/replay-clips/ReplayClips.dto";
 import type {
   SavedEditFileActionResult,
@@ -109,7 +113,6 @@ import type {
   Profile,
   ProfileCreateInput,
   ProfileUpdateInput,
-  ReplayClip,
   StateImportMode,
   StateImportPreview,
 } from "~/types";
@@ -181,6 +184,7 @@ declare global {
       };
       diagLog: {
         revealLogFile: () => Promise<DiagLogRevealResult>;
+        writeClipPreviewEvent: (input: ClipPreviewDiagnosticInput) => void;
       };
       editor: {
         copyExport: (exportId: string) => Promise<EditorExportFileActionResult>;
@@ -219,6 +223,7 @@ declare global {
           clipId: string,
           options?: MainWindowOpenEditorClipOptions,
         ) => Promise<void>;
+        openClip: (clipId: string) => Promise<void>;
         openDevTools: () => Promise<void>;
       };
       keybinds: {
@@ -325,11 +330,11 @@ declare global {
       };
       replayClips: {
         get: (id: string) => Promise<ReplayClipDetail | null>;
-        list: (filter?: ReplayClipListFilter) => Promise<ReplayClip[]>;
+        list: (filter?: ReplayClipListFilter) => Promise<ReplayClipView[]>;
         listLibrary: (
           query?: ReplayClipLibraryQuery,
         ) => Promise<ReplayClipLibraryPage>;
-        saveManualReplay: () => Promise<ReplayClip | null>;
+        saveManualReplay: () => Promise<ReplayClipView | null>;
         update: (
           input: ReplayClipUpdateInput,
         ) => Promise<ReplayClipUpdateResult>;
@@ -343,7 +348,9 @@ declare global {
         ) => () => void;
         delete: (id: string) => Promise<ReplayClipFileActionResult>;
         deleteMany: (ids: string[]) => Promise<ReplayClipBatchFileActionResult>;
-        onStatusChanged: (callback: (clip: ReplayClip) => void) => () => void;
+        onStatusChanged: (
+          callback: (clip: ReplayClipView) => void,
+        ) => () => void;
       };
       savedEdits: {
         delete: (projectId: string) => Promise<void>;

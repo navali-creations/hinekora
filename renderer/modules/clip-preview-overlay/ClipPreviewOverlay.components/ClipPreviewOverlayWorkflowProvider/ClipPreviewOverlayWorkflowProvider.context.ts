@@ -6,11 +6,13 @@ import type { ClipPreviewOverlayWorkflow } from "../../ClipPreviewOverlay.page/u
 type ClipPreviewOverlayControlsWorkflow = Pick<
   ClipPreviewOverlayWorkflow,
   | "canCopy"
+  | "canOpenSavedClip"
   | "canEdit"
   | "canSave"
   | "handleClose"
   | "handleCopyClip"
   | "handleEditClip"
+  | "handleOpenSavedClipInEditor"
   | "handleSaveClip"
   | "handleTitleChange"
   | "hasCopied"

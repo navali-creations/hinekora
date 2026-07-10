@@ -4,7 +4,7 @@ import { copyFile, rename, rm, stat, unlink } from "node:fs/promises";
 import { basename, dirname, parse, resolve } from "node:path";
 
 import type { WebContents } from "electron";
-import { app, BrowserWindow, protocol, shell } from "electron";
+import { app, BrowserWindow, net, protocol, shell } from "electron";
 
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
@@ -36,6 +36,7 @@ import * as FileClipboard from "~/main/utils/file-clipboard";
 import {
   assertNumber,
   assertObject,
+  assertOptionalBoolean,
   assertString,
   handleValidationError,
   IpcValidationError,
@@ -67,9 +68,12 @@ import type {
   ReplayClipLibrarySortKey,
   ReplayClipListFilter,
   ReplayClipOperationProgress,
+  ReplayClipSourceDetail,
   ReplayClipTrimInput,
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
+  ReplayClipView,
+  ReplayTriggerEvent,
 } from "./ReplayClips.dto";
 import { ReplayClipDuplicateTracker } from "./ReplayClips.duplicates";
 import {
@@ -85,6 +89,8 @@ import { ReplayClipsRepository } from "./ReplayClips.repository";
 
 const REPLAY_CLIPS_LOG_SCOPE = "replay-clips";
 const REPLAY_CLIP_MEDIA_SCHEME = "hinekora-media";
+const replayMediaDiagnosticsEnabled =
+  process.env.HINEKORA_CLIP_PREVIEW_DIAGNOSTICS === "1";
 const defaultLibraryPageSize = 20;
 const maxEditorReplayPageValidationCandidates = 500;
 const maxLibraryPageSize = 100;
@@ -136,19 +142,32 @@ class ReplayClipsService {
     return this.repository.list(filter).map((clip) => this.withClipSize(clip));
   }
 
-  getClip(id: string): ReplayClipDetail | null {
+  getClip(id: string): ReplayClipSourceDetail | null {
+    const startedAt = Date.now();
     const clip = this.repository.get(id);
     if (!clip) {
+      logWarn(REPLAY_CLIPS_LOG_SCOPE, "Replay preview detail missing", {
+        clipId: id,
+        elapsedMs: Date.now() - startedAt,
+      });
       return null;
     }
     const sizedClip = this.withClipSize(clip);
     const storedClipPath = this.getStoredClipPathForClip(sizedClip);
+    const durationSeconds =
+      sizedClip.durationSeconds ?? this.readReplayClipDuration(storedClipPath);
+
+    logInfo(REPLAY_CLIPS_LOG_SCOPE, "Replay preview detail resolved", {
+      clipId: id,
+      durationSeconds,
+      elapsedMs: Date.now() - startedAt,
+      hasMedia: Boolean(storedClipPath),
+      status: sizedClip.status,
+    });
 
     return {
       clip: sizedClip,
-      durationSeconds:
-        sizedClip.durationSeconds ??
-        this.readReplayClipDuration(storedClipPath),
+      durationSeconds,
       mediaUrl: storedClipPath ? createReplayClipMediaUrl(id) : null,
     };
   }
@@ -162,7 +181,7 @@ class ReplayClipsService {
     league?: string;
     pageIndex: number;
     pageSize: number;
-  }): { items: ReplayClipDetail[]; totalCount: number } {
+  }): { items: ReplayClipSourceDetail[]; totalCount: number } {
     const filter: ReplayClipListFilter & {
       createdAfter?: string;
       excludeIds?: string[];
@@ -191,7 +210,7 @@ class ReplayClipsService {
       mediaPathOnly: true,
       positiveMediaOnly: true,
     };
-    const items: ReplayClipDetail[] = [];
+    const items: ReplayClipSourceDetail[] = [];
     const seenAvailableClipIds = new Set<string>();
     let validatedCandidates = 0;
 
@@ -267,7 +286,9 @@ class ReplayClipsService {
     });
 
     return {
-      items: page.items.map((clip) => this.withClipSize(clip, true)),
+      items: page.items.map((clip) =>
+        this.createReplayClipView(this.withClipSize(clip, true)),
+      ),
       availableLeagues: this.listLibraryLeagues(normalizedQuery),
       pageIndex: normalizedQuery.pageIndex,
       pageSize: normalizedQuery.pageSize,
@@ -305,7 +326,7 @@ class ReplayClipsService {
 
   async saveManualReplay(): Promise<ReplayClip | null> {
     const settings = SettingsStoreService.getInstance().get();
-    return this.handleDeathEvent({
+    return this.handleReplayTrigger({
       kind: "manual",
       game: settings.activeGame,
       line: "Manual replay save",
@@ -315,16 +336,24 @@ class ReplayClipsService {
   }
 
   async handleDeathEvent(event: DeathEvent): Promise<ReplayClip | null> {
-    logInfo(REPLAY_CLIPS_LOG_SCOPE, "Death event received", {
+    return this.handleReplayTrigger({ ...event, kind: "death" });
+  }
+
+  async handleReplayTrigger(
+    event: ReplayTriggerEvent,
+  ): Promise<ReplayClip | null> {
+    logInfo(REPLAY_CLIPS_LOG_SCOPE, "Replay trigger received", {
       game: event.game,
+      kind: event.kind,
       lineHash: event.lineHash,
     });
 
     if (this.duplicateTracker.isDuplicate(event.lineHash)) {
       const existing = this.repository.getByTriggerLineHash(event.lineHash);
       if (existing) {
-        logWarn(REPLAY_CLIPS_LOG_SCOPE, "Duplicate death event ignored", {
+        logWarn(REPLAY_CLIPS_LOG_SCOPE, "Duplicate replay trigger ignored", {
           game: event.game,
+          kind: event.kind,
           lineHash: event.lineHash,
           clipId: existing.id,
         });
@@ -343,7 +372,7 @@ class ReplayClipsService {
     });
 
     const settings = SettingsStoreService.getInstance().get();
-    const replayKind = event.kind ?? "death";
+    const replayKind = event.kind;
     let clip = this.createClip(
       event.game,
       replayKind,
@@ -355,9 +384,10 @@ class ReplayClipsService {
     try {
       clip = this.updateClip(clip, { status: "saving_replay" });
       this.showClipPreviewOverlay(clip);
-      logInfo(REPLAY_CLIPS_LOG_SCOPE, "Saving replay for death event", {
+      logInfo(REPLAY_CLIPS_LOG_SCOPE, "Saving replay for trigger", {
         clipId: clip.id,
         backend: "managed",
+        kind: replayKind,
         seconds: settings.deathClipSeconds,
       });
       const replayPath = await this.saveManagedReplay(
@@ -408,7 +438,7 @@ class ReplayClipsService {
     }
   }
 
-  private isManagedReplayBufferActive(event: DeathEvent): boolean {
+  private isManagedReplayBufferActive(event: ReplayTriggerEvent): boolean {
     const status = ManagedRecorderService.getInstance().getStatus();
     if (status.bufferActive && status.gameRunning !== false) {
       return true;
@@ -486,7 +516,8 @@ class ReplayClipsService {
     }
   }
 
-  private handleMediaRequest(request: GlobalRequest): Response {
+  private async handleMediaRequest(request: GlobalRequest): Promise<Response> {
+    const startedAt = Date.now();
     const target = resolveHinekoraMediaRequestTarget(request.url);
     if (!target) {
       return new Response(null, { status: 404 });
@@ -494,7 +525,7 @@ class ReplayClipsService {
 
     const mediaPath =
       target.kind === "replay-clip"
-        ? this.getStoredClipPath(target.id)
+        ? this.getStoredClipMediaPath(target.id)
         : RecordingStorageService.getInstance().getRecordingMediaPath(
             target.id,
           );
@@ -508,7 +539,22 @@ class ReplayClipsService {
     }
 
     try {
-      return createReplayClipMediaFileResponse(mediaPath, request);
+      const response = await createReplayClipMediaFileResponse(
+        mediaPath,
+        request,
+        (url, init) => net.fetch(url, init),
+      );
+      if (replayMediaDiagnosticsEnabled) {
+        logInfo(REPLAY_CLIPS_LOG_SCOPE, "Replay preview media response ready", {
+          elapsedMs: Date.now() - startedAt,
+          mediaId: target.id,
+          mediaKind: target.kind,
+          range: request.headers.get("range"),
+          status: response.status,
+        });
+      }
+
+      return response;
     } catch (error) {
       logWarn(REPLAY_CLIPS_LOG_SCOPE, "Replay preview media failed", {
         mediaId: target.id,
@@ -565,14 +611,20 @@ class ReplayClipsService {
         this.readReplayClipDuration(clipPath) ??
         clip.durationSeconds ??
         clip.targetDurationSeconds;
+      const muteAudio = copyInput.muteAudio === true;
       const trim = copyInput.trim
         ? this.resolveReplayClipQuickTrim(copyInput.trim, durationSeconds)
         : null;
+      const fullRangeTrim = this.resolveReplayClipQuickTrim(
+        { inSeconds: 0, outSeconds: durationSeconds },
+        durationSeconds,
+      );
       const didTrim = trim
         ? !isReplayClipFullRangeTrim(trim, durationSeconds)
         : false;
+      const shouldRenderTrimmedCopy = didTrim || muteAudio;
 
-      if (didTrim && trim) {
+      if (shouldRenderTrimmedCopy && trim) {
         const onProgress = createReplayClipOperationProgressHandler(
           copyInput.operationRequestId,
           options,
@@ -582,6 +634,21 @@ class ReplayClipsService {
           ...(onProgress ? { onProgress } : {}),
           sourcePath: clipPath,
           trim,
+          ...(muteAudio ? { muteAudio } : {}),
+        });
+      }
+
+      if (shouldRenderTrimmedCopy && !trim) {
+        const onProgress = createReplayClipOperationProgressHandler(
+          copyInput.operationRequestId,
+          options,
+        );
+
+        return await this.copyTrimmedClipToClipboard({
+          ...(onProgress ? { onProgress } : {}),
+          sourcePath: clipPath,
+          trim: fullRangeTrim,
+          ...(muteAudio ? { muteAudio } : {}),
         });
       }
 
@@ -623,9 +690,14 @@ class ReplayClipsService {
         this.readReplayClipDuration(sourcePath) ?? clip.durationSeconds;
       const durationSeconds =
         knownDurationSeconds ?? clip.targetDurationSeconds;
+      const muteAudio = input.muteAudio === true;
       const trim = input.trim
         ? this.resolveReplayClipQuickTrim(input.trim, durationSeconds)
         : null;
+      const fullRangeTrim = this.resolveReplayClipQuickTrim(
+        { inSeconds: 0, outSeconds: durationSeconds },
+        durationSeconds,
+      );
       const targetPath = this.resolveReplayClipRenameTarget(
         sourcePath,
         input.name ?? null,
@@ -636,8 +708,13 @@ class ReplayClipsService {
       const didTrim = trim
         ? !isReplayClipFullRangeTrim(trim, durationSeconds)
         : false;
+      const shouldRenderTrimmedUpdate = didTrim || muteAudio;
+      const renderTrim = trim ?? {
+        inSeconds: fullRangeTrim.inSeconds,
+        outSeconds: fullRangeTrim.outSeconds,
+      };
 
-      if (didTrim && trim) {
+      if (shouldRenderTrimmedUpdate && renderTrim) {
         const onProgress = createReplayClipOperationProgressHandler(
           input.operationRequestId,
           options,
@@ -647,7 +724,8 @@ class ReplayClipsService {
           ...(onProgress ? { onProgress } : {}),
           outputPath: finalPath,
           sourcePath,
-          trim,
+          trim: renderTrim,
+          ...(muteAudio ? { muteAudio } : {}),
         });
         if (didRename) {
           await rm(sourcePath, { force: true });
@@ -656,8 +734,12 @@ class ReplayClipsService {
         await rename(sourcePath, targetPath);
       }
 
-      if (!didTrim && !didRename) {
-        return { ok: true, detail: this.getClip(clip.id), error: null };
+      if (!shouldRenderTrimmedUpdate && !didTrim && !didRename) {
+        return {
+          ok: true,
+          detail: this.getClipView(clip.id),
+          error: null,
+        };
       }
 
       const fileStats = await stat(finalPath);
@@ -687,7 +769,7 @@ class ReplayClipsService {
 
       return {
         ok: true,
-        detail: this.getClip(updatedClip.id),
+        detail: this.getClipView(updatedClip.id),
         error: null,
       };
     } catch (error) {
@@ -840,11 +922,12 @@ class ReplayClipsService {
   private persistAndPublish(clip: ReplayClip): void {
     const publishedClip = this.withClipSize(clip);
     this.repository.upsert(publishedClip);
+    const publishedView = this.createReplayClipView(publishedClip);
     for (const window of BrowserWindow.getAllWindows()) {
       if (!window.isDestroyed()) {
         window.webContents.send(
           ReplayClipsChannel.StatusChanged,
-          publishedClip,
+          publishedView,
         );
       }
     }
@@ -860,7 +943,7 @@ class ReplayClipsService {
             min: 1,
             max: 128,
           });
-          return this.getClip(id);
+          return this.getClipView(id);
         } catch (error) {
           return handleValidationError(error);
         }
@@ -871,7 +954,9 @@ class ReplayClipsService {
       [WindowName.Main, WindowName.RecorderOverlay],
       (_event, filter: unknown) => {
         try {
-          return this.list(this.validateListFilter(filter));
+          return this.list(this.validateListFilter(filter)).map((clip) =>
+            this.createReplayClipView(clip),
+          );
         } catch (error) {
           return handleValidationError(error);
         }
@@ -891,7 +976,10 @@ class ReplayClipsService {
     registerGuardedIpcHandler(
       ReplayClipsChannel.SaveManualReplay,
       [WindowName.Main, WindowName.RecorderOverlay],
-      () => this.saveManualReplay(),
+      async () => {
+        const clip = await this.saveManualReplay();
+        return clip ? this.createReplayClipView(clip) : null;
+      },
     );
     registerGuardedIpcHandler(
       ReplayClipsChannel.Update,
@@ -1011,6 +1099,18 @@ class ReplayClipsService {
     return this.getStoredClipPathForClip(clip);
   }
 
+  private getStoredClipMediaPath(id: string): string | null {
+    const clip = this.repository.get(id);
+    if (!clip) {
+      return null;
+    }
+
+    return this.resolveClipFilePath(
+      clip.processedClipPath ?? clip.originalObsPath,
+      { requireExistingFile: false },
+    );
+  }
+
   private getStoredClipPathForClip(clip: ReplayClip): string | null {
     return this.resolveClipFilePath(
       clip.processedClipPath ?? clip.originalObsPath,
@@ -1040,12 +1140,35 @@ class ReplayClipsService {
   private createAvailableReplayClipDetail({
     clip,
     storedClipPath,
-  }: AvailableReplayClip): ReplayClipDetail {
+  }: AvailableReplayClip): ReplayClipSourceDetail {
     return {
       clip,
       durationSeconds:
         clip.durationSeconds ?? this.readReplayClipDuration(storedClipPath),
       mediaUrl: createReplayClipMediaUrl(clip.id),
+    };
+  }
+
+  private getClipView(id: string): ReplayClipDetail | null {
+    const detail = this.getClip(id);
+    if (!detail) {
+      return null;
+    }
+
+    return {
+      ...detail,
+      clip: this.createReplayClipView(detail.clip),
+    };
+  }
+
+  private createReplayClipView(clip: ReplayClip): ReplayClipView {
+    const { originalObsPath, processedClipPath, ...view } = clip;
+    const mediaPath = processedClipPath ?? originalObsPath;
+
+    return {
+      ...view,
+      fileName: mediaPath ? basename(mediaPath) : null,
+      hasMediaFile: Boolean(mediaPath && clip.sizeBytes > 0),
     };
   }
 
@@ -1055,6 +1178,7 @@ class ReplayClipsService {
 
   private async renderReplayClipQuickTrim(input: {
     onProgress?: (progress: number) => void;
+    muteAudio?: boolean;
     outputPath: string;
     sourcePath: string;
     trim: ReplayClipTrimInput;
@@ -1078,6 +1202,7 @@ class ReplayClipsService {
     try {
       await renderEditorExportWithFfmpeg({
         ...(input.onProgress ? { onProgress: input.onProgress } : {}),
+        ...(input.muteAudio ? { muteAudio: true } : {}),
         outputPath: tempOutputPath,
         resolution: "1080p",
         segments,
@@ -1106,6 +1231,7 @@ class ReplayClipsService {
 
   private async copyTrimmedClipToClipboard(input: {
     onProgress?: (progress: number) => void;
+    muteAudio?: boolean;
     sourcePath: string;
     trim: ReplayClipTrimInput;
   }): Promise<ReplayClipFileActionResult> {
@@ -1136,6 +1262,7 @@ class ReplayClipsService {
       render: (outputPath) =>
         this.renderReplayClipQuickTrim({
           ...(input.onProgress ? { onProgress: input.onProgress } : {}),
+          ...(input.muteAudio ? { muteAudio: true } : {}),
           outputPath,
           sourcePath: input.sourcePath,
           trim: input.trim,
@@ -1440,6 +1567,14 @@ class ReplayClipsService {
         ReplayClipsChannel.Update,
       );
     }
+    if (value.muteAudio !== undefined) {
+      assertOptionalBoolean(
+        value.muteAudio,
+        "mute clip audio",
+        ReplayClipsChannel.Update,
+      );
+      input.muteAudio = value.muteAudio;
+    }
 
     return input;
   }
@@ -1476,6 +1611,14 @@ class ReplayClipsService {
 
     if (value.trim !== undefined && value.trim !== null) {
       input.trim = this.validateTrimInput(value.trim, ReplayClipsChannel.Copy);
+    }
+    if (value.muteAudio !== undefined) {
+      assertOptionalBoolean(
+        value.muteAudio,
+        "mute clip audio",
+        ReplayClipsChannel.Copy,
+      );
+      input.muteAudio = value.muteAudio;
     }
 
     return input;
@@ -1693,9 +1836,7 @@ function normalizeReplayClipQuickName(name: string | null): string | null {
   const parsed = parse(basename(name));
   // c8 ignore next
   const parsedName = parsed.name || parsed.base || "";
-  const normalized = Array.from(
-    parsedName.replace(/[<>:"/\\|?*]/g, " "),
-  )
+  const normalized = Array.from(parsedName.replace(/[<>:"/\\|?*]/g, " "))
     .map((character) => (character.charCodeAt(0) < 32 ? " " : character))
     .join("")
     .replace(/\s+/g, " ")

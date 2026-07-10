@@ -4,7 +4,8 @@ import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.
 import { useClipPreviewOverlayControlsContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
 
 function ClipPreviewOverlaySaveMessage() {
-  const { saveMessage } = useClipPreviewOverlayControlsContext();
+  const { canOpenSavedClip, handleOpenSavedClipInEditor, saveMessage } =
+    useClipPreviewOverlayControlsContext();
 
   if (!saveMessage) {
     return null;
@@ -20,6 +21,21 @@ function ClipPreviewOverlaySaveMessage() {
       role="status"
     >
       {saveMessage.text}
+      {canOpenSavedClip && saveMessage.text === "Clip saved." && (
+        <>
+          {" "}
+          <a
+            className="link link-hover text-sky-400 underline"
+            href="#"
+            onClick={(event) => {
+              event.preventDefault();
+              handleOpenSavedClipInEditor();
+            }}
+          >
+            Open in Clips view
+          </a>
+        </>
+      )}
     </div>
   );
 }

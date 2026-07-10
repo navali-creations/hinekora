@@ -986,11 +986,16 @@ test("covers editor recording bookmarks, trim filtering, chips, hover, Escape, a
     edge: "start",
     seconds: 8,
   });
-  await expectBookmarkItemIds(page, ["a-crossing", "a-manual", "a-death"]);
-  await expect(bookmarksRail.getByText("3 items")).toBeVisible();
+  await expectBookmarkItemIds(page, [
+    "a-first-hideout",
+    "a-crossing",
+    "a-manual",
+    "a-death",
+  ]);
+  await expect(bookmarksRail.getByText("4 items")).toBeVisible();
   await expect(
     page.locator("[data-recording-bookmark-marker-id='a-crossing']"),
-  ).toHaveCount(0);
+  ).toHaveCount(1);
   await expect(
     page.locator("[data-recording-timeline-hover-segment-id='a-crossing']"),
   ).toBeVisible();

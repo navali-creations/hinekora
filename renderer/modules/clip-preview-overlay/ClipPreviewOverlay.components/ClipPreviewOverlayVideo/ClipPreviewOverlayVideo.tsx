@@ -9,7 +9,6 @@ import {
 } from "react-icons/fi";
 
 import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.css";
-import { formatClipPreviewTimestamp } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { useClipPreviewOverlayMediaContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
 
 function ClipPreviewOverlayVideo() {
@@ -46,7 +45,6 @@ function ClipPreviewOverlayVideo() {
             onSeeked={workflow.handleSeeked}
             onSeeking={workflow.handleSeeking}
             onTimeUpdate={workflow.handleTimeUpdate}
-            onWaiting={workflow.handleWaiting}
           />
           <div className={styles.videoControls}>
             <button
@@ -59,7 +57,7 @@ function ClipPreviewOverlayVideo() {
                 "tooltip tooltip-right btn btn-circle btn-sm",
               )}
               data-tip={workflow.isMuted ? "Unmute" : "Mute"}
-              disabled={!workflow.canUseClip}
+              disabled={!workflow.canUseClip || workflow.isProcessing}
               type="button"
               onClick={workflow.handleToggleMuted}
             >
@@ -82,10 +80,7 @@ function ClipPreviewOverlayVideo() {
               <span
                 className={styles.videoTime}
                 ref={workflow.setPlaybackTimeElement}
-              >
-                {formatClipPreviewTimestamp(workflow.playbackSeconds)} /{" "}
-                {formatClipPreviewTimestamp(workflow.durationSeconds)}
-              </span>
+              />
             </div>
           </div>
           <div className={styles.videoFileActions}>
@@ -97,7 +92,7 @@ function ClipPreviewOverlayVideo() {
                 "tooltip tooltip-left btn btn-circle btn-sm",
               )}
               data-tip="Show in Explorer"
-              disabled={!workflow.clipPath}
+              disabled={!workflow.clipFileName}
               type="button"
               onClick={workflow.handleRevealClip}
             >

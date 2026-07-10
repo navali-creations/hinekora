@@ -11,7 +11,6 @@ import { useClipPreviewTrimRailDrag } from "./useClipPreviewTrimRailDrag/useClip
 interface ClipPreviewTrimRailProps {
   disabled: boolean;
   durationSeconds: number;
-  playbackSeconds: number;
   playheadRef?: (element: HTMLSpanElement | null) => void;
   trim: ClipPreviewTrimRange;
   onSeek: (seconds: number, options?: { preservePlayback?: boolean }) => void;
@@ -24,7 +23,6 @@ interface ClipPreviewTrimRailProps {
 function ClipPreviewTrimRail({
   disabled,
   durationSeconds,
-  playbackSeconds,
   playheadRef,
   trim,
   onSeek,
@@ -52,10 +50,6 @@ function ClipPreviewTrimRail({
   );
   const trimEndPercent = calculateClipPreviewTimelinePercent(
     trim.outSeconds,
-    durationSeconds,
-  );
-  const playbackPercent = calculateClipPreviewTimelinePercent(
-    playbackSeconds,
     durationSeconds,
   );
   const trimWidthPercent = Math.max(trimEndPercent - trimStartPercent, 0);
@@ -135,11 +129,7 @@ function ClipPreviewTrimRail({
           type="button"
           onPointerDown={handleSelectionPointerDown}
         />
-        <span
-          className={styles.playheadLayer}
-          ref={playheadRef}
-          style={{ transform: `translate3d(${playbackPercent}%, 0, 0)` }}
-        >
+        <span className={styles.playheadLayer} ref={playheadRef}>
           <span className={styles.playhead} />
         </span>
         <button

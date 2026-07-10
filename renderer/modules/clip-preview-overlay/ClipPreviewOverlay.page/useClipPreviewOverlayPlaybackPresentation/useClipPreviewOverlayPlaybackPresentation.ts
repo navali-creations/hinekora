@@ -6,30 +6,18 @@ import {
   roundClipPreviewSeconds,
 } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 
-interface StartPlaybackClockInput {
-  outSeconds: number;
-  playbackRate: number;
-  seconds: number;
-}
-
 function useClipPreviewOverlayPlaybackPresentation(durationSeconds: number) {
   const durationSecondsRef = useRef(durationSeconds);
   const playbackSecondsRef = useRef(0);
   const playbackTextRef = useRef<string | null>(null);
   const playbackTimeElementRef = useRef<HTMLSpanElement | null>(null);
   const playheadElementRef = useRef<HTMLSpanElement | null>(null);
+  const playheadTransformRef = useRef<string | null>(null);
 
-  const updatePlaybackPresentation = useCallback((seconds: number) => {
+  const updatePlaybackTimer = useCallback((seconds: number) => {
     const nextSeconds = roundClipPreviewSeconds(seconds);
     const currentDurationSeconds = durationSecondsRef.current;
     playbackSecondsRef.current = nextSeconds;
-
-    if (playheadElementRef.current) {
-      playheadElementRef.current.style.transform = `translate3d(${calculateClipPreviewTimelinePercent(
-        nextSeconds,
-        currentDurationSeconds,
-      )}%, 0, 0)`;
-    }
 
     const nextText = `${formatClipPreviewTimestamp(
       nextSeconds,
@@ -41,22 +29,36 @@ function useClipPreviewOverlayPlaybackPresentation(durationSeconds: number) {
       playbackTextRef.current = nextText;
       playbackTimeElementRef.current.textContent = nextText;
     }
+
+    return nextSeconds;
   }, []);
 
-  const stopPlaybackClock = useCallback(
-    (seconds?: number) => {
-      if (seconds !== undefined) {
-        updatePlaybackPresentation(seconds);
+  const updatePlaybackFrame = useCallback(
+    (seconds: number) => {
+      const nextSeconds = updatePlaybackTimer(seconds);
+      const currentDurationSeconds = durationSecondsRef.current;
+
+      if (playheadElementRef.current) {
+        const nextTransform = `translate3d(${calculateClipPreviewTimelinePercent(
+          nextSeconds,
+          currentDurationSeconds,
+        )}%, 0, 0)`;
+        if (playheadTransformRef.current !== nextTransform) {
+          playheadTransformRef.current = nextTransform;
+          playheadElementRef.current.style.transform = nextTransform;
+        }
       }
     },
-    [updatePlaybackPresentation],
+    [updatePlaybackTimer],
   );
 
-  const startPlaybackClock = useCallback(
-    ({ seconds }: StartPlaybackClockInput) => {
-      updatePlaybackPresentation(seconds);
+  const syncPlaybackPresentation = useCallback(
+    (seconds?: number) => {
+      if (seconds !== undefined) {
+        updatePlaybackFrame(seconds);
+      }
     },
-    [updatePlaybackPresentation],
+    [updatePlaybackFrame],
   );
 
   const getPlaybackSeconds = useCallback(() => playbackSecondsRef.current, []);
@@ -64,31 +66,31 @@ function useClipPreviewOverlayPlaybackPresentation(durationSeconds: number) {
   const setPlaybackTimeElement = useCallback(
     (element: HTMLSpanElement | null) => {
       playbackTimeElementRef.current = element;
-      updatePlaybackPresentation(playbackSecondsRef.current);
+      updatePlaybackFrame(playbackSecondsRef.current);
     },
-    [updatePlaybackPresentation],
+    [updatePlaybackFrame],
   );
 
   const setPlayheadElement = useCallback(
     (element: HTMLSpanElement | null) => {
       playheadElementRef.current = element;
-      updatePlaybackPresentation(playbackSecondsRef.current);
+      playheadTransformRef.current = null;
+      updatePlaybackFrame(playbackSecondsRef.current);
     },
-    [updatePlaybackPresentation],
+    [updatePlaybackFrame],
   );
 
   useEffect(() => {
     durationSecondsRef.current = durationSeconds;
-    updatePlaybackPresentation(playbackSecondsRef.current);
-  }, [durationSeconds, updatePlaybackPresentation]);
+    updatePlaybackFrame(playbackSecondsRef.current);
+  }, [durationSeconds, updatePlaybackFrame]);
 
   return {
     getPlaybackSeconds,
-    playbackSeconds: playbackSecondsRef.current,
     setPlaybackTimeElement,
     setPlayheadElement,
-    startPlaybackClock,
-    stopPlaybackClock,
+    syncPlaybackPresentation,
+    updatePlaybackFrame,
   };
 }
 

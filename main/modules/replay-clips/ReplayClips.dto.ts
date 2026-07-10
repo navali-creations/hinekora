@@ -7,11 +7,14 @@ import type {
 import type { ManagedReplayKind } from "../managed-recorder/ManagedRecorder.dto";
 
 export interface DeathEvent {
-  kind?: ManagedReplayKind;
   game: GameId;
   line: string;
   lineHash: string;
   detectedAt: string;
+}
+
+export interface ReplayTriggerEvent extends DeathEvent {
+  kind: ManagedReplayKind;
 }
 
 export interface ReplayClipFileActionResult {
@@ -20,7 +23,21 @@ export interface ReplayClipFileActionResult {
   error: string | null;
 }
 
+export type ReplayClipView = Omit<
+  ReplayClip,
+  "originalObsPath" | "processedClipPath"
+> & {
+  fileName: string | null;
+  hasMediaFile: boolean;
+};
+
 export interface ReplayClipDetail {
+  clip: ReplayClipView;
+  durationSeconds: number | null;
+  mediaUrl: string | null;
+}
+
+export interface ReplayClipSourceDetail {
   clip: ReplayClip;
   durationSeconds: number | null;
   mediaUrl: string | null;
@@ -38,6 +55,7 @@ export interface ReplayClipCopyInput {
   id: string;
   operationRequestId?: string | null;
   trim?: ReplayClipTrimInput | null;
+  muteAudio?: boolean;
 }
 
 export interface ReplayClipUpdateInput {
@@ -45,6 +63,7 @@ export interface ReplayClipUpdateInput {
   name?: string | null;
   operationRequestId?: string | null;
   trim?: ReplayClipTrimInput | null;
+  muteAudio?: boolean;
 }
 
 export interface ReplayClipOperationProgress {
@@ -75,7 +94,7 @@ export interface ReplayClipLibraryQuery extends ReplayClipListFilter {
 }
 
 export interface ReplayClipLibraryPage {
-  items: ReplayClip[];
+  items: ReplayClipView[];
   availableLeagues: string[];
   pageIndex: number;
   pageSize: number;

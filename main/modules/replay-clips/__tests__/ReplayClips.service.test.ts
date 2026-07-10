@@ -20,20 +20,24 @@ import {
 } from "vitest";
 
 import { DatabaseService } from "~/main/modules/database";
+import * as EditorFfmpeg from "~/main/modules/editor/Editor.ffmpeg";
+import * as EditorFiles from "~/main/modules/editor/Editor.files";
 import { WindowName } from "~/main/modules/main-window";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { SettingsStoreService } from "~/main/modules/settings-store";
-import { createReplayClip } from "~/main/test/factories/replayClip";
+import {
+  createReplayClip,
+  createReplayClipView,
+} from "~/main/test/factories/replayClip";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
+import { fetchLocalFileForTests } from "~/main/test/local-file-fetch";
 import * as FileClipboard from "~/main/utils/file-clipboard";
 import {
   clearIpcWindowRolesForTests,
   registerIpcWindowRole,
 } from "~/main/utils/ipc-window-roles";
-import * as EditorFiles from "~/main/modules/editor/Editor.files";
-import * as EditorFfmpeg from "~/main/modules/editor/Editor.ffmpeg";
 
 import { createDefaultSettings } from "~/types";
 import { ReplayClipsChannel } from "../ReplayClips.channels";
@@ -45,12 +49,24 @@ interface ReplayClipQuickTrimRenderInput {
   outputPath: string;
   sourcePath: string;
   trim: { inSeconds: number; outSeconds: number };
+  muteAudio?: boolean;
 }
+
+type ReplayClipsServicePrivateTestHooks = {
+  queueClipFileOperation: <T>(
+    clipId: string,
+    operation: () => Promise<T>,
+  ) => Promise<T>;
+  renderReplayClipQuickTrim: (
+    input: ReplayClipQuickTrimRenderInput,
+  ) => Promise<void>;
+};
 
 const electronMocks = vi.hoisted(() => ({
   getAllWindows: vi.fn(),
   getPath: vi.fn(),
   isProtocolHandled: vi.fn(),
+  netFetch: vi.fn(),
   openPath: vi.fn(),
   protocolHandle: vi.fn(),
   showItemInFolder: vi.fn(),
@@ -66,6 +82,9 @@ vi.mock("electron", () => ({
   protocol: {
     handle: electronMocks.protocolHandle,
     isProtocolHandled: electronMocks.isProtocolHandled,
+  },
+  net: {
+    fetch: electronMocks.netFetch,
   },
   shell: {
     openPath: electronMocks.openPath,
@@ -88,16 +107,19 @@ function createDeferred() {
 
   return { promise, resolve };
 }
+
 let send: Mock<(channel: string, payload: unknown) => void>;
 let showItemInFolder: Mock<(path: string) => void>;
 
-function getReplayMediaProtocolHandler(): (request: Request) => Response {
+function getReplayMediaProtocolHandler(): (
+  request: Request,
+) => Promise<Response> {
   const protocolHandler = electronMocks.protocolHandle.mock.calls[0]?.[1] as
-    | ((request: Request) => Response)
+    | ((request: Request) => Promise<Response>)
     | undefined;
   expect(protocolHandler).toBeDefined();
 
-  return protocolHandler as (request: Request) => Response;
+  return protocolHandler as (request: Request) => Promise<Response>;
 }
 
 beforeEach(() => {
@@ -113,6 +135,8 @@ beforeEach(() => {
   ]);
   electronMocks.getPath.mockReturnValue(join(root, "videos"));
   electronMocks.isProtocolHandled.mockReturnValue(false);
+  electronMocks.netFetch.mockReset();
+  electronMocks.netFetch.mockImplementation(fetchLocalFileForTests);
   electronMocks.openPath.mockImplementation(openPath);
   electronMocks.showItemInFolder.mockImplementation(showItemInFolder);
   vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
@@ -214,9 +238,9 @@ describe("ReplayClipsService file actions", () => {
     ).resolves.toEqual({
       detail: {
         clip: expect.objectContaining({
+          fileName: "Boss kill.mp4",
+          hasMediaFile: true,
           id: "clip-1",
-          originalObsPath: resolve(join(directory, "Boss kill.mp4")),
-          processedClipPath: resolve(join(directory, "Boss kill.mp4")),
           sizeBytes: 9,
         }),
         durationSeconds: null,
@@ -230,7 +254,14 @@ describe("ReplayClipsService file actions", () => {
     expect(send).toHaveBeenCalledWith(
       ReplayClipsChannel.StatusChanged,
       expect.objectContaining({
+        fileName: "Boss kill.mp4",
+        hasMediaFile: true,
         id: "clip-1",
+      }),
+    );
+    expect(repository.get("clip-1")).toEqual(
+      expect.objectContaining({
+        originalObsPath: resolve(join(directory, "Boss kill.mp4")),
         processedClipPath: resolve(join(directory, "Boss kill.mp4")),
       }),
     );
@@ -983,6 +1014,51 @@ describe("ReplayClipsService file actions", () => {
     });
   });
 
+  it("renders the entire clip silently when copy is muted without trim", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({
+        durationSeconds: 20,
+        processedClipPath: path,
+        targetDurationSeconds: 20,
+      }),
+    );
+    vi.spyOn(FileClipboard, "copyFileToClipboard").mockResolvedValue({
+      ok: true,
+      error: null,
+    });
+    const renderReplayClipQuickTrim = vi
+      .spyOn(
+        service as unknown as {
+          renderReplayClipQuickTrim: (
+            input: ReplayClipQuickTrimRenderInput,
+          ) => Promise<void>;
+        },
+        "renderReplayClipQuickTrim",
+      )
+      .mockImplementation(async (input) => {
+        writeFileSync(input.outputPath, "trimmed");
+      });
+
+    await expect(
+      service.copyClipToClipboard({
+        id: "clip-1",
+        muteAudio: true,
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      error: null,
+    });
+
+    expect(renderReplayClipQuickTrim).toHaveBeenCalledWith({
+      outputPath: expect.any(String),
+      muteAudio: true,
+      sourcePath: resolve(path),
+      trim: { inSeconds: 0, outSeconds: 20 },
+    });
+  });
+
   it("reports trimmed clipboard render progress with the operation request id", async () => {
     const path = join(root, "2026-06-12_10-30-00.mp4");
     writeFileSync(path, "video");
@@ -1114,6 +1190,8 @@ describe("ReplayClipsService file actions", () => {
   it("renders with source and output being the same path for clipboard exports", async () => {
     const sourcePath = join(root, "same-output.mp4");
     writeFileSync(sourcePath, "source");
+    const serviceWithPrivateHooks =
+      service as unknown as ReplayClipsServicePrivateTestHooks;
     const renderEditorExportWithFfmpeg = vi
       .spyOn(EditorFfmpeg, "renderEditorExportWithFfmpeg")
       .mockImplementation(async ({ outputPath }) => {
@@ -1121,12 +1199,11 @@ describe("ReplayClipsService file actions", () => {
       });
 
     await expect(
-      (service as unknown as { renderReplayClipQuickTrim: () => Promise<void> })
-        .renderReplayClipQuickTrim({
-          sourcePath,
-          outputPath: sourcePath,
-          trim: { inSeconds: 0, outSeconds: 5 },
-        }),
+      serviceWithPrivateHooks.renderReplayClipQuickTrim({
+        sourcePath,
+        outputPath: sourcePath,
+        trim: { inSeconds: 0, outSeconds: 5 },
+      }),
     ).resolves.toBeUndefined();
 
     expect(renderEditorExportWithFfmpeg).toHaveBeenCalled();
@@ -1137,6 +1214,8 @@ describe("ReplayClipsService file actions", () => {
     const sourcePath = join(root, "no-progress.mp4");
     const outputPath = join(root, "no-progress-output.mp4");
     writeFileSync(sourcePath, "source");
+    const serviceWithPrivateHooks =
+      service as unknown as ReplayClipsServicePrivateTestHooks;
     const renderEditorExportWithFfmpeg = vi
       .spyOn(EditorFfmpeg, "renderEditorExportWithFfmpeg")
       .mockImplementation(async ({ outputPath: tempOutputPath }) => {
@@ -1144,12 +1223,11 @@ describe("ReplayClipsService file actions", () => {
       });
 
     await expect(
-      (service as unknown as { renderReplayClipQuickTrim: () => Promise<void> })
-        .renderReplayClipQuickTrim({
-          sourcePath,
-          outputPath,
-          trim: { inSeconds: 0.5, outSeconds: 3.4 },
-        }),
+      serviceWithPrivateHooks.renderReplayClipQuickTrim({
+        sourcePath,
+        outputPath,
+        trim: { inSeconds: 0.5, outSeconds: 3.4 },
+      }),
     ).resolves.toBeUndefined();
 
     expect(renderEditorExportWithFfmpeg).toHaveBeenCalled();
@@ -1177,9 +1255,10 @@ describe("ReplayClipsService file actions", () => {
       "renderReplayClipQuickTrim",
     ).mockResolvedValue(undefined);
 
-    vi.spyOn(EditorFiles, "cleanupEditorClipboardOutputDirectory").mockRejectedValue(
-      new Error("cleanup failed"),
-    );
+    vi.spyOn(
+      EditorFiles,
+      "cleanupEditorClipboardOutputDirectory",
+    ).mockRejectedValue(new Error("cleanup failed"));
     vi.spyOn(FileClipboard, "copyFileToClipboard").mockResolvedValue({
       ok: true,
       error: null,
@@ -1204,10 +1283,18 @@ describe("ReplayClipsService file actions", () => {
   });
 
   it("forces the queue to continue when a queued operation rejects", async () => {
-    const first = service["queueClipFileOperation"]("clip-1", async () => {
-      throw new Error("queued fail");
-    });
-    const second = service["queueClipFileOperation"]("clip-1", async () => "next");
+    const serviceWithPrivateHooks =
+      service as unknown as ReplayClipsServicePrivateTestHooks;
+    const first = serviceWithPrivateHooks.queueClipFileOperation(
+      "clip-1",
+      async () => {
+        throw new Error("queued fail");
+      },
+    );
+    const second = serviceWithPrivateHooks.queueClipFileOperation(
+      "clip-1",
+      async () => "next",
+    );
 
     await expect(first).rejects.toThrow("queued fail");
     await expect(second).resolves.toBe("next");
@@ -1393,6 +1480,45 @@ describe("ReplayClipsService file actions", () => {
       vi.doUnmock("~/main/modules/editor/Editor.ffmpeg");
       vi.resetModules();
     }
+  });
+
+  it("renders the entire clip silently when saving with mute enabled", async () => {
+    const path = join(root, "2026-06-12_10-30-00-death-20s.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({
+        id: "clip-1",
+        durationSeconds: 20,
+        processedClipPath: path,
+        targetDurationSeconds: 20,
+      }),
+    );
+    const renderReplayClipQuickTrim = vi
+      .spyOn(
+        service as unknown as {
+          renderReplayClipQuickTrim: (
+            input: ReplayClipQuickTrimRenderInput,
+          ) => Promise<void>;
+        },
+        "renderReplayClipQuickTrim",
+      )
+      .mockResolvedValue(undefined);
+
+    await expect(
+      service.updateClipFile({
+        id: "clip-1",
+        muteAudio: true,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+    });
+
+    expect(renderReplayClipQuickTrim).toHaveBeenCalledWith({
+      outputPath: resolve(path),
+      muteAudio: true,
+      sourcePath: resolve(path),
+      trim: { inSeconds: 0, outSeconds: 20 },
+    });
   });
 
   it("cleans up source when updating a trimmed renamed clip", async () => {
@@ -1663,7 +1789,7 @@ describe("ReplayClipsService file actions", () => {
     repository.upsert(createReplayClip({ processedClipPath: path }));
     const protocolHandler = getReplayMediaProtocolHandler();
 
-    const response = protocolHandler(
+    const response = await protocolHandler(
       new Request("hinekora-media://replay-clip/clip-1", {
         headers: { range: "bytes=1-3" },
       }),
@@ -1676,10 +1802,12 @@ describe("ReplayClipsService file actions", () => {
       "ide",
     );
     expect(
-      protocolHandler(
-        new Request("hinekora-media://replay-clip/clip-1", {
-          headers: { range: "bytes=0-0" },
-        }),
+      (
+        await protocolHandler(
+          new Request("hinekora-media://replay-clip/clip-1", {
+            headers: { range: "bytes=0-0" },
+          }),
+        )
       ).status,
     ).toBe(206);
   });
@@ -1692,7 +1820,7 @@ describe("ReplayClipsService file actions", () => {
     } as unknown as RecordingStorageService);
     const protocolHandler = getReplayMediaProtocolHandler();
 
-    const response = protocolHandler(
+    const response = await protocolHandler(
       new Request("hinekora-media://run-recording/recording-1", {
         headers: { range: "bytes=0-1" },
       }),
@@ -1703,20 +1831,23 @@ describe("ReplayClipsService file actions", () => {
     await expect(response.text()).resolves.toBe("vi");
   });
 
-  it("rejects invalid replay media requests", () => {
+  it("rejects invalid replay media requests", async () => {
     const path = join(root, "2026-06-12_10-30-00.mp4");
     writeFileSync(path, "video");
     repository.upsert(createReplayClip({ processedClipPath: path }));
     const protocolHandler = getReplayMediaProtocolHandler();
 
     expect(
-      protocolHandler(new Request("hinekora-media://wrong-host/clip-1")).status,
+      (await protocolHandler(new Request("hinekora-media://wrong-host/clip-1")))
+        .status,
     ).toBe(404);
     expect(
-      protocolHandler(
-        new Request("hinekora-media://replay-clip/clip-1", {
-          headers: { range: "bytes=10-12" },
-        }),
+      (
+        await protocolHandler(
+          new Request("hinekora-media://replay-clip/clip-1", {
+            headers: { range: "bytes=10-12" },
+          }),
+        )
       ).status,
     ).toBe(416);
   });
@@ -1727,14 +1858,14 @@ describe("ReplayClipsService file actions", () => {
     repository.upsert(createReplayClip({ processedClipPath: path }));
     const protocolHandler = getReplayMediaProtocolHandler();
 
-    const headResponse = protocolHandler(
+    const headResponse = await protocolHandler(
       new Request("hinekora-media://replay-clip/clip-1", { method: "HEAD" }),
     );
     expect(headResponse.status).toBe(200);
     expect(headResponse.headers.get("Content-Length")).toBe("5");
     expect(headResponse.headers.get("Content-Type")).toBe("video/x-matroska");
 
-    const fullResponse = protocolHandler(
+    const fullResponse = await protocolHandler(
       new Request("hinekora-media://replay-clip/clip-1"),
     );
     expect(fullResponse.status).toBe(200);
@@ -1742,7 +1873,7 @@ describe("ReplayClipsService file actions", () => {
       "video",
     );
 
-    const suffixResponse = protocolHandler(
+    const suffixResponse = await protocolHandler(
       new Request("hinekora-media://replay-clip/clip-1", {
         headers: { range: "bytes=-2" },
       }),
@@ -1753,7 +1884,7 @@ describe("ReplayClipsService file actions", () => {
       "eo",
     );
 
-    const openEndedRangeResponse = protocolHandler(
+    const openEndedRangeResponse = await protocolHandler(
       new Request("hinekora-media://replay-clip/clip-1", {
         headers: { range: "bytes=2-" },
       }),
@@ -1763,7 +1894,7 @@ describe("ReplayClipsService file actions", () => {
       "bytes 2-4/5",
     );
 
-    const headRangeResponse = protocolHandler(
+    const headRangeResponse = await protocolHandler(
       new Request("hinekora-media://replay-clip/clip-1", {
         method: "HEAD",
         headers: { range: "bytes=1-2" },
@@ -1773,31 +1904,39 @@ describe("ReplayClipsService file actions", () => {
     expect(await headRangeResponse.text()).toBe("");
 
     expect(
-      protocolHandler(
-        new Request("hinekora-media://replay-clip/clip-1", {
-          headers: { range: "bytes=-0" },
-        }),
+      (
+        await protocolHandler(
+          new Request("hinekora-media://replay-clip/clip-1", {
+            headers: { range: "bytes=-0" },
+          }),
+        )
       ).status,
     ).toBe(416);
     expect(
-      protocolHandler(
-        new Request("hinekora-media://replay-clip/clip-1", {
-          headers: { range: "bytes=-" },
-        }),
+      (
+        await protocolHandler(
+          new Request("hinekora-media://replay-clip/clip-1", {
+            headers: { range: "bytes=-" },
+          }),
+        )
       ).status,
     ).toBe(416);
     expect(
-      protocolHandler(
-        new Request("hinekora-media://replay-clip/clip-1", {
-          headers: { range: "not a range" },
-        }),
+      (
+        await protocolHandler(
+          new Request("hinekora-media://replay-clip/clip-1", {
+            headers: { range: "not a range" },
+          }),
+        )
       ).status,
     ).toBe(416);
     expect(
-      protocolHandler(
-        new Request("hinekora-media://replay-clip/clip-1", {
-          headers: { range: "bytes=3-2" },
-        }),
+      (
+        await protocolHandler(
+          new Request("hinekora-media://replay-clip/clip-1", {
+            headers: { range: "bytes=3-2" },
+          }),
+        )
       ).status,
     ).toBe(416);
 
@@ -1817,39 +1956,50 @@ describe("ReplayClipsService file actions", () => {
       createReplayClip({ id: "clip-flv", processedClipPath: flvPath }),
     );
     expect(
-      protocolHandler(
-        new Request("hinekora-media://replay-clip/clip-mov"),
+      (
+        await protocolHandler(
+          new Request("hinekora-media://replay-clip/clip-mov"),
+        )
       ).headers.get("Content-Type"),
     ).toBe("video/quicktime");
     expect(
-      protocolHandler(
-        new Request("hinekora-media://replay-clip/clip-webm"),
+      (
+        await protocolHandler(
+          new Request("hinekora-media://replay-clip/clip-webm"),
+        )
       ).headers.get("Content-Type"),
     ).toBe("video/webm");
     expect(
-      protocolHandler(
-        new Request("hinekora-media://replay-clip/clip-flv"),
+      (
+        await protocolHandler(
+          new Request("hinekora-media://replay-clip/clip-flv"),
+        )
       ).headers.get("Content-Type"),
     ).toBe("application/octet-stream");
-    expect(protocolHandler(new Request("https://example.test")).status).toBe(
-      404,
-    );
     expect(
-      protocolHandler(
-        new Request(`hinekora-media://replay-clip/${"x".repeat(129)}`),
+      (await protocolHandler(new Request("https://example.test"))).status,
+    ).toBe(404);
+    expect(
+      (
+        await protocolHandler(
+          new Request(`hinekora-media://replay-clip/${"x".repeat(129)}`),
+        )
       ).status,
     ).toBe(404);
   });
 
-  it("returns media misses as bounded responses", () => {
+  it("returns media misses as bounded responses", async () => {
     const path = join(root, "2026-06-12_10-30-00.mp4");
     writeFileSync(path, "video");
     repository.upsert(createReplayClip({ processedClipPath: path }));
     const protocolHandler = getReplayMediaProtocolHandler();
 
     expect(
-      protocolHandler(new Request("hinekora-media://replay-clip/missing"))
-        .status,
+      (
+        await protocolHandler(
+          new Request("hinekora-media://replay-clip/missing"),
+        )
+      ).status,
     ).toBe(404);
   });
 
@@ -1899,13 +2049,13 @@ describe("ReplayClipsService file actions", () => {
       new MockedReplayClipsService();
       const protocolHandler = electronMocks.protocolHandle.mock.calls.at(
         -1,
-      )?.[1] as ((request: Request) => Response) | undefined;
+      )?.[1] as ((request: Request) => Promise<Response>) | undefined;
 
       expect(protocolHandler).toBeDefined();
-      expect(
-        protocolHandler?.(new Request("hinekora-media://replay-clip/clip-1"))
-          .status,
-      ).toBe(500);
+      const failureResponse = await protocolHandler?.(
+        new Request("hinekora-media://replay-clip/clip-1"),
+      );
+      expect(failureResponse?.status).toBe(500);
     } finally {
       resetDynamicDatabase();
       vi.doUnmock("../ReplayClips.media");
@@ -2118,12 +2268,11 @@ describe("ReplayClipsService file actions", () => {
         inSeconds: number;
         outSeconds: number;
       };
-      validateCopyInput: (
-        value: unknown,
-      ) => {
+      validateCopyInput: (value: unknown) => {
         id: string;
         operationRequestId: string;
         trim?: { inSeconds: number; outSeconds: number };
+        muteAudio?: boolean;
       };
     };
 
@@ -2140,11 +2289,27 @@ describe("ReplayClipsService file actions", () => {
       outSeconds: 0.1,
     });
 
-    expect(internals.validateCopyInput({ id: "clip-1", operationRequestId: "op" }))
-      .toEqual({
+    expect(
+      internals.validateCopyInput({ id: "clip-1", operationRequestId: "op" }),
+    ).toEqual({
+      id: "clip-1",
+      operationRequestId: "op",
+    });
+    expect(
+      internals.validateCopyInput({
         id: "clip-1",
-        operationRequestId: "op",
-      });
+        muteAudio: true,
+      }),
+    ).toEqual({
+      id: "clip-1",
+      muteAudio: true,
+    });
+    expect(() =>
+      internals.validateCopyInput({
+        id: "clip-1",
+        muteAudio: "yes",
+      }),
+    ).toThrow("mute clip audio must be a boolean");
   });
 
   it("covers replay clip service internals for edge branches", async () => {
@@ -2154,7 +2319,12 @@ describe("ReplayClipsService file actions", () => {
         operation: () => Promise<T>,
       ) => Promise<T>;
       sendOperationProgress: (
-        sender: { isDestroyed?: () => boolean; send?: (channel: string, payload: unknown) => void } | undefined,
+        sender:
+          | {
+              isDestroyed?: () => boolean;
+              send?: (channel: string, payload: unknown) => void;
+            }
+          | undefined,
         progress: { operationRequestId: string; progress: number },
       ) => void;
       showClipPreviewOverlay: (clip: unknown) => void;
@@ -2176,8 +2346,7 @@ describe("ReplayClipsService file actions", () => {
     ).resolves.toBe("ok");
 
     vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
-      showClipPreviewOverlay: () =>
-        Promise.reject(new Error("overlay failed")),
+      showClipPreviewOverlay: () => Promise.reject(new Error("overlay failed")),
     } as unknown as OverlayWindowsService);
     internals.showClipPreviewOverlay(
       createReplayClip({
@@ -2219,7 +2388,9 @@ describe("ReplayClipsService file actions", () => {
     writeFileSync(sourcePath, "source");
     writeFileSync(sourceConflict, "conflict");
     writeFileSync(secondConflict, "conflict");
-    expect(internals.resolveReplayClipRenameTarget(sourcePath, "Renamed")).toBeNull();
+    expect(
+      internals.resolveReplayClipRenameTarget(sourcePath, "Renamed"),
+    ).toBeNull();
     expect(
       internals.resolveReplayClipRenameTarget(sourceConflict, "Renamed"),
     ).toBeNull();
@@ -2228,15 +2399,23 @@ describe("ReplayClipsService file actions", () => {
       ok: false,
       error: "Clip was not found",
     });
-    await expect(service.updateClipFile({ id: "missing-clip" })).resolves.toEqual({
+    await expect(
+      service.updateClipFile({ id: "missing-clip" }),
+    ).resolves.toEqual({
       ok: false,
       detail: null,
       error: "Clip was not found",
     });
     repository.upsert(
-      createReplayClip({ id: "pathless-clip", originalObsPath: null, processedClipPath: null }),
+      createReplayClip({
+        id: "pathless-clip",
+        originalObsPath: null,
+        processedClipPath: null,
+      }),
     );
-    await expect(service.updateClipFile({ id: "pathless-clip" })).resolves.toEqual({
+    await expect(
+      service.updateClipFile({ id: "pathless-clip" }),
+    ).resolves.toEqual({
       ok: false,
       detail: null,
       error: "Clip file path is not available",
@@ -2249,7 +2428,9 @@ describe("ReplayClipsService file actions", () => {
       }),
     );
     writeFileSync(join(root, "2026-07-09_10-00-00.mp4"), "video");
-    await expect(service.updateClipFile({ id: "renamed-clip" })).resolves.toMatchObject({
+    await expect(
+      service.updateClipFile({ id: "renamed-clip" }),
+    ).resolves.toMatchObject({
       ok: true,
       error: null,
       detail: expect.anything(),
@@ -2258,7 +2439,10 @@ describe("ReplayClipsService file actions", () => {
 
   it("covers remaining helper branches in clip update and queue internals", async () => {
     const helperService = service as unknown as {
-      queueClipFileOperation: <T>(clipId: string, operation: () => Promise<T>) => Promise<T>;
+      queueClipFileOperation: <T>(
+        clipId: string,
+        operation: () => Promise<T>,
+      ) => Promise<T>;
       renderReplayClipQuickTrim: (input: {
         onProgress?: (progress: number) => void;
         outputPath: string;
@@ -2303,11 +2487,9 @@ describe("ReplayClipsService file actions", () => {
     );
 
     const onProgress = vi.fn();
-    const renderEditorExportWithFfmpeg = vi
-      .spyOn(EditorFfmpeg, "renderEditorExportWithFfmpeg")
-      .mockImplementation(async ({ outputPath }) => {
-        writeFileSync(outputPath, "trimmed");
-      });
+    const renderEditorExportWithFfmpeg = vi.mocked(
+      EditorFfmpeg.renderEditorExportWithFfmpeg,
+    );
 
     const updateResult = await service.updateClipFile(
       {
@@ -2325,7 +2507,9 @@ describe("ReplayClipsService file actions", () => {
     );
 
     await expect(
-      helperService.queueClipFileOperation("clip-helpers", async () => Promise.resolve("done")),
+      helperService.queueClipFileOperation("clip-helpers", async () =>
+        Promise.resolve("done"),
+      ),
     ).resolves.toBe("done");
 
     helperService.clipFileOperationQueues.set(
@@ -2333,12 +2517,15 @@ describe("ReplayClipsService file actions", () => {
       Promise.reject(new Error("seed")),
     );
     await expect(
-      helperService.queueClipFileOperation("clip-helpers", async () => "chained"),
+      helperService.queueClipFileOperation(
+        "clip-helpers",
+        async () => "chained",
+      ),
     ).resolves.toBe("chained");
 
-    expect(helperService.resolveReplayClipRenameTarget(sourceWithoutExt, "Renamed")).toBe(
-      resolve(join(root, "Renamed.mp4")),
-    );
+    expect(
+      helperService.resolveReplayClipRenameTarget(sourceWithoutExt, "Renamed"),
+    ).toBe(resolve(join(root, "Renamed.mp4")));
     expect(
       helperService.resolveReplayClipRenameTarget(sourceWithoutExt, "\n\t"),
     ).toBeNull();
@@ -2372,8 +2559,12 @@ describe("ReplayClipsService file actions", () => {
     });
     expect(updatedClip.processedClipPath).toBeNull();
 
-    expect(helperService.resolveReplayClipQuickTrim({ inSeconds: 0, outSeconds: 20 }, Infinity))
-      .toEqual({ inSeconds: 0, outSeconds: 20 });
+    expect(
+      helperService.resolveReplayClipQuickTrim(
+        { inSeconds: 0, outSeconds: 20 },
+        Infinity,
+      ),
+    ).toEqual({ inSeconds: 0, outSeconds: 20 });
 
     await expect(
       service.updateClipFile({
@@ -2389,13 +2580,12 @@ describe("ReplayClipsService file actions", () => {
         sourcePath: string,
         name: string | null,
       ) => string | null;
-      validateUpdateInput: (
-        value: unknown,
-      ) => {
+      validateUpdateInput: (value: unknown) => {
         id: string;
         name?: string;
         trim?: { inSeconds: number; outSeconds: number };
         operationRequestId?: string;
+        muteAudio?: boolean;
       };
     };
 
@@ -2410,21 +2600,50 @@ describe("ReplayClipsService file actions", () => {
 
     expect(renameTarget).toBe(resolve(root, "Renamed (2).mp4"));
 
-    expect(internals.validateUpdateInput({ id: "clip-1", operationRequestId: "op" }))
-      .toEqual({
+    expect(
+      internals.validateUpdateInput({ id: "clip-1", operationRequestId: "op" }),
+    ).toEqual({
+      id: "clip-1",
+      operationRequestId: "op",
+    });
+    expect(
+      internals.validateUpdateInput({
         id: "clip-1",
-        operationRequestId: "op",
-      });
+        muteAudio: false,
+      }),
+    ).toEqual({
+      id: "clip-1",
+      muteAudio: false,
+    });
+    expect(() =>
+      internals.validateUpdateInput({
+        id: "clip-1",
+        muteAudio: 1 as unknown as boolean,
+      }),
+    ).toThrow("mute clip audio must be a boolean");
   });
 
   it("registers IPC handlers with validation", async () => {
     const { handlers } = mockIpcMainHandlers();
     const ipcService = new ReplayClipsService();
     const clip = createReplayClip();
+    const clipView = createReplayClipView();
+    const {
+      originalObsPath: _originalObsPath,
+      processedClipPath: _processedClipPath,
+      ...clipWithoutPaths
+    } = clip;
+    void _originalObsPath;
+    void _processedClipPath;
+    const rendererClip = {
+      ...clipWithoutPaths,
+      fileName: null,
+      hasMediaFile: false,
+    };
     vi.spyOn(ipcService, "list").mockReturnValue([clip]);
     vi.spyOn(ipcService, "listLibrary").mockReturnValue({
       availableLeagues: ["Standard"],
-      items: [clip],
+      items: [clipView],
       pageCount: 1,
       pageIndex: 0,
       pageSize: 20,
@@ -2440,7 +2659,7 @@ describe("ReplayClipsService file actions", () => {
     vi.spyOn(ipcService, "saveManualReplay").mockResolvedValue(clip);
     vi.spyOn(ipcService, "updateClipFile").mockResolvedValue({
       detail: {
-        clip,
+        clip: clipView,
         durationSeconds: null,
         mediaUrl: "hinekora-media://replay-clip/clip-1",
       },
@@ -2484,7 +2703,7 @@ describe("ReplayClipsService file actions", () => {
 
         return Promise.resolve({
           detail: {
-            clip,
+            clip: clipView,
             durationSeconds: null,
             mediaUrl: "hinekora-media://replay-clip/clip-1",
           },
@@ -2519,32 +2738,34 @@ describe("ReplayClipsService file actions", () => {
     registerIpcWindowRole({ id: 42 }, WindowName.ClipPreviewOverlay);
 
     expect(await handlers.get(ReplayClipsChannel.Get)?.({}, "clip-1")).toEqual({
-      clip,
+      clip: rendererClip,
       durationSeconds: null,
       mediaUrl: "hinekora-media://replay-clip/clip-1",
     });
-    expect(await handlers.get(ReplayClipsChannel.List)?.({})).toEqual([clip]);
+    expect(await handlers.get(ReplayClipsChannel.List)?.({})).toEqual([
+      rendererClip,
+    ]);
     expect(
       await handlers.get(ReplayClipsChannel.List)?.(
         {},
         { game: "poe1", kind: "death", league: "Standard" },
       ),
-    ).toEqual([clip]);
+    ).toEqual([rendererClip]);
     expect(
       await handlers.get(ReplayClipsChannel.List)?.(
         {},
         { game: "poe1", kind: "death" },
       ),
-    ).toEqual([clip]);
+    ).toEqual([rendererClip]);
     expect(await handlers.get(ReplayClipsChannel.ListLibrary)?.({})).toEqual(
-      expect.objectContaining({ items: [clip] }),
+      expect.objectContaining({ items: [clipView] }),
     );
     expect(
       await handlers.get(ReplayClipsChannel.ListLibrary)?.(
         {},
         { game: "poe1", kind: "death" },
       ),
-    ).toEqual(expect.objectContaining({ items: [clip] }));
+    ).toEqual(expect.objectContaining({ items: [clipView] }));
     expect(
       await handlers.get(ReplayClipsChannel.ListLibrary)?.(
         {},
@@ -2555,23 +2776,20 @@ describe("ReplayClipsService file actions", () => {
           sortDirection: "asc",
         },
       ),
-    ).toEqual(expect.objectContaining({ items: [clip] }));
-    expect(await handlers.get(ReplayClipsChannel.SaveManualReplay)?.({})).toBe(
-      clip,
-    );
+    ).toEqual(expect.objectContaining({ items: [clipView] }));
     expect(
-      await handlers.get(ReplayClipsChannel.Update)?.(
-        eventWithProgress,
-        {
-          id: "clip-1",
-          name: "Renamed clip",
-          operationRequestId: "op",
-          trim: { inSeconds: 1, outSeconds: 2 },
-        },
-      ),
+      await handlers.get(ReplayClipsChannel.SaveManualReplay)?.({}),
+    ).toEqual(rendererClip);
+    expect(
+      await handlers.get(ReplayClipsChannel.Update)?.(eventWithProgress, {
+        id: "clip-1",
+        name: "Renamed clip",
+        operationRequestId: "op",
+        trim: { inSeconds: 1, outSeconds: 2 },
+      }),
     ).toEqual({
       detail: {
-        clip,
+        clip: clipView,
         durationSeconds: null,
         mediaUrl: "hinekora-media://replay-clip/clip-1",
       },
@@ -2595,7 +2813,7 @@ describe("ReplayClipsService file actions", () => {
     expect(
       await handlers.get(ReplayClipsChannel.Get)?.(clipPreviewEvent, "clip-1"),
     ).toEqual({
-      clip,
+      clip: rendererClip,
       durationSeconds: null,
       mediaUrl: "hinekora-media://replay-clip/clip-1",
     });
@@ -2615,14 +2833,20 @@ describe("ReplayClipsService file actions", () => {
       ok: true,
       error: null,
     });
-    expect(sendProgress).toHaveBeenCalledWith(ReplayClipsChannel.OperationProgress, {
-      operationRequestId: "op",
-      progress: 0.4,
-    });
-    expect(sendProgress).toHaveBeenCalledWith(ReplayClipsChannel.OperationProgress, {
-      operationRequestId: "op",
-      progress: 0.6,
-    });
+    expect(sendProgress).toHaveBeenCalledWith(
+      ReplayClipsChannel.OperationProgress,
+      {
+        operationRequestId: "op",
+        progress: 0.4,
+      },
+    );
+    expect(sendProgress).toHaveBeenCalledWith(
+      ReplayClipsChannel.OperationProgress,
+      {
+        operationRequestId: "op",
+        progress: 0.6,
+      },
+    );
     expect(
       await handlers.get(ReplayClipsChannel.Delete)?.({}, "clip-1"),
     ).toEqual({
@@ -2781,7 +3005,7 @@ describe("ReplayClipsService file actions", () => {
   });
 });
 
-describe("ReplayClipsService death-event workflow", () => {
+describe("ReplayClipsService replay-trigger workflow", () => {
   it("saves manual replays using current settings", async () => {
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
       get: () => ({
@@ -2791,12 +3015,12 @@ describe("ReplayClipsService death-event workflow", () => {
       }),
     } as unknown as SettingsStoreService);
     const clip = createReplayClip({ sourceGame: "poe2" });
-    const handleDeathEvent = vi
-      .spyOn(service, "handleDeathEvent")
+    const handleReplayTrigger = vi
+      .spyOn(service, "handleReplayTrigger")
       .mockResolvedValue(clip);
 
     await expect(service.saveManualReplay()).resolves.toBe(clip);
-    expect(handleDeathEvent).toHaveBeenCalledWith(
+    expect(handleReplayTrigger).toHaveBeenCalledWith(
       expect.objectContaining({
         kind: "manual",
         game: "poe2",

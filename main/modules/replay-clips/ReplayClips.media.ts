@@ -1,14 +1,11 @@
-import { createReadStream, statSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { extname } from "node:path";
-import { Readable } from "node:stream";
+import { pathToFileURL } from "node:url";
 
 const HINEKORA_MEDIA_SCHEME = "hinekora-media";
 const REPLAY_CLIP_MEDIA_HOST = "replay-clip";
 const RUN_RECORDING_MEDIA_HOST = "run-recording";
-const mediaCorsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Cross-Origin-Resource-Policy": "cross-origin",
-};
+const MAX_MEDIA_ID_LENGTH = 128;
 
 type HinekoraMediaKind = "replay-clip" | "run-recording";
 
@@ -18,9 +15,11 @@ interface HinekoraMediaRequestTarget {
 }
 
 interface MediaByteRange {
-  start: number;
   end: number;
+  start: number;
 }
+
+type MediaFileFetcher = (url: string, init: RequestInit) => Promise<Response>;
 
 export function createReplayClipMediaUrl(id: string): string {
   return createHinekoraMediaUrl(REPLAY_CLIP_MEDIA_HOST, id);
@@ -46,82 +45,85 @@ export function resolveHinekoraMediaRequestTarget(
 
     const id = decodeURIComponent(parsedUrl.pathname.replace(/^\/+/, ""));
 
-    return id.length > 0 && id.length <= 2048 ? { id, kind } : null;
+    return id.length > 0 && id.length <= MAX_MEDIA_ID_LENGTH
+      ? { id, kind }
+      : null;
   } catch {
     return null;
   }
 }
 
-export function resolveReplayClipMediaRequestId(url: string): string | null {
-  const target = resolveHinekoraMediaRequestTarget(url);
-
-  return target?.kind === "replay-clip" && target.id.length <= 128
-    ? target.id
-    : null;
-}
-
-export function createReplayClipMediaFileResponse(
+export async function createReplayClipMediaFileResponse(
   clipPath: string,
   request: Request,
-): Response {
-  const stats = statSync(clipPath);
-  if (!stats.isFile() || stats.size <= 0) {
+  fetchFile: MediaFileFetcher,
+): Promise<Response> {
+  const method = request.method.toUpperCase();
+  if (method !== "GET" && method !== "HEAD") {
+    return new Response(null, {
+      status: 405,
+      headers: { Allow: "GET, HEAD" },
+    });
+  }
+
+  const corsOrigin = resolveMediaCorsOrigin(request.headers.get("origin"));
+  if (corsOrigin === false) {
+    return new Response(null, { status: 403 });
+  }
+
+  const fileSize = await resolveMediaFileSize(clipPath);
+  if (fileSize === null) {
     return new Response(null, { status: 404 });
   }
 
-  const fileSize = stats.size;
+  const headers = new Headers();
   const rangeHeader = request.headers.get("range");
-  const contentType = resolveMediaContentType(clipPath);
-  const bodyAllowed = request.method.toUpperCase() !== "HEAD";
-
-  if (rangeHeader) {
-    const range = parseMediaRange(rangeHeader, fileSize);
-    if (!range) {
-      return new Response(null, {
-        status: 416,
-        headers: {
-          ...mediaCorsHeaders,
-          "Accept-Ranges": "bytes",
-          "Content-Range": `bytes */${fileSize}`,
-        },
-      });
-    }
-
-    const contentLength = range.end - range.start + 1;
-
-    return new Response(
-      bodyAllowed ? createMediaFileBody(clipPath, range) : null,
-      {
-        status: 206,
-        headers: {
-          ...mediaCorsHeaders,
-          "Accept-Ranges": "bytes",
-          "Content-Length": String(contentLength),
-          "Content-Range": `bytes ${range.start}-${range.end}/${fileSize}`,
-          "Content-Type": contentType,
-        },
-      },
-    );
-  }
-
-  return new Response(bodyAllowed ? createMediaFileBody(clipPath) : null, {
-    status: 200,
-    headers: {
-      ...mediaCorsHeaders,
+  const range = rangeHeader ? parseMediaRange(rangeHeader, fileSize) : null;
+  if (rangeHeader && !range) {
+    const responseHeaders = new Headers({
       "Accept-Ranges": "bytes",
-      "Content-Length": String(fileSize),
-      "Content-Type": contentType,
-    },
+      "Content-Range": `bytes */${fileSize}`,
+    });
+    applyMediaCorsHeaders(responseHeaders, corsOrigin);
+    return new Response(null, { headers: responseHeaders, status: 416 });
+  }
+  if (rangeHeader) {
+    headers.set("Range", rangeHeader);
+  }
+  const fileResponse = await fetchFile(pathToFileURL(clipPath).toString(), {
+    method,
+    headers,
+  });
+  // Electron applies file byte ranges but reports them as headerless 200s.
+  const responseHeaders = new Headers(fileResponse.headers);
+  responseHeaders.set("Accept-Ranges", "bytes");
+  if (!responseHeaders.has("Content-Type")) {
+    responseHeaders.set("Content-Type", resolveMediaContentType(clipPath));
+  }
+  if (range) {
+    responseHeaders.set(
+      "Content-Range",
+      `bytes ${range.start}-${range.end}/${fileSize}`,
+    );
+    responseHeaders.set("Content-Length", String(range.end - range.start + 1));
+  } else {
+    responseHeaders.set("Content-Length", String(fileSize));
+  }
+  applyMediaCorsHeaders(responseHeaders, corsOrigin);
+
+  return new Response(method === "HEAD" ? null : fileResponse.body, {
+    status: range && fileResponse.status < 400 ? 206 : fileResponse.status,
+    headers: responseHeaders,
   });
 }
 
-function createMediaFileBody(
-  clipPath: string,
-  range?: MediaByteRange,
-): BodyInit {
-  return Readable.toWeb(
-    createReadStream(clipPath, range),
-  ) as unknown as BodyInit;
+async function resolveMediaFileSize(clipPath: string): Promise<number | null> {
+  try {
+    const stats = await stat(clipPath);
+    return stats.isFile() && stats.size > 0 ? stats.size : null;
+  } catch {
+    return null;
+  }
 }
 
 function parseMediaRange(
@@ -133,12 +135,11 @@ function parseMediaRange(
     return null;
   }
 
-  const startText = match[1] as string;
-  const endText = match[2] as string;
+  const startText = match[1] ?? "";
+  const endText = match[2] ?? "";
   if (!startText && !endText) {
     return null;
   }
-
   if (!startText) {
     const suffixLength = Number(endText);
     if (!Number.isInteger(suffixLength) || suffixLength <= 0) {
@@ -163,10 +164,42 @@ function parseMediaRange(
     return null;
   }
 
-  return {
-    start,
-    end: Math.min(end, fileSize - 1),
-  };
+  return { start, end: Math.min(end, fileSize - 1) };
+}
+
+function applyMediaCorsHeaders(
+  headers: Headers,
+  corsOrigin: string | null,
+): void {
+  if (!corsOrigin) {
+    return;
+  }
+
+  headers.set("Access-Control-Allow-Origin", corsOrigin);
+  headers.set("Vary", "Origin");
+}
+
+function resolveMediaCorsOrigin(origin: string | null): string | false | null {
+  if (!origin) {
+    return null;
+  }
+  if (origin === "null" || origin === "file://") {
+    return origin;
+  }
+
+  try {
+    const parsedOrigin = new URL(origin);
+    const isLocalDevelopmentOrigin =
+      (parsedOrigin.protocol === "http:" ||
+        parsedOrigin.protocol === "https:") &&
+      (parsedOrigin.hostname === "localhost" ||
+        parsedOrigin.hostname === "127.0.0.1" ||
+        parsedOrigin.hostname === "[::1]");
+
+    return isLocalDevelopmentOrigin ? parsedOrigin.origin : false;
+  } catch {
+    return false;
+  }
 }
 
 function resolveMediaContentType(clipPath: string): string {

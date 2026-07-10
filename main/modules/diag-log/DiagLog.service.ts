@@ -20,16 +20,41 @@ import {
   logInfoSync,
   logWarn,
 } from "~/main/utils/app-log";
-import { safeErrorMessage } from "~/main/utils/ipc-validation";
+import {
+  assertNumber,
+  assertObject,
+  assertString,
+  handleValidationError,
+  IpcValidationError,
+  safeErrorMessage,
+} from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 
 import pkgJson from "../../../package.json" with { type: "json" };
 import { DiagLogChannel } from "./DiagLog.channels";
-import type { DiagLogRevealResult } from "./DiagLog.dto";
+import type {
+  ClipPreviewDiagnosticEvent,
+  ClipPreviewDiagnosticFieldValue,
+  ClipPreviewDiagnosticInput,
+  DiagLogRevealResult,
+} from "./DiagLog.dto";
 
 const DIAG_LOG_SCOPE = "diag-log";
+const CLIP_PREVIEW_RENDERER_LOG_SCOPE = "clip-preview-renderer";
 const recentCrashDumpLimit = 5;
 const runStateFileName = "last-run.json";
+const maxClipPreviewDiagnosticFields = 32;
+const clipPreviewDiagnosticEvents = new Set<ClipPreviewDiagnosticEvent>([
+  "clip-state",
+  "document-state",
+  "media-event",
+  "media-source",
+  "overlay-mounted",
+  "overlay-unmounted",
+  "playback-health",
+  "trim-state",
+  "workflow-state",
+]);
 
 interface DiagLogInitializeOptions {
   startReporter?: boolean;
@@ -198,10 +223,86 @@ class DiagLogService {
 
   private setupHandlers(): void {
     registerGuardedIpcHandler(
+      DiagLogChannel.ClipPreviewEvent,
+      [WindowName.ClipPreviewOverlay],
+      (_event, input: unknown) => {
+        try {
+          const diagnostic = this.validateClipPreviewDiagnosticInput(input);
+          logInfo(
+            CLIP_PREVIEW_RENDERER_LOG_SCOPE,
+            diagnostic.event,
+            diagnostic.fields,
+          );
+
+          return { success: true };
+        } catch (error) {
+          return handleValidationError(error);
+        }
+      },
+    );
+    registerGuardedIpcHandler(
       DiagLogChannel.RevealLogFile,
       [WindowName.Main],
       () => this.revealLogFile(),
     );
+  }
+
+  private validateClipPreviewDiagnosticInput(
+    value: unknown,
+  ): ClipPreviewDiagnosticInput {
+    const channel = DiagLogChannel.ClipPreviewEvent;
+    assertObject(value, "clip preview diagnostic", channel);
+    assertString(value.event, "event", channel, { min: 1, max: 64 });
+    if (
+      !clipPreviewDiagnosticEvents.has(
+        value.event as ClipPreviewDiagnosticEvent,
+      )
+    ) {
+      throw new IpcValidationError(channel, "event is not supported");
+    }
+
+    if (value.fields === undefined) {
+      return { event: value.event as ClipPreviewDiagnosticEvent };
+    }
+
+    assertObject(value.fields, "fields", channel);
+    const entries = Object.entries(value.fields);
+    if (entries.length > maxClipPreviewDiagnosticFields) {
+      throw new IpcValidationError(channel, "fields has too many entries");
+    }
+
+    const fields: Record<string, ClipPreviewDiagnosticFieldValue> = {};
+    for (const [key, fieldValue] of entries) {
+      assertString(key, "field name", channel, { min: 1, max: 64 });
+      if (!/^[a-z][A-Za-z0-9]*$/.test(key)) {
+        throw new IpcValidationError(channel, "field name is not supported");
+      }
+
+      if (fieldValue === null || typeof fieldValue === "boolean") {
+        fields[key] = fieldValue;
+        continue;
+      }
+      if (typeof fieldValue === "number") {
+        assertNumber(fieldValue, key, channel);
+        fields[key] = fieldValue;
+        continue;
+      }
+      if (typeof fieldValue === "string") {
+        assertString(fieldValue, key, channel, { max: 256 });
+        fields[key] = safeErrorMessage(new Error(fieldValue));
+        continue;
+      }
+
+      throw new IpcValidationError(
+        channel,
+        `${key} must be a primitive log value`,
+      );
+    }
+
+    return {
+      event: value.event as ClipPreviewDiagnosticEvent,
+      fields,
+    };
   }
 
   private registerProcessErrorHandlers(): void {

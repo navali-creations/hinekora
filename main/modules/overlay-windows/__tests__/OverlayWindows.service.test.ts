@@ -186,7 +186,6 @@ function getInternals(service: OverlayWindowsService) {
     coordinator: GameOverlayCoordinator;
     deathClipsOverlay: Record<string, unknown>;
     gridLinesOverlay: Record<string, unknown>;
-    manualReplaysOverlay: Record<string, unknown>;
     recordingControlsOverlay: Record<string, unknown>;
     auraManagerOverlays: Record<string, unknown>;
   };
@@ -296,12 +295,11 @@ describe("OverlayWindowsService", () => {
       hide(): boolean;
       showClip(clip: ReplayClip): Promise<void>;
     };
-    const manualReplaysOverlay = internals.manualReplaysOverlay as {
-      showClip(clip: ReplayClip): Promise<void>;
-    };
     const auraManagerOverlays = internals.auraManagerOverlays as {
       hide(): void;
       isLocked(): boolean;
+      restoreRequestedOverlay(): Promise<void>;
+      setClipPreviewSuspended(suspended: boolean): void;
       setGameRunningActive(active: boolean): void;
       setLocked(locked: boolean): void;
       show(profileId?: string, options?: ShowAuraOverlayOptions): Promise<void>;
@@ -320,7 +318,12 @@ describe("OverlayWindowsService", () => {
     vi.spyOn(recordingControlsOverlay, "setMode").mockReturnValue("minimized");
     vi.spyOn(deathClipsOverlay, "showClip").mockResolvedValue(undefined);
     vi.spyOn(deathClipsOverlay, "hide").mockReturnValue(true);
-    vi.spyOn(manualReplaysOverlay, "showClip").mockResolvedValue(undefined);
+    vi.spyOn(auraManagerOverlays, "restoreRequestedOverlay").mockResolvedValue(
+      undefined,
+    );
+    vi.spyOn(auraManagerOverlays, "setClipPreviewSuspended").mockImplementation(
+      () => undefined,
+    );
     vi.spyOn(auraManagerOverlays, "setGameRunningActive").mockImplementation(
       () => undefined,
     );
@@ -343,12 +346,6 @@ describe("OverlayWindowsService", () => {
     service.setGameRunningActive(true);
     service.setPoeFocusActive(true);
     await expect(service.showClipPreviewOverlay(clip)).resolves.toBeUndefined();
-    await expect(
-      service.showDeathClipPreviewOverlay(clip),
-    ).resolves.toBeUndefined();
-    await expect(
-      service.showManualReplayPreviewOverlay(clip),
-    ).resolves.toBeUndefined();
     await expect(service.showAuraOverlay("profile-1")).resolves.toBeUndefined();
     await expect(
       service.showAuraOverlay("profile-1", { startAddingAura: true }),
@@ -371,8 +368,10 @@ describe("OverlayWindowsService", () => {
     expect(auraManagerOverlays.show).toHaveBeenCalledWith("profile-1");
     expect(setPoeFocusActive).toHaveBeenCalledWith(true);
     expect(deathClipsOverlay.showClip).toHaveBeenCalledWith(clip);
-    expect(deathClipsOverlay.showClip).toHaveBeenCalledTimes(2);
-    expect(manualReplaysOverlay.showClip).toHaveBeenCalledWith(clip);
+    expect(deathClipsOverlay.showClip).toHaveBeenCalledTimes(1);
+    expect(auraManagerOverlays.setClipPreviewSuspended).toHaveBeenCalledWith(
+      true,
+    );
     expect(auraManagerOverlays.show).toHaveBeenCalledWith("profile-1", {
       startAddingAura: true,
     });
@@ -834,7 +833,7 @@ describe("OverlayWindowsService", () => {
     });
     service.setPoeFocusActive(true);
 
-    await service.showDeathClipPreviewOverlay(createClip());
+    await service.showClipPreviewOverlay(createClip());
 
     expect(electronMocks.BrowserWindow).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -1,14 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ReplayClipLibraryPage } from "~/main/modules/replay-clips/ReplayClips.dto";
-import { createReplayClip } from "~/main/test/factories/replayClip";
+import type {
+  ReplayClipLibraryPage,
+  ReplayClipView,
+} from "~/main/modules/replay-clips/ReplayClips.dto";
+import { createReplayClipView } from "~/main/test/factories/replayClip";
 import type { BoundStore } from "~/renderer/store/store.types";
 import { createBoundStoreForTests } from "~/renderer/test/createBoundStoreForTests";
 
-import type { ReplayClip } from "~/types";
 import { createReplayClipsSlice } from "./ReplayClips.slice";
 
-function createLibraryPage(items: ReplayClip[] = []): ReplayClipLibraryPage {
+function createLibraryPage(
+  items: ReplayClipView[] = [],
+): ReplayClipLibraryPage {
   return {
     items,
     availableLeagues: ["Standard"],
@@ -37,7 +41,7 @@ describe("ReplayClips slice", () => {
   const deleteClip = vi.fn();
   const deleteMany = vi.fn();
   const onStatusChanged = vi.fn();
-  let statusChangedListener: ((clip: ReplayClip) => void) | null = null;
+  let statusChangedListener: ((clip: ReplayClipView) => void) | null = null;
   const unsubscribe = vi.fn();
 
   beforeEach(() => {
@@ -56,7 +60,7 @@ describe("ReplayClips slice", () => {
       failed: [],
     });
     onStatusChanged.mockImplementation(
-      (listener: (clip: ReplayClip) => void) => {
+      (listener: (clip: ReplayClipView) => void) => {
         statusChangedListener = listener;
         return unsubscribe;
       },
@@ -92,7 +96,7 @@ describe("ReplayClips slice", () => {
   });
 
   it("hydrates and refreshes the clip library", async () => {
-    const clip = createReplayClip({ id: "clip-1" });
+    const clip = createReplayClipView({ id: "clip-1" });
     list.mockResolvedValue([clip]);
     listLibrary.mockResolvedValue(createLibraryPage([clip]));
     const store = createTestStore();
@@ -115,8 +119,8 @@ describe("ReplayClips slice", () => {
   });
 
   it("saves manual replays and keeps the previous active clip when none is returned", async () => {
-    const activeClip = createReplayClip({ id: "active-clip" });
-    const savedClip = createReplayClip({ id: "saved-clip" });
+    const activeClip = createReplayClipView({ id: "active-clip" });
+    const savedClip = createReplayClipView({ id: "saved-clip" });
     list.mockResolvedValue([activeClip, savedClip]);
     saveManualReplay
       .mockResolvedValueOnce(savedClip)
@@ -161,7 +165,7 @@ describe("ReplayClips slice", () => {
   });
 
   it("clears an active deleted clip and default cleanup state", async () => {
-    const clip = createReplayClip({ id: "clip-1" });
+    const clip = createReplayClipView({ id: "clip-1" });
     const store = createTestStore();
     store.setState((state) => ({
       replayClips: {
@@ -179,7 +183,7 @@ describe("ReplayClips slice", () => {
   });
 
   it("surfaces batch clip cleanup warnings after clearing selection", async () => {
-    const clip = createReplayClip({ id: "clip-1" });
+    const clip = createReplayClipView({ id: "clip-1" });
     deleteMany.mockResolvedValue({
       ok: true,
       error: null,
@@ -207,7 +211,7 @@ describe("ReplayClips slice", () => {
   });
 
   it("skips empty batch deletes and reports batch failures", async () => {
-    const clip = createReplayClip({ id: "clip-1" });
+    const clip = createReplayClipView({ id: "clip-1" });
     const store = createTestStore();
 
     await store.getState().replayClips.deleteSelectedClips();
@@ -245,7 +249,7 @@ describe("ReplayClips slice", () => {
   });
 
   it("sets, clears, and listens for selected clip state", async () => {
-    const clip = createReplayClip({ id: "clip-1" });
+    const clip = createReplayClipView({ id: "clip-1" });
     list.mockResolvedValue([clip]);
     const store = createTestStore();
 

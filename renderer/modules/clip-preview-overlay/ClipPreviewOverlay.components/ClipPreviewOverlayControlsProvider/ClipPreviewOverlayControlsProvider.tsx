@@ -17,11 +17,13 @@ function ClipPreviewOverlayControlsProvider({
   const controlsWorkflow = useMemo<ClipPreviewOverlayControlsWorkflow>(
     () => ({
       canCopy: workflow.canCopy,
+      canOpenSavedClip: workflow.canOpenSavedClip,
       canEdit: workflow.canEdit,
       canSave: workflow.canSave,
       handleClose: workflow.handleClose,
       handleCopyClip: workflow.handleCopyClip,
       handleEditClip: workflow.handleEditClip,
+      handleOpenSavedClipInEditor: workflow.handleOpenSavedClipInEditor,
       handleSaveClip: workflow.handleSaveClip,
       handleTitleChange: workflow.handleTitleChange,
       hasCopied: workflow.hasCopied,
@@ -37,11 +39,13 @@ function ClipPreviewOverlayControlsProvider({
     }),
     [
       workflow.canCopy,
+      workflow.canOpenSavedClip,
       workflow.canEdit,
       workflow.canSave,
       workflow.handleClose,
       workflow.handleCopyClip,
       workflow.handleEditClip,
+      workflow.handleOpenSavedClipInEditor,
       workflow.handleSaveClip,
       workflow.handleTitleChange,
       workflow.hasCopied,

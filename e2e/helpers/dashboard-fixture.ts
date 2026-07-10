@@ -162,7 +162,7 @@ interface DashboardE2EOptions {
 }
 
 function createDashboardE2EFixture(
-  options: DashboardE2EOptions = {}
+  options: DashboardE2EOptions = {},
 ): DashboardE2EFixture {
   const activeGame = options.activeGame ?? "poe2";
   const activeLeague = activeGame === "poe1" ? "Standard" : "Runes of Aldur";
@@ -352,7 +352,7 @@ function createDashboardE2EFixture(
 
 async function setupDashboardE2E(
   page: Page,
-  options: DashboardE2EOptions = {}
+  options: DashboardE2EOptions = {},
 ) {
   await page.setViewportSize({ height: 760, width: 1280 });
   const initialHash = options.initialHash ?? "/#/";
@@ -368,12 +368,12 @@ async function setupDashboardE2E(
       const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
       const applyCaptureProfileUpdate = (
         profile: CaptureProfile,
-        update: CaptureProfileUpdateInput
+        update: CaptureProfileUpdateInput,
       ): CaptureProfile => {
         const updates = Object.fromEntries(
           Object.entries(update).filter(
-            ([key, value]) => key !== "id" && value !== undefined
-          )
+            ([key, value]) => key !== "id" && value !== undefined,
+          ),
         ) as Partial<CaptureProfile>;
 
         return {
@@ -385,10 +385,10 @@ async function setupDashboardE2E(
       const transparentPixel =
         "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==";
       const createBridgeDomainFactory = Function(
-        `"use strict"; return (${input.bridgeFactorySource});`
+        `"use strict"; return (${input.bridgeFactorySource});`,
       )() as E2EBridgeDomainFactory;
       const createPoeProcessSnapshotFactory = Function(
-        input.poeProcessSnapshotFactoryScript
+        input.poeProcessSnapshotFactoryScript,
       )() as () => E2EPoeProcessSnapshotFactory;
       const poeProcessSnapshotFactory = createPoeProcessSnapshotFactory();
       let settings = clone(fixture.settings);
@@ -445,13 +445,13 @@ async function setupDashboardE2E(
       let poeProcessSnapshot =
         poeProcessSnapshotFactory.createPoeProcessSnapshotFromState(
           poeProcessState,
-          settings.activeGame
+          settings.activeGame,
         );
       const syncPoeProcessSnapshot = () => {
         poeProcessSnapshot =
           poeProcessSnapshotFactory.createPoeProcessSnapshotFromState(
             poeProcessState,
-            settings.activeGame
+            settings.activeGame,
           );
       };
       let captureSources = clone(fixture.sources);
@@ -526,13 +526,13 @@ async function setupDashboardE2E(
       };
       const createBridgeDomain = <TBridge extends object>(
         domain: string,
-        methods: E2EBridgeDomainMethods<TBridge>
+        methods: E2EBridgeDomainMethods<TBridge>,
       ): TBridge =>
         createBridgeDomainFactory(
           domain,
           methods,
           calls.unexpectedBridgeCalls,
-          "dashboard"
+          "dashboard",
         );
       const emitAuraLock = (locked: boolean) => {
         auraLocked = locked;
@@ -541,7 +541,7 @@ async function setupDashboardE2E(
       };
       const sortBookmarks = (
         items: BookmarkLibraryItem[],
-        query: BookmarkLibraryQuery
+        query: BookmarkLibraryQuery,
       ) => {
         const sortBy = query.sortBy ?? "occurredAt";
         const direction = query.sortDirection ?? "desc";
@@ -557,7 +557,7 @@ async function setupDashboardE2E(
         });
       };
       const listBookmarks = (
-        query: BookmarkLibraryQuery = {}
+        query: BookmarkLibraryQuery = {},
       ): BookmarkLibraryPage => {
         calls.bookmarkLibraryQueries.push(clone(query));
         const filtered = bookmarks.filter((bookmark) => {
@@ -580,16 +580,16 @@ async function setupDashboardE2E(
 
         return {
           availableCategories: Array.from(
-            new Set(filtered.map((bookmark) => bookmark.category))
+            new Set(filtered.map((bookmark) => bookmark.category)),
           ),
           availableLeagues: Array.from(
             new Set(
               bookmarks
                 .filter((bookmark) =>
-                  query.game ? bookmark.sourceGame === query.game : true
+                  query.game ? bookmark.sourceGame === query.game : true,
                 )
-                .map((bookmark) => bookmark.sourceLeague)
-            )
+                .map((bookmark) => bookmark.sourceLeague),
+            ),
           ),
           items: clone(sorted.slice(pageStart, pageStart + pageSize)),
           pageCount: Math.max(1, Math.ceil(filtered.length / pageSize)),
@@ -602,7 +602,7 @@ async function setupDashboardE2E(
       };
       const listRecordingBookmarks = (
         recordingId: string,
-        query: RecordingBookmarksQuery = {}
+        query: RecordingBookmarksQuery = {},
       ): RecordingBookmarksPage => {
         const linked = bookmarks
           .filter((bookmark) => bookmark.activeRecordingId === recordingId)
@@ -611,7 +611,7 @@ async function setupDashboardE2E(
               ...bookmark,
               durationSeconds: null,
               offsetSeconds: bookmark.activeRecordingOffsetSeconds,
-            })
+            }),
           );
         const filtered = query.category
           ? linked.filter((bookmark) => bookmark.category === query.category)
@@ -622,19 +622,19 @@ async function setupDashboardE2E(
         const sortedItems = [...filtered].sort(
           (left, right) =>
             right.occurredAt.localeCompare(left.occurredAt) ||
-            (right.offsetSeconds ?? 0) - (left.offsetSeconds ?? 0)
+            (right.offsetSeconds ?? 0) - (left.offsetSeconds ?? 0),
         );
         const timelineItems =
           query.includeTimeline === false
             ? []
             : [...linked].sort(
                 (left, right) =>
-                  (left.offsetSeconds ?? 0) - (right.offsetSeconds ?? 0)
+                  (left.offsetSeconds ?? 0) - (right.offsetSeconds ?? 0),
               );
 
         return {
           availableCategories: Array.from(
-            new Set(linked.map((bookmark) => bookmark.category))
+            new Set(linked.map((bookmark) => bookmark.category)),
           ) as BookmarkCategory[],
           items: clone(sortedItems.slice(pageStart, pageStart + pageSize)),
           pageCount: Math.max(1, Math.ceil(filtered.length / pageSize)),
@@ -647,7 +647,7 @@ async function setupDashboardE2E(
       };
       const sortActivitySessions = (
         items: ActivitySessionLibraryItem[],
-        query: ActivitySessionLibraryQuery
+        query: ActivitySessionLibraryQuery,
       ) => {
         const sortBy = query.sortBy ?? "startedAt";
         const direction = query.sortDirection ?? "desc";
@@ -671,7 +671,7 @@ async function setupDashboardE2E(
         });
       };
       const listActivitySessions = (
-        query: ActivitySessionLibraryQuery = {}
+        query: ActivitySessionLibraryQuery = {},
       ): ActivitySessionLibraryPage => {
         const filtered = activitySessions.filter((session) => {
           if (query.game && session.sourceGame !== query.game) {
@@ -693,10 +693,10 @@ async function setupDashboardE2E(
             new Set(
               activitySessions
                 .filter((session) =>
-                  query.game ? session.sourceGame === query.game : true
+                  query.game ? session.sourceGame === query.game : true,
                 )
-                .map((session) => session.sourceLeague)
-            )
+                .map((session) => session.sourceLeague),
+            ),
           ),
           items: clone(sorted.slice(pageStart, pageStart + pageSize)),
           pageCount: Math.max(1, Math.ceil(filtered.length / pageSize)),
@@ -713,7 +713,7 @@ async function setupDashboardE2E(
         listeners.recorderVisibility?.(visible);
       };
       const updateRecorderStatus = (
-        nextStatus: Partial<ManagedRecorderStatus>
+        nextStatus: Partial<ManagedRecorderStatus>,
       ) => {
         recorderStatus = { ...recorderStatus, ...nextStatus };
         listeners.recorderStatus?.(clone(recorderStatus));
@@ -764,7 +764,7 @@ async function setupDashboardE2E(
           "appSetup",
           {
             getSetupState: async () => clone(fixture.setupState),
-          }
+          },
         ),
         bookmarks: createBridgeDomain<DashboardE2EElectron["bookmarks"]>(
           "bookmarks",
@@ -777,7 +777,7 @@ async function setupDashboardE2E(
             deleteManual: async (bookmarkId) => {
               calls.bookmarkDeletes.push(bookmarkId);
               bookmarks = bookmarks.filter(
-                (bookmark) => bookmark.id !== bookmarkId
+                (bookmark) => bookmark.id !== bookmarkId,
               );
             },
             listLibrary: async (query) => listBookmarks(query),
@@ -795,10 +795,10 @@ async function setupDashboardE2E(
                       label: input.label,
                       updatedAt: fixture.now,
                     }
-                  : bookmark
+                  : bookmark,
               );
             },
-          }
+          },
         ),
         capturePreview: createBridgeDomain<
           DashboardE2EElectron["capturePreview"]
@@ -811,7 +811,7 @@ async function setupDashboardE2E(
           listSources: async (forceRefresh?: boolean) => {
             calls.captureSourceRequests.push(forceRefresh === true);
             calls.captureSourceResponses.push(
-              captureSources.map((source) => source.id)
+              captureSources.map((source) => source.id),
             );
             if (forceRefresh === true) {
               window.setTimeout(() => {
@@ -848,11 +848,11 @@ async function setupDashboardE2E(
                 game: input.game,
                 id: createdProfile.id,
                 name: input.name,
-              })
+              }),
             );
             captureProfilesById.set(createdProfile.id, createdProfile);
             listeners.captureProfileChanged?.(
-              clone(Array.from(captureProfilesById.values()))
+              clone(Array.from(captureProfilesById.values())),
             );
 
             return clone(createdProfile);
@@ -861,7 +861,7 @@ async function setupDashboardE2E(
             calls.captureProfileDeletes.push(id);
             captureProfilesById.delete(id);
             listeners.captureProfileChanged?.(
-              clone(Array.from(captureProfilesById.values()))
+              clone(Array.from(captureProfilesById.values())),
             );
           },
           list: async () => clone(Array.from(captureProfilesById.values())),
@@ -877,7 +877,7 @@ async function setupDashboardE2E(
             const updatedProfile = applyCaptureProfileUpdate(profile, input);
             captureProfilesById.set(input.id, updatedProfile);
             listeners.captureProfileChanged?.(
-              clone(Array.from(captureProfilesById.values()))
+              clone(Array.from(captureProfilesById.values())),
             );
 
             return clone(updatedProfile);
@@ -898,22 +898,22 @@ async function setupDashboardE2E(
 
               return clone(clientLogStatus);
             },
-          }
+          },
         ),
         diagLog: createBridgeDomain<DashboardE2EElectron["diagLog"]>(
           "diagLog",
-          {}
+          {},
         ),
         editor: createBridgeDomain<DashboardE2EElectron["editor"]>(
           "editor",
-          {}
+          {},
         ),
         keybinds: createBridgeDomain<DashboardE2EElectron["keybinds"]>(
           "keybinds",
           {
             getStatus: async () => createDefaultKeybindRegistrationStatus(),
             onStatusChanged: () => unsubscribe,
-          }
+          },
         ),
         mainWindow: createBridgeDomain<DashboardE2EElectron["mainWindow"]>(
           "mainWindow",
@@ -944,7 +944,7 @@ async function setupDashboardE2E(
                 ...(options?.trim ? { trim: clone(options.trim) } : {}),
               });
             },
-          }
+          },
         ),
         managedRecorder: createBridgeDomain<
           DashboardE2EElectron["managedRecorder"]
@@ -952,7 +952,7 @@ async function setupDashboardE2E(
           getCaptureMode: async () => captureMode,
           getStatus: async () => clone(recorderStatus),
           listAudioDevices: async (
-            options?: ManagedRecorderListAudioDevicesOptions
+            options?: ManagedRecorderListAudioDevicesOptions,
           ) => {
             calls.audioDeviceRequests.push(options ? clone(options) : null);
 
@@ -1074,7 +1074,7 @@ async function setupDashboardE2E(
 
               return unsubscribe;
             },
-          }
+          },
         ),
         profiles: createBridgeDomain<DashboardE2EElectron["profiles"]>(
           "profiles",
@@ -1096,11 +1096,11 @@ async function setupDashboardE2E(
                   game: input.game ?? null,
                   id: createdProfile.id,
                   name: input.name,
-                })
+                }),
               );
               profilesById.set(createdProfile.id, createdProfile);
               listeners.profileChanged?.(
-                clone(Array.from(profilesById.values()))
+                clone(Array.from(profilesById.values())),
               );
 
               return clone(createdProfile);
@@ -1109,7 +1109,7 @@ async function setupDashboardE2E(
               calls.profileDeletes.push(id);
               profilesById.delete(id);
               listeners.profileChanged?.(
-                clone(Array.from(profilesById.values()))
+                clone(Array.from(profilesById.values())),
               );
             },
             list: async () => clone(Array.from(profilesById.values())),
@@ -1141,19 +1141,19 @@ async function setupDashboardE2E(
               };
               profilesById.set(input.id, updatedProfile);
               listeners.profileChanged?.(
-                clone(Array.from(profilesById.values()))
+                clone(Array.from(profilesById.values())),
               );
 
               return clone(updatedProfile);
             },
-          }
+          },
         ),
         recordingStorage: createBridgeDomain<
           DashboardE2EElectron["recordingStorage"]
         >("recordingStorage", {
           getRecording: async (recordingId) => {
             const bookmark = bookmarks.find(
-              (item) => item.activeRecordingId === recordingId
+              (item) => item.activeRecordingId === recordingId,
             );
             if (!bookmark) {
               return null;
@@ -1190,12 +1190,12 @@ async function setupDashboardE2E(
             },
             list: async () =>
               clone(
-                Object.values(replayClipDetails).map((detail) => detail.clip)
+                Object.values(replayClipDetails).map((detail) => detail.clip),
               ),
             listLibrary: async () => ({
               availableLeagues: ["Standard", "Runes of Aldur"],
               items: clone(
-                Object.values(replayClipDetails).map((detail) => detail.clip)
+                Object.values(replayClipDetails).map((detail) => detail.clip),
               ),
               pageCount: 0,
               pageIndex: 0,
@@ -1251,12 +1251,13 @@ async function setupDashboardE2E(
                 const fileName = input.name.endsWith(".mp4")
                   ? input.name
                   : `${input.name}.mp4`;
-                nextDetail.clip.processedClipPath = `C:\\Hinekora\\${fileName}`;
+                nextDetail.clip.fileName = fileName;
+                nextDetail.clip.hasMediaFile = true;
               }
               if (input.trim) {
                 const durationSeconds = Math.max(
                   0,
-                  input.trim.outSeconds - input.trim.inSeconds
+                  input.trim.outSeconds - input.trim.inSeconds,
                 );
                 nextDetail.durationSeconds = durationSeconds;
                 nextDetail.clip.durationSeconds = durationSeconds;
@@ -1270,7 +1271,7 @@ async function setupDashboardE2E(
 
               return unsubscribe;
             },
-          }
+          },
         ),
         savedEdits: createBridgeDomain<DashboardE2EElectron["savedEdits"]>(
           "savedEdits",
@@ -1286,7 +1287,7 @@ async function setupDashboardE2E(
               sortDirection: "desc",
               totalCount: 0,
             }),
-          }
+          },
         ),
         settings: createBridgeDomain<DashboardE2EElectron["settings"]>(
           "settings",
@@ -1305,14 +1306,14 @@ async function setupDashboardE2E(
 
               return clone(settings);
             },
-          }
+          },
         ),
         storage: createBridgeDomain<DashboardE2EElectron["storage"]>(
           "storage",
           {
             checkDiskSpace: async () => clone(diskCheck),
             getInfo: async () => clone(fixture.storageInfo),
-          }
+          },
         ),
         stateTransfer: createBridgeDomain<
           DashboardE2EElectron["stateTransfer"]
@@ -1331,7 +1332,7 @@ async function setupDashboardE2E(
 
               return unsubscribe;
             },
-          }
+          },
         ),
       };
 
@@ -1359,7 +1360,7 @@ async function setupDashboardE2E(
             state ?? {
               isRunning: false,
               processName: "",
-            }
+            },
           );
           syncPoeProcessSnapshot();
           listeners.poeStop?.(clone(poeProcessSnapshot));
@@ -1388,16 +1389,16 @@ async function setupDashboardE2E(
       bridgeFactorySource: e2eBridgeDomainFactorySource,
       fixture: createDashboardE2EFixture(options),
       poeProcessSnapshotFactoryScript: e2ePoeProcessSnapshotFactoryScript,
-    }
+    },
   );
 
   await page.goto(new URL(initialHash, appBaseUrl).toString());
   if (!options.skipDashboardShellChecks) {
     await expect(
-      page.getByRole("heading", { name: "Dashboard" })
+      page.getByRole("heading", { name: "Dashboard" }),
     ).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Live Preview" })
+      page.getByRole("heading", { name: "Live Preview" }),
     ).toBeVisible();
   }
 }
@@ -1424,7 +1425,7 @@ async function getDashboardE2ECalls(page: Page): Promise<DashboardE2ECalls> {
 
 async function emitDashboardRecorderOverlayVisibility(
   page: Page,
-  visible: boolean
+  visible: boolean,
 ) {
   await page.evaluate((nextVisible) => {
     const e2eWindow = window as unknown as {
@@ -1432,14 +1433,14 @@ async function emitDashboardRecorderOverlayVisibility(
     };
 
     e2eWindow.__HINEKORA_DASHBOARD_E2E_API__.emitRecorderOverlayVisibility(
-      nextVisible
+      nextVisible,
     );
   }, visible);
 }
 
 async function emitDashboardPoeProcessStart(
   page: Page,
-  state: PoeProcessState
+  state: PoeProcessState,
 ) {
   await page.evaluate((nextState) => {
     const e2eWindow = window as unknown as {
@@ -1452,7 +1453,7 @@ async function emitDashboardPoeProcessStart(
 
 async function emitDashboardPoeProcessStop(
   page: Page,
-  state?: PoeProcessState
+  state?: PoeProcessState,
 ) {
   await page.evaluate((nextState) => {
     const e2eWindow = window as unknown as {
@@ -1465,7 +1466,7 @@ async function emitDashboardPoeProcessStop(
 
 async function emitDashboardReplayClipProgress(
   page: Page,
-  progress: { operationRequestId: string; progress: number }
+  progress: { operationRequestId: string; progress: number },
 ) {
   await page.evaluate((nextProgress) => {
     const e2eWindow = window as unknown as {
@@ -1473,14 +1474,14 @@ async function emitDashboardReplayClipProgress(
     };
 
     e2eWindow.__HINEKORA_DASHBOARD_E2E_API__.emitReplayClipProgress(
-      nextProgress
+      nextProgress,
     );
   }, progress);
 }
 
 async function emitDashboardReplayClipStatusChanged(
   page: Page,
-  clip: ReplayClipDetail["clip"]
+  clip: ReplayClipDetail["clip"],
 ) {
   await page.evaluate((nextClip) => {
     const e2eWindow = window as unknown as {
@@ -1488,14 +1489,14 @@ async function emitDashboardReplayClipStatusChanged(
     };
 
     e2eWindow.__HINEKORA_DASHBOARD_E2E_API__.emitReplayClipStatusChanged(
-      nextClip
+      nextClip,
     );
   }, clip);
 }
 
 async function setDashboardCaptureSources(
   page: Page,
-  sources: CapturePreviewSource[]
+  sources: CapturePreviewSource[],
 ) {
   await page.evaluate((nextSources) => {
     const e2eWindow = window as unknown as {
@@ -1509,7 +1510,7 @@ async function setDashboardCaptureSources(
 async function scheduleDashboardCaptureSources(
   page: Page,
   sources: CapturePreviewSource[],
-  delayMs: number
+  delayMs: number,
 ) {
   await page.evaluate(
     ({ delay, nextSources }) => {
@@ -1521,7 +1522,7 @@ async function scheduleDashboardCaptureSources(
         e2eWindow.__HINEKORA_DASHBOARD_E2E_API__.setCaptureSources(nextSources);
       }, delay);
     },
-    { delay: delayMs, nextSources: sources }
+    { delay: delayMs, nextSources: sources },
   );
 }
 

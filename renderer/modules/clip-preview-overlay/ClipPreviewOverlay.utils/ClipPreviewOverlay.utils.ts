@@ -1,3 +1,5 @@
+import type { ReplayClipDetail } from "~/main/modules/replay-clips";
+
 import { type QuickClipTrimRange, quickClipTrimMinimumSeconds } from "~/types";
 
 export type ClipPreviewTrimRange = QuickClipTrimRange;
@@ -98,6 +100,32 @@ export function getClipPreviewFileTitle(path: string | null): string {
 
   const fileName = path.split(/[\\/]/).pop() ?? path;
   return fileName.replace(/\.[^.]+$/, "");
+}
+
+export function resolveClipPreviewDetail(
+  detail: ReplayClipDetail | null,
+  durationOverrideSeconds: number | null,
+) {
+  const clip = detail?.clip ?? null;
+  const durationSeconds = Math.max(
+    0,
+    detail?.durationSeconds ??
+      durationOverrideSeconds ??
+      clip?.durationSeconds ??
+      clip?.targetDurationSeconds ??
+      0,
+  );
+  const mediaUrl = detail?.mediaUrl ?? null;
+
+  return {
+    clip,
+    clipFileName: clip?.fileName ?? null,
+    durationSeconds,
+    hasPlayableClipFile: Boolean(
+      clip?.hasMediaFile && mediaUrl && durationSeconds > 0,
+    ),
+    mediaUrl,
+  };
 }
 
 export function resolveClipPreviewTimelineSeconds(input: {

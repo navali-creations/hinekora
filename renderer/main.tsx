@@ -52,8 +52,12 @@ declare module "@tanstack/react-router" {
   }
 }
 
-createRoot(document.getElementById("root") as HTMLElement).render(
+const renderer = isOverlayRoute ? (
+  <App />
+) : (
   <React.StrictMode>
-    {isOverlayRoute ? <App /> : <RouterProvider router={router} />}
-  </React.StrictMode>,
+    <RouterProvider router={router} />
+  </React.StrictMode>
 );
+
+createRoot(document.getElementById("root") as HTMLElement).render(renderer);

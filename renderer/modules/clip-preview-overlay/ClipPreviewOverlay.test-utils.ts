@@ -1,7 +1,7 @@
 function dispatchClipPreviewPointerEvent(
   target: Element,
   type: string,
-  input: { clientX: number; pointerId?: number },
+  input: { clientX: number; pointerId?: number; timeStamp?: number },
 ): void {
   const event = new Event(type, {
     bubbles: true,
@@ -11,6 +11,7 @@ function dispatchClipPreviewPointerEvent(
     button: { value: 0 },
     clientX: { value: input.clientX },
     pointerId: { value: input.pointerId ?? 1 },
+    timeStamp: { value: input.timeStamp ?? 0 },
   });
   target.dispatchEvent(event);
 }

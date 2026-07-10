@@ -33,7 +33,6 @@ async function renderRail(
       <ClipPreviewTrimRail
         disabled={false}
         durationSeconds={10}
-        playbackSeconds={0}
         trim={trim}
         onSeek={onSeek}
         onTrimChange={onTrimChange}
@@ -127,9 +126,13 @@ describe("ClipPreviewTrimRail", () => {
     await act(async () => {
       dispatchClipPreviewPointerEvent(selection, "pointerdown", {
         clientX: 30,
+        timeStamp: 0,
       });
       vi.advanceTimersByTime(250);
-      dispatchClipPreviewPointerEvent(rail, "pointermove", { clientX: 60 });
+      dispatchClipPreviewPointerEvent(rail, "pointermove", {
+        clientX: 60,
+        timeStamp: 250,
+      });
     });
 
     expect(onTrimChange).toHaveBeenLastCalledWith(
@@ -155,15 +158,22 @@ describe("ClipPreviewTrimRail", () => {
     await act(async () => {
       dispatchClipPreviewPointerEvent(selection, "pointerdown", {
         clientX: 30,
+        timeStamp: 0,
       });
       vi.advanceTimersByTime(249);
-      dispatchClipPreviewPointerEvent(rail, "pointermove", { clientX: 60 });
+      dispatchClipPreviewPointerEvent(rail, "pointermove", {
+        clientX: 60,
+        timeStamp: 249,
+      });
     });
     expect(onTrimChange).not.toHaveBeenCalled();
 
     await act(async () => {
       vi.advanceTimersByTime(1);
-      dispatchClipPreviewPointerEvent(rail, "pointermove", { clientX: 60 });
+      dispatchClipPreviewPointerEvent(rail, "pointermove", {
+        clientX: 60,
+        timeStamp: 250,
+      });
     });
 
     expect(onTrimChange).toHaveBeenLastCalledWith(
@@ -196,6 +206,42 @@ describe("ClipPreviewTrimRail", () => {
         outSeconds: 7,
       },
       { previewSeconds: 7 },
+    );
+  });
+
+  it("commits a throttled final handle position on pointer up", async () => {
+    const onTrimChange = vi.fn();
+    const rail = await renderRail(onTrimChange);
+    const endHandle = container.querySelector('[aria-label="Trim clip end"]');
+    if (!(endHandle instanceof HTMLElement)) {
+      throw new Error("Expected trim end handle");
+    }
+
+    await act(async () => {
+      dispatchClipPreviewPointerEvent(endHandle, "pointerdown", {
+        clientX: 50,
+        timeStamp: 100,
+      });
+      dispatchClipPreviewPointerEvent(rail, "pointermove", {
+        clientX: 70,
+        timeStamp: 120,
+      });
+      dispatchClipPreviewPointerEvent(rail, "pointermove", {
+        clientX: 80,
+        timeStamp: 125,
+      });
+      dispatchClipPreviewPointerEvent(rail, "pointerup", {
+        clientX: 80,
+        timeStamp: 126,
+      });
+    });
+
+    expect(onTrimChange).toHaveBeenLastCalledWith(
+      {
+        inSeconds: 2,
+        outSeconds: 8,
+      },
+      { previewSeconds: 8 },
     );
   });
 });

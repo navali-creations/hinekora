@@ -2,7 +2,7 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createReplayClip } from "~/main/test/factories/replayClip";
+import { createReplayClipView } from "~/main/test/factories/replayClip";
 
 const storeMocks = vi.hoisted(() => ({
   deleteClip: vi.fn(),
@@ -41,7 +41,7 @@ function getButton(label: string): HTMLButtonElement {
   return button;
 }
 
-async function renderActions(clip = createReplayClip()) {
+async function renderActions(clip = createReplayClipView()) {
   await act(async () => {
     root.render(<ReplayClipTableActions clip={clip} />);
   });
@@ -63,9 +63,10 @@ describe("ReplayClipTableActions", () => {
 
   it("opens playable clips from the open action", async () => {
     await renderActions(
-      createReplayClip({
+      createReplayClipView({
         id: "clip-1",
-        processedClipPath: "C:\\clips\\clip-1.mp4",
+        fileName: "clip-1.mp4",
+        hasMediaFile: true,
         sizeBytes: 1024,
       }),
     );
@@ -82,7 +83,7 @@ describe("ReplayClipTableActions", () => {
   });
 
   it("shows an unavailable indicator for missing clips while leaving delete available", async () => {
-    await renderActions(createReplayClip({ id: "missing-clip" }));
+    await renderActions(createReplayClipView({ id: "missing-clip" }));
 
     const indicator = container.querySelector(
       '[aria-label="Clip video unavailable"]',
