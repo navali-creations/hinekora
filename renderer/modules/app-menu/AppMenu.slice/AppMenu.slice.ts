@@ -118,7 +118,10 @@ export const createAppMenuSlice: BoundStoreStateCreator<AppMenuSlice> = (
         try {
           const currentVersion = await window.electron.app.getVersion();
           const settings = await window.electron.settings.get();
-          const lastSeenVersion = settings.lastSeenAppVersion;
+          const lastSeenVersion =
+            "lastSeenAppVersion" in settings
+              ? settings.lastSeenAppVersion
+              : null;
 
           if (lastSeenVersion && lastSeenVersion !== currentVersion) {
             setAppMenu(

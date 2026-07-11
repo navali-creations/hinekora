@@ -21,6 +21,7 @@ import { EditorService } from "./modules/editor";
 import { KeybindsService } from "./modules/keybinds";
 import { MainWindowService } from "./modules/main-window";
 import { ManagedRecorderService } from "./modules/managed-recorder";
+import { setupMediaProtocol } from "./modules/media-protocol";
 import { OverlayWindowsService } from "./modules/overlay-windows";
 import { PoeProcessService } from "./modules/poe-process";
 import { ProfilesService } from "./modules/profiles";
@@ -177,6 +178,13 @@ async function bootstrap(): Promise<void> {
 
   const replayClips = ReplayClipsService.getInstance();
   logInfo("startup", "Replay clips initialized");
+
+  setupMediaProtocol({
+    resolveClipPreviewPath: (id) => replayClips.getPreviewMediaPath(id),
+    resolveReplayClipPath: (id) => replayClips.getMediaPath(id),
+    resolveRunRecordingPath: (id) => recordingStorage.getRecordingMediaPath(id),
+  });
+  logInfo("startup", "Media protocol initialized");
 
   EditorService.getInstance();
   logInfo("startup", "Editor initialized");

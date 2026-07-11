@@ -10,6 +10,7 @@ import { migration_20260701_000000_capture_profiles } from "./20260701_000000_ca
 import { migration_20260702_000000_aura_profiles_global_scope } from "./20260702_000000_aura_profiles_global_scope";
 import { migration_20260702_010000_bookmarks } from "./20260702_010000_bookmarks";
 import { migration_20260707_000000_keybind_settings } from "./20260707_000000_keybind_settings";
+import { migration_20260710_000000_replay_clip_effective_duration_index } from "./20260710_000000_replay_clip_effective_duration_index";
 import type { Migration } from "./Migration.interface";
 
 const migrations: Migration[] = [
@@ -25,6 +26,7 @@ const migrations: Migration[] = [
   migration_20260702_000000_aura_profiles_global_scope,
   migration_20260702_010000_bookmarks,
   migration_20260707_000000_keybind_settings,
+  migration_20260710_000000_replay_clip_effective_duration_index,
 ];
 
 export type { Migration } from "./Migration.interface";

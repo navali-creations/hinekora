@@ -18,8 +18,10 @@ import {
 const storeMocks = vi.hoisted(() => ({
   hideClipPreview: vi.fn(),
   copyClip: vi.fn(),
+  dismissClipPreviewInfoAlert: vi.fn(),
   getClip: vi.fn(),
   onOperationProgress: vi.fn(),
+  onPreviewProgress: vi.fn(),
   onStatusChanged: vi.fn(),
   openEditorClip: vi.fn(),
   openClip: vi.fn(),
@@ -28,7 +30,6 @@ const storeMocks = vi.hoisted(() => ({
   settingsValue: null as AppSettings | null,
   trackEvent: vi.fn(),
   updateClip: vi.fn(),
-  updateSettings: vi.fn(),
   useSettingsShallow: vi.fn(),
   writeClipPreviewEvent: vi.fn(),
 }));
@@ -242,11 +243,52 @@ describe("ClipPreviewOverlayPage playback", () => {
         clientX: 80,
       });
       dispatchClipPreviewPointerEvent(rail, "pointermove", { clientX: 70 });
+      video.dispatchEvent(new Event("seeked", { bubbles: true }));
     });
 
     expect(fastSeek).not.toHaveBeenCalled();
     expect(video.currentTime).toBe(7);
     expect(container.textContent).toContain("7.00 / 10.00");
+  });
+
+  it("coalesces rapid trim seeks to the latest pointer target", async () => {
+    await renderPage();
+    await flushPromises();
+    const video = await markPreviewVideoReady();
+    let currentTime = 0;
+    const seekWrites: number[] = [];
+    Object.defineProperty(video, "currentTime", {
+      configurable: true,
+      get: () => currentTime,
+      set: (seconds: number) => {
+        currentTime = seconds;
+        seekWrites.push(seconds);
+      },
+    });
+    const rail = setupTrimRail();
+    const endHandle = findButtonByLabel("Trim clip end");
+
+    await act(async () => {
+      dispatchClipPreviewPointerEvent(endHandle, "pointerdown", {
+        clientX: 80,
+        timeStamp: 100,
+      });
+      dispatchClipPreviewPointerEvent(rail, "pointermove", {
+        clientX: 70,
+        timeStamp: 120,
+      });
+      dispatchClipPreviewPointerEvent(rail, "pointermove", {
+        clientX: 60,
+        timeStamp: 140,
+      });
+    });
+
+    expect(seekWrites).toEqual([8]);
+    expect(container.textContent).toContain("6.00 / 10.00");
+    await act(async () => {
+      video.dispatchEvent(new Event("seeked", { bubbles: true }));
+    });
+    expect(seekWrites).toEqual([8, 6]);
   });
 
   it("keeps the timer and marker at a non-zero trimmed start", async () => {
@@ -450,6 +492,9 @@ describe("ClipPreviewOverlayPage playback", () => {
       });
       dispatchClipPreviewPointerEvent(rail, "pointermove", { clientX: 20 });
       dispatchClipPreviewPointerEvent(rail, "pointerup", { clientX: 20 });
+    });
+    await act(async () => {
+      video.dispatchEvent(new Event("seeked", { bubbles: true }));
     });
 
     await act(async () => {

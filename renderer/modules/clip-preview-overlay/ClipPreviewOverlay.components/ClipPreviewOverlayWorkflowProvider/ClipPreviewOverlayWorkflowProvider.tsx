@@ -15,11 +15,11 @@ function ClipPreviewOverlayWorkflowProvider({
   children,
 }: ClipPreviewOverlayWorkflowProviderProps) {
   return (
-    <ClipPreviewOverlayControlsProvider>
-      <ClipPreviewOverlayMediaProvider>
+    <ClipPreviewOverlayMediaProvider>
+      <ClipPreviewOverlayControlsProvider>
         {children}
-      </ClipPreviewOverlayMediaProvider>
-    </ClipPreviewOverlayControlsProvider>
+      </ClipPreviewOverlayControlsProvider>
+    </ClipPreviewOverlayMediaProvider>
   );
 }
 

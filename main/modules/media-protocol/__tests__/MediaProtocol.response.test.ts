@@ -6,14 +6,15 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { fetchLocalFileForTests } from "~/main/test/local-file-fetch";
 
+import { createMediaFileResponse } from "../MediaProtocol.response";
 import {
-  createReplayClipMediaFileResponse as createMediaFileResponse,
+  createClipPreviewMediaUrl,
   createReplayClipMediaUrl,
   createRunRecordingMediaUrl,
-  resolveHinekoraMediaRequestTarget,
-} from "../ReplayClips.media";
+  resolveMediaRequestTarget,
+} from "../MediaProtocol.urls";
 
-function createReplayClipMediaFileResponse(path: string, request: Request) {
+function createTestMediaFileResponse(path: string, request: Request) {
   return createMediaFileResponse(path, request, fetchLocalFileForTests);
 }
 
@@ -27,7 +28,7 @@ afterEach(() => {
   rmSync(root, { recursive: true, force: true });
 });
 
-describe("ReplayClips.media", () => {
+describe("MediaProtocol response", () => {
   it("builds and resolves app media URLs", () => {
     expect(createReplayClipMediaUrl("clip one")).toBe(
       "hinekora-media://replay-clip/clip%20one",
@@ -38,23 +39,24 @@ describe("ReplayClips.media", () => {
     expect(createRunRecordingMediaUrl("recording-1")).toBe(
       "hinekora-media://run-recording/recording-1",
     );
+    expect(createClipPreviewMediaUrl("clip-1", "v1")).toBe(
+      "hinekora-media://clip-preview/clip-1?v=v1",
+    );
     expect(
-      resolveHinekoraMediaRequestTarget(
-        "hinekora-media://run-recording/recording-1",
-      ),
+      resolveMediaRequestTarget("hinekora-media://clip-preview/clip-1"),
+    ).toEqual({ id: "clip-1", kind: "clip-preview" });
+    expect(
+      resolveMediaRequestTarget("hinekora-media://run-recording/recording-1"),
     ).toEqual({ id: "recording-1", kind: "run-recording" });
     expect(
-      resolveHinekoraMediaRequestTarget(
+      resolveMediaRequestTarget(
         `hinekora-media://run-recording/${"x".repeat(129)}`,
       ),
     ).toBe(null);
+    expect(resolveMediaRequestTarget("hinekora-media://other/item")).toBe(null);
+    expect(resolveMediaRequestTarget("https://replay-clip/item")).toBe(null);
     expect(
-      resolveHinekoraMediaRequestTarget("hinekora-media://other/item"),
-    ).toBe(null);
-    expect(
-      resolveHinekoraMediaRequestTarget(
-        "hinekora-media://replay-clip/%E0%A4%A",
-      ),
+      resolveMediaRequestTarget("hinekora-media://replay-clip/%E0%A4%A"),
     ).toBe(null);
   });
 
@@ -62,7 +64,7 @@ describe("ReplayClips.media", () => {
     const path = join(root, "clip.mp4");
     writeFileSync(path, "abcdef");
 
-    const fullResponse = await createReplayClipMediaFileResponse(
+    const fullResponse = await createTestMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1"),
     );
@@ -72,14 +74,14 @@ describe("ReplayClips.media", () => {
     expect(fullResponse.headers.get("Content-Type")).toBe("video/mp4");
     await expect(fullResponse.text()).resolves.toBe("abcdef");
 
-    const headResponse = await createReplayClipMediaFileResponse(
+    const headResponse = await createTestMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1", { method: "HEAD" }),
     );
     expect(headResponse.status).toBe(200);
     expect(headResponse.body).toBeNull();
 
-    const rangeResponse = await createReplayClipMediaFileResponse(
+    const rangeResponse = await createTestMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1", {
         headers: { range: "bytes=1-3" },
@@ -91,7 +93,7 @@ describe("ReplayClips.media", () => {
     expect(rangeResponse.headers.get("Cache-Control")).toBe("no-store");
     await expect(rangeResponse.text()).resolves.toBe("bcd");
 
-    const suffixResponse = await createReplayClipMediaFileResponse(
+    const suffixResponse = await createTestMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1", {
         headers: { range: "bytes=-2" },
@@ -101,7 +103,7 @@ describe("ReplayClips.media", () => {
     expect(suffixResponse.headers.get("Content-Range")).toBe("bytes 4-5/6");
     await expect(suffixResponse.text()).resolves.toBe("ef");
 
-    const openEndedResponse = await createReplayClipMediaFileResponse(
+    const openEndedResponse = await createTestMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1", {
         headers: { range: "bytes=3-" },
@@ -111,7 +113,7 @@ describe("ReplayClips.media", () => {
     expect(openEndedResponse.headers.get("Content-Range")).toBe("bytes 3-5/6");
     await expect(openEndedResponse.text()).resolves.toBe("def");
 
-    const clippedEndResponse = await createReplayClipMediaFileResponse(
+    const clippedEndResponse = await createTestMediaFileResponse(
       path,
       new Request("hinekora-media://replay-clip/clip-1", {
         headers: { range: "bytes=2-99" },
@@ -132,7 +134,7 @@ describe("ReplayClips.media", () => {
 
     expect(
       (
-        await createReplayClipMediaFileResponse(
+        await createTestMediaFileResponse(
           emptyPath,
           new Request("hinekora-media://replay-clip/clip-1"),
         )
@@ -140,7 +142,7 @@ describe("ReplayClips.media", () => {
     ).toBe(404);
     expect(
       (
-        await createReplayClipMediaFileResponse(
+        await createTestMediaFileResponse(
           directoryPath,
           new Request("hinekora-media://replay-clip/clip-1"),
         )
@@ -154,7 +156,7 @@ describe("ReplayClips.media", () => {
       "bytes=5-4",
       "bytes=6-",
     ]) {
-      const response = await createReplayClipMediaFileResponse(
+      const response = await createTestMediaFileResponse(
         path,
         new Request("hinekora-media://replay-clip/clip-1", {
           headers: { range },
@@ -180,7 +182,7 @@ describe("ReplayClips.media", () => {
 
       expect(
         (
-          await createReplayClipMediaFileResponse(
+          await createTestMediaFileResponse(
             path,
             new Request("hinekora-media://replay-clip/clip-1", {
               method: "HEAD",

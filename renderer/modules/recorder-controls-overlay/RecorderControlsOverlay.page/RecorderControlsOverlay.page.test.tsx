@@ -323,6 +323,9 @@ describe("RecorderControlsOverlayPage", () => {
   it("switches capture modes from overlay tabs and locks conflicting active modes", async () => {
     await renderOverlay();
 
+    expect(
+      container.querySelector('[aria-label="Rewind preview quality: 720p"]'),
+    ).toBeInstanceOf(HTMLSpanElement);
     expect(getTab(container, "Recording").getAttribute("aria-selected")).toBe(
       "false",
     );
@@ -347,6 +350,9 @@ describe("RecorderControlsOverlayPage", () => {
     managedRecorderState.captureMode = "session";
     await renderOverlay();
 
+    expect(
+      container.querySelector('[aria-label^="Rewind preview quality:"]'),
+    ).toBeNull();
     expect(queryButton(container, "Save last 60 seconds")).toBeNull();
     expect(getTab(container, "Recording").getAttribute("aria-selected")).toBe(
       "true",
@@ -499,6 +505,32 @@ describe("RecorderControlsOverlayPage", () => {
     getButton(container, "Start recording").click();
     expect(managedRecorderState.startRunRecording).toHaveBeenCalledTimes(1);
     expect(managedRecorderState.startBuffer).not.toHaveBeenCalled();
+  });
+
+  it("shows the configured quality only in expanded rewind mode", async () => {
+    await renderOverlay();
+    expect(
+      container.querySelector('[aria-label="Rewind preview quality: 720p"]'),
+    ).toBeInstanceOf(HTMLSpanElement);
+
+    settingsState.value = {
+      ...createDefaultSettings(),
+      replayClipPreviewResolution: "1080p",
+    };
+    await renderOverlay();
+
+    expect(
+      container.querySelector('[aria-label="Rewind preview quality: 1080p"]'),
+    ).toBeInstanceOf(HTMLSpanElement);
+
+    await act(async () => {
+      modeChangedListener?.("minimized");
+      await flushPromises();
+    });
+
+    expect(
+      container.querySelector('[aria-label^="Rewind preview quality:"]'),
+    ).toBeNull();
   });
 
   it("reacts to recorder overlay mode changes from main", async () => {

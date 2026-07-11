@@ -35,6 +35,7 @@ export interface ReplayClipDetail {
   clip: ReplayClipView;
   durationSeconds: number | null;
   mediaUrl: string | null;
+  previewMediaUrl?: string | null;
 }
 
 export interface ReplayClipSourceDetail {
@@ -68,6 +69,11 @@ export interface ReplayClipUpdateInput {
 
 export interface ReplayClipOperationProgress {
   operationRequestId: string;
+  progress: number;
+}
+
+export interface ReplayClipPreviewProgress {
+  clipId: string;
   progress: number;
 }
 

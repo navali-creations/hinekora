@@ -135,6 +135,12 @@ describe("ManagedRecorderRewindSettingsFields", () => {
     expect(getDurationInput().value).toBe("");
     expect(getPresetButton("15").getAttribute("aria-pressed")).toBe("true");
     expect(container.textContent).toContain("seconds");
+    expect(container.textContent).toContain("Preview quality");
+    expect(
+      container
+        .querySelector('button[aria-label="Use 720p preview quality"]')
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(container.textContent).toContain("Start rewind automatically");
     expect(container.textContent).toContain("Hide overlays from rewind");
     expect(getOverlayCheckbox().checked).toBe(true);

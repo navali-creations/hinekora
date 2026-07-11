@@ -118,6 +118,10 @@ interface DashboardE2EApi {
     operationRequestId: string;
     progress: number;
   }) => void;
+  emitReplayClipPreviewProgress: (progress: {
+    clipId: string;
+    progress: number;
+  }) => void;
   emitRecorderOverlayVisibility: (visible: boolean) => void;
   setCaptureSources: (sources: CapturePreviewSource[]) => void;
 }
@@ -470,6 +474,10 @@ async function setupDashboardE2E(
         settingsChanged?: (settings: AppSettings) => void;
         replayClipOperationProgress?: (progress: {
           operationRequestId: string;
+          progress: number;
+        }) => void;
+        replayClipPreviewProgress?: (progress: {
+          clipId: string;
           progress: number;
         }) => void;
         replayClipStatusChanged?: (clip: ReplayClipDetail["clip"]) => void;
@@ -1267,6 +1275,11 @@ async function setupDashboardE2E(
 
               return unsubscribe;
             },
+            onPreviewProgress: (callback) => {
+              listeners.replayClipPreviewProgress = callback;
+
+              return unsubscribe;
+            },
           },
         ),
         savedEdits: createBridgeDomain<DashboardE2EElectron["savedEdits"]>(
@@ -1288,6 +1301,18 @@ async function setupDashboardE2E(
         settings: createBridgeDomain<DashboardE2EElectron["settings"]>(
           "settings",
           {
+            dismissClipPreviewInfoAlert: async () => {
+              const input = { clipPreviewInfoAlertDismissed: true };
+              calls.settingsUpdates.push(input);
+              settings = { ...settings, ...input };
+              listeners.settingsChanged?.(clone(settings));
+
+              return {
+                clipPreviewInfoAlertDismissed: true,
+                telemetryCrashReporting: settings.telemetryCrashReporting,
+                telemetryUsageAnalytics: settings.telemetryUsageAnalytics,
+              };
+            },
             get: async () => clone(settings),
             onChanged: (callback) => {
               listeners.settingsChanged = callback;
@@ -1371,6 +1396,9 @@ async function setupDashboardE2E(
             operationRequestId: progress.operationRequestId,
             progress: progress.progress,
           });
+        },
+        emitReplayClipPreviewProgress: (progress) => {
+          listeners.replayClipPreviewProgress?.(clone(progress));
         },
         emitReplayClipStatusChanged: (clip) => {
           calls.replayClipStatusChangedCalls.push(clip.id);
@@ -1475,6 +1503,21 @@ async function emitDashboardReplayClipProgress(
   }, progress);
 }
 
+async function emitDashboardReplayClipPreviewProgress(
+  page: Page,
+  progress: { clipId: string; progress: number },
+) {
+  await page.evaluate((nextProgress) => {
+    const e2eWindow = window as unknown as {
+      __HINEKORA_DASHBOARD_E2E_API__: DashboardE2EApi;
+    };
+
+    e2eWindow.__HINEKORA_DASHBOARD_E2E_API__.emitReplayClipPreviewProgress(
+      nextProgress,
+    );
+  }, progress);
+}
+
 async function emitDashboardReplayClipStatusChanged(
   page: Page,
   clip: ReplayClipDetail["clip"],
@@ -1539,6 +1582,7 @@ export {
   emitDashboardPoeProcessStart,
   emitDashboardPoeProcessStop,
   emitDashboardRecorderOverlayVisibility,
+  emitDashboardReplayClipPreviewProgress,
   emitDashboardReplayClipProgress,
   emitDashboardReplayClipStatusChanged,
   expectNoUnexpectedDashboardBridgeCalls,

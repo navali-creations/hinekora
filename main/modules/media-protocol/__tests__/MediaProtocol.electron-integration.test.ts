@@ -40,8 +40,11 @@ describe.runIf(process.platform === "win32")(
 );
 
 async function transpileMediaModules(outputDirectory: string): Promise<string> {
-  const sourceDirectory = resolve("main/modules/replay-clips");
-  for (const fileName of ["ReplayClips.range.ts", "ReplayClips.media.ts"]) {
+  const sourceDirectory = resolve("main/modules/media-protocol");
+  for (const fileName of [
+    "MediaProtocol.range.ts",
+    "MediaProtocol.response.ts",
+  ]) {
     const source = await readFile(join(sourceDirectory, fileName), "utf8");
     const output = ts.transpileModule(source, {
       compilerOptions: {
@@ -57,7 +60,7 @@ async function transpileMediaModules(outputDirectory: string): Promise<string> {
     );
   }
 
-  return join(outputDirectory, "ReplayClips.media.js");
+  return join(outputDirectory, "MediaProtocol.response.js");
 }
 
 async function runElectronProbe(

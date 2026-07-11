@@ -11,10 +11,12 @@ interface UseClipPreviewTrimRailDragInput {
   durationSeconds: number;
   trim: ClipPreviewTrimRange;
   onSeek: (seconds: number, options?: { preservePlayback?: boolean }) => void;
-  onTrimChange: (
+  onTrimCommit: (trim: ClipPreviewTrimRange) => void;
+  onTrimPreview: (
     trim: ClipPreviewTrimRange,
-    options?: { previewSeconds: number },
+    options: { previewSeconds: number },
   ) => void;
+  syncTrimPresentation: (trim: ClipPreviewTrimRange) => void;
 }
 type TrimDragState =
   | { edge: TrimDragEdge; kind: "edge"; pointerId: number }
@@ -99,7 +101,6 @@ export type { TrimDragEdge, TrimDragState, UseClipPreviewTrimRailDragInput };
 export {
   createTrimEdgeDragRange,
   createTrimSelectionDragRange,
-  moveThrottleMs,
   readTrimRailBounds,
   resolveTrimRailSeconds,
   resolveTrimRailSeekSeconds,

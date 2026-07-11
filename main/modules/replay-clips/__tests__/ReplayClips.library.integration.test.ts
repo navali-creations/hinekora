@@ -154,9 +154,9 @@ describe("Replay clip library integration", () => {
         createdAt: "2026-06-12T10:00:00.000Z",
       }),
     );
-    const listLibraryPageSpy = vi.spyOn(
+    const listLibraryItemsSpy = vi.spyOn(
       ReplayClipsRepository.prototype,
-      "listLibraryPage",
+      "listLibraryItems",
     );
 
     const page = await service.listEditorReplayDetailPage({
@@ -177,37 +177,28 @@ describe("Replay clip library integration", () => {
     expect(page.totalCount).toBe(2);
     expect(nextPage.items).toEqual([]);
     expect(nextPage.totalCount).toBe(2);
-    expect(listLibraryPageSpy).toHaveBeenCalledTimes(3);
-    expect(listLibraryPageSpy).toHaveBeenNthCalledWith(1, {
+    expect(listLibraryItemsSpy).toHaveBeenCalledTimes(2);
+    expect(listLibraryItemsSpy).toHaveBeenNthCalledWith(1, {
       filter: {
         kind: "death",
         mediaPathOnly: true,
         positiveMediaOnly: true,
       },
+      offset: 0,
       pageIndex: 0,
-      pageSize: 5,
+      pageSize: 100,
       sortBy: "createdAt",
       sortDirection: "desc",
     });
-    expect(listLibraryPageSpy).toHaveBeenNthCalledWith(2, {
+    expect(listLibraryItemsSpy).toHaveBeenNthCalledWith(2, {
       filter: {
         kind: "death",
         mediaPathOnly: true,
         positiveMediaOnly: true,
       },
+      offset: 5,
       pageIndex: 0,
-      pageSize: 5,
-      sortBy: "createdAt",
-      sortDirection: "desc",
-    });
-    expect(listLibraryPageSpy).toHaveBeenNthCalledWith(3, {
-      filter: {
-        kind: "death",
-        mediaPathOnly: true,
-        positiveMediaOnly: true,
-      },
-      pageIndex: 1,
-      pageSize: 5,
+      pageSize: 100,
       sortBy: "createdAt",
       sortDirection: "desc",
     });
@@ -375,9 +366,9 @@ describe("Replay clip library integration", () => {
         }),
       );
     }
-    const listLibraryPageSpy = vi.spyOn(
+    const listLibraryItemsSpy = vi.spyOn(
       ReplayClipsRepository.prototype,
-      "listLibraryPage",
+      "listLibraryItems",
     );
 
     const page = await service.listEditorReplayDetailPage({
@@ -387,15 +378,16 @@ describe("Replay clip library integration", () => {
     });
 
     expect(page).toEqual({ items: [], totalCount: 10 });
-    expect(listLibraryPageSpy).toHaveBeenCalledTimes(1);
-    expect(listLibraryPageSpy).toHaveBeenCalledWith({
+    expect(listLibraryItemsSpy).toHaveBeenCalledTimes(1);
+    expect(listLibraryItemsSpy).toHaveBeenCalledWith({
       filter: {
         kind: "death",
         mediaPathOnly: true,
         positiveMediaOnly: true,
       },
-      pageIndex: 1000,
-      pageSize: 5,
+      offset: 5000,
+      pageIndex: 0,
+      pageSize: 100,
       sortBy: "createdAt",
       sortDirection: "desc",
     });

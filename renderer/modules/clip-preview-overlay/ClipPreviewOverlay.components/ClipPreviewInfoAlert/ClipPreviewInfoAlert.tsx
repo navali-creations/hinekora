@@ -1,16 +1,24 @@
+import { useState } from "react";
 import { FiInfo } from "react-icons/fi";
 
 import { useSettingsShallow } from "~/renderer/store";
 
 function ClipPreviewInfoAlert() {
-  const { settingsValue, updateSettings } = useSettingsShallow((settings) => ({
+  const [dismissError, setDismissError] = useState<string | null>(null);
+  const settingsValue = useSettingsShallow((settings) => ({
     settingsValue: settings.value,
-    updateSettings: settings.update,
-  }));
+  })).settingsValue;
 
   const handleDismiss = () => {
-    void updateSettings({
-      clipPreviewInfoAlertDismissed: true,
+    const dismiss = window.electron.settings.dismissClipPreviewInfoAlert;
+    if (!dismiss) {
+      setDismissError("Could not dismiss this message.");
+      return;
+    }
+
+    setDismissError(null);
+    void dismiss().catch(() => {
+      setDismissError("Could not dismiss this message.");
     });
   };
 
@@ -36,6 +44,11 @@ function ClipPreviewInfoAlert() {
       >
         Dismiss
       </button>
+      {dismissError && (
+        <span className="col-span-3 text-error" role="alert">
+          {dismissError}
+        </span>
+      )}
     </div>
   );
 }

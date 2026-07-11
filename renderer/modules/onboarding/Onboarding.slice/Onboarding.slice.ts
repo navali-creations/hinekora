@@ -108,11 +108,11 @@ const createOnboardingSlice: BoundStoreStateCreator<OnboardingSlice> = (
 
         try {
           const settings = await window.electron.settings.get();
-          const persistedDismissed = Array.isArray(
-            settings.onboardingDismissedBeacons,
-          )
-            ? settings.onboardingDismissedBeacons
-            : [];
+          const persistedDismissed =
+            "onboardingDismissedBeacons" in settings &&
+            Array.isArray(settings.onboardingDismissedBeacons)
+              ? settings.onboardingDismissedBeacons
+              : [];
           const sanitizedDismissed =
             sanitizeOnboardingBeaconIds(persistedDismissed);
 

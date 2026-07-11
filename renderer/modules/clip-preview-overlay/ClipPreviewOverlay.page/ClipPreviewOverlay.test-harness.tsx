@@ -10,9 +10,11 @@ import { ClipPreviewOverlayPage } from "./ClipPreviewOverlay.page";
 
 interface ClipPreviewOverlayStoreMocks {
   copyClip: Mock;
+  dismissClipPreviewInfoAlert: Mock;
   getClip: Mock;
   hideClipPreview: Mock;
   onOperationProgress: Mock;
+  onPreviewProgress: Mock;
   onStatusChanged: Mock;
   openClip: Mock;
   openEditorClip: Mock;
@@ -20,7 +22,6 @@ interface ClipPreviewOverlayStoreMocks {
   revealClip: Mock;
   settingsValue: AppSettings | null;
   updateClip: Mock;
-  updateSettings: Mock;
   useSettingsShallow: Mock;
   writeClipPreviewEvent: Mock;
 }
@@ -28,8 +29,13 @@ interface ClipPreviewOverlayStoreMocks {
 let container: HTMLDivElement;
 let root: Root;
 let originalFastSeekDescriptor: PropertyDescriptor | undefined;
+let originalLoadDescriptor: PropertyDescriptor | undefined;
+let originalPauseDescriptor: PropertyDescriptor | undefined;
 let operationProgressListener:
   | Parameters<typeof window.electron.replayClips.onOperationProgress>[0]
+  | null = null;
+let previewProgressListener:
+  | Parameters<typeof window.electron.replayClips.onPreviewProgress>[0]
   | null = null;
 let statusChangedListener:
   | Parameters<typeof window.electron.replayClips.onStatusChanged>[0]
@@ -107,6 +113,14 @@ function emitOperationProgress(
   operationProgressListener?.(progress);
 }
 
+function emitPreviewProgress(
+  progress: Parameters<
+    Parameters<typeof window.electron.replayClips.onPreviewProgress>[0]
+  >[0],
+): void {
+  previewProgressListener?.(progress);
+}
+
 function emitStatusChanged(
   clip: Parameters<
     Parameters<typeof window.electron.replayClips.onStatusChanged>[0]
@@ -129,6 +143,22 @@ function setupClipPreviewOverlayTestHarness(
       HTMLVideoElement.prototype,
       "fastSeek",
     );
+    originalLoadDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      "load",
+    );
+    originalPauseDescriptor = Object.getOwnPropertyDescriptor(
+      HTMLMediaElement.prototype,
+      "pause",
+    );
+    Object.defineProperty(HTMLMediaElement.prototype, "load", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Object.defineProperty(HTMLMediaElement.prototype, "pause", {
+      configurable: true,
+      value: vi.fn(),
+    });
     window.location.hash = "#/clip-preview-overlay?clipId=clip-1";
     const clip = createReplayClipView({
       id: "clip-1",
@@ -142,6 +172,7 @@ function setupClipPreviewOverlayTestHarness(
       mediaUrl: "hinekora-media://replay-clip/main-provided-clip-1",
     });
     operationProgressListener = null;
+    previewProgressListener = null;
     statusChangedListener = null;
     storeMocks.onOperationProgress.mockImplementation(
       (
@@ -150,6 +181,17 @@ function setupClipPreviewOverlayTestHarness(
         >[0],
       ) => {
         operationProgressListener = listener;
+
+        return vi.fn();
+      },
+    );
+    storeMocks.onPreviewProgress.mockImplementation(
+      (
+        listener: Parameters<
+          typeof window.electron.replayClips.onPreviewProgress
+        >[0],
+      ) => {
+        previewProgressListener = listener;
 
         return vi.fn();
       },
@@ -172,16 +214,20 @@ function setupClipPreviewOverlayTestHarness(
     storeMocks.revealClip.mockResolvedValue({ error: null, ok: true });
     storeMocks.requestFullscreen.mockResolvedValue(undefined);
     storeMocks.settingsValue = createDefaultSettings();
-    storeMocks.updateSettings.mockImplementation(
-      (input: Partial<AppSettings>) => {
-        storeMocks.settingsValue = {
-          ...storeMocks.settingsValue,
-          ...input,
-        } as AppSettings;
+    storeMocks.dismissClipPreviewInfoAlert.mockImplementation(() => {
+      storeMocks.settingsValue = {
+        ...storeMocks.settingsValue,
+        clipPreviewInfoAlertDismissed: true,
+      } as AppSettings;
 
-        return Promise.resolve();
-      },
-    );
+      return Promise.resolve({
+        clipPreviewInfoAlertDismissed: true,
+        telemetryCrashReporting:
+          storeMocks.settingsValue.telemetryCrashReporting,
+        telemetryUsageAnalytics:
+          storeMocks.settingsValue.telemetryUsageAnalytics,
+      });
+    });
     storeMocks.updateClip.mockResolvedValue({
       detail: {
         clip: createReplayClipView({
@@ -197,14 +243,8 @@ function setupClipPreviewOverlayTestHarness(
       ok: true,
     });
     storeMocks.useSettingsShallow.mockImplementation(
-      (
-        selector: (state: {
-          update: Mock;
-          value: AppSettings | null;
-        }) => unknown,
-      ) =>
+      (selector: (state: { value: AppSettings | null }) => unknown) =>
         selector({
-          update: storeMocks.updateSettings,
           value: storeMocks.settingsValue,
         }),
     );
@@ -230,9 +270,13 @@ function setupClipPreviewOverlayTestHarness(
           copy: storeMocks.copyClip,
           get: storeMocks.getClip,
           onOperationProgress: storeMocks.onOperationProgress,
+          onPreviewProgress: storeMocks.onPreviewProgress,
           onStatusChanged: storeMocks.onStatusChanged,
           reveal: storeMocks.revealClip,
           update: storeMocks.updateClip,
+        },
+        settings: {
+          dismissClipPreviewInfoAlert: storeMocks.dismissClipPreviewInfoAlert,
         },
       },
     });
@@ -244,6 +288,7 @@ function setupClipPreviewOverlayTestHarness(
     });
     container.remove();
     operationProgressListener = null;
+    previewProgressListener = null;
     statusChangedListener = null;
     window.location.hash = "";
     if (originalFastSeekDescriptor) {
@@ -256,6 +301,22 @@ function setupClipPreviewOverlayTestHarness(
       Reflect.deleteProperty(HTMLVideoElement.prototype, "fastSeek");
     }
     originalFastSeekDescriptor = undefined;
+    if (originalLoadDescriptor) {
+      Object.defineProperty(
+        HTMLMediaElement.prototype,
+        "load",
+        originalLoadDescriptor,
+      );
+    }
+    if (originalPauseDescriptor) {
+      Object.defineProperty(
+        HTMLMediaElement.prototype,
+        "pause",
+        originalPauseDescriptor,
+      );
+    }
+    originalLoadDescriptor = undefined;
+    originalPauseDescriptor = undefined;
     vi.clearAllMocks();
     vi.unstubAllGlobals();
     vi.useRealTimers();
@@ -267,6 +328,7 @@ export {
   container,
   createDeferred,
   emitOperationProgress,
+  emitPreviewProgress,
   emitStatusChanged,
   findButton,
   findButtonByLabel,

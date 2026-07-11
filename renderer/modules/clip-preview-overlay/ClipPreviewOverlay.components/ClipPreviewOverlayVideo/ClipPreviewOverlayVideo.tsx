@@ -12,8 +12,9 @@ import {
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
 import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.css";
-import { resolveClipPreviewMediaState } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+import { resolveClipPreviewMediaState } from "../../ClipPreviewOverlay.page/useClipPreviewOverlayMediaWorkflow/useClipPreviewOverlayMediaWorkflow.utils";
 import { useClipPreviewOverlayMediaContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
+import { ClipPreviewPreparingState } from "../ClipPreviewPreparingState/ClipPreviewPreparingState";
 
 function ClipPreviewOverlayVideo() {
   const workflow = useClipPreviewOverlayMediaContext();
@@ -52,13 +53,7 @@ function ClipPreviewOverlayVideo() {
   const playbackLabel = isPlaying ? "Pause replay" : "Play replay";
 
   return (
-    <div
-      className={clsx(
-        styles.videoShell,
-        isPreparingClip && styles.videoShellPreparing,
-      )}
-      data-clip-preview-video-shell=""
-    >
+    <div className={styles.videoShell} data-clip-preview-video-shell="">
       {mediaError ? (
         <div className={styles.empty}>
           <strong>Preview unavailable</strong>
@@ -168,16 +163,10 @@ function ClipPreviewOverlayVideo() {
               <Fullscreen size={15} />
             </button>
           </div>
+          {isPreparingClip && <ClipPreviewPreparingState />}
         </>
       ) : (
-        <div
-          className={clsx(
-            styles.empty,
-            isPreparingClip && styles.emptyPreparing,
-          )}
-        >
-          Preparing preview
-        </div>
+        <ClipPreviewPreparingState />
       )}
     </div>
   );

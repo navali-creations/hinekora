@@ -69,6 +69,14 @@
   color: var(--color-base-content);
 }
 
+.previewQualityChip {
+  border: var(--border) solid
+    color-mix(in oklch, var(--color-primary) 38%, transparent);
+  border-radius: var(--radius-field);
+  background: color-mix(in oklch, var(--color-primary) 18%, transparent);
+  color: color-mix(in oklch, var(--color-base-content) 88%, transparent);
+}
+
 .profileSelect {
   -webkit-app-region: no-drag;
 }

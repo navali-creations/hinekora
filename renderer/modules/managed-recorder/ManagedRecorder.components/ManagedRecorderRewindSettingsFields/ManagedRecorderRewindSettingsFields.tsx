@@ -15,6 +15,7 @@ import {
 import { useManagedRecorderSettingsDisabled } from "../../ManagedRecorder.hooks/useManagedRecorderSettingsDisabled/useManagedRecorderSettingsDisabled";
 import { ManagedRecorderAutoStartToggle } from "../ManagedRecorderAutoStartToggle/ManagedRecorderAutoStartToggle";
 import { ManagedRecorderOverlayCaptureToggle } from "../ManagedRecorderOverlayCaptureToggle/ManagedRecorderOverlayCaptureToggle";
+import { ManagedRecorderPreviewQualityField } from "../ManagedRecorderPreviewQualityField/ManagedRecorderPreviewQualityField";
 import { ManagedRecorderSettingsToggle } from "../ManagedRecorderSettingsToggle/ManagedRecorderSettingsToggle";
 
 const rewindAutoStartHelp =
@@ -192,6 +193,10 @@ function ManagedRecorderRewindSettingsFields() {
             seconds
           </span>
         </div>
+      </div>
+
+      <div className="border-base-content/10 border-t pt-3">
+        <ManagedRecorderPreviewQualityField />
       </div>
 
       <div className="border-base-content/10 border-t pt-3">

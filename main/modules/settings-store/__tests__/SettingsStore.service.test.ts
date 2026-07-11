@@ -200,6 +200,8 @@ describe("SettingsStoreService", () => {
           auraOverlayShowEditingFrame:
             updatedSettings.auraOverlayShowEditingFrame,
           deathClipSeconds: updatedSettings.deathClipSeconds,
+          replayClipPreviewResolution:
+            updatedSettings.replayClipPreviewResolution,
           selectedCaptureProfileId: updatedSettings.selectedCaptureProfileId,
           selectedCaptureProfileIdsByGame:
             updatedSettings.selectedCaptureProfileIdsByGame,
@@ -215,6 +217,8 @@ describe("SettingsStoreService", () => {
           auraOverlayShowEditingFrame:
             updatedSettings.auraOverlayShowEditingFrame,
           deathClipSeconds: updatedSettings.deathClipSeconds,
+          replayClipPreviewResolution:
+            updatedSettings.replayClipPreviewResolution,
           selectedCaptureProfileId: updatedSettings.selectedCaptureProfileId,
           selectedCaptureProfileIdsByGame:
             updatedSettings.selectedCaptureProfileIdsByGame,
@@ -325,6 +329,7 @@ describe("SettingsStoreService", () => {
       const expectedOverlaySnapshot = {
         activeGame: fullSettings.activeGame,
         deathClipSeconds: fullSettings.deathClipSeconds,
+        replayClipPreviewResolution: fullSettings.replayClipPreviewResolution,
         selectedCaptureProfileId: fullSettings.selectedCaptureProfileId,
         selectedCaptureProfileIdsByGame:
           fullSettings.selectedCaptureProfileIdsByGame,

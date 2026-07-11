@@ -1,7 +1,7 @@
 import { readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { parseMediaRange } from "~/main/modules/replay-clips/ReplayClips.range";
+import { parseMediaRange } from "~/main/modules/media-protocol/MediaProtocol.range";
 
 function fetchLocalFileForTests(
   url: string,

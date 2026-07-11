@@ -5,7 +5,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import * as EditorFfmpeg from "~/main/modules/editor/Editor.ffmpeg";
 import { WindowName } from "~/main/modules/main-window";
-import { OverlayWindowsService } from "~/main/modules/overlay-windows";
 import {
   createReplayClip,
   createReplayClipView,
@@ -14,6 +13,10 @@ import { mockIpcMainHandlers } from "~/main/test/ipc";
 import { registerIpcWindowRole } from "~/main/utils/ipc-window-roles";
 
 import { ReplayClipsChannel } from "../ReplayClips.channels";
+import {
+  createUpdatedClipForStoredPath,
+  resolveReplayClipQuickTrim,
+} from "../ReplayClips.file-actions";
 import { resolveReplayClipRenameTarget } from "../ReplayClips.file-operations";
 import { ReplayClipsService } from "../ReplayClips.service";
 import {
@@ -53,23 +56,21 @@ vi.mock("electron", () => ({
 
 setupReplayClipsServiceTestHarness(electronMocks);
 
+function getFileActionsService(): unknown {
+  return (
+    service as unknown as {
+      fileActionsService: unknown;
+    }
+  ).fileActionsService;
+}
+
 describe("ReplayClipsService boundaries", () => {
   it("registers media protocol setup defensively", () => {
     expect(new ReplayClipsService()).toBeInstanceOf(ReplayClipsService);
   });
 
   it("covers copy input validation and trim clamp edge cases", () => {
-    const internals = service as unknown as {
-      resolveReplayClipQuickTrim: (
-        trim: { inSeconds: number; outSeconds: number },
-        durationSeconds: number,
-      ) => {
-        inSeconds: number;
-        outSeconds: number;
-      };
-    };
-
-    const copiedTrim = internals.resolveReplayClipQuickTrim(
+    const copiedTrim = resolveReplayClipQuickTrim(
       {
         inSeconds: Number.NaN,
         outSeconds: Number.NaN,
@@ -111,27 +112,34 @@ describe("ReplayClipsService boundaries", () => {
   it("covers replay clip service internals for edge branches", async () => {
     const internals = service as unknown as {
       getClipView(id: string): unknown;
-      getStoredClipMediaPath(id: string): string | null;
-      queueClipFileOperation: <T>(
+      resolveReplayTriggerBatchQueued: (
         clipId: string,
-        operation: () => Promise<T>,
-      ) => Promise<T>;
-      showClipPreviewOverlay: (clip: unknown) => void;
+        events: [],
+      ) => Promise<unknown>;
       resolveReplayClipRenameTarget: (
         sourcePath: string,
         name: string | null,
       ) => string | null;
+      storageService: {
+        getStoredClipMediaPath(id: string): string | null;
+      };
+    };
+    const fileActions = getFileActionsService() as {
+      queueClipFileOperation: <T>(
+        clipId: string,
+        operation: () => Promise<T>,
+      ) => Promise<T>;
     };
 
     await expect(
-      internals
+      fileActions
         .queueClipFileOperation("clip-1", () => {
           return Promise.reject(new Error("boom"));
         })
         .catch(() => undefined),
     ).resolves.toBeUndefined();
     await expect(
-      internals.queueClipFileOperation("clip-1", () => Promise.resolve("ok")),
+      fileActions.queueClipFileOperation("clip-1", () => Promise.resolve("ok")),
     ).resolves.toBe("ok");
 
     const originalOnlyPath = join(root, "2026-06-12_10-36-00.mp4");
@@ -142,21 +150,14 @@ describe("ReplayClipsService boundaries", () => {
         processedClipPath: null,
       }),
     );
-    expect(internals.getStoredClipMediaPath("original-only")).toBe(
-      resolve(originalOnlyPath),
-    );
+    expect(
+      internals.storageService.getStoredClipMediaPath("original-only"),
+    ).toBe(resolve(originalOnlyPath));
     expect(internals.getClipView("missing-view")).toBeNull();
-
-    vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
-      showClipPreviewOverlay: () => Promise.reject(new Error("overlay failed")),
-    } as unknown as OverlayWindowsService);
-    internals.showClipPreviewOverlay(
-      createReplayClip({
-        id: "clip-overlay",
-        processedClipPath: join(root, "clip-overlay.mp4"),
-      }),
-    );
-    await Promise.resolve();
+    expect(service.getMediaPath("missing-view")).toBeNull();
+    await expect(
+      internals.resolveReplayTriggerBatchQueued("missing-view", []),
+    ).resolves.toBeNull();
 
     const sourcePath = join(root, "renamed.mp4");
     const sourceConflict = join(root, "renamed (2).mp4");
@@ -214,7 +215,7 @@ describe("ReplayClipsService boundaries", () => {
   });
 
   it("covers remaining helper branches in clip update and queue internals", async () => {
-    const helperService = service as unknown as {
+    const helperService = getFileActionsService() as {
       queueClipFileOperation: <T>(
         clipId: string,
         operation: () => Promise<T>,
@@ -225,21 +226,6 @@ describe("ReplayClipsService boundaries", () => {
         sourcePath: string;
         trim: { inSeconds: number; outSeconds: number };
       }) => Promise<void>;
-      resolveReplayClipRenameTarget: (
-        sourcePath: string,
-        name: string | null,
-      ) => string | null;
-      resolveReplayClipQuickTrim: (
-        trim: { inSeconds: number; outSeconds: number },
-        durationSeconds: number,
-      ) => { inSeconds: number; outSeconds: number };
-      createUpdatedClipForStoredPath: (input: {
-        clip: ReturnType<typeof createReplayClip>;
-        durationSeconds: number | null;
-        path: string;
-        sizeBytes: number;
-      }) => ReturnType<typeof createReplayClip>;
-      clipFileOperationQueues: Map<string, Promise<unknown>>;
     };
 
     const sourcePath = join(root, "2026-06-12_10-30-00.mp4");
@@ -288,17 +274,6 @@ describe("ReplayClipsService boundaries", () => {
       ),
     ).resolves.toBe("done");
 
-    helperService.clipFileOperationQueues.set(
-      "clip-helpers",
-      Promise.reject(new Error("seed")),
-    );
-    await expect(
-      helperService.queueClipFileOperation(
-        "clip-helpers",
-        async () => "chained",
-      ),
-    ).resolves.toBe("chained");
-
     await expect(
       resolveReplayClipRenameTarget(sourceWithoutExt, "Renamed"),
     ).resolves.toBe(resolve(join(root, "Renamed.mp4")));
@@ -327,7 +302,7 @@ describe("ReplayClipsService boundaries", () => {
       originalObsPath: sourcePath,
       processedClipPath: null,
     });
-    const updatedClip = helperService.createUpdatedClipForStoredPath({
+    const updatedClip = createUpdatedClipForStoredPath({
       clip: clipWithNoProcessedPath,
       durationSeconds: 10,
       path: sourcePath,
@@ -336,10 +311,7 @@ describe("ReplayClipsService boundaries", () => {
     expect(updatedClip.processedClipPath).toBeNull();
 
     expect(
-      helperService.resolveReplayClipQuickTrim(
-        { inSeconds: 0, outSeconds: 20 },
-        Infinity,
-      ),
+      resolveReplayClipQuickTrim({ inSeconds: 0, outSeconds: 20 }, Infinity),
     ).toEqual({ inSeconds: 0, outSeconds: 20 });
 
     await expect(
@@ -505,6 +477,7 @@ describe("ReplayClipsService boundaries", () => {
       clip: rendererClip,
       durationSeconds: null,
       mediaUrl: "hinekora-media://replay-clip/clip-1",
+      previewMediaUrl: null,
     });
     expect(await handlers.get(ReplayClipsChannel.ListLibrary)?.({})).toEqual(
       expect.objectContaining({ items: [clipView] }),
@@ -569,6 +542,7 @@ describe("ReplayClipsService boundaries", () => {
       clip: rendererClip,
       durationSeconds: null,
       mediaUrl: "hinekora-media://replay-clip/clip-1",
+      previewMediaUrl: null,
     });
     expect(() =>
       handlers.get(ReplayClipsChannel.Open)?.(clipPreviewEvent, "clip-1"),
@@ -757,5 +731,10 @@ describe("ReplayClipsService boundaries", () => {
       ok: false,
       error: "id is too short",
     });
+    await handlers.get(ReplayClipsChannel.DeleteMany)?.({}, [
+      "clip-1",
+      "clip-1",
+    ]);
+    expect(ipcService.deleteManyClips).toHaveBeenLastCalledWith(["clip-1"]);
   });
 });

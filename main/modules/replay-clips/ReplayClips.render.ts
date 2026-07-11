@@ -2,6 +2,7 @@ import { basename } from "node:path";
 
 import { app } from "electron";
 
+import type { EditorExportResolution } from "~/main/modules/editor/Editor.dto";
 import {
   createEditorExportSegments,
   type EditorResolvedExportClip,
@@ -25,6 +26,8 @@ interface ReplayClipQuickTrimRenderInput {
   muteAudio?: boolean;
   onProgress?: (progress: number) => void;
   outputPath: string;
+  queuePolicy?: "preview";
+  resolution?: EditorExportResolution;
   sourcePath: string;
   trim: ReplayClipTrimInput;
 }
@@ -51,7 +54,10 @@ async function renderReplayClipQuickTrim(
     ...(input.onProgress ? { onProgress: input.onProgress } : {}),
     ...(input.muteAudio ? { muteAudio: true } : {}),
     outputPath: input.outputPath,
-    resolution: "1080p",
+    ...(input.queuePolicy === "preview"
+      ? { queueOptions: { priority: "high" as const, rejectIfBusy: true } }
+      : {}),
+    resolution: input.resolution ?? "1080p",
     segments,
   });
 }

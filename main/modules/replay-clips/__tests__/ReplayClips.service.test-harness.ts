@@ -2,24 +2,25 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, expect, type Mock, vi } from "vitest";
+import { afterEach, beforeEach, type Mock, vi } from "vitest";
 
 import { DatabaseService } from "~/main/modules/database";
+import { WindowName } from "~/main/modules/main-window";
 import { SettingsStoreService } from "~/main/modules/settings-store";
-import { fetchLocalFileForTests } from "~/main/test/local-file-fetch";
-import { clearIpcWindowRolesForTests } from "~/main/utils/ipc-window-roles";
+import {
+  clearIpcWindowRolesForTests,
+  registerIpcWindowRole,
+} from "~/main/utils/ipc-window-roles";
 
 import { createDefaultSettings } from "~/types";
+import { ReplayClipPreviewService } from "../ReplayClips.preview";
 import { ReplayClipsRepository } from "../ReplayClips.repository";
 import { ReplayClipsService } from "../ReplayClips.service";
 
 interface ReplayClipsElectronMocks {
   getAllWindows: ReturnType<typeof vi.fn>;
   getPath: ReturnType<typeof vi.fn>;
-  isProtocolHandled: ReturnType<typeof vi.fn>;
-  netFetch: ReturnType<typeof vi.fn>;
   openPath: ReturnType<typeof vi.fn>;
-  protocolHandle: ReturnType<typeof vi.fn>;
   showItemInFolder: ReturnType<typeof vi.fn>;
 }
 
@@ -31,7 +32,6 @@ let outsideRoot: string;
 let openPath: Mock<(path: string) => Promise<string>>;
 let send: Mock<(channel: string, payload: unknown) => void>;
 let showItemInFolder: Mock<(path: string) => void>;
-let activeElectronMocks: ReplayClipsElectronMocks;
 
 function createDeferred() {
   let resolve!: () => void;
@@ -42,20 +42,9 @@ function createDeferred() {
   return { promise, resolve };
 }
 
-function getReplayMediaProtocolHandler(): (
-  request: Request,
-) => Promise<Response> {
-  const protocolHandler = activeElectronMocks.protocolHandle.mock
-    .calls[0]?.[1] as ((request: Request) => Promise<Response>) | undefined;
-  expect(protocolHandler).toBeDefined();
-
-  return protocolHandler as (request: Request) => Promise<Response>;
-}
-
 function setupReplayClipsServiceTestHarness(
   electronMocks: ReplayClipsElectronMocks,
 ): void {
-  activeElectronMocks = electronMocks;
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "hinekora-replay-service-root-"));
     outsideRoot = mkdtempSync(
@@ -66,13 +55,12 @@ function setupReplayClipsServiceTestHarness(
     openPath = vi.fn<(path: string) => Promise<string>>().mockResolvedValue("");
     send = vi.fn<(channel: string, payload: unknown) => void>();
     showItemInFolder = vi.fn<(path: string) => void>();
+    const webContents = { id: 100, send };
+    registerIpcWindowRole(webContents, WindowName.ClipPreviewOverlay);
     electronMocks.getAllWindows.mockReturnValue([
-      { isDestroyed: () => false, webContents: { send } },
+      { isDestroyed: () => false, webContents },
     ]);
     electronMocks.getPath.mockReturnValue(join(root, "videos"));
-    electronMocks.isProtocolHandled.mockReturnValue(false);
-    electronMocks.netFetch.mockReset();
-    electronMocks.netFetch.mockImplementation(fetchLocalFileForTests);
     electronMocks.openPath.mockImplementation(openPath);
     electronMocks.showItemInFolder.mockImplementation(showItemInFolder);
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
@@ -81,15 +69,17 @@ function setupReplayClipsServiceTestHarness(
         recordingStoragePath: root,
       }),
     } as unknown as SettingsStoreService);
+    vi.spyOn(ReplayClipPreviewService.prototype, "prepare").mockResolvedValue(
+      null,
+    );
+    vi.spyOn(ReplayClipPreviewService.prototype, "remove").mockResolvedValue();
     service = new ReplayClipsService();
   });
 
   afterEach(() => {
     electronMocks.getAllWindows.mockReset();
     electronMocks.getPath.mockReset();
-    electronMocks.isProtocolHandled.mockReset();
     electronMocks.openPath.mockReset();
-    electronMocks.protocolHandle.mockReset();
     electronMocks.showItemInFolder.mockReset();
     vi.restoreAllMocks();
     clearIpcWindowRolesForTests();
@@ -104,7 +94,6 @@ export type { ReplayClipsElectronMocks };
 export {
   createDeferred,
   database,
-  getReplayMediaProtocolHandler,
   openPath,
   outsideRoot,
   repository,

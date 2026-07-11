@@ -1,112 +1,45 @@
 import type { PointerEvent } from "react";
-import { useEffect, useRef } from "react";
 
 import {
-  createTrimEdgeDragRange,
-  createTrimSelectionDragRange,
-  readTrimRailBounds,
-  resolveTrimRailSeconds,
   resolveTrimRailSeekSeconds,
   shouldProcessTrimRailMove,
-  type TrimDragEdge,
-  type TrimDragState,
   type UseClipPreviewTrimRailDragInput,
 } from "../ClipPreviewTrimRail.utils";
 import { useClipPreviewTrimEdgeDrag } from "../useClipPreviewTrimEdgeDrag/useClipPreviewTrimEdgeDrag";
 import { useClipPreviewTrimSelectionGrab } from "../useClipPreviewTrimSelectionGrab/useClipPreviewTrimSelectionGrab";
+import { useClipPreviewTrimDragController } from "./useClipPreviewTrimDragController";
 
 function useClipPreviewTrimRailDrag({
   disabled,
   durationSeconds,
   trim,
   onSeek,
-  onTrimChange,
+  onTrimCommit,
+  onTrimPreview,
+  syncTrimPresentation,
 }: UseClipPreviewTrimRailDragInput) {
-  const railRef = useRef<HTMLDivElement>(null);
-  const dragStateRef = useRef<TrimDragState | null>(null);
-  const durationSecondsRef = useRef(durationSeconds);
-  const railBoundsRef = useRef<{ left: number; width: number } | null>(null);
-  const trimRef = useRef(trim);
-  const lastDragMoveTimeRef = useRef(0);
+  const {
+    applySelectionDrag,
+    applyTrimDrag,
+    cacheRailBounds,
+    commitTrim,
+    dragStateRef,
+    lastDragMoveTimeRef,
+    railRef,
+    resolveTimelineSeconds,
+    trimRef,
+  } = useClipPreviewTrimDragController({
+    durationSeconds,
+    onTrimCommit,
+    onTrimPreview,
+    syncTrimPresentation,
+    trim,
+  });
   const { beginSelectionGrab, isSelectionDragging, resetSelectionGrab } =
     useClipPreviewTrimSelectionGrab({
       dragStateRef,
       lastDragMoveTimeRef,
     });
-  durationSecondsRef.current = durationSeconds;
-  trimRef.current = trim;
-
-  const cacheRailBounds = () => {
-    railBoundsRef.current = readTrimRailBounds(railRef.current);
-  };
-
-  const resolveTimelineSeconds = (clientX: number): number | null => {
-    if (!railBoundsRef.current) {
-      cacheRailBounds();
-    }
-    return resolveTrimRailSeconds({
-      bounds: railBoundsRef.current,
-      clientX,
-      durationSeconds: durationSecondsRef.current,
-    });
-  };
-
-  const applyTrimDrag = (edge: TrimDragEdge, clientX: number) => {
-    const seconds = resolveTimelineSeconds(clientX);
-    if (seconds === null) {
-      return;
-    }
-
-    const currentTrim = trimRef.current;
-    const nextTrim = createTrimEdgeDragRange({
-      durationSeconds: durationSecondsRef.current,
-      edge,
-      seconds,
-      trim: currentTrim,
-    });
-    if (
-      nextTrim.inSeconds === currentTrim.inSeconds &&
-      nextTrim.outSeconds === currentTrim.outSeconds
-    ) {
-      return;
-    }
-    onTrimChange(nextTrim, {
-      previewSeconds: edge === "end" ? nextTrim.outSeconds : nextTrim.inSeconds,
-    });
-  };
-
-  const applySelectionDrag = (
-    state: Extract<TrimDragState, { kind: "selection" }>,
-    clientX: number,
-  ) => {
-    const seconds = resolveTimelineSeconds(clientX);
-    if (seconds === null) {
-      return;
-    }
-
-    if (!state.canMove) {
-      return;
-    }
-
-    state.hasMoved = true;
-    const nextTrim = createTrimSelectionDragRange({
-      durationSeconds: durationSecondsRef.current,
-      grabOffsetSeconds: state.grabOffsetSeconds,
-      seconds,
-      trimDurationSeconds: state.trimDurationSeconds,
-    });
-    const currentTrim = trimRef.current;
-    if (
-      nextTrim.inSeconds === currentTrim.inSeconds &&
-      nextTrim.outSeconds === currentTrim.outSeconds
-    ) {
-      return;
-    }
-    onTrimChange(nextTrim, {
-      previewSeconds: nextTrim.inSeconds,
-    });
-  };
-
   const handleRailPointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (disabled) {
       return;
@@ -161,6 +94,9 @@ function useClipPreviewTrimRailDrag({
       } else if (dragState.canMove) {
         applySelectionDrag(dragState, event.clientX);
       }
+    }
+    if (dragState) {
+      commitTrim();
     }
     if (dragState?.kind === "selection" && !dragState.hasMoved) {
       onSeek(
@@ -219,14 +155,6 @@ function useClipPreviewTrimRailDrag({
     lastDragMoveTimeRef.current = 0;
     beginSelectionGrab(event.pointerId);
   };
-
-  useEffect(
-    () => () => {
-      lastDragMoveTimeRef.current = 0;
-      dragStateRef.current = null;
-    },
-    [],
-  );
 
   return {
     handleEndPointerDown,

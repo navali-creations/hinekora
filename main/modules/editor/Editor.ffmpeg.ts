@@ -5,6 +5,10 @@ import { rm, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
 import {
+  type MediaRenderQueueOptions,
+  mediaRenderQueue,
+} from "~/main/modules/media-render/MediaRender.queue";
+import {
   createSafePathLogFields,
   logInfo,
   logWarn,
@@ -26,13 +30,27 @@ const editorAudioProbeConcurrency = 4;
 const editorLogScope = "editor";
 const currentDir = __dirname;
 
-async function renderEditorExportWithFfmpeg(input: {
+interface EditorFfmpegRenderInput {
   muteAudio?: boolean;
   onProgress?: (progress: number) => void;
   outputPath: string;
+  queueOptions?: MediaRenderQueueOptions;
   resolution: EditorExportResolution;
   segments: EditorExportSegment[];
-}): Promise<void> {
+}
+
+async function renderEditorExportWithFfmpeg(
+  input: EditorFfmpegRenderInput,
+): Promise<void> {
+  return mediaRenderQueue.enqueue(
+    () => renderEditorExportWithFfmpegQueued(input),
+    input.queueOptions ?? {},
+  );
+}
+
+async function renderEditorExportWithFfmpegQueued(
+  input: EditorFfmpegRenderInput,
+): Promise<void> {
   const ffmpegPath = resolveEditorFfmpegPath();
   logEditorBinaryResolution("ffmpeg", ffmpegPath);
   /* v8 ignore next -- Depends on packaged binary availability, not business logic. */

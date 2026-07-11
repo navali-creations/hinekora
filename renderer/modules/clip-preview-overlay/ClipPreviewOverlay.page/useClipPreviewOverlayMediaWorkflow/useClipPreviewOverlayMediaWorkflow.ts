@@ -3,11 +3,11 @@ import { useCallback, useEffect, useRef } from "react";
 import { trackEvent } from "~/renderer/modules/umami";
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
-import type { ClipPreviewTrimRange } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
-import { resolveClipPreviewMediaState } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { useClipPreviewOverlayDiagnostics } from "../useClipPreviewOverlayDiagnostics/useClipPreviewOverlayDiagnostics";
 import { useClipPreviewOverlayPlayback } from "../useClipPreviewOverlayPlayback/useClipPreviewOverlayPlayback";
 import { useClipPreviewOverlayPlaybackPresentation } from "../useClipPreviewOverlayPlaybackPresentation/useClipPreviewOverlayPlaybackPresentation";
+import { useClipPreviewOverlayTrimWorkflow } from "../useClipPreviewOverlayTrimWorkflow/useClipPreviewOverlayTrimWorkflow";
+import { resolveClipPreviewMediaState } from "./useClipPreviewOverlayMediaWorkflow.utils";
 
 function useClipPreviewOverlayMediaWorkflow() {
   const hasUserAdjustedTrimRef = useRef(false);
@@ -177,36 +177,33 @@ function useClipPreviewOverlayMediaWorkflow() {
     incrementMediaVersion();
   }, [incrementMediaVersion, setMediaError]);
 
-  const handleTrimChange = useCallback(
-    (nextTrim: ClipPreviewTrimRange, options?: { previewSeconds: number }) => {
-      if (isProcessing) {
-        return;
-      }
+  const prepareForFileMutation = useCallback(() => {
+    const video = videoRef.current;
+    if (video) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+    }
+    setMediaReady(false);
+    setPlaying(false);
+  }, [setMediaReady, setPlaying, videoRef]);
 
-      hasUserAdjustedTrimRef.current = true;
-      setCopied(false);
-      setHasSavedClip(false);
-      setTrim(nextTrim);
-      setSaveMessage(null);
-      const currentPlaybackSeconds = getPlaybackSeconds();
-      if (options) {
-        seekPreview(options.previewSeconds);
-      } else if (currentPlaybackSeconds < nextTrim.inSeconds) {
-        seekPreview(nextTrim.inSeconds);
-      } else if (currentPlaybackSeconds > nextTrim.outSeconds) {
-        seekPreview(nextTrim.outSeconds);
-      }
-    },
-    [
+  const reloadAfterFileMutation = useCallback(() => {
+    setMediaError(null);
+    incrementMediaVersion();
+  }, [incrementMediaVersion, setMediaError]);
+
+  const { handleTrimCommit, handleTrimPreview } =
+    useClipPreviewOverlayTrimWorkflow({
       getPlaybackSeconds,
+      hasUserAdjustedTrimRef,
       isProcessing,
       seekPreview,
-      setHasSavedClip,
       setCopied,
+      setHasSavedClip,
       setSaveMessage,
       setTrim,
-    ],
-  );
+    });
 
   return {
     handleCanPlay,
@@ -224,8 +221,11 @@ function useClipPreviewOverlayMediaWorkflow() {
     handleTimeUpdate,
     handleToggleMuted,
     handleTogglePlayback,
-    handleTrimChange,
+    handleTrimCommit,
+    handleTrimPreview,
     handleVideoError,
+    prepareForFileMutation,
+    reloadAfterFileMutation,
     seekPreview,
     setPlaybackTimeElement,
     setPlayheadElement,

@@ -20,16 +20,16 @@ async function run() {
     throw new Error("Media probe arguments are missing");
   }
 
-  const { createReplayClipMediaFileResponse } = require(mediaModulePath);
+  const { createMediaFileResponse } = require(mediaModulePath);
   await app.whenReady();
   protocol.handle("hinekora-media", (request) =>
-    createReplayClipMediaFileResponse(mediaPath, request, (url, init) =>
-      net.fetch(url, init),
-    ),
+    createMediaFileResponse(mediaPath, request, (url, init) =>
+      net.fetch(url, init)
+    )
   );
   const response = await net.fetch(
     "hinekora-media://replay-clip/integration-probe",
-    { headers: { Range: "bytes=2-5" } },
+    { headers: { Range: "bytes=2-5" } }
   );
   const body = Buffer.from(await response.arrayBuffer()).toString("utf8");
   process.stdout.write(
@@ -39,7 +39,7 @@ async function run() {
       contentLength: response.headers.get("content-length"),
       contentRange: response.headers.get("content-range"),
       status: response.status,
-    })}\n`,
+    })}\n`
   );
 }
 

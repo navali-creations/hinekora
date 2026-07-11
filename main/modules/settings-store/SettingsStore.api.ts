@@ -1,22 +1,35 @@
 import { ipcRenderer } from "electron";
 
+import { unwrapIpcResult } from "~/main/utils/ipc-api";
+
 import type { AppSettings } from "~/types";
 import { SettingsStoreChannel } from "./SettingsStore.channels";
 import type {
   SettingsStoreClipPreviewOverlaySnapshot,
   SettingsStoreOverlaySnapshot,
-  SettingsStoreScopedSnapshot,
   SettingsUpdateInput,
 } from "./SettingsStore.dto";
 
 const SettingsStoreAPI = {
   scope: "full" as const,
-  get: (): Promise<AppSettings> => ipcRenderer.invoke(SettingsStoreChannel.Get),
+  get: (): Promise<AppSettings> =>
+    ipcRenderer.invoke(SettingsStoreChannel.Get).then(unwrapIpcResult),
   getClipPreviewOverlaySnapshot:
     (): Promise<SettingsStoreClipPreviewOverlaySnapshot> =>
-      ipcRenderer.invoke(SettingsStoreChannel.GetClipPreviewOverlaySnapshot),
+      ipcRenderer
+        .invoke(SettingsStoreChannel.GetClipPreviewOverlaySnapshot)
+        .then(unwrapIpcResult),
+  dismissClipPreviewInfoAlert:
+    (): Promise<SettingsStoreClipPreviewOverlaySnapshot> =>
+      ipcRenderer
+        .invoke(SettingsStoreChannel.Update, {
+          clipPreviewInfoAlertDismissed: true,
+        })
+        .then(unwrapIpcResult),
   getOverlaySnapshot: (): Promise<SettingsStoreOverlaySnapshot> =>
-    ipcRenderer.invoke(SettingsStoreChannel.GetOverlaySnapshot),
+    ipcRenderer
+      .invoke(SettingsStoreChannel.GetOverlaySnapshot)
+      .then(unwrapIpcResult),
   onChanged: (callback: (settings: AppSettings) => void): (() => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
@@ -63,10 +76,10 @@ const SettingsStoreAPI = {
     return () =>
       ipcRenderer.removeListener(SettingsStoreChannel.OverlayChanged, listener);
   },
-  update: (
-    input: SettingsUpdateInput,
-  ): Promise<AppSettings | SettingsStoreScopedSnapshot> =>
-    ipcRenderer.invoke(SettingsStoreChannel.Update, input),
+  update: (input: SettingsUpdateInput): Promise<AppSettings> =>
+    ipcRenderer
+      .invoke(SettingsStoreChannel.Update, input)
+      .then(unwrapIpcResult),
 };
 
 export { SettingsStoreAPI };

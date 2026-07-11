@@ -387,6 +387,7 @@ describe("OverlayWindowsService", () => {
       };
       clipPreviewResourceRestoreEnabled: boolean;
       deathClipsOverlay: {
+        isRequested(): boolean;
         showClip(clip: ReplayClip): Promise<void>;
       };
       restoreClipPreviewResources(): void;
@@ -408,6 +409,17 @@ describe("OverlayWindowsService", () => {
     expect(setClipPreviewSuspended).toHaveBeenNthCalledWith(1, true);
     expect(setClipPreviewSuspended).toHaveBeenNthCalledWith(2, false);
     expect(restoreRequestedOverlay).toHaveBeenCalledTimes(1);
+
+    setClipPreviewSuspended.mockClear();
+    restoreRequestedOverlay.mockClear();
+    vi.spyOn(internals.deathClipsOverlay, "isRequested").mockReturnValue(true);
+    await expect(
+      service.showClipPreviewOverlay({} as ReplayClip),
+    ).rejects.toThrow("preview failed");
+    expect(setClipPreviewSuspended).toHaveBeenCalledOnce();
+    expect(setClipPreviewSuspended).toHaveBeenCalledWith(true);
+    expect(restoreRequestedOverlay).not.toHaveBeenCalled();
+    internals.restoreClipPreviewResources();
 
     setClipPreviewSuspended.mockClear();
     restoreRequestedOverlay.mockClear();

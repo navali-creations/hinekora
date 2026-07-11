@@ -12,8 +12,8 @@ import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.
 import {
   getClipPreviewFileTitle,
   resolveClipPreviewDetail,
-  resolveClipPreviewOperationState,
-} from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+} from "../../ClipPreviewOverlay.page/useClipPreviewOverlayDetail/useClipPreviewOverlayDetail.utils";
+import { resolveClipPreviewOperationState } from "../../ClipPreviewOverlay.page/useClipPreviewOverlayOperations/useClipPreviewOverlayOperations.utils";
 import { useClipPreviewOverlayControlsContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
 
 type ProcessingButtonStyle = CSSProperties & {

@@ -1,6 +1,6 @@
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
-import { resolveClipPreviewMediaState } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+import { resolveClipPreviewMediaState } from "../../ClipPreviewOverlay.page/useClipPreviewOverlayMediaWorkflow/useClipPreviewOverlayMediaWorkflow.utils";
 import { useClipPreviewOverlayMediaContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
 import { ClipPreviewTrimRail } from "../ClipPreviewTrimRail/ClipPreviewTrimRail";
 
@@ -43,7 +43,8 @@ function ClipPreviewOverlayTrimRail() {
       playheadRef={workflow.setPlayheadElement}
       trim={trim}
       onSeek={workflow.seekPreview}
-      onTrimChange={workflow.handleTrimChange}
+      onTrimCommit={workflow.handleTrimCommit}
+      onTrimPreview={workflow.handleTrimPreview}
     />
   );
 }

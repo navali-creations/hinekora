@@ -22,6 +22,7 @@ interface ClipPreviewOverlayState {
   isSaving: boolean;
   mediaVersion: number;
   operationProgress: number;
+  previewProgress: number;
   saveMessage: ClipPreviewOverlaySaveMessage | null;
   titleDraft: string;
   trim: ClipPreviewTrimRange;
@@ -45,6 +46,7 @@ interface ClipPreviewOverlaySlice {
       durationOverrideSeconds: number | null,
     ) => void;
     setOperationProgress: (operationProgress: number) => void;
+    setPreviewProgress: (previewProgress: number) => void;
     setSaveMessage: (saveMessage: ClipPreviewOverlaySaveMessage | null) => void;
     setSaving: (isSaving: boolean) => void;
     setTitleDraft: (titleDraft: string) => void;
@@ -71,6 +73,7 @@ const createInitialClipPreviewOverlayState = (): ClipPreviewOverlayState => ({
   isSaving: false,
   mediaVersion: 0,
   operationProgress: 0,
+  previewProgress: 0,
   saveMessage: null,
   titleDraft: "",
   trim: { ...initialTrimRange },
@@ -98,6 +101,7 @@ const createClipPreviewOverlaySlice: BoundStoreStateCreator<
       set((state) => {
         state.clipPreviewOverlay.hasCopied = false;
         state.clipPreviewOverlay.operationProgress = 0;
+        state.clipPreviewOverlay.previewProgress = 0;
         state.clipPreviewOverlay.saveMessage = null;
         state.clipPreviewOverlay.isMediaReady = false;
         state.clipPreviewOverlay.mediaError = null;
@@ -162,6 +166,14 @@ const createClipPreviewOverlaySlice: BoundStoreStateCreator<
       set((state) => {
         state.clipPreviewOverlay.operationProgress = Math.min(
           Math.max(operationProgress, 0),
+          1,
+        );
+      });
+    },
+    setPreviewProgress: (previewProgress) => {
+      set((state) => {
+        state.clipPreviewOverlay.previewProgress = Math.min(
+          Math.max(previewProgress, 0),
           1,
         );
       });

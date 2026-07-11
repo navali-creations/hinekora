@@ -5,6 +5,7 @@ enum ReplayClipsChannel {
   Update = "replay-clips:update",
   Open = "replay-clips:open",
   OperationProgress = "replay-clips:operation-progress",
+  PreviewProgress = "replay-clips:preview-progress",
   Reveal = "replay-clips:reveal",
   Copy = "replay-clips:copy",
   Delete = "replay-clips:delete",

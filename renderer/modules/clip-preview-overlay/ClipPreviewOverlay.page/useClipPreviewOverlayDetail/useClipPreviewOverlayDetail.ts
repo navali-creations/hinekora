@@ -2,20 +2,17 @@ import { useEffect, useMemo, useRef } from "react";
 
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
+import { roundClipPreviewSeconds } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+import { useClipPreviewOverlayRouteClipId } from "../useClipPreviewOverlayRouteClipId/useClipPreviewOverlayRouteClipId";
 import {
   getClipPreviewFileTitle,
   resolveClipPreviewDetail,
   resolveClipPreviewHeaderState,
-  resolveClipPreviewRouteClipId,
-  roundClipPreviewSeconds,
-} from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+} from "./useClipPreviewOverlayDetail.utils";
 
 function useClipPreviewOverlayDetail() {
   const initializedClipIdRef = useRef<string | null>(null);
-  const clipId = useMemo(
-    () => resolveClipPreviewRouteClipId(window.location.hash),
-    [],
-  );
+  const clipId = useClipPreviewOverlayRouteClipId();
   const {
     detail,
     detailError,
@@ -26,6 +23,7 @@ function useClipPreviewOverlayDetail() {
     setDetail,
     setDetailError,
     setHasSavedClip,
+    setPreviewProgress,
   } = useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
     detail: clipPreviewOverlay.detail,
     detailError: clipPreviewOverlay.detailError,
@@ -36,6 +34,7 @@ function useClipPreviewOverlayDetail() {
     setDetail: clipPreviewOverlay.setDetail,
     setDetailError: clipPreviewOverlay.setDetailError,
     setHasSavedClip: clipPreviewOverlay.setHasSavedClip,
+    setPreviewProgress: clipPreviewOverlay.setPreviewProgress,
   }));
   const { clip, clipFileName, durationSeconds } = resolveClipPreviewDetail(
     detail,
@@ -91,12 +90,19 @@ function useClipPreviewOverlayDetail() {
         setDetailError(null);
       },
     );
+    const unsubscribePreviewProgress =
+      window.electron.replayClips.onPreviewProgress((progress) => {
+        if (progress.clipId === clipId && isActive) {
+          setPreviewProgress(progress.progress);
+        }
+      });
 
     return () => {
       isActive = false;
+      unsubscribePreviewProgress();
       unsubscribeStatus();
     };
-  }, [clipId, reset, setDetail, setDetailError]);
+  }, [clipId, reset, setDetail, setDetailError, setPreviewProgress]);
 
   useEffect(() => {
     if (

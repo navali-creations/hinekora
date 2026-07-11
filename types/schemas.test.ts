@@ -39,6 +39,7 @@ describe("shared schemas", () => {
       recordingStoragePath: null,
       keybindManualBookmark: "Alt+B",
       keybindManualReplay: "Alt+C",
+      replayClipPreviewResolution: "720p",
       recordingOutputResolution: "native",
       recordingFps: 30,
       recordingEncoder: "hardware_h264",
@@ -81,9 +82,20 @@ describe("shared schemas", () => {
     );
     expect(appSettingsKeys).toContain("recordingHideOverlaysFromRecording");
     expect(appSettingsKeys).toContain("keybindManualBookmark");
+    expect(appSettingsKeys).toContain("replayClipPreviewResolution");
     expect(appSettingsKeys).toContain("recorderOverlayShowOnStartup");
     expect(appSettingsKeys).toContain("auraOverlayShowEditingFrame");
     expect(appSettingsKeys).not.toContain("recordingHideOverlaysFromCapture");
+  });
+
+  it("accepts only supported replay clip preview resolutions", () => {
+    expect(
+      AppSettingsSchema.parse({ replayClipPreviewResolution: "1080p" })
+        .replayClipPreviewResolution,
+    ).toBe("1080p");
+    expect(() =>
+      AppSettingsSchema.parse({ replayClipPreviewResolution: "4k" }),
+    ).toThrow();
   });
 
   it("tracks capture profile setting keys from the profile settings schema", () => {

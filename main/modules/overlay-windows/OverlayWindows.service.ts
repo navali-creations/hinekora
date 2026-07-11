@@ -221,9 +221,10 @@ class OverlayWindowsService {
     this.suspendClipPreviewResources();
     try {
       await this.deathClipsOverlay.showClip(clip);
-    } catch (error) {
-      this.restoreClipPreviewResources();
-      throw error;
+    } finally {
+      if (!this.deathClipsOverlay.isRequested()) {
+        this.restoreClipPreviewResources();
+      }
     }
   }
 

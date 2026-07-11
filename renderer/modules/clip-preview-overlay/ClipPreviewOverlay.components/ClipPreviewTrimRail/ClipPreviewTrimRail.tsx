@@ -1,4 +1,6 @@
 import clsx from "clsx";
+import type { CSSProperties } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import {
   type ClipPreviewTrimRange,
@@ -14,11 +16,19 @@ interface ClipPreviewTrimRailProps {
   playheadRef?: (element: HTMLSpanElement | null) => void;
   trim: ClipPreviewTrimRange;
   onSeek: (seconds: number, options?: { preservePlayback?: boolean }) => void;
-  onTrimChange: (
+  onTrimCommit: (trim: ClipPreviewTrimRange) => void;
+  onTrimPreview: (
     trim: ClipPreviewTrimRange,
-    options?: { previewSeconds: number },
+    options: { previewSeconds: number },
   ) => void;
 }
+
+type ClipPreviewTrimRailStyle = CSSProperties & {
+  "--clip-preview-trim-center": string;
+  "--clip-preview-trim-end": string;
+  "--clip-preview-trim-start": string;
+  "--clip-preview-trim-width": string;
+};
 
 function ClipPreviewTrimRail({
   disabled,
@@ -26,8 +36,88 @@ function ClipPreviewTrimRail({
   playheadRef,
   trim,
   onSeek,
-  onTrimChange,
+  onTrimCommit,
+  onTrimPreview,
 }: ClipPreviewTrimRailProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const durationLabelRef = useRef<HTMLSpanElement>(null);
+  const endLabelRef = useRef<HTMLSpanElement>(null);
+  const startLabelRef = useRef<HTMLSpanElement>(null);
+  const resolveTrimPresentation = useCallback(
+    (nextTrim: ClipPreviewTrimRange) => {
+      const startPercent = calculateClipPreviewTimelinePercent(
+        nextTrim.inSeconds,
+        durationSeconds,
+      );
+      const endPercent = calculateClipPreviewTimelinePercent(
+        nextTrim.outSeconds,
+        durationSeconds,
+      );
+      const widthPercent = Math.max(endPercent - startPercent, 0);
+
+      return {
+        centerPercent: startPercent + widthPercent / 2,
+        endPercent,
+        startPercent,
+        useDetachedEdgeLabels: widthPercent < 20,
+        widthPercent,
+      };
+    },
+    [durationSeconds],
+  );
+  const syncTrimPresentation = useCallback(
+    (nextTrim: ClipPreviewTrimRange) => {
+      const presentation = resolveTrimPresentation(nextTrim);
+      const container = containerRef.current;
+      container?.style.setProperty(
+        "--clip-preview-trim-start",
+        `${presentation.startPercent}%`,
+      );
+      container?.style.setProperty(
+        "--clip-preview-trim-end",
+        `${presentation.endPercent}%`,
+      );
+      container?.style.setProperty(
+        "--clip-preview-trim-width",
+        `${presentation.widthPercent}%`,
+      );
+      container?.style.setProperty(
+        "--clip-preview-trim-center",
+        `${presentation.centerPercent}%`,
+      );
+      startLabelRef.current?.classList.toggle(
+        styles.startTimeDetached!,
+        presentation.useDetachedEdgeLabels,
+      );
+      endLabelRef.current?.classList.toggle(
+        styles.endTimeDetached!,
+        presentation.useDetachedEdgeLabels,
+      );
+      if (startLabelRef.current) {
+        startLabelRef.current.textContent = formatClipPreviewTimestamp(
+          nextTrim.inSeconds,
+        );
+      }
+      if (durationLabelRef.current) {
+        durationLabelRef.current.textContent = formatClipPreviewTimestamp(
+          nextTrim.outSeconds - nextTrim.inSeconds,
+        );
+      }
+      if (endLabelRef.current) {
+        endLabelRef.current.textContent = formatClipPreviewTimestamp(
+          nextTrim.outSeconds,
+        );
+      }
+    },
+    [resolveTrimPresentation],
+  );
+  const initialPresentation = resolveTrimPresentation(trim);
+  const railStyle: ClipPreviewTrimRailStyle = {
+    "--clip-preview-trim-center": `${initialPresentation.centerPercent}%`,
+    "--clip-preview-trim-end": `${initialPresentation.endPercent}%`,
+    "--clip-preview-trim-start": `${initialPresentation.startPercent}%`,
+    "--clip-preview-trim-width": `${initialPresentation.widthPercent}%`,
+  };
   const {
     handleEndPointerDown,
     handleRailPointerDown,
@@ -42,19 +132,14 @@ function ClipPreviewTrimRail({
     durationSeconds,
     trim,
     onSeek,
-    onTrimChange,
+    onTrimCommit,
+    onTrimPreview,
+    syncTrimPresentation,
   });
-  const trimStartPercent = calculateClipPreviewTimelinePercent(
-    trim.inSeconds,
-    durationSeconds,
-  );
-  const trimEndPercent = calculateClipPreviewTimelinePercent(
-    trim.outSeconds,
-    durationSeconds,
-  );
-  const trimWidthPercent = Math.max(trimEndPercent - trimStartPercent, 0);
-  const useDetachedEdgeLabels = trimWidthPercent < 20;
-  const trimCenterPercent = trimStartPercent + trimWidthPercent / 2;
+
+  useEffect(() => {
+    syncTrimPresentation(trim);
+  }, [syncTrimPresentation, trim]);
 
   return (
     <div
@@ -62,35 +147,31 @@ function ClipPreviewTrimRail({
         styles.rail,
         isSelectionDragging && styles.railSelectionDragging,
       )}
+      ref={containerRef}
+      style={railStyle}
     >
       <div className={styles.labels}>
         <span
           className={clsx(
             styles.timeLabel,
             styles.startTime,
-            useDetachedEdgeLabels && styles.startTimeDetached,
+            initialPresentation.useDetachedEdgeLabels &&
+              styles.startTimeDetached,
           )}
-          style={
-            useDetachedEdgeLabels ? undefined : { left: `${trimStartPercent}%` }
-          }
+          ref={startLabelRef}
         >
           {formatClipPreviewTimestamp(trim.inSeconds)}
         </span>
-        <span
-          className={styles.duration}
-          style={{ left: `${trimCenterPercent}%` }}
-        >
+        <span className={styles.duration} ref={durationLabelRef}>
           {formatClipPreviewTimestamp(trim.outSeconds - trim.inSeconds)}
         </span>
         <span
           className={clsx(
             styles.timeLabel,
             styles.endTime,
-            useDetachedEdgeLabels && styles.endTimeDetached,
+            initialPresentation.useDetachedEdgeLabels && styles.endTimeDetached,
           )}
-          style={
-            useDetachedEdgeLabels ? undefined : { left: `${trimEndPercent}%` }
-          }
+          ref={endLabelRef}
         >
           {formatClipPreviewTimestamp(trim.outSeconds)}
         </span>
@@ -107,14 +188,8 @@ function ClipPreviewTrimRail({
         onPointerMove={handleRailPointerMove}
         onPointerUp={handleRailPointerEnd}
       >
-        <span
-          className={styles.shade}
-          style={{ left: 0, width: `${trimStartPercent}%` }}
-        />
-        <span
-          className={styles.shade}
-          style={{ left: `${trimEndPercent}%`, right: 0 }}
-        />
+        <span className={styles.shade} />
+        <span className={styles.shade} />
         <button
           aria-label="Move selected trim range"
           className={clsx(
@@ -122,10 +197,6 @@ function ClipPreviewTrimRail({
             isSelectionDragging && styles.selectionDragging,
           )}
           disabled={disabled}
-          style={{
-            left: `${trimStartPercent}%`,
-            width: `${trimWidthPercent}%`,
-          }}
           type="button"
           onPointerDown={handleSelectionPointerDown}
         />
@@ -136,7 +207,6 @@ function ClipPreviewTrimRail({
           aria-label="Trim clip start"
           className={clsx(styles.handle, styles.handleStart)}
           disabled={disabled}
-          style={{ left: `${trimStartPercent}%` }}
           type="button"
           onPointerDown={handleStartPointerDown}
         />
@@ -144,7 +214,6 @@ function ClipPreviewTrimRail({
           aria-label="Trim clip end"
           className={clsx(styles.handle, styles.handleEnd)}
           disabled={disabled}
-          style={{ left: `${trimEndPercent}%` }}
           type="button"
           onPointerDown={handleEndPointerDown}
         />

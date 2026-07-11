@@ -9,8 +9,10 @@ import { dispatchClipPreviewPointerEvent } from "../ClipPreviewOverlay.test-util
 const storeMocks = vi.hoisted(() => ({
   hideClipPreview: vi.fn(),
   copyClip: vi.fn(),
+  dismissClipPreviewInfoAlert: vi.fn(),
   getClip: vi.fn(),
   onOperationProgress: vi.fn(),
+  onPreviewProgress: vi.fn(),
   onStatusChanged: vi.fn(),
   openEditorClip: vi.fn(),
   openClip: vi.fn(),
@@ -19,7 +21,6 @@ const storeMocks = vi.hoisted(() => ({
   settingsValue: null as AppSettings | null,
   trackEvent: vi.fn(),
   updateClip: vi.fn(),
-  updateSettings: vi.fn(),
   useSettingsShallow: vi.fn(),
   writeClipPreviewEvent: vi.fn(),
 }));
@@ -41,6 +42,7 @@ import {
   container,
   createDeferred,
   emitOperationProgress,
+  emitPreviewProgress,
   emitStatusChanged,
   findButton,
   findButtonByLabel,
@@ -54,6 +56,47 @@ import {
 setupClipPreviewOverlayTestHarness(storeMocks);
 
 describe("ClipPreviewOverlayPage", () => {
+  it("loads a new clip when a reused overlay window changes its hash", async () => {
+    storeMocks.getClip.mockImplementation(async (id: string) => ({
+      clip: createReplayClipView({
+        id,
+        durationSeconds: 10,
+        fileName: `${id}.mp4`,
+        hasMediaFile: true,
+      }),
+      durationSeconds: 10,
+      mediaUrl: `hinekora-media://replay-clip/${id}`,
+    }));
+    await renderPage();
+    await flushPromises();
+
+    await act(async () => {
+      window.location.hash = "#/clip-preview-overlay?clipId=clip-2";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    await flushPromises();
+
+    expect(storeMocks.getClip).toHaveBeenCalledWith("clip-2");
+    expect(container.querySelector("video")?.getAttribute("src")).toBe(
+      "hinekora-media://replay-clip/clip-2?v=0",
+    );
+  });
+
+  it("reports a failed info-alert dismissal", async () => {
+    storeMocks.dismissClipPreviewInfoAlert.mockRejectedValueOnce(
+      new Error("settings unavailable"),
+    );
+    await renderPage();
+    await flushPromises();
+
+    await act(async () => {
+      findButtonByLabel("Dismiss clips page info").click();
+    });
+    await flushPromises();
+
+    expect(container.textContent).toContain("Could not dismiss this message.");
+  });
+
   it("routes overlay actions to fullscreen, editor, save, clipboard, and explorer handlers", async () => {
     await renderPage();
     await flushPromises();
@@ -120,9 +163,7 @@ describe("ClipPreviewOverlayPage", () => {
     await act(async () => {
       findButtonByLabel("Dismiss clips page info").click();
     });
-    expect(storeMocks.updateSettings).toHaveBeenCalledWith({
-      clipPreviewInfoAlertDismissed: true,
-    });
+    expect(storeMocks.dismissClipPreviewInfoAlert).toHaveBeenCalledTimes(1);
     await renderPage();
     expect(container.textContent).not.toContain(
       "Manual Replays and Death Clips are available on the Clips page.",
@@ -189,6 +230,27 @@ describe("ClipPreviewOverlayPage", () => {
     });
   });
 
+  it("reloads preview media after a failed save", async () => {
+    await renderPage();
+    await flushPromises();
+    const video = await markPreviewVideoReady();
+    storeMocks.updateClip.mockRejectedValueOnce(new Error("save unavailable"));
+
+    await act(async () => {
+      findButtonByLabel("Mute replay").click();
+    });
+    await act(async () => {
+      findButton("Save clip").click();
+    });
+    await flushPromises();
+
+    expect(video.pause).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("save unavailable");
+    expect(container.querySelector("video")?.getAttribute("src")).toBe(
+      "hinekora-media://replay-clip/main-provided-clip-1?v=1",
+    );
+  });
+
   it("shows media errors and retries with a fresh media URL", async () => {
     await renderPage();
     await flushPromises();
@@ -221,7 +283,7 @@ describe("ClipPreviewOverlayPage", () => {
   it("labels pending save and copy actions as processing", async () => {
     await renderPage();
     await flushPromises();
-    await markPreviewVideoReady();
+    const video = await markPreviewVideoReady();
 
     const input = container.querySelector("input");
     if (!(input instanceof HTMLInputElement)) {
@@ -241,7 +303,12 @@ describe("ClipPreviewOverlayPage", () => {
     storeMocks.updateClip.mockReturnValueOnce(saveDeferred.promise);
     await act(async () => {
       findButton("Save clip").click();
+      findButton("Save clip").click();
     });
+    expect(storeMocks.updateClip).toHaveBeenCalledTimes(1);
+    expect(video.pause).toHaveBeenCalledTimes(1);
+    expect(video.load).toHaveBeenCalledTimes(1);
+    expect(video.getAttribute("src")).toBeNull();
     const saveRequestId =
       storeMocks.updateClip.mock.calls[0]?.[0].operationRequestId;
     expect(container.textContent).toContain("Processing...");
@@ -279,6 +346,9 @@ describe("ClipPreviewOverlayPage", () => {
       });
     });
     await flushPromises();
+    expect(container.querySelector("video")?.getAttribute("src")).toBe(
+      "hinekora-media://replay-clip/clip-1?v=1",
+    );
 
     const copyDeferred =
       createDeferred<Awaited<ReturnType<typeof storeMocks.copyClip>>>();
@@ -345,6 +415,16 @@ describe("ClipPreviewOverlayPage", () => {
     expect(container.textContent).toContain("Preparing Replay");
     expect(container.textContent).toContain("Saving replay file");
     expect(container.textContent).toContain("Preparing preview");
+    expect(container.textContent).toContain("0%");
+    await act(async () => {
+      emitPreviewProgress({ clipId: "clip-1", progress: 0.42 });
+    });
+    expect(container.textContent).toContain("42%");
+    expect(
+      container
+        .querySelector('[aria-label="Preview preparation progress"]')
+        ?.getAttribute("aria-valuenow"),
+    ).toBe("42");
     expect(container.querySelector("video")).toBeNull();
     expect(findButton("Continue in editor").disabled).toBe(true);
     expect(findButton("Copy to clipboard").disabled).toBe(true);

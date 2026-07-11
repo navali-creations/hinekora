@@ -11,6 +11,7 @@ import type {
   ReplayClipLibraryPage,
   ReplayClipLibraryQuery,
   ReplayClipOperationProgress,
+  ReplayClipPreviewProgress,
   ReplayClipUpdateInput,
   ReplayClipUpdateResult,
   ReplayClipView,
@@ -69,6 +70,20 @@ const ReplayClipsAPI = {
         ReplayClipsChannel.OperationProgress,
         listener,
       );
+  },
+  onPreviewProgress: (
+    callback: (progress: ReplayClipPreviewProgress) => void,
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      progress: ReplayClipPreviewProgress,
+    ) => {
+      callback(progress);
+    };
+    ipcRenderer.on(ReplayClipsChannel.PreviewProgress, listener);
+
+    return () =>
+      ipcRenderer.removeListener(ReplayClipsChannel.PreviewProgress, listener);
   },
 };
 

@@ -46,26 +46,7 @@ const fullApi = {
   updater: UpdaterAPI,
 };
 
-type ElectronAPI = typeof fullApi;
-type ScopedSettingsAPI = {
-  scope: "full" | "overlay";
-  get:
-    | typeof SettingsStoreAPI.get
-    | typeof SettingsStoreAPI.getClipPreviewOverlaySnapshot
-    | typeof SettingsStoreAPI.getOverlaySnapshot;
-  onChanged:
-    | typeof SettingsStoreAPI.onChanged
-    | typeof SettingsStoreAPI.onClipPreviewOverlayChanged
-    | typeof SettingsStoreAPI.onOverlayChanged;
-  update?: typeof SettingsStoreAPI.update;
-};
-type ScopedElectronAPI = {
-  [K in keyof ElectronAPI]?: K extends "settings"
-    ? ScopedSettingsAPI
-    : Partial<ElectronAPI[K]>;
-};
-
-function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
+function createScopedApi(hash: string) {
   if (hash.includes("recorder-overlay")) {
     return {
       managedRecorder: {
@@ -98,7 +79,7 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
         onChanged: ProfilesAPI.onChanged,
       },
       settings: {
-        scope: "overlay",
+        scope: "recorder-overlay" as const,
         get: SettingsStoreAPI.getOverlaySnapshot,
         onChanged: SettingsStoreAPI.onOverlayChanged,
       },
@@ -122,15 +103,17 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
         hideClipPreview: OverlayWindowsAPI.hideClipPreview,
       },
       settings: {
-        scope: "overlay",
+        scope: "clip-preview-overlay" as const,
+        dismissClipPreviewInfoAlert:
+          SettingsStoreAPI.dismissClipPreviewInfoAlert,
         get: SettingsStoreAPI.getClipPreviewOverlaySnapshot,
         onChanged: SettingsStoreAPI.onClipPreviewOverlayChanged,
-        update: SettingsStoreAPI.update,
       },
       replayClips: {
         copy: ReplayClipsAPI.copy,
         get: ReplayClipsAPI.get,
         onOperationProgress: ReplayClipsAPI.onOperationProgress,
+        onPreviewProgress: ReplayClipsAPI.onPreviewProgress,
         onStatusChanged: ReplayClipsAPI.onStatusChanged,
         update: ReplayClipsAPI.update,
         reveal: ReplayClipsAPI.reveal,
@@ -166,7 +149,7 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
         onChanged: ProfilesAPI.onChanged,
       },
       settings: {
-        scope: "overlay",
+        scope: "aura-overlay" as const,
         get: SettingsStoreAPI.getOverlaySnapshot,
         onChanged: SettingsStoreAPI.onOverlayChanged,
       },
@@ -186,8 +169,20 @@ function createScopedApi(hash: string): ElectronAPI | ScopedElectronAPI {
   return fullApi;
 }
 
-const api = createScopedApi(globalThis.location?.hash ?? "");
+type NormalizeExposedMethod<T> = T extends (...args: infer Args) => infer Result
+  ? (
+      ...args: Args
+    ) => Result extends (...args: infer CleanupArgs) => unknown
+      ? (...args: CleanupArgs) => void
+      : Result
+  : T extends object
+    ? { [Key in keyof T]: NormalizeExposedMethod<T[Key]> }
+    : T;
+type ElectronAPI = NormalizeExposedMethod<ReturnType<typeof createScopedApi>>;
+type FullElectronAPI = NormalizeExposedMethod<typeof fullApi>;
+
+const api: ElectronAPI = createScopedApi(globalThis.location?.hash ?? "");
 
 contextBridge.exposeInMainWorld("electron", api);
 
-export type { ElectronAPI };
+export type { ElectronAPI, FullElectronAPI };

@@ -1,24 +1,23 @@
 import type { AppSettings } from "~/types";
 
-type SettingsStoreOverlaySnapshot = Partial<AppSettings> &
-  Pick<
-    AppSettings,
-    | "activeGame"
-    | "auraOverlayShowEditingFrame"
-    | "deathClipSeconds"
-    | "selectedCaptureProfileId"
-    | "selectedCaptureProfileIdsByGame"
-    | "selectedProfileId"
-    | "telemetryCrashReporting"
-    | "telemetryUsageAnalytics"
-  >;
-type SettingsStoreClipPreviewOverlaySnapshot = Partial<AppSettings> &
-  Pick<
-    AppSettings,
-    | "clipPreviewInfoAlertDismissed"
-    | "telemetryCrashReporting"
-    | "telemetryUsageAnalytics"
-  >;
+type SettingsStoreOverlaySnapshot = Pick<
+  AppSettings,
+  | "activeGame"
+  | "auraOverlayShowEditingFrame"
+  | "deathClipSeconds"
+  | "replayClipPreviewResolution"
+  | "selectedCaptureProfileId"
+  | "selectedCaptureProfileIdsByGame"
+  | "selectedProfileId"
+  | "telemetryCrashReporting"
+  | "telemetryUsageAnalytics"
+>;
+type SettingsStoreClipPreviewOverlaySnapshot = Pick<
+  AppSettings,
+  | "clipPreviewInfoAlertDismissed"
+  | "telemetryCrashReporting"
+  | "telemetryUsageAnalytics"
+>;
 type SettingsStoreScopedSnapshot =
   | SettingsStoreClipPreviewOverlaySnapshot
   | SettingsStoreOverlaySnapshot;
@@ -37,6 +36,7 @@ export function createSettingsStoreOverlaySnapshot(
     activeGame: settings.activeGame,
     auraOverlayShowEditingFrame: settings.auraOverlayShowEditingFrame,
     deathClipSeconds: settings.deathClipSeconds,
+    replayClipPreviewResolution: settings.replayClipPreviewResolution,
     selectedCaptureProfileId: settings.selectedCaptureProfileId,
     selectedCaptureProfileIdsByGame: settings.selectedCaptureProfileIdsByGame,
     selectedProfileId: settings.selectedProfileId,

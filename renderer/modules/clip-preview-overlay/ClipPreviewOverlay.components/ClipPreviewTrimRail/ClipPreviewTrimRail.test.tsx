@@ -24,9 +24,10 @@ function findLabel(text: string): HTMLSpanElement {
 }
 
 async function renderRail(
-  onTrimChange = vi.fn(),
+  onTrimCommit = vi.fn(),
   trim: ClipPreviewTrimRange = { inSeconds: 2, outSeconds: 5 },
   onSeek = vi.fn(),
+  onTrimPreview = vi.fn(),
 ) {
   await act(async () => {
     root.render(
@@ -35,7 +36,8 @@ async function renderRail(
         durationSeconds={10}
         trim={trim}
         onSeek={onSeek}
-        onTrimChange={onTrimChange}
+        onTrimCommit={onTrimCommit}
+        onTrimPreview={onTrimPreview}
       />,
     );
   });
@@ -101,21 +103,36 @@ describe("ClipPreviewTrimRail", () => {
   it("attaches timers to trim edges until the range is tight", async () => {
     await renderRail();
 
-    expect(findLabel("02.00").style.left).toBe("20%");
-    expect(findLabel("05.00").style.left).toBe("50%");
-    expect(findLabel("03.00").style.left).toBe("35%");
+    const railContainer = container.firstElementChild as HTMLElement;
+    expect(
+      railContainer.style.getPropertyValue("--clip-preview-trim-start"),
+    ).toBe("20%");
+    expect(
+      railContainer.style.getPropertyValue("--clip-preview-trim-end"),
+    ).toBe("50%");
+    expect(
+      railContainer.style.getPropertyValue("--clip-preview-trim-center"),
+    ).toBe("35%");
 
     await renderRail(vi.fn(), { inSeconds: 2, outSeconds: 3 });
 
-    expect(findLabel("02.00").style.left).toBe("");
-    expect(findLabel("03.00").style.left).toBe("");
-    expect(findLabel("01.00").style.left).toBe("25%");
+    expect(findLabel("02.00").className).toContain("startTimeDetached");
+    expect(findLabel("03.00").className).toContain("endTimeDetached");
+    expect(
+      railContainer.style.getPropertyValue("--clip-preview-trim-center"),
+    ).toBe("25%");
   });
 
   it("moves the selected trim range as a fixed duration", async () => {
     vi.useFakeTimers();
-    const onTrimChange = vi.fn();
-    const rail = await renderRail(onTrimChange);
+    const onTrimCommit = vi.fn();
+    const onTrimPreview = vi.fn();
+    const rail = await renderRail(
+      onTrimCommit,
+      undefined,
+      undefined,
+      onTrimPreview,
+    );
     const selection = container.querySelector(
       '[aria-label="Move selected trim range"]',
     );
@@ -135,19 +152,20 @@ describe("ClipPreviewTrimRail", () => {
       });
     });
 
-    expect(onTrimChange).toHaveBeenLastCalledWith(
+    expect(onTrimPreview).toHaveBeenLastCalledWith(
       {
         inSeconds: 5,
         outSeconds: 8,
       },
       { previewSeconds: 5 },
     );
+    expect(onTrimCommit).not.toHaveBeenCalled();
   });
 
   it("waits for a hold before moving the selected trim range", async () => {
     vi.useFakeTimers();
-    const onTrimChange = vi.fn();
-    const rail = await renderRail(onTrimChange);
+    const onTrimPreview = vi.fn();
+    const rail = await renderRail(vi.fn(), undefined, undefined, onTrimPreview);
     const selection = container.querySelector(
       '[aria-label="Move selected trim range"]',
     );
@@ -166,7 +184,7 @@ describe("ClipPreviewTrimRail", () => {
         timeStamp: 249,
       });
     });
-    expect(onTrimChange).not.toHaveBeenCalled();
+    expect(onTrimPreview).not.toHaveBeenCalled();
 
     await act(async () => {
       vi.advanceTimersByTime(1);
@@ -176,7 +194,7 @@ describe("ClipPreviewTrimRail", () => {
       });
     });
 
-    expect(onTrimChange).toHaveBeenLastCalledWith(
+    expect(onTrimPreview).toHaveBeenLastCalledWith(
       {
         inSeconds: 5,
         outSeconds: 8,
@@ -186,8 +204,8 @@ describe("ClipPreviewTrimRail", () => {
   });
 
   it("previews the active trim edge while dragging handles", async () => {
-    const onTrimChange = vi.fn();
-    const rail = await renderRail(onTrimChange);
+    const onTrimPreview = vi.fn();
+    const rail = await renderRail(vi.fn(), undefined, undefined, onTrimPreview);
     const endHandle = container.querySelector('[aria-label="Trim clip end"]');
     if (!(endHandle instanceof HTMLElement)) {
       throw new Error("Expected trim end handle");
@@ -200,7 +218,7 @@ describe("ClipPreviewTrimRail", () => {
       dispatchClipPreviewPointerEvent(rail, "pointermove", { clientX: 70 });
     });
 
-    expect(onTrimChange).toHaveBeenLastCalledWith(
+    expect(onTrimPreview).toHaveBeenLastCalledWith(
       {
         inSeconds: 2,
         outSeconds: 7,
@@ -210,8 +228,14 @@ describe("ClipPreviewTrimRail", () => {
   });
 
   it("commits a throttled final handle position on pointer up", async () => {
-    const onTrimChange = vi.fn();
-    const rail = await renderRail(onTrimChange);
+    const onTrimCommit = vi.fn();
+    const onTrimPreview = vi.fn();
+    const rail = await renderRail(
+      onTrimCommit,
+      undefined,
+      undefined,
+      onTrimPreview,
+    );
     const endHandle = container.querySelector('[aria-label="Trim clip end"]');
     if (!(endHandle instanceof HTMLElement)) {
       throw new Error("Expected trim end handle");
@@ -236,12 +260,17 @@ describe("ClipPreviewTrimRail", () => {
       });
     });
 
-    expect(onTrimChange).toHaveBeenLastCalledWith(
+    expect(onTrimPreview).toHaveBeenLastCalledWith(
       {
         inSeconds: 2,
         outSeconds: 8,
       },
       { previewSeconds: 8 },
     );
+    expect(onTrimCommit).toHaveBeenCalledTimes(1);
+    expect(onTrimCommit).toHaveBeenLastCalledWith({
+      inSeconds: 2,
+      outSeconds: 8,
+    });
   });
 });

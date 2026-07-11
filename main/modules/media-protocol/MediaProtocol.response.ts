@@ -2,58 +2,11 @@ import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { parseMediaRange } from "./ReplayClips.range";
-
-const HINEKORA_MEDIA_SCHEME = "hinekora-media";
-const REPLAY_CLIP_MEDIA_HOST = "replay-clip";
-const RUN_RECORDING_MEDIA_HOST = "run-recording";
-const MAX_MEDIA_ID_LENGTH = 128;
-
-type HinekoraMediaKind = "replay-clip" | "run-recording";
-
-interface HinekoraMediaRequestTarget {
-  id: string;
-  kind: HinekoraMediaKind;
-}
+import { parseMediaRange } from "./MediaProtocol.range";
 
 type MediaFileFetcher = (url: string, init: RequestInit) => Promise<Response>;
 
-export function createReplayClipMediaUrl(
-  id: string,
-  version?: string | null,
-): string {
-  return createHinekoraMediaUrl(REPLAY_CLIP_MEDIA_HOST, id, version);
-}
-
-export function createRunRecordingMediaUrl(id: string): string {
-  return createHinekoraMediaUrl(RUN_RECORDING_MEDIA_HOST, id);
-}
-
-export function resolveHinekoraMediaRequestTarget(
-  url: string,
-): HinekoraMediaRequestTarget | null {
-  try {
-    const parsedUrl = new URL(url);
-    if (parsedUrl.protocol !== `${HINEKORA_MEDIA_SCHEME}:`) {
-      return null;
-    }
-
-    const kind = resolveMediaKind(parsedUrl.hostname);
-    if (!kind) {
-      return null;
-    }
-
-    const id = decodeURIComponent(parsedUrl.pathname.replace(/^\/+/, ""));
-
-    return id.length > 0 && id.length <= MAX_MEDIA_ID_LENGTH
-      ? { id, kind }
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-export async function createReplayClipMediaFileResponse(
+export async function createMediaFileResponse(
   clipPath: string,
   request: Request,
   fetchFile: MediaFileFetcher,
@@ -175,26 +128,5 @@ function resolveMediaContentType(clipPath: string): string {
       return "video/x-matroska";
     default:
       return "application/octet-stream";
-  }
-}
-
-function createHinekoraMediaUrl(
-  host: string,
-  id: string,
-  version?: string | null,
-): string {
-  const url = `${HINEKORA_MEDIA_SCHEME}://${host}/${encodeURIComponent(id)}`;
-
-  return version ? `${url}?v=${encodeURIComponent(version)}` : url;
-}
-
-function resolveMediaKind(host: string): HinekoraMediaKind | null {
-  switch (host) {
-    case REPLAY_CLIP_MEDIA_HOST:
-      return "replay-clip";
-    case RUN_RECORDING_MEDIA_HOST:
-      return "run-recording";
-    default:
-      return null;
   }
 }

@@ -1,6 +1,7 @@
 import { stat } from "node:fs/promises";
 
 import { normalizeMediaLibraryPageQuery } from "~/main/modules/media-library/MediaLibrary.utils";
+import { createReplayClipMediaUrl } from "~/main/modules/media-protocol";
 
 import type { GameId, ReplayClip, ReplayClipKind } from "~/types";
 import type {
@@ -10,7 +11,6 @@ import type {
   ReplayClipSourceDetail,
   ReplayClipView,
 } from "./ReplayClips.dto";
-import { createReplayClipMediaUrl } from "./ReplayClips.media";
 import type { ReplayClipsRepository } from "./ReplayClips.repository";
 
 const defaultLibraryPageSize = 20;
@@ -51,58 +51,31 @@ class ReplayClipLibraryService {
       mediaPathOnly: true,
       positiveMediaOnly: true,
     };
-    const items: ReplayClipSourceDetail[] = [];
-    const seenAvailableClipIds = new Set<string>();
-    let validatedCandidates = 0;
-
-    while (
-      items.length < input.pageSize &&
-      validatedCandidates < maxEditorReplayPageValidationCandidates
-    ) {
-      const page = this.dependencies.repository.listLibraryPage({
-        filter: candidateFilter,
-        pageIndex: input.pageIndex,
-        pageSize: input.pageSize,
-        sortBy: "createdAt",
-        sortDirection: "desc",
-      });
-      if (page.items.length === 0) {
-        break;
-      }
-
-      const candidates = page.items
-        .filter((clip) => !seenAvailableClipIds.has(clip.id))
-        .slice(
-          0,
-          maxEditorReplayPageValidationCandidates - validatedCandidates,
-        );
-      if (candidates.length === 0) {
-        break;
-      }
-      validatedCandidates += candidates.length;
-      const resolvedCandidates = await Promise.all(
-        candidates.map(async (clip) => ({
-          availablePath: await this.resolveAvailableReplayClipPath(clip),
-          clip,
-        })),
-      );
-      const missingIds: string[] = [];
-      for (const { availablePath, clip } of resolvedCandidates) {
-        if (!availablePath) {
-          missingIds.push(clip.id);
-          continue;
-        }
-        seenAvailableClipIds.add(clip.id);
-        items.push(this.createAvailableReplayClipDetail(clip, availablePath));
-        if (items.length >= input.pageSize) {
-          break;
-        }
-      }
-      this.dependencies.repository.updateSizes(missingIds, 0);
-      if (missingIds.length === 0 || page.items.length < input.pageSize) {
-        break;
-      }
-    }
+    const candidates = this.dependencies.repository.listLibraryItems({
+      filter: candidateFilter,
+      offset: input.pageIndex * input.pageSize,
+      pageIndex: 0,
+      pageSize: maxEditorReplayPageValidationCandidates,
+      sortBy: "createdAt",
+      sortDirection: "desc",
+    });
+    const resolvedCandidates = await Promise.all(
+      candidates.map(async (clip) => ({
+        availablePath: await this.resolveAvailableReplayClipPath(clip),
+        clip,
+      })),
+    );
+    const missingIds = resolvedCandidates
+      .filter(({ availablePath }) => !availablePath)
+      .map(({ clip }) => clip.id);
+    const items = resolvedCandidates
+      .flatMap(({ availablePath, clip }) =>
+        availablePath
+          ? [this.createAvailableReplayClipDetail(clip, availablePath)]
+          : [],
+      )
+      .slice(0, input.pageSize);
+    this.dependencies.repository.updateSizes(missingIds, 0);
 
     return {
       items,

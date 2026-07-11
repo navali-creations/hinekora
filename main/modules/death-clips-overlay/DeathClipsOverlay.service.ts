@@ -28,7 +28,9 @@ function createClipPreviewRoute(clipId: string): string {
     process.env.HINEKORA_CLIP_PREVIEW_DIAGNOSTICS === "1"
       ? "&diagnostics=1"
       : "";
-  return `#/${WindowName.ClipPreviewOverlay}?clipId=${encodeURIComponent(clipId)}${diagnosticsQuery}`;
+  return `#/${WindowName.ClipPreviewOverlay}?clipId=${encodeURIComponent(
+    clipId,
+  )}${diagnosticsQuery}`;
 }
 
 type ClipPreviewOverlayCloseReason =
@@ -113,6 +115,10 @@ class DeathClipsOverlayService {
     return this.closeWindow("hide-requested");
   }
 
+  isRequested(): boolean {
+    return this.clipPreviewOverlayRequested;
+  }
+
   suspendRequestedOverlay(): void {
     if (this.clipPreviewOverlayRequested) {
       this.coordinator.suspendGameOverlayWindow(this.clipPreviewWindow);
@@ -148,7 +154,10 @@ class DeathClipsOverlayService {
       skipTaskbar: true,
       focusable: true,
       show: false,
-      webPreferences: createOverlayWebPreferences(),
+      webPreferences: {
+        ...createOverlayWebPreferences(),
+        backgroundThrottling: false,
+      },
     });
 
     const clipPreviewWindow = this.clipPreviewWindow;

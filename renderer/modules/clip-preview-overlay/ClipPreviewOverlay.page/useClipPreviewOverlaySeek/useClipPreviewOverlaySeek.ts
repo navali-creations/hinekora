@@ -10,6 +10,7 @@ interface SeekPreviewOptions {
 }
 
 function useClipPreviewOverlaySeek(input: {
+  activeSeekSecondsRef: RefObject<number | null>;
   canUseClip: boolean;
   durationSeconds: number;
   pendingSeekSecondsRef: RefObject<number | null>;
@@ -18,6 +19,37 @@ function useClipPreviewOverlaySeek(input: {
   syncPlaybackPresentation: (seconds?: number) => void;
   videoRef: RefObject<HTMLVideoElement | null>;
 }) {
+  const startPendingSeek = (video: HTMLVideoElement): boolean => {
+    const pendingSeconds = input.pendingSeekSecondsRef.current;
+    if (pendingSeconds === null) {
+      return false;
+    }
+    if (input.activeSeekSecondsRef.current !== null) {
+      return true;
+    }
+
+    if (Math.abs(video.currentTime - pendingSeconds) < 0.01) {
+      clearPendingSeek(input.pendingSeekSecondsRef, pendingSeconds);
+      return false;
+    }
+
+    input.activeSeekSecondsRef.current = pendingSeconds;
+    video.currentTime = pendingSeconds;
+    return true;
+  };
+
+  const resumePlayback = (video: HTMLVideoElement | null): void => {
+    if (!input.resumePlaybackAfterSeekRef.current || !video) {
+      return;
+    }
+
+    input.resumePlaybackAfterSeekRef.current = false;
+    void video.play().catch((error: unknown) => {
+      console.warn("[clip-preview] Could not resume preview", { error });
+      input.setPlaying(false);
+    });
+  };
+
   const seekPreview = (seconds: number, options?: SeekPreviewOptions) => {
     const nextSeconds = clampClipPreviewPlaybackSeconds(
       seconds,
@@ -39,31 +71,17 @@ function useClipPreviewOverlaySeek(input: {
     }
     input.setPlaying(false);
     input.syncPlaybackPresentation(nextSeconds);
-    const resumeImmediately = () => {
-      if (!input.resumePlaybackAfterSeekRef.current || !video) {
-        return;
-      }
-
-      input.resumePlaybackAfterSeekRef.current = false;
-      void video.play().catch((error: unknown) => {
-        console.warn("[clip-preview] Could not resume preview", { error });
-        input.setPlaying(false);
-      });
-    };
     if (
       video &&
       input.canUseClip &&
       video.readyState >= HTMLMediaElement.HAVE_METADATA
     ) {
-      if (Math.abs(video.currentTime - nextSeconds) < 0.01) {
-        clearPendingSeek(input.pendingSeekSecondsRef, nextSeconds);
-        resumeImmediately();
-      } else {
-        video.currentTime = nextSeconds;
+      if (!startPendingSeek(video)) {
+        resumePlayback(video);
       }
     } else {
       clearPendingSeek(input.pendingSeekSecondsRef, nextSeconds);
-      resumeImmediately();
+      resumePlayback(video);
     }
   };
 
@@ -76,21 +94,19 @@ function useClipPreviewOverlaySeek(input: {
 
   const handleSeeked = () => {
     const video = input.videoRef.current;
+    input.activeSeekSecondsRef.current = null;
     const pendingSeconds = input.pendingSeekSecondsRef.current;
     if (pendingSeconds !== null) {
       input.syncPlaybackPresentation(pendingSeconds);
       if (!video) {
         input.pendingSeekSecondsRef.current = null;
         input.resumePlaybackAfterSeekRef.current = false;
-      } else if (input.resumePlaybackAfterSeekRef.current) {
-        input.resumePlaybackAfterSeekRef.current = false;
-        void video.play().catch((error: unknown) => {
-          input.pendingSeekSecondsRef.current = null;
-          console.warn("[clip-preview] Could not resume preview", { error });
-          input.setPlaying(false);
-        });
-      } else if (Math.abs(video.currentTime - pendingSeconds) < 0.1) {
+      } else if (Math.abs(video.currentTime - pendingSeconds) >= 0.1) {
+        startPendingSeek(video);
+        return;
+      } else {
         input.pendingSeekSecondsRef.current = null;
+        resumePlayback(video);
       }
     } else if (video) {
       input.syncPlaybackPresentation(

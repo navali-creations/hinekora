@@ -123,6 +123,14 @@ describe("ReplayClipsService replay-trigger workflow", () => {
 
     const first = service.saveManualReplay();
     await vi.waitFor(() => expect(saveReplay).toHaveBeenCalledTimes(1));
+    const savingClip = repository.list()[0];
+    expect(savingClip).toBeDefined();
+    let updateSettled = false;
+    const update = service
+      .updateClipFile({ id: savingClip!.id, name: "Coalesced replay" })
+      .finally(() => {
+        updateSettled = true;
+      });
     const second = service.handleDeathEvent({
       game: "poe1",
       line: "You have died.",
@@ -130,13 +138,12 @@ describe("ReplayClipsService replay-trigger workflow", () => {
       detectedAt: "2026-06-12T10:00:00.000Z",
     });
     const third = service.saveManualReplay();
+    await Promise.resolve();
+    expect(updateSettled).toBe(false);
     saveGate.resolve();
 
-    const [manualClip, deathClip, coalescedManualClip] = await Promise.all([
-      first,
-      second,
-      third,
-    ]);
+    const [manualClip, deathClip, coalescedManualClip, updateResult] =
+      await Promise.all([first, second, third, update]);
     expect(manualClip?.id).toBe(deathClip?.id);
     expect(coalescedManualClip?.id).toBe(deathClip?.id);
     expect(manualClip).toMatchObject({
@@ -146,46 +153,12 @@ describe("ReplayClipsService replay-trigger workflow", () => {
     });
     expect(repository.list()[0]).toMatchObject({
       kind: "death",
+      processedClipPath: expect.stringContaining("Coalesced replay.mp4"),
       triggerLineHash: "overlapping-death",
     });
+    expect(updateResult.ok).toBe(true);
     expect(repository.list()).toHaveLength(1);
     expect(saveReplay).toHaveBeenCalledTimes(1);
-  });
-
-  it("does not clear a newer active replay request when an older request settles", async () => {
-    let settleRequest!: (
-      clip: ReturnType<typeof createReplayClip> | null,
-    ) => void;
-    const pendingRequest = new Promise<ReturnType<
-      typeof createReplayClip
-    > | null>((resolveRequest) => {
-      settleRequest = resolveRequest;
-    });
-    const internals = service as unknown as {
-      activeReplayTriggerRequest: Promise<ReturnType<
-        typeof createReplayClip
-      > | null> | null;
-      handleReplayTriggerExclusive: () => Promise<ReturnType<
-        typeof createReplayClip
-      > | null>;
-    };
-    vi.spyOn(internals, "handleReplayTriggerExclusive").mockReturnValue(
-      pendingRequest,
-    );
-    const olderRequest = service.handleReplayTrigger({
-      detectedAt: "2026-06-12T10:00:00.000Z",
-      game: "poe1",
-      kind: "manual",
-      line: "Manual replay save",
-      lineHash: "older-request",
-    });
-    const newerRequest = Promise.resolve(null);
-    internals.activeReplayTriggerRequest = newerRequest;
-
-    settleRequest(null);
-    await expect(olderRequest).resolves.toBeNull();
-    expect(internals.activeReplayTriggerRequest).toBe(newerRequest);
-    internals.activeReplayTriggerRequest = null;
   });
 
   it("skips death replay saves when the managed replay buffer is inactive", async () => {
@@ -543,7 +516,9 @@ describe("ReplayClipsService replay-trigger workflow", () => {
   it("saves a ready managed replay, opens the pending preview, cleans storage, and ignores duplicates", async () => {
     const replayPath = join(root, "2026-06-12_10-30-00.mp4");
     writeFileSync(replayPath, "video");
-    const showClipPreviewOverlay = vi.fn().mockResolvedValue(undefined);
+    const showClipPreviewOverlay = vi
+      .fn()
+      .mockRejectedValue(new Error("overlay unavailable"));
     const cleanup = vi.fn();
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
       get: () => ({
@@ -616,6 +591,18 @@ describe("ReplayClipsService replay-trigger workflow", () => {
     expect(showClipPreviewOverlay).toHaveBeenCalledWith(
       expect.objectContaining({ id: ready.id, status: "saving_replay" }),
     );
+    const publishedClips = send.mock.calls
+      .filter(([channel]) => channel === ReplayClipsChannel.StatusChanged)
+      .map(([, clip]) => clip as { hasMediaFile: boolean; status: string });
+    expect(
+      publishedClips
+        .filter((clip) => clip.status === "saving_replay")
+        .every((clip) => !clip.hasMediaFile),
+    ).toBe(true);
+    expect(publishedClips.at(-1)).toMatchObject({
+      hasMediaFile: true,
+      status: "ready",
+    });
     expect(cleanup).toHaveBeenCalledWith({
       protectedPaths: [resolve(replayPath), resolve(replayPath)],
     });

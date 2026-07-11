@@ -360,6 +360,11 @@ export type RecordingAutoStartMode = z.infer<
   typeof RecordingAutoStartModeSchema
 >;
 
+export const ReplayClipPreviewResolutionSchema = z.enum(["720p", "1080p"]);
+export type ReplayClipPreviewResolution = z.infer<
+  typeof ReplayClipPreviewResolutionSchema
+>;
+
 export const defaultCaptureProfileNames: Record<GameId, string> = {
   poe1: "Default PoE Capture",
   poe2: "Default PoE 2 Capture",
@@ -508,6 +513,8 @@ export const AppSettingsSchema = z.object({
   keybindManualReplay: OptionalKeybindAcceleratorSchema.default(
     keybindActionConfigs.manualReplay.defaultAccelerator,
   ),
+  replayClipPreviewResolution:
+    ReplayClipPreviewResolutionSchema.default("720p"),
   ...CaptureProfileSettingsSchema.shape,
   selectedCaptureProfileId: z.string().min(1).max(128).nullable().default(null),
   selectedCaptureProfileIdsByGame: CaptureProfileSelectionMemorySchema,

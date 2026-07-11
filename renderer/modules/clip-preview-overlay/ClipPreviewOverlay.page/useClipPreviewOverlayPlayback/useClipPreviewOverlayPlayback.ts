@@ -32,6 +32,7 @@ function useClipPreviewOverlayPlayback(
   input: UseClipPreviewOverlayPlaybackInput,
 ) {
   const pendingSeekSecondsRef = useRef<number | null>(null);
+  const activeSeekSecondsRef = useRef<number | null>(null);
   const resumePlaybackAfterSeekRef = useRef(false);
   const videoSrcRef = useRef(input.videoSrc);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -42,6 +43,7 @@ function useClipPreviewOverlayPlayback(
     }
     videoSrcRef.current = input.videoSrc;
     pendingSeekSecondsRef.current = null;
+    activeSeekSecondsRef.current = null;
     resumePlaybackAfterSeekRef.current = false;
   }, [input.videoSrc]);
 
@@ -58,6 +60,7 @@ function useClipPreviewOverlayPlayback(
   const { handleSeeked, handleSeeking, seekPreview } =
     useClipPreviewOverlaySeek({
       canUseClip: input.canUseClip,
+      activeSeekSecondsRef,
       durationSeconds: input.durationSeconds,
       pendingSeekSecondsRef,
       resumePlaybackAfterSeekRef,

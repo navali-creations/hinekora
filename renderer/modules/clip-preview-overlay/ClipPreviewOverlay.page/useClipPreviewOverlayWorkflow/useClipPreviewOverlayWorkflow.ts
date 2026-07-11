@@ -1,9 +1,12 @@
 import { useClipPreviewOverlayDetail } from "../useClipPreviewOverlayDetail/useClipPreviewOverlayDetail";
 import { useClipPreviewOverlayOperations } from "../useClipPreviewOverlayOperations/useClipPreviewOverlayOperations";
 
-function useClipPreviewOverlayWorkflow() {
+function useClipPreviewOverlayWorkflow(mediaLifecycle: {
+  prepareForFileMutation: () => void;
+  reloadAfterFileMutation: () => void;
+}) {
   const detail = useClipPreviewOverlayDetail();
-  const operations = useClipPreviewOverlayOperations(detail);
+  const operations = useClipPreviewOverlayOperations(detail, mediaLifecycle);
 
   return {
     ...operations,

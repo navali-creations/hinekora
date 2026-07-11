@@ -9,6 +9,7 @@ interface RunClipPreviewOperationInput<T extends ClipPreviewOperationResult> {
   execute: (requestId: string) => Promise<T>;
   fallbackError: string;
   getResultError?: (result: T) => string | null;
+  onSettled?: () => void;
   onSuccess: (result: T) => void;
 }
 
@@ -25,6 +26,10 @@ function useClipPreviewOverlayOperation(input: {
     <T extends ClipPreviewOperationResult>(
       operation: RunClipPreviewOperationInput<T>,
     ) => {
+      if (operationRequestRef.current !== null) {
+        return;
+      }
+
       input.setActive(true);
       input.setOperationProgress(0.02);
       input.setSaveMessage(null);
@@ -71,8 +76,12 @@ function useClipPreviewOverlayOperation(input: {
         .finally(() => {
           unsubscribeProgress();
           if (operationRequestRef.current === requestId) {
-            operationRequestRef.current = null;
-            input.setActive(false);
+            try {
+              operation.onSettled?.();
+            } finally {
+              operationRequestRef.current = null;
+              input.setActive(false);
+            }
           }
         });
     },

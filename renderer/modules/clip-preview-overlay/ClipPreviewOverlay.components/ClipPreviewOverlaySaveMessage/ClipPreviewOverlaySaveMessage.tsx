@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import type { MouseEvent } from "react";
 
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
@@ -6,8 +7,7 @@ import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.
 import { useClipPreviewOverlayControlsContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
 
 function ClipPreviewOverlaySaveMessage() {
-  const { handleOpenSavedClipInEditor } =
-    useClipPreviewOverlayControlsContext();
+  const { handleOpenSavedClip } = useClipPreviewOverlayControlsContext();
   const { detail, hasSavedClip, isCopying, isSaving, saveMessage } =
     useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
       detail: clipPreviewOverlay.detail,
@@ -18,6 +18,10 @@ function ClipPreviewOverlaySaveMessage() {
     }));
   const canOpenSavedClip =
     Boolean(detail?.clip) && hasSavedClip && !isCopying && !isSaving;
+  const handleOpenSavedClipClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    event.preventDefault();
+    handleOpenSavedClip();
+  };
 
   if (!saveMessage) {
     return null;
@@ -39,10 +43,7 @@ function ClipPreviewOverlaySaveMessage() {
           <a
             className="link link-hover text-sky-400 underline"
             href="#"
-            onClick={(event) => {
-              event.preventDefault();
-              handleOpenSavedClipInEditor();
-            }}
+            onClick={handleOpenSavedClipClick}
           >
             Open in Clips view
           </a>

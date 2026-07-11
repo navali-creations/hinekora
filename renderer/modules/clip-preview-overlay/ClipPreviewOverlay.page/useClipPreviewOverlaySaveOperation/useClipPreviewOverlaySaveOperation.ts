@@ -17,12 +17,13 @@ function useClipPreviewOverlaySaveOperation(input: {
   hasTitleChange: boolean;
   hasTrimChanges: boolean;
   isMuted: boolean;
+  prepareForFileMutation: () => void;
+  reloadAfterFileMutation: () => void;
   resetCopiedState: () => void;
   trim: ClipPreviewTrimRange;
   trimmedTitle: string;
 }) {
   const {
-    incrementMediaVersion,
     resetLoadedClipState,
     setDetail,
     setDurationOverrideSeconds,
@@ -31,7 +32,6 @@ function useClipPreviewOverlaySaveOperation(input: {
     setSaveMessage,
     setSaving,
   } = useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
-    incrementMediaVersion: clipPreviewOverlay.incrementMediaVersion,
     resetLoadedClipState: clipPreviewOverlay.resetLoadedClipState,
     setDetail: clipPreviewOverlay.setDetail,
     setDurationOverrideSeconds: clipPreviewOverlay.setDurationOverrideSeconds,
@@ -52,8 +52,9 @@ function useClipPreviewOverlaySaveOperation(input: {
     }
 
     runOperation({
-      execute: (requestId) =>
-        window.electron.replayClips.update({
+      execute: (requestId) => {
+        input.prepareForFileMutation();
+        return window.electron.replayClips.update({
           id: input.clip?.id ?? "",
           operationRequestId: requestId,
           ...(input.isMuted ? { muteAudio: true } : {}),
@@ -66,7 +67,8 @@ function useClipPreviewOverlaySaveOperation(input: {
                 },
               }
             : {}),
-        }),
+        });
+      },
       fallbackError: "Could not save clip.",
       getResultError: (result) =>
         result.ok && result.detail
@@ -84,20 +86,21 @@ function useClipPreviewOverlaySaveOperation(input: {
         setHasSavedClip(true);
         setDetail(result.detail);
         setDurationOverrideSeconds(result.detail.durationSeconds);
-        incrementMediaVersion();
         input.resetCopiedState();
         resetLoadedClipState({ inSeconds: 0, outSeconds: nextDurationSeconds });
         setSaveMessage({ text: "Clip saved.", tone: "success" });
       },
+      onSettled: input.reloadAfterFileMutation,
     });
   }, [
-    incrementMediaVersion,
     input.canSave,
     input.clip,
     input.durationSeconds,
     input.hasTitleChange,
     input.hasTrimChanges,
     input.isMuted,
+    input.prepareForFileMutation,
+    input.reloadAfterFileMutation,
     input.resetCopiedState,
     input.trim.inSeconds,
     input.trim.outSeconds,

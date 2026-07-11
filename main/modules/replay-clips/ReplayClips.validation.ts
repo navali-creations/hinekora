@@ -199,13 +199,17 @@ function validateReplayClipIdList(value: unknown): string[] {
     );
   }
 
-  return value.map((id) => {
-    assertString(id, "id", ReplayClipsChannel.DeleteMany, {
-      min: 1,
-      max: 128,
-    });
-    return id;
-  });
+  return [
+    ...new Set(
+      value.map((id) => {
+        assertString(id, "id", ReplayClipsChannel.DeleteMany, {
+          min: 1,
+          max: 128,
+        });
+        return id;
+      }),
+    ),
+  ];
 }
 
 function validateTrimInput(

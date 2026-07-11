@@ -33,6 +33,7 @@ interface ReplayClipRow {
 
 interface ReplayClipLibraryPageInput {
   filter?: ReplayClipRepositoryListFilter;
+  offset?: number;
   pageIndex: number;
   pageSize: number;
   sortBy: ReplayClipLibrarySortKey;
@@ -213,6 +214,13 @@ class ReplayClipsRepository {
   listLibraryPage(
     input: ReplayClipLibraryPageInput,
   ): ReplayClipLibraryPageResult {
+    return {
+      items: this.listLibraryItems(input),
+      totalCount: this.count(input.filter ?? {}),
+    };
+  }
+
+  listLibraryItems(input: ReplayClipLibraryPageInput): ReplayClip[] {
     const filter = input.filter ?? {};
     const rows = this.database.queryAll(
       this.createFilteredQuery(filter)
@@ -221,15 +229,17 @@ class ReplayClipsRepository {
           this.getLibrarySortExpression(input.sortBy),
           input.sortDirection,
         )
-        .orderBy("created_at", "desc")
+        .orderBy(
+          "created_at",
+          input.sortBy === "targetDurationSeconds"
+            ? input.sortDirection
+            : "desc",
+        )
         .limit(input.pageSize)
-        .offset(input.pageIndex * input.pageSize),
+        .offset(input.offset ?? input.pageIndex * input.pageSize),
     );
 
-    return {
-      items: rows.map(mapReplayClipRow),
-      totalCount: this.count(filter),
-    };
+    return rows.map(mapReplayClipRow);
   }
 
   count(filter: ReplayClipRepositoryListFilter = {}): number {

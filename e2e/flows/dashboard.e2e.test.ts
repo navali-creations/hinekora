@@ -262,6 +262,10 @@ test("covers unavailable PoE live preview sources and auto-start alerts", async 
     name: "Recording settings",
   });
   await recordingSettingsTabs.getByRole("tab", { name: "Rewind" }).click();
+  await page.getByRole("button", { name: "Use 1080p preview quality" }).click();
+  await expect
+    .poll(async () => (await getDashboardE2ECalls(page)).settingsUpdates)
+    .toContainEqual({ replayClipPreviewResolution: "1080p" });
   await page.getByLabel("Start rewind automatically").check();
   await expect(
     page.getByText(

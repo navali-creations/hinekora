@@ -11,6 +11,7 @@ export type {
   ReplayClipLibraryQuery,
   ReplayClipLibrarySortKey,
   ReplayClipListFilter,
+  ReplayClipPreviewProgress,
   ReplayClipSourceDetail,
   ReplayClipTrimInput,
   ReplayClipUpdateInput,

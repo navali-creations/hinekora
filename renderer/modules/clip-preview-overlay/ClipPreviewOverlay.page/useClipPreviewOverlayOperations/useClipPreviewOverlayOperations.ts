@@ -4,16 +4,18 @@ import { useCallback } from "react";
 import { trackEvent } from "~/renderer/modules/umami";
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
-import { resolveClipPreviewOperationState } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { useClipPreviewOverlayCopyOperation } from "../useClipPreviewOverlayCopyOperation/useClipPreviewOverlayCopyOperation";
 import type { ClipPreviewOverlayDetail } from "../useClipPreviewOverlayDetail/useClipPreviewOverlayDetail";
 import { useClipPreviewOverlaySaveOperation } from "../useClipPreviewOverlaySaveOperation/useClipPreviewOverlaySaveOperation";
+import { resolveClipPreviewOperationState } from "./useClipPreviewOverlayOperations.utils";
 
-function useClipPreviewOverlayOperations({
-  clip,
-  durationSeconds,
-  fileTitle,
-}: ClipPreviewOverlayDetail) {
+function useClipPreviewOverlayOperations(
+  { clip, durationSeconds, fileTitle }: ClipPreviewOverlayDetail,
+  mediaLifecycle: {
+    prepareForFileMutation: () => void;
+    reloadAfterFileMutation: () => void;
+  },
+) {
   const {
     hasSavedClip,
     isCopying,
@@ -76,6 +78,8 @@ function useClipPreviewOverlayOperations({
     hasTitleChange,
     hasTrimChanges,
     isMuted,
+    prepareForFileMutation: mediaLifecycle.prepareForFileMutation,
+    reloadAfterFileMutation: mediaLifecycle.reloadAfterFileMutation,
     resetCopiedState,
     trim,
     trimmedTitle,
@@ -131,7 +135,7 @@ function useClipPreviewOverlayOperations({
     ],
   );
 
-  const handleOpenSavedClipInEditor = useCallback(() => {
+  const handleOpenSavedClip = useCallback(() => {
     if (!clip || !canOpenSavedClip) {
       return;
     }
@@ -159,7 +163,7 @@ function useClipPreviewOverlayOperations({
     handleClose,
     handleCopyClip,
     handleEditClip,
-    handleOpenSavedClipInEditor,
+    handleOpenSavedClip,
     handleSaveClip,
     handleTitleChange,
     hasCopied,

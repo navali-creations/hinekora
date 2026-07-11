@@ -8,7 +8,7 @@ import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { normalizeMediaLibraryPageQuery } from "~/main/modules/media-library/MediaLibrary.utils";
-import { createRunRecordingMediaUrl } from "~/main/modules/replay-clips/ReplayClips.media";
+import { createRunRecordingMediaUrl } from "~/main/modules/media-protocol";
 import { ReplayClipsRepository } from "~/main/modules/replay-clips/ReplayClips.repository";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import {

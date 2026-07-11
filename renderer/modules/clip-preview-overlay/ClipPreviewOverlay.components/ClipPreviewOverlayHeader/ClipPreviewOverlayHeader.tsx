@@ -7,7 +7,7 @@ import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.
 import {
   resolveClipPreviewDetail,
   resolveClipPreviewHeaderState,
-} from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+} from "../../ClipPreviewOverlay.page/useClipPreviewOverlayDetail/useClipPreviewOverlayDetail.utils";
 import { useClipPreviewOverlayControlsContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
 
 function ClipPreviewOverlayHeader() {

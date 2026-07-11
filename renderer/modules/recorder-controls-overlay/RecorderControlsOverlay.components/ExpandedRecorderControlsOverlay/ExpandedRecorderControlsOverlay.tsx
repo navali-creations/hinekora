@@ -1,4 +1,3 @@
-import type { ChangeEvent } from "react";
 import {
   FiLoader as Loader2,
   FiPlay as Play,
@@ -8,23 +7,17 @@ import { HiViewGrid } from "react-icons/hi";
 import { PiBezierCurve, PiFilmSlate, PiSelection } from "react-icons/pi";
 import { TbRouteSquare2 } from "react-icons/tb";
 
-import {
-  getProfilesForGame,
-  resolveActiveGameProfile,
-} from "~/renderer/modules/profiles/Profiles.utils/Profiles.utils";
 import { CaptureModeTabs } from "~/renderer/modules/recorder-controls-overlay/RecorderControlsOverlay.components/CaptureModeTabs/CaptureModeTabs";
 import { RecorderOverlayTimer } from "~/renderer/modules/recorder-controls-overlay/RecorderControlsOverlay.components/RecorderOverlayTimer/RecorderOverlayTimer";
+import { RecorderPreviewQualityChip } from "~/renderer/modules/recorder-controls-overlay/RecorderControlsOverlay.components/RecorderPreviewQualityChip/RecorderPreviewQualityChip";
 import { useRecorderOverlayControls } from "~/renderer/modules/recorder-controls-overlay/RecorderControlsOverlay.hooks/useRecorderOverlayControls/useRecorderOverlayControls";
-import { useProfilesShallow, useSettingsSelector } from "~/renderer/store";
 
 import styles from "../../RecorderControlsOverlay.page/RecorderControlsOverlayPage.module.css";
 import { RecorderAuraActionButton } from "../RecorderAuraActionButton/RecorderAuraActionButton";
 import { RecorderBookmarkActionButton } from "../RecorderBookmarkActionButton/RecorderBookmarkActionButton";
 import { RecorderOverlayWindowActions } from "../RecorderOverlayWindowActions/RecorderOverlayWindowActions";
-import {
-  closeRecorderOverlay,
-  openRecorderAuraOverlay,
-} from "./ExpandedRecorderControlsOverlay.utils";
+import { closeRecorderOverlay } from "./ExpandedRecorderControlsOverlay.utils";
+import { useExpandedRecorderAuraControls } from "./useExpandedRecorderAuraControls/useExpandedRecorderAuraControls";
 
 type ExpandedRecorderControlsOverlayProps = { onMinimize: () => void };
 
@@ -49,66 +42,16 @@ function ExpandedRecorderControlsOverlay({
     recordingButtonTitle,
     showBookmarkAction,
   } = useRecorderOverlayControls();
-  const { profileItems, selectedProfileId, selectProfile } = useProfilesShallow(
-    (profiles) => ({
-      profileItems: profiles.items,
-      selectedProfileId: profiles.selectedProfileId,
-      selectProfile: profiles.select,
-    }),
-  );
-  const activeGame = useSettingsSelector(
-    (settings) => settings.value?.activeGame ?? "poe1",
-  );
-  const activeGameProfiles = getProfilesForGame(profileItems, activeGame);
-  const selectedProfile = resolveActiveGameProfile(
-    profileItems,
-    selectedProfileId,
-    activeGame,
-  );
-  const canUnlockAuras = gameRunning && !isRecorderBusy && !!selectedProfile;
-
-  const handleProfileChange = (event: ChangeEvent<HTMLSelectElement>) => {
-    const profileId = event.currentTarget.value;
-    if (!profileId) {
-      return;
-    }
-
-    selectProfile(profileId);
-    if (gameRunning) {
-      void window.electron.overlayWindows.showAura(profileId);
-    }
-  };
-  const handleEditAura = () =>
-    openRecorderAuraOverlay({
-      gameRunning,
-      isRecorderBusy,
-      profileId: selectedProfile?.id ?? null,
-      startAddingAura: false,
-    });
-  const handleAddAura = () =>
-    openRecorderAuraOverlay({
-      addAuraShape: "rect",
-      gameRunning,
-      isRecorderBusy,
-      profileId: selectedProfile?.id ?? null,
-      startAddingAura: true,
-    });
-  const handleAddArchedAura = () =>
-    openRecorderAuraOverlay({
-      addAuraShape: "arc",
-      gameRunning,
-      isRecorderBusy,
-      profileId: selectedProfile?.id ?? null,
-      startAddingAura: true,
-    });
-  const handleAddPointerAura = () =>
-    openRecorderAuraOverlay({
-      addAuraShape: "points",
-      gameRunning,
-      isRecorderBusy,
-      profileId: selectedProfile?.id ?? null,
-      startAddingAura: true,
-    });
+  const {
+    activeGameProfiles,
+    canUnlockAuras,
+    handleAddArchedAura,
+    handleAddAura,
+    handleAddPointerAura,
+    handleEditAura,
+    handleProfileChange,
+    selectedProfile,
+  } = useExpandedRecorderAuraControls({ gameRunning, isRecorderBusy });
   const handleCloseOverlay = () => closeRecorderOverlay();
 
   return (
@@ -116,7 +59,10 @@ function ExpandedRecorderControlsOverlay({
       className={`${styles.overlay} box-border flex h-screen w-screen flex-col gap-1.5 overflow-hidden p-2`}
     >
       <div className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-start gap-1">
-        <RecorderOverlayTimer />
+        <div className="flex min-w-0 items-center gap-1">
+          <RecorderOverlayTimer />
+          <RecorderPreviewQualityChip />
+        </div>
         <RecorderOverlayWindowActions
           onClose={handleCloseOverlay}
           onMinimize={onMinimize}

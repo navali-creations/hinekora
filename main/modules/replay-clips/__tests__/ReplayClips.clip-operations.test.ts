@@ -60,6 +60,14 @@ type ReplayClipsServicePrivateTestHooks = {
   ) => Promise<void>;
 };
 
+function getFileActionsService(): unknown {
+  return (
+    service as unknown as {
+      fileActionsService: unknown;
+    }
+  ).fileActionsService;
+}
+
 setupReplayClipsServiceTestHarness(electronMocks);
 
 describe("Replay clip copy and update operations", () => {
@@ -93,7 +101,7 @@ describe("Replay clip copy and update operations", () => {
       .mockResolvedValue({ ok: true, error: null });
     const renderReplayClipQuickTrim = vi
       .spyOn(
-        service as unknown as {
+        getFileActionsService() as {
           renderReplayClipQuickTrim: (
             input: ReplayClipQuickTrimRenderInput,
           ) => Promise<void>;
@@ -140,7 +148,7 @@ describe("Replay clip copy and update operations", () => {
     });
     const renderReplayClipQuickTrim = vi
       .spyOn(
-        service as unknown as {
+        getFileActionsService() as {
           renderReplayClipQuickTrim: (
             input: ReplayClipQuickTrimRenderInput,
           ) => Promise<void>;
@@ -184,7 +192,7 @@ describe("Replay clip copy and update operations", () => {
     });
     const renderReplayClipQuickTrim = vi
       .spyOn(
-        service as unknown as {
+        getFileActionsService() as {
           renderReplayClipQuickTrim: (
             input: ReplayClipQuickTrimRenderInput,
           ) => Promise<void>;
@@ -228,7 +236,7 @@ describe("Replay clip copy and update operations", () => {
       error: null,
     });
     vi.spyOn(
-      service as unknown as {
+      getFileActionsService() as {
         renderReplayClipQuickTrim: (
           input: ReplayClipQuickTrimRenderInput,
         ) => Promise<void>;
@@ -276,7 +284,7 @@ describe("Replay clip copy and update operations", () => {
       error: null,
     });
     vi.spyOn(
-      service as unknown as {
+      getFileActionsService() as {
         renderReplayClipQuickTrim: (
           input: ReplayClipQuickTrimRenderInput,
         ) => Promise<void>;
@@ -320,7 +328,7 @@ describe("Replay clip copy and update operations", () => {
       error: "copy failed",
     });
     vi.spyOn(
-      service as unknown as {
+      getFileActionsService() as {
         renderReplayClipQuickTrim: (
           input: ReplayClipQuickTrimRenderInput,
         ) => Promise<void>;
@@ -358,7 +366,7 @@ describe("Replay clip copy and update operations", () => {
     );
     vi.spyOn(FileClipboard, "copyFileToClipboard");
     vi.spyOn(
-      service as unknown as {
+      getFileActionsService() as {
         renderReplayClipQuickTrim: (
           input: ReplayClipQuickTrimRenderInput,
         ) => Promise<void>;
@@ -389,7 +397,7 @@ describe("Replay clip copy and update operations", () => {
     const sourcePath = join(root, "same-output.mp4");
     writeFileSync(sourcePath, "source");
     const serviceWithPrivateHooks =
-      service as unknown as ReplayClipsServicePrivateTestHooks;
+      getFileActionsService() as ReplayClipsServicePrivateTestHooks;
     const renderEditorExportWithFfmpeg = vi
       .spyOn(EditorFfmpeg, "renderEditorExportWithFfmpeg")
       .mockImplementation(async ({ outputPath }) => {
@@ -413,7 +421,7 @@ describe("Replay clip copy and update operations", () => {
     const outputPath = join(root, "no-progress-output.mp4");
     writeFileSync(sourcePath, "source");
     const serviceWithPrivateHooks =
-      service as unknown as ReplayClipsServicePrivateTestHooks;
+      getFileActionsService() as ReplayClipsServicePrivateTestHooks;
     const renderEditorExportWithFfmpeg = vi
       .spyOn(EditorFfmpeg, "renderEditorExportWithFfmpeg")
       .mockImplementation(async ({ outputPath: tempOutputPath }) => {
@@ -443,7 +451,7 @@ describe("Replay clip copy and update operations", () => {
       }),
     );
     vi.spyOn(
-      service as unknown as {
+      getFileActionsService() as {
         renderReplayClipQuickTrim: (input: {
           outputPath: string;
           sourcePath: string;
@@ -482,7 +490,7 @@ describe("Replay clip copy and update operations", () => {
 
   it("forces the queue to continue when a queued operation rejects", async () => {
     const serviceWithPrivateHooks =
-      service as unknown as ReplayClipsServicePrivateTestHooks;
+      getFileActionsService() as ReplayClipsServicePrivateTestHooks;
     const first = serviceWithPrivateHooks.queueClipFileOperation(
       "clip-1",
       async () => {
@@ -499,18 +507,14 @@ describe("Replay clip copy and update operations", () => {
   });
 
   it("recovers the global stored-file mutation queue after rejection", async () => {
-    const internals = service as unknown as {
+    const internals = getFileActionsService() as {
       queueStoredFileMutation<T>(operation: () => Promise<T>): Promise<T>;
-      storedFileMutationQueue: Promise<unknown>;
     };
     const first = internals.queueStoredFileMutation(async () => {
       throw new Error("mutation failed");
     });
     await expect(first).rejects.toThrow("mutation failed");
 
-    internals.storedFileMutationQueue = Promise.reject(
-      new Error("stale queue failure"),
-    );
     await expect(
       internals.queueStoredFileMutation(async () => "recovered"),
     ).resolves.toBe("recovered");
@@ -533,7 +537,7 @@ describe("Replay clip copy and update operations", () => {
       error: null,
     });
     vi.spyOn(
-      service as unknown as {
+      getFileActionsService() as {
         renderReplayClipQuickTrim: (
           input: ReplayClipQuickTrimRenderInput,
         ) => Promise<void>;
@@ -578,7 +582,7 @@ describe("Replay clip copy and update operations", () => {
       }),
     );
     vi.spyOn(
-      service as unknown as {
+      getFileActionsService() as {
         renderReplayClipQuickTrim: (
           input: ReplayClipQuickTrimRenderInput,
         ) => Promise<void>;
@@ -606,6 +610,70 @@ describe("Replay clip copy and update operations", () => {
     await expect(deletePromise).resolves.toEqual({ ok: true, error: null });
     expect(repository.get("clip-1")).toBeNull();
     expect(existsSync(path)).toBe(false);
+  });
+
+  it("queues bulk deletion behind active copy operations", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    const copy = createDeferred();
+    writeFileSync(path, "video");
+    repository.upsert(createReplayClip({ processedClipPath: path }));
+    vi.spyOn(FileClipboard, "copyFileToClipboard").mockImplementation(
+      async () => {
+        await copy.promise;
+        return { ok: true, error: null };
+      },
+    );
+
+    const copyPromise = service.copyClipToClipboard("clip-1");
+    await Promise.resolve();
+    const deletePromise = service.deleteManyClips(["clip-1"]);
+    await Promise.resolve();
+
+    expect(repository.get("clip-1")).not.toBeNull();
+    expect(existsSync(path)).toBe(true);
+    copy.resolve();
+    await expect(copyPromise).resolves.toEqual({ ok: true, error: null });
+    await expect(deletePromise).resolves.toMatchObject({
+      deletedIds: ["clip-1"],
+      ok: true,
+    });
+    expect(repository.get("clip-1")).toBeNull();
+    expect(existsSync(path)).toBe(false);
+  });
+
+  it("reuses completed update results for repeated request ids", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({
+        durationSeconds: 20,
+        processedClipPath: path,
+        targetDurationSeconds: 20,
+      }),
+    );
+    const render = vi
+      .spyOn(
+        getFileActionsService() as {
+          renderReplayClipQuickTrim: (
+            input: ReplayClipQuickTrimRenderInput,
+          ) => Promise<void>;
+        },
+        "renderReplayClipQuickTrim",
+      )
+      .mockImplementation(async (input) => {
+        writeFileSync(input.outputPath, "trimmed");
+      });
+    const input = {
+      id: "clip-1",
+      operationRequestId: "same-request",
+      trim: { inSeconds: 1, outSeconds: 10 },
+    };
+
+    const first = await service.updateClipFile(input);
+    const repeated = await service.updateClipFile(input);
+
+    expect(first).toEqual(repeated);
+    expect(render).toHaveBeenCalledTimes(1);
   });
 
   it("keeps in-place trim updates successful when backup cleanup fails", async () => {
@@ -712,7 +780,7 @@ describe("Replay clip copy and update operations", () => {
     );
     const renderReplayClipQuickTrim = vi
       .spyOn(
-        service as unknown as {
+        getFileActionsService() as {
           renderReplayClipQuickTrim: (
             input: ReplayClipQuickTrimRenderInput,
           ) => Promise<void>;
@@ -752,7 +820,7 @@ describe("Replay clip copy and update operations", () => {
       }),
     );
     vi.spyOn(
-      service as unknown as {
+      getFileActionsService() as {
         renderReplayClipQuickTrim: (input: {
           outputPath: string;
           sourcePath: string;
@@ -786,7 +854,7 @@ describe("Replay clip copy and update operations", () => {
       }),
     );
     vi.spyOn(
-      service as unknown as {
+      getFileActionsService() as {
         renderReplayClipQuickTrim: (input: {
           outputPath: string;
           sourcePath: string;

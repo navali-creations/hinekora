@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
+import { createReplayClipView } from "~/main/test/factories/replayClip";
+
+import { getClipPreviewFileTitle } from "../ClipPreviewOverlay.page/useClipPreviewOverlayDetail/useClipPreviewOverlayDetail.utils";
+import { resolveClipPreviewMediaState } from "../ClipPreviewOverlay.page/useClipPreviewOverlayMediaWorkflow/useClipPreviewOverlayMediaWorkflow.utils";
+import { resolveClipPreviewRouteClipId } from "../ClipPreviewOverlay.page/useClipPreviewOverlayRouteClipId/useClipPreviewOverlayRouteClipId.utils";
 import {
   clampClipPreviewTrimRange,
   formatClipPreviewTimestamp,
-  getClipPreviewFileTitle,
   moveClipPreviewTrimRange,
-  resolveClipPreviewRouteClipId,
 } from "./ClipPreviewOverlay.utils";
 
 describe("ClipPreviewOverlay utils", () => {
@@ -58,5 +61,28 @@ describe("ClipPreviewOverlay utils", () => {
         trimDurationSeconds: 3,
       }),
     ).toEqual({ inSeconds: 0, outSeconds: 3 });
+  });
+
+  it("prefers the lightweight preview proxy without replacing source media", () => {
+    const state = resolveClipPreviewMediaState({
+      detail: {
+        clip: createReplayClipView({
+          durationSeconds: 10,
+          hasMediaFile: true,
+        }),
+        durationSeconds: 10,
+        mediaUrl: "hinekora-media://replay-clip/clip-1",
+        previewMediaUrl: "hinekora-media://clip-preview/clip-1",
+      },
+      durationOverrideSeconds: null,
+      isCopying: false,
+      isMediaReady: true,
+      isSaving: false,
+      mediaError: null,
+      mediaVersion: 2,
+    });
+
+    expect(state.videoSrc).toBe("hinekora-media://clip-preview/clip-1?v=2");
+    expect(state.clip?.id).toBe("clip-1");
   });
 });

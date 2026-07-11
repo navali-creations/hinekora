@@ -8,11 +8,11 @@ import { app, net, protocol, shell } from "electron";
 
 import { DatabaseService } from "~/main/modules/database";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
+import { createMediaFileResponse } from "~/main/modules/media-protocol";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { resolveRecordingStorageRoot } from "~/main/modules/recording-storage/RecordingStorage.utils";
 import { ReplayClipsService } from "~/main/modules/replay-clips";
 import { resolveReplayClipFilePath } from "~/main/modules/replay-clips/ReplayClips.files";
-import { createReplayClipMediaFileResponse } from "~/main/modules/replay-clips/ReplayClips.media";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import {
   createSafePathLogFields,
@@ -992,10 +992,8 @@ class EditorService {
     }
 
     try {
-      return await createReplayClipMediaFileResponse(
-        exportPath,
-        request,
-        (url, init) => net.fetch(url, init),
+      return await createMediaFileResponse(exportPath, request, (url, init) =>
+        net.fetch(url, init),
       );
     } catch {
       /* v8 ignore next -- Native file fetch failures are surfaced as protocol errors. */
