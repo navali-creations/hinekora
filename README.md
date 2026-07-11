@@ -26,6 +26,8 @@ Hinekora is a gameplay recorder tailored for Path of Exile 1 and Path of Exile 2
 > [!WARNING]
 > Just like any software, use it at your own risk. The Aura Manager feature fall into a grey area of what is and is not allowed by GGG's Terms of Service. There is no mention of mirroring ui in ToS as of 6th Jun 2026. If you feel this information may be outdated, please create an issue. [Link to GGG Terms of Service](https://www.pathofexile.com/legal/terms-of-use-and-privacy-policy)
 
+
+
 - Manages aura overlays for tracking important on-screen buffs or effects.
 > [!NOTE]
 > Aura overlays do NOT read in game memory. It's an OBS mirrored scene, using OBS bindings. See https://github.com/aza547/noobs
@@ -34,11 +36,11 @@ https://github.com/user-attachments/assets/a4b70f85-0d7f-4602-ad0a-2e07cd6988f0
 
 https://github.com/user-attachments/assets/029f0a36-8e8b-446b-860e-4b6dc48a6dcd
 
-https://github.com/user-attachments/assets/ceb8da34-6f51-48c7-b823-d528299de07c
+https://github.com/user-attachments/assets/6c8fd31c-34cc-45a1-8a19-c1712730248a
 
 https://github.com/user-attachments/assets/6f033449-ba8f-4a0b-91c3-e66250101088
 
-https://github.com/user-attachments/assets/437220a9-609f-4bf8-ac0b-7ea4c4334e94
+https://github.com/user-attachments/assets/3dcf79c6-7f53-4573-86b8-d4d75ed9ef63
 
 
 ## For Developers
