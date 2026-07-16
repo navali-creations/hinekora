@@ -263,6 +263,9 @@ test("covers rewind detail playback, timeline filters, linked clips, bookmark pa
     replayClipDetails,
   });
   await page.goto("/#/rewind/rewind-detail-1");
+  const openingBookmark = page.locator(
+    '[data-recording-bookmark-panel-item-id="rewind-map-0"]',
+  );
 
   await expect(page.getByRole("heading", { name: /Rewind/ })).toBeVisible();
   await expect(page.getByText("6 items")).toBeVisible();
@@ -270,15 +273,13 @@ test("covers rewind detail playback, timeline filters, linked clips, bookmark pa
   await expect(
     page.getByRole("button", { name: /Manual replay.*1:35/ }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Sanctuary.*0:00/ }),
-  ).toBeHidden();
+  await expect(openingBookmark).toBeHidden();
 
   await page.getByRole("button", { name: "Next bookmark page" }).click();
   await expect(page.getByText("2 / 2")).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Sanctuary.*0:00/ }),
-  ).toBeVisible();
+  await expect(openingBookmark).toBeVisible();
+  await expect(openingBookmark).toContainText("Sanctuary");
+  await expect(openingBookmark).toContainText("0:00");
   await page.getByRole("button", { name: "Previous bookmark page" }).click();
 
   await expect(

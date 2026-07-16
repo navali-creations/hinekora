@@ -337,10 +337,12 @@ describe("probeEditorAudioStream", () => {
     expect(probe).not.toHaveBeenCalled();
   });
 
-  it("renders 1080p exports through the bundled ffmpeg path without ffprobe", async () => {
+  it("renders exports with gaps through the bundled ffmpeg and ffprobe paths", async () => {
     vi.resetModules();
     const directory = mkdtempSync(join(tmpdir(), "hinekora-editor-ffmpeg-"));
     const ffmpegPath = join(directory, "ffmpeg.exe");
+    const ffprobePath = join(directory, "ffprobe.exe");
+    const sourcePath = join(directory, "source.mp4");
     const previousFfmpegPath = process.env.HINEKORA_FFMPEG_PATH;
     const spawn = vi.fn(() => {
       const child = createProbeChild();
@@ -362,12 +364,14 @@ describe("probeEditorAudioStream", () => {
 
       return {
         ...actual,
-        existsSync: (path: string) => path === ffmpegPath,
+        existsSync: (path: string) =>
+          path === ffmpegPath || path === ffprobePath,
       };
     });
 
     try {
       writeFileSync(ffmpegPath, "");
+      writeFileSync(ffprobePath, "");
       process.env.HINEKORA_FFMPEG_PATH = ffmpegPath;
       const { renderEditorExportWithFfmpeg } = await import("../Editor.ffmpeg");
       const progress = vi.fn();
@@ -379,20 +383,33 @@ describe("probeEditorAudioStream", () => {
         segments: [
           {
             durationSeconds: 1,
+            kind: "gap",
+            startSeconds: 0,
+          },
+          {
+            durationSeconds: 1,
             inSeconds: 0,
             kind: "clip",
             outSeconds: 1,
             source: {
-              path: join(directory, "source.mp4"),
+              path: sourcePath,
             },
-            startSeconds: 0,
+            startSeconds: 1,
           },
         ],
       });
 
-      const args = spawn.mock.calls[0]?.[1] ?? [];
+      const ffmpegCalls = spawn.mock.calls.filter(
+        ([executablePath]) => executablePath === ffmpegPath,
+      );
+      const ffprobeCalls = spawn.mock.calls.filter(
+        ([executablePath]) => executablePath === ffprobePath,
+      );
+      const args = ffmpegCalls[0]?.[1] ?? [];
       expect(args).toContain("-crf");
       expect(args).toContain("21");
+      expect(ffprobeCalls).toHaveLength(1);
+      expect(ffprobeCalls[0]?.[1]).toContain(sourcePath);
       expect(progress).toHaveBeenCalledWith(1);
 
       await renderEditorExportWithFfmpeg({
@@ -406,13 +423,22 @@ describe("probeEditorAudioStream", () => {
             kind: "clip",
             outSeconds: 1,
             source: {
-              path: join(directory, "source.mp4"),
+              path: sourcePath,
             },
             startSeconds: 0,
           },
         ],
       });
-      expect(spawn).toHaveBeenCalledTimes(2);
+      expect(
+        spawn.mock.calls.filter(
+          ([executablePath]) => executablePath === ffmpegPath,
+        ),
+      ).toHaveLength(2);
+      expect(
+        spawn.mock.calls.filter(
+          ([executablePath]) => executablePath === ffprobePath,
+        ),
+      ).toHaveLength(1);
     } finally {
       if (previousFfmpegPath === undefined) {
         delete process.env.HINEKORA_FFMPEG_PATH;

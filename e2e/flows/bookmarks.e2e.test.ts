@@ -352,6 +352,9 @@ test("covers recording detail playback, timeline seeking, bookmark pagination, a
 
   await setupDashboardE2E(page, { bookmarks });
   await page.goto("/#/recording/recording-detail-1");
+  const openingBookmark = page.locator(
+    '[data-recording-bookmark-panel-item-id="recording-map-0"]',
+  );
 
   await expect(
     page.getByRole("heading", { name: "recording-detail-1.mp4" }),
@@ -361,15 +364,13 @@ test("covers recording detail playback, timeline seeking, bookmark pagination, a
   await expect(
     page.getByRole("button", { name: /The Khari Bazaar/ }),
   ).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Qimah Reservoir.*0:00/ }),
-  ).toBeHidden();
+  await expect(openingBookmark).toBeHidden();
 
   await page.getByRole("button", { name: "Next bookmark page" }).click();
   await expect(page.getByText("2 / 2")).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: /Qimah Reservoir.*0:00/ }),
-  ).toBeVisible();
+  await expect(openingBookmark).toBeVisible();
+  await expect(openingBookmark).toContainText("Qimah Reservoir");
+  await expect(openingBookmark).toContainText("0:00");
   await page.getByRole("button", { name: "Previous bookmark page" }).click();
   await expect(page.getByText("1 / 2")).toBeVisible();
 
