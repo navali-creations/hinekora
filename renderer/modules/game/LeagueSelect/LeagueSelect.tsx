@@ -56,13 +56,13 @@ function LeagueSelect({ disabled = false, game }: LeagueSelectProps) {
 
   return (
     <label
-      className="select select-xs w-max no-drag"
+      className="select select-xs w-max cursor-pointer no-drag focus-within:outline-none focus-within:ring-0"
       aria-label={`${game} league`}
     >
       <span className="label">League</span>
       <select
         aria-invalid={preferenceError ? true : undefined}
-        className="-me-[30px] -ms-[18px]"
+        className="-me-[30px] -ms-[18px] cursor-pointer outline-none focus:outline-none focus-visible:outline-none disabled:cursor-not-allowed"
         disabled={disabled || isFetching}
         title={preferenceError ?? undefined}
         value={selectedLeague}

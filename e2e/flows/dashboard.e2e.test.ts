@@ -736,6 +736,37 @@ test("covers keybind settings keyboard recording", async ({ page }) => {
   await expect(recordingPrompt).not.toBeVisible();
 });
 
+test("keeps content-width tabs on one horizontally scrollable row", async ({
+  page,
+}) => {
+  await setupDashboardE2E(page, {
+    initialHash: "/#/settings?tab=keybinds",
+    skipDashboardShellChecks: true,
+  });
+
+  const settingsTabs = page.getByRole("tablist", {
+    name: "Settings sections",
+  });
+  await expect(settingsTabs).toBeVisible();
+
+  const layout = await settingsTabs.evaluate((element) => {
+    element.style.maxWidth = "320px";
+    element.style.width = "320px";
+    const tabs = Array.from(
+      element.querySelectorAll<HTMLElement>('[role="tab"]'),
+    );
+
+    return {
+      clientWidth: element.clientWidth,
+      rowOffsets: [...new Set(tabs.map((tab) => tab.offsetTop))],
+      scrollWidth: element.scrollWidth,
+    };
+  });
+
+  expect(layout.rowOffsets).toHaveLength(1);
+  expect(layout.scrollWidth).toBeGreaterThan(layout.clientWidth);
+});
+
 test("shows and copies the pseudonymous user ID from privacy settings", async ({
   page,
 }) => {

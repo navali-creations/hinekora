@@ -4,10 +4,7 @@ import { useEffect, useState } from "react";
 import { PageContainer } from "~/renderer/components/PageContainer/PageContainer";
 import { PageContent } from "~/renderer/components/PageContent/PageContent";
 import { PageHeader } from "~/renderer/components/PageHeader/PageHeader";
-import {
-  type TabsBoxTabItem,
-  TabsBoxTabs,
-} from "~/renderer/components/TabsBoxTabs/TabsBoxTabs";
+import { type TabItem, Tabs } from "~/renderer/components/Tabs/Tabs";
 import { CaptureProfilesPanel } from "~/renderer/modules/capture-profiles/CaptureProfiles.components/CaptureProfilesPanel/CaptureProfilesPanel";
 import { ProfilesPanel } from "~/renderer/modules/profiles/Profiles.components/ProfilesPanel/ProfilesPanel";
 
@@ -59,8 +56,8 @@ function getSettingsCategoryFromSlug(slug: unknown): SettingsCategory | null {
 
   return settingsCategoryBySlug[slug as SettingsCategorySlug];
 }
-const settingsTabItems: TabsBoxTabItem<SettingsCategory>[] =
-  settingsCategories.map((category) => {
+const settingsTabItems: TabItem<SettingsCategory>[] = settingsCategories.map(
+  (category) => {
     const categorySlug = getSettingsCategorySlug(category);
 
     return {
@@ -69,7 +66,8 @@ const settingsTabItems: TabsBoxTabItem<SettingsCategory>[] =
       tabId: `settings-tab-${categorySlug}`,
       panelId: `settings-panel-${categorySlug}`,
     };
-  });
+  },
+);
 
 interface SettingsPageProps {
   initialCategory?: SettingsCategory;
@@ -99,13 +97,12 @@ function SettingsPage({
         subtitle="Configure your application preferences and game paths"
       />
       <PageContent>
-        <section
-          aria-label="Settings sections"
-          className="tabs tabs-box max-w-5xl bg-base-200 p-1"
-          role="tablist"
-        >
-          <TabsBoxTabs
+        <section className="max-w-5xl rounded-lg bg-base-200">
+          <Tabs
+            ariaLabel="Settings sections"
+            className="w-full"
             items={settingsTabItems}
+            size="sm"
             value={activeCategory}
             onChange={handleCategoryChange}
           />

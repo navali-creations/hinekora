@@ -101,12 +101,19 @@ describe("SettingsPage", () => {
   it("opens the Help tab from the initial route category", async () => {
     await renderSettingsPage("Help");
 
+    const tabs = container.querySelector('[aria-label="Settings sections"]');
+
     expect(container.textContent).toContain("Help settings card");
+    expect(tabs?.className).toContain("rounded-md");
+    expect(tabs?.className).toContain("bg-base-300");
     expect(
       container
         .querySelector("#settings-tab-help")
         ?.getAttribute("aria-selected"),
     ).toBe("true");
+    expect(container.querySelector("#settings-tab-help")?.className).toContain(
+      "!bg-primary",
+    );
     expect(container.querySelector("#settings-panel-help")).not.toBeNull();
   });
 

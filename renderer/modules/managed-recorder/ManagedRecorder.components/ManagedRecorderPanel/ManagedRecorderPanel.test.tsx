@@ -70,6 +70,8 @@ describe("ManagedRecorderPanel", () => {
       "recorder-settings-panel-capture",
     );
     expect(captureTab?.getAttribute("aria-selected")).toBe("true");
+    expect(captureTab?.className).toContain("!bg-primary");
+    expect(captureTab?.parentElement?.className).toContain("rounded-md");
     expect(panel?.getAttribute("role")).toBe("tabpanel");
     expect(panel?.getAttribute("aria-labelledby")).toBe(
       "recorder-settings-tab-capture",

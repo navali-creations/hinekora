@@ -62,7 +62,7 @@ function GameSelectorTab({ game }: GameSelectorTabProps) {
       role="tab"
     >
       <button
-        className="no-drag btn btn-ghost p-0 hover:bg-transparent focus-visible:bg-transparent disabled:cursor-not-allowed disabled:opacity-50"
+        className="no-drag btn btn-ghost border-0 p-0 shadow-none outline-none hover:bg-transparent focus:bg-transparent focus:outline-none focus-visible:bg-transparent focus-visible:outline-none focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50"
         disabled={isGameSwitchDisabled}
         title={
           isGameSwitchDisabled

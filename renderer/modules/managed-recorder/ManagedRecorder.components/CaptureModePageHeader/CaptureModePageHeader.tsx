@@ -7,10 +7,7 @@ import {
 } from "react-icons/fi";
 
 import { PageHeader } from "~/renderer/components/PageHeader/PageHeader";
-import {
-  type TabsBoxItem,
-  TabsBoxTabs,
-} from "~/renderer/components/TabsBoxTabs/TabsBoxTabs";
+import { type TabItem, Tabs } from "~/renderer/components/Tabs/Tabs";
 import { CaptureProfileSelect } from "~/renderer/modules/capture-profiles/CaptureProfiles.components/CaptureProfileSelect/CaptureProfileSelect";
 import {
   useManagedRecorderShallow,
@@ -125,33 +122,28 @@ function CaptureModePageHeader({
           <div className="flex flex-wrap items-center justify-end gap-2">
             <CaptureProfileSelect />
 
-            <div
-              aria-label="Capture mode"
-              className="tabs tabs-boxed tabs-xs inline-grid shrink-0 auto-cols-max grid-flow-col bg-base-300 p-1"
-              data-onboarding="capture-mode"
-              role="radiogroup"
-            >
-              <TabsBoxTabs
-                items={
-                  [
-                    {
-                      value: "session",
-                      label: "Session Recording",
-                      disabled: isRewindActive,
-                    },
-                    {
-                      value: "rewind",
-                      label: "Rewind",
-                      disabled: isSessionActive,
-                    },
-                  ] satisfies TabsBoxItem<CaptureMode>[]
-                }
-                selectionRole="radio"
-                value={selectedMode}
-                variant="primary"
-                onChange={handleCaptureModeChange}
-              />
-            </div>
+            <Tabs
+              ariaLabel="Capture mode"
+              className="shrink-0"
+              dataOnboarding="capture-mode"
+              items={
+                [
+                  {
+                    value: "session",
+                    label: "Session Recording",
+                    disabled: isRewindActive,
+                  },
+                  {
+                    value: "rewind",
+                    label: "Rewind",
+                    disabled: isSessionActive,
+                  },
+                ] satisfies TabItem<CaptureMode>[]
+              }
+              selectionRole="radio"
+              value={selectedMode}
+              onChange={handleCaptureModeChange}
+            />
 
             <div
               className="tooltip tooltip-left no-drag"

@@ -155,6 +155,11 @@ describe("LeagueSelect", () => {
     await renderLeagueSelect("poe1");
 
     expect(getOptionLabels()).toEqual(["Mirage", "Standard"]);
+    expect(getLeagueSelect().className).toContain("cursor-pointer");
+    expect(getLeagueSelect().className).toContain("focus:outline-none");
+    expect(getLeagueSelect().parentElement?.className).toContain(
+      "focus-within:outline-none",
+    );
   });
 
   it("renders current PoE 2 league options", async () => {

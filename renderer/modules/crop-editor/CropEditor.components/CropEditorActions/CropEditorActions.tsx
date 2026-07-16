@@ -4,6 +4,7 @@ import { PiBezierCurve, PiSelection } from "react-icons/pi";
 import { TbRouteSquare2 } from "react-icons/tb";
 
 import type { CropRegionSelectionShape } from "~/main/modules/overlay-windows/OverlayWindows.dto";
+import { type TabItem, Tabs } from "~/renderer/components/Tabs/Tabs";
 import {
   createAuraProfileUpdateFromSelection,
   getSelectedProfile,
@@ -16,6 +17,13 @@ import {
   useProfilesShallow,
   useSettingsSelector,
 } from "~/renderer/store";
+
+type AuraLockMode = "locked" | "unlocked";
+
+const auraLockTabs: TabItem<AuraLockMode>[] = [
+  { label: "Lock", value: "locked" },
+  { label: "Unlock", value: "unlocked" },
+];
 
 function CropEditorActions() {
   const { profileItems, selectedProfileId, selectProfile, updateProfile } =
@@ -93,12 +101,8 @@ function CropEditorActions() {
     }
   };
 
-  const handleLockClick = () => {
-    void setAuraLocked(true);
-  };
-
-  const handleUnlockClick = () => {
-    void setAuraLocked(false);
+  const handleAuraLockModeChange = (mode: AuraLockMode) => {
+    void setAuraLocked(mode === "locked");
   };
 
   const handleAddRectAuraClick = () => {
@@ -138,29 +142,14 @@ function CropEditorActions() {
         data-tip="Lock keeps auras click-through for gameplay. Unlock lets you drag and resize aura positions."
         data-onboarding="aura-lock-toggle"
       >
-        <div
-          className="tabs tabs-box tabs-xs [--tab-height:calc(var(--size-field,0.25rem)*7)]"
-          role="tablist"
-        >
-          <button
-            aria-selected={auraOverlayLocked}
-            className={clsx("tab", auraOverlayLocked && "tab-active")}
-            role="tab"
-            type="button"
-            onClick={handleLockClick}
-          >
-            Lock
-          </button>
-          <button
-            aria-selected={!auraOverlayLocked}
-            className={clsx("tab", !auraOverlayLocked && "tab-active")}
-            role="tab"
-            type="button"
-            onClick={handleUnlockClick}
-          >
-            Unlock
-          </button>
-        </div>
+        <Tabs
+          ariaLabel="Aura overlay lock"
+          className="[--tab-height:calc(var(--size-field,0.25rem)*7)]"
+          items={auraLockTabs}
+          selectionRole="radio"
+          value={auraOverlayLocked ? "locked" : "unlocked"}
+          onChange={handleAuraLockModeChange}
+        />
       </div>
       <div
         className={clsx(

@@ -40,7 +40,8 @@ function GameStatusBadge({ game }: GameStatusBadgeProps) {
         "border-emerald-400/45 bg-emerald-500/15 text-emerald-300":
           isRunning && !isFetching,
         "badge-info badge-soft": isFetching,
-        "badge-neutral badge-soft": !isRunning && !isFetching,
+        "border-zinc-500/30 bg-zinc-500/10 text-zinc-400":
+          !isRunning && !isFetching,
       })}
       title={title}
     >

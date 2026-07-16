@@ -1,8 +1,8 @@
-import clsx from "clsx";
 import { type MouseEvent, useEffect, useMemo, useState } from "react";
 import { FiTrash2 } from "react-icons/fi";
 
 import type { StorageGameLeagueUsage } from "~/main/modules/storage/Storage.dto";
+import { type TabItem, Tabs } from "~/renderer/components/Tabs/Tabs";
 
 import type { GameId } from "~/types";
 import { formatBytes, gameLabel } from "../storage.utils/storage.utils";
@@ -39,11 +39,8 @@ function LeagueDataSection({
     }
   }, [hasPoe1, hasPoe2]);
 
-  const handleGameTabClick = (event: MouseEvent<HTMLButtonElement>) => {
-    const game = event.currentTarget.dataset.game;
-    if (game === "poe1" || game === "poe2") {
-      setActiveGame(game);
-    }
+  const handleGameChange = (game: GameId) => {
+    setActiveGame(game);
   };
 
   const handleDeleteClick = (event: MouseEvent<HTMLButtonElement>) => {
@@ -67,35 +64,38 @@ function LeagueDataSection({
       {usage.length > 0 && (
         <div className="space-y-3">
           {hasPoe1 && hasPoe2 && (
-            <div
-              className="tabs tabs-box tabs-sm w-fit bg-base-200"
-              role="tablist"
-            >
-              <button
-                className={clsx("tab", activeGame === "poe1" && "tab-active")}
-                data-game="poe1"
-                role="tab"
-                type="button"
-                onClick={handleGameTabClick}
-              >
-                PoE1
-                <span className="badge badge-ghost badge-xs ml-1.5">
-                  {poe1Usage.length}
-                </span>
-              </button>
-              <button
-                className={clsx("tab", activeGame === "poe2" && "tab-active")}
-                data-game="poe2"
-                role="tab"
-                type="button"
-                onClick={handleGameTabClick}
-              >
-                PoE2
-                <span className="badge badge-ghost badge-xs ml-1.5">
-                  {poe2Usage.length}
-                </span>
-              </button>
-            </div>
+            <Tabs
+              ariaLabel="League data game"
+              items={
+                [
+                  {
+                    label: (
+                      <span className="flex items-center">
+                        PoE1
+                        <span className="badge badge-ghost badge-xs ml-1.5">
+                          {poe1Usage.length}
+                        </span>
+                      </span>
+                    ),
+                    value: "poe1",
+                  },
+                  {
+                    label: (
+                      <span className="flex items-center">
+                        PoE2
+                        <span className="badge badge-ghost badge-xs ml-1.5">
+                          {poe2Usage.length}
+                        </span>
+                      </span>
+                    ),
+                    value: "poe2",
+                  },
+                ] satisfies TabItem<GameId>[]
+              }
+              size="sm"
+              value={activeGame}
+              onChange={handleGameChange}
+            />
           )}
 
           {hasPoe1 !== hasPoe2 && (

@@ -207,23 +207,33 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
   await expect
     .poll(() =>
       gradientRow.evaluate((row) => {
-        const style = getComputedStyle(row, "::before");
-        const rowBounds = row.getBoundingClientRect();
+        const cells = Array.from(row.querySelectorAll("td"));
+        const headers = Array.from(
+          row.closest("table")?.querySelectorAll("thead th") ?? [],
+        );
         return {
-          backgroundImage: style.backgroundImage,
-          heightMatchesRow:
-            Math.abs(Number.parseFloat(style.height) - rowBounds.height) <= 2,
-          position: style.position,
-          spansRow:
-            Math.abs(Number.parseFloat(style.width) - rowBounds.width) < 1,
+          backgroundImage: getComputedStyle(row).backgroundImage,
+          cellsAreTransparent: cells.every(
+            (cell) =>
+              getComputedStyle(cell).backgroundColor === "rgba(0, 0, 0, 0)",
+          ),
+          columnsAreAligned: cells.every((cell, index) => {
+            const header = headers[index];
+            return (
+              header !== undefined &&
+              Math.abs(
+                cell.getBoundingClientRect().left -
+                  header.getBoundingClientRect().left,
+              ) <= 1
+            );
+          }),
         };
       }),
     )
     .toEqual({
       backgroundImage: expect.stringContaining("linear-gradient"),
-      heightMatchesRow: true,
-      position: "absolute",
-      spansRow: true,
+      cellsAreTransparent: true,
+      columnsAreAligned: true,
     });
 
   await page.getByRole("button", { name: "Next page" }).click();

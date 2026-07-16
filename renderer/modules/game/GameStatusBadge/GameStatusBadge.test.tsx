@@ -59,10 +59,10 @@ describe("GameStatusBadge", () => {
     await renderBadge();
     expect(container.textContent).toContain("Offline");
     expect(container.querySelector("span")?.className).toContain(
-      "badge-neutral",
+      "text-zinc-400",
     );
     expect(container.querySelector("span")?.className).not.toContain(
-      "badge-success",
+      "badge-neutral",
     );
   });
 

@@ -1,4 +1,3 @@
-import clsx from "clsx";
 import { useMemo } from "react";
 import { FiTrash2 as Trash2 } from "react-icons/fi";
 
@@ -6,6 +5,7 @@ import type { ReplayClipLibraryQuery } from "~/main/modules/replay-clips";
 import { PageContainer } from "~/renderer/components/PageContainer/PageContainer";
 import { PageContent } from "~/renderer/components/PageContent/PageContent";
 import { PageHeader } from "~/renderer/components/PageHeader/PageHeader";
+import { type TabItem, Tabs } from "~/renderer/components/Tabs/Tabs";
 import { MediaLibraryLeagueControl } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryLeagueControl/MediaLibraryLeagueControl";
 import { MediaLibraryPageActions } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryPageActions/MediaLibraryPageActions";
 import { useMediaLibraryScope } from "~/renderer/modules/media-library/MediaLibrary.hooks/useMediaLibraryScope/useMediaLibraryScope";
@@ -14,6 +14,11 @@ import { ReplayClipsPanel } from "~/renderer/modules/replay-clips/ReplayClips.co
 import { useReplayClipsShallow, useSettingsShallow } from "~/renderer/store";
 
 import type { ReplayClipKind } from "~/types";
+
+const clipKindTabs: TabItem<ReplayClipKind>[] = [
+  { label: "Death Clips", value: "death" },
+  { label: "Manual Replays", value: "manual" },
+];
 
 function ClipsLibraryPage() {
   const { clipError, clipKind, updatePreference } = useSettingsShallow(
@@ -60,14 +65,6 @@ function ClipsLibraryPage() {
     void updatePreference("clipsLibraryView", nextClipKind);
   };
 
-  const handleDeathClipsTab = () => {
-    selectClipKind("death");
-  };
-
-  const handleManualReplaysTab = () => {
-    selectClipKind("manual");
-  };
-
   return (
     <PageContainer>
       <PageHeader
@@ -77,36 +74,13 @@ function ClipsLibraryPage() {
           <MediaLibraryPageActions
             leadingAction={
               <div className="flex min-w-0 items-center gap-2">
-                <div
-                  aria-label="Clip type"
-                  className="tabs tabs-box tabs-xs no-drag shrink-0 bg-base-200 p-1"
-                  role="tablist"
-                >
-                  <button
-                    aria-selected={clipKind === "death"}
-                    className={clsx(
-                      "tab px-3 font-semibold",
-                      clipKind === "death" && "tab-active text-primary",
-                    )}
-                    role="tab"
-                    type="button"
-                    onClick={handleDeathClipsTab}
-                  >
-                    Death Clips
-                  </button>
-                  <button
-                    aria-selected={clipKind === "manual"}
-                    className={clsx(
-                      "tab px-3 font-semibold",
-                      clipKind === "manual" && "tab-active text-primary",
-                    )}
-                    role="tab"
-                    type="button"
-                    onClick={handleManualReplaysTab}
-                  >
-                    Manual Replays
-                  </button>
-                </div>
+                <Tabs
+                  ariaLabel="Clip type"
+                  className="no-drag shrink-0"
+                  items={clipKindTabs}
+                  value={clipKind}
+                  onChange={selectClipKind}
+                />
                 {clipError && (
                   <span
                     className="max-w-64 truncate text-error text-xs"

@@ -1,7 +1,7 @@
-import clsx from "clsx";
 import { useState } from "react";
 import { FiCommand, FiX } from "react-icons/fi";
 
+import { type TabItem, Tabs } from "~/renderer/components/Tabs/Tabs";
 import { useEditorShallow } from "~/renderer/store";
 
 import {
@@ -12,6 +12,11 @@ import {
 
 type EditorShortcutsTab = "editor" | "timeline";
 
+const shortcutTabs: TabItem<EditorShortcutsTab>[] = [
+  { label: "Timeline", value: "timeline" },
+  { label: "Editor", value: "editor" },
+];
+
 function EditorShortcutsRail() {
   const [activeTab, setActiveTab] = useState<EditorShortcutsTab>("timeline");
   const closeSidePanel = useEditorShallow((editor) => editor.closeSidePanel);
@@ -20,12 +25,8 @@ function EditorShortcutsRail() {
       ? editorTimelineShortcutItems
       : editorCommandShortcutItems;
 
-  const handleShowTimelineShortcuts = () => {
-    setActiveTab("timeline");
-  };
-
-  const handleShowEditorShortcuts = () => {
-    setActiveTab("editor");
+  const handleShortcutTabChange = (tab: EditorShortcutsTab) => {
+    setActiveTab(tab);
   };
 
   return (
@@ -56,40 +57,13 @@ function EditorShortcutsRail() {
       </div>
 
       <div className="border-base-content/10 border-b p-3">
-        <div
-          aria-label="Shortcut groups"
-          className="tabs tabs-boxed tabs-xs grid grid-cols-2 bg-base-300 p-1"
-          role="tablist"
-        >
-          <button
-            aria-selected={activeTab === "timeline"}
-            className={clsx(
-              "tab rounded-md font-semibold",
-              activeTab === "timeline"
-                ? "tab-active bg-primary text-primary-content shadow-sm"
-                : "text-base-content/65 hover:bg-base-200 hover:text-base-content",
-            )}
-            role="tab"
-            type="button"
-            onClick={handleShowTimelineShortcuts}
-          >
-            Timeline
-          </button>
-          <button
-            aria-selected={activeTab === "editor"}
-            className={clsx(
-              "tab rounded-md font-semibold",
-              activeTab === "editor"
-                ? "tab-active bg-primary text-primary-content shadow-sm"
-                : "text-base-content/65 hover:bg-base-200 hover:text-base-content",
-            )}
-            role="tab"
-            type="button"
-            onClick={handleShowEditorShortcuts}
-          >
-            Editor
-          </button>
-        </div>
+        <Tabs
+          ariaLabel="Shortcut groups"
+          items={shortcutTabs}
+          layout="equal"
+          value={activeTab}
+          onChange={handleShortcutTabChange}
+        />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">

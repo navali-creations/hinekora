@@ -1,7 +1,6 @@
-import clsx from "clsx";
-import type { MouseEvent } from "react";
 import { useState } from "react";
 
+import { type TabItem, Tabs } from "~/renderer/components/Tabs/Tabs";
 import { CaptureProfileLockToggle } from "~/renderer/modules/capture-profiles/CaptureProfiles.components/CaptureProfileLockToggle/CaptureProfileLockToggle";
 import { ManagedRecorderAudioSettingsCard } from "~/renderer/modules/managed-recorder/ManagedRecorder.components/ManagedRecorderAudioSettingsCard/ManagedRecorderAudioSettingsCard";
 import { ManagedRecorderRecordingSettingsFields } from "~/renderer/modules/managed-recorder/ManagedRecorder.components/ManagedRecorderRecordingSettingsFields/ManagedRecorderRecordingSettingsFields";
@@ -10,13 +9,7 @@ import { ManagedRecorderSettingsFields } from "~/renderer/modules/managed-record
 import { ManagedRecorderSettingsInfoAlert } from "~/renderer/modules/managed-recorder/ManagedRecorder.components/ManagedRecorderSettingsInfoAlert/ManagedRecorderSettingsInfoAlert";
 import { ManagedRecorderSettingsLockedOverlay } from "~/renderer/modules/managed-recorder/ManagedRecorder.components/ManagedRecorderSettingsLockedOverlay/ManagedRecorderSettingsLockedOverlay";
 
-const recorderSettingsTabs = [
-  { id: "recording", label: "Recording" },
-  { id: "rewind", label: "Rewind" },
-  { id: "capture", label: "Capture" },
-  { id: "audio", label: "Audio" },
-] as const;
-type RecorderSettingsTab = (typeof recorderSettingsTabs)[number]["id"];
+type RecorderSettingsTab = "audio" | "capture" | "recording" | "rewind";
 
 function getRecorderSettingsTabId(tab: RecorderSettingsTab): string {
   return `recorder-settings-tab-${tab}`;
@@ -26,17 +19,39 @@ function getRecorderSettingsPanelId(tab: RecorderSettingsTab): string {
   return `recorder-settings-panel-${tab}`;
 }
 
+const recorderSettingsTabs: TabItem<RecorderSettingsTab>[] = [
+  {
+    label: "Recording",
+    panelId: getRecorderSettingsPanelId("recording"),
+    tabId: getRecorderSettingsTabId("recording"),
+    value: "recording",
+  },
+  {
+    label: "Rewind",
+    panelId: getRecorderSettingsPanelId("rewind"),
+    tabId: getRecorderSettingsTabId("rewind"),
+    value: "rewind",
+  },
+  {
+    label: "Capture",
+    panelId: getRecorderSettingsPanelId("capture"),
+    tabId: getRecorderSettingsTabId("capture"),
+    value: "capture",
+  },
+  {
+    label: "Audio",
+    panelId: getRecorderSettingsPanelId("audio"),
+    tabId: getRecorderSettingsTabId("audio"),
+    value: "audio",
+  },
+];
+
 function ManagedRecorderPanel() {
   const [selectedTab, setSelectedTab] =
     useState<RecorderSettingsTab>("capture");
 
-  const handleSettingsTabClick = (event: MouseEvent<HTMLButtonElement>) => {
-    const tab = event.currentTarget.dataset.tab as
-      | RecorderSettingsTab
-      | undefined;
-    if (tab) {
-      setSelectedTab(tab);
-    }
+  const handleSettingsTabChange = (tab: RecorderSettingsTab) => {
+    setSelectedTab(tab);
   };
 
   return (
@@ -53,39 +68,13 @@ function ManagedRecorderPanel() {
 
           <ManagedRecorderSettingsInfoAlert />
 
-          <div
-            aria-label="Recording settings"
-            className="tabs tabs-boxed tabs-xs grid grid-cols-4 bg-base-300 p-1"
-            role="tablist"
-          >
-            {recorderSettingsTabs.map((tab) => {
-              const isSelected = selectedTab === tab.id;
-
-              return (
-                <button
-                  aria-controls={getRecorderSettingsPanelId(tab.id)}
-                  aria-selected={isSelected}
-                  className={clsx(
-                    "tab min-w-0 whitespace-nowrap rounded-md font-semibold",
-                    {
-                      "tab-active bg-primary text-primary-content shadow-sm":
-                        isSelected,
-                      "text-base-content/65 hover:bg-base-200 hover:text-base-content":
-                        !isSelected,
-                    },
-                  )}
-                  data-tab={tab.id}
-                  id={getRecorderSettingsTabId(tab.id)}
-                  key={tab.id}
-                  role="tab"
-                  type="button"
-                  onClick={handleSettingsTabClick}
-                >
-                  {tab.label}
-                </button>
-              );
-            })}
-          </div>
+          <Tabs
+            ariaLabel="Recording settings"
+            items={recorderSettingsTabs}
+            layout="equal"
+            value={selectedTab}
+            onChange={handleSettingsTabChange}
+          />
         </div>
 
         <div

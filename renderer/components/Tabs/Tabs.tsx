@@ -1,46 +1,39 @@
 import clsx from "clsx";
-import type { KeyboardEvent, MouseEvent } from "react";
+import type { KeyboardEvent, MouseEvent, ReactNode } from "react";
 
-interface TabsBoxItem<T extends string> {
+interface TabItem<T extends string> {
   value: T;
-  label: string;
+  label: ReactNode;
   disabled?: boolean;
   tabId?: string;
   panelId?: string;
 }
 
-interface TabsBoxTabItem<T extends string> extends TabsBoxItem<T> {
-  tabId: string;
-  panelId: string;
-}
-
-interface TabsBoxTabsBaseProps<T extends string> {
+interface TabsProps<T extends string> {
+  ariaLabel: string;
+  className?: string;
+  dataOnboarding?: string;
+  disabled?: boolean;
+  items: readonly TabItem<T>[];
+  layout?: "content" | "equal";
+  selectionRole?: "radio" | "tab";
+  size?: "xs" | "sm";
   value: T;
   onChange: (value: T) => void;
-  variant?: "default" | "primary";
 }
 
-interface TabsBoxRadioProps<T extends string> extends TabsBoxTabsBaseProps<T> {
-  items: readonly TabsBoxItem<T>[];
-  selectionRole: "radio";
-}
-
-interface TabsBoxTabProps<T extends string> extends TabsBoxTabsBaseProps<T> {
-  items: readonly TabsBoxTabItem<T>[];
-  selectionRole?: "tab";
-}
-
-type TabsBoxTabsProps<T extends string> =
-  | TabsBoxRadioProps<T>
-  | TabsBoxTabProps<T>;
-
-function TabsBoxTabs<T extends string>({
+function Tabs<T extends string>({
+  ariaLabel,
+  className,
+  dataOnboarding,
+  disabled = false,
   items,
+  layout = "content",
+  selectionRole = "tab",
+  size = "xs",
   value,
   onChange,
-  selectionRole = "tab",
-  variant = "default",
-}: TabsBoxTabsProps<T>) {
+}: TabsProps<T>) {
   const handleTabClick = (event: MouseEvent<HTMLButtonElement>) => {
     const nextValue = event.currentTarget.dataset.value as T | undefined;
     if (!nextValue || nextValue === value) {
@@ -92,9 +85,24 @@ function TabsBoxTabs<T extends string>({
   };
 
   return (
-    <>
+    <div
+      aria-label={ariaLabel}
+      className={clsx(
+        "tabs tabs-box flex-nowrap overflow-x-auto rounded-md bg-base-300 p-1",
+        {
+          "inline-flex": layout === "content",
+          "flex w-full": layout === "equal",
+          "tabs-sm": size === "sm",
+          "tabs-xs": size === "xs",
+        },
+        className,
+      )}
+      data-onboarding={dataOnboarding}
+      role={selectionRole === "radio" ? "radiogroup" : "tablist"}
+    >
       {items.map((item) => {
         const isActive = value === item.value;
+        const isDisabled = disabled || item.disabled === true;
 
         return (
           <button
@@ -102,20 +110,18 @@ function TabsBoxTabs<T extends string>({
             aria-controls={selectionRole === "tab" ? item.panelId : undefined}
             aria-selected={selectionRole === "tab" ? isActive : undefined}
             className={clsx(
-              "tab border-0 bg-transparent px-4 font-semibold transition-colors disabled:text-base-content/40 disabled:hover:bg-transparent disabled:hover:text-base-content/40",
+              "tab min-w-0 cursor-pointer whitespace-nowrap rounded-md border-0 bg-transparent font-semibold text-base-content/65 transition-colors duration-150 hover:bg-base-200 hover:text-base-content focus-visible:outline focus-visible:outline-2 focus-visible:outline-base-content/70 focus-visible:outline-offset-[-2px] active:translate-y-px motion-reduce:transform-none disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:bg-transparent disabled:hover:text-base-content/65",
               {
-                "rounded-md text-base-content/65 hover:bg-base-200 hover:text-base-content":
-                  variant === "primary",
-                "tab-active !bg-base-300 !text-primary shadow-sm hover:!bg-base-300 hover:!text-primary":
-                  variant === "default" && isActive,
+                "flex-1": layout === "equal",
+                "px-3": size === "xs",
+                "px-4": size === "sm",
+                "shrink-0": layout === "content",
                 "tab-active !bg-primary !text-primary-content shadow-sm hover:!bg-primary hover:!text-primary-content":
-                  variant === "primary" && isActive,
-                "text-base-content/60 hover:bg-base-300 hover:text-primary":
-                  variant === "default",
+                  isActive,
               },
             )}
             data-value={item.value}
-            disabled={item.disabled}
+            disabled={isDisabled}
             id={item.tabId}
             key={item.value}
             role={selectionRole}
@@ -128,9 +134,9 @@ function TabsBoxTabs<T extends string>({
           </button>
         );
       })}
-    </>
+    </div>
   );
 }
 
-export type { TabsBoxItem, TabsBoxTabItem };
-export { TabsBoxTabs };
+export type { TabItem };
+export { Tabs };

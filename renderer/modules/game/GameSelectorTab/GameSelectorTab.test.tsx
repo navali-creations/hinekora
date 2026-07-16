@@ -101,6 +101,9 @@ describe("GameSelectorTab", () => {
     const leagueSelect = container.querySelector<HTMLSelectElement>("select");
 
     expect(gameButton?.disabled).toBe(false);
+    expect(gameButton?.className).toContain("border-0");
+    expect(gameButton?.className).toContain("shadow-none");
+    expect(gameButton?.className).toContain("focus-visible:outline-none");
     expect(leagueSelect?.disabled).toBe(false);
 
     await act(async () => {

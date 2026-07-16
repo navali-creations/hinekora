@@ -522,8 +522,10 @@ describe("EditorAssetRail", () => {
       'button[role="tab"][aria-selected="false"]',
     );
 
-    expect(tabList?.className).toContain("tabs-boxed");
+    expect(tabList?.className).toContain("tabs-box");
     expect(tabList?.className).toContain("tabs-xs");
+    expect(tabList?.className).toContain("rounded-md");
+    expect(tabList?.className).toContain("bg-base-300");
 
     await act(async () => {
       inTimelineTab?.click();

@@ -1,4 +1,3 @@
-import clsx from "clsx";
 import { useRef, useState } from "react";
 import type { IconType } from "react-icons";
 import { CgSpaceBetween } from "react-icons/cg";
@@ -14,6 +13,7 @@ import {
 import { TbColumnRemove } from "react-icons/tb";
 
 import { Modal, type ModalHandle } from "~/renderer/components/Modal/Modal";
+import { type TabItem, Tabs } from "~/renderer/components/Tabs/Tabs";
 
 import { editorHistoryLimit } from "../../Editor.slice/Editor.slice.constants";
 
@@ -65,6 +65,22 @@ function EditorHelpAction() {
     modalRef.current?.close();
   };
 
+  const handleHelpTabChange = (tab: EditorHelpTab) => {
+    setActiveTab(tab);
+  };
+
+  const helpTabItems: TabItem<EditorHelpTab>[] = editorHelpTabs.map(
+    ({ Icon, label, value }) => ({
+      label: (
+        <span className="flex items-center gap-1.5">
+          <Icon size={14} />
+          <span>{label}</span>
+        </span>
+      ),
+      value,
+    }),
+  );
+
   return (
     <>
       <button
@@ -87,34 +103,13 @@ function EditorHelpAction() {
             </p>
           </header>
 
-          <div
-            aria-label="Editor help sections"
-            className="tabs tabs-boxed tabs-xs w-full bg-base-300 p-1"
-            role="tablist"
-          >
-            {editorHelpTabs.map((tab) => {
-              const Icon = tab.Icon;
-
-              return (
-                <button
-                  aria-selected={activeTab === tab.value}
-                  className={clsx(
-                    "tab flex-1 gap-1.5 rounded-md font-semibold",
-                    activeTab === tab.value
-                      ? "tab-active bg-primary text-primary-content shadow-sm"
-                      : "text-base-content/65 hover:bg-base-200 hover:text-base-content",
-                  )}
-                  key={tab.value}
-                  role="tab"
-                  type="button"
-                  onClick={() => setActiveTab(tab.value)}
-                >
-                  <Icon size={14} />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
+          <Tabs
+            ariaLabel="Editor help sections"
+            items={helpTabItems}
+            layout="equal"
+            value={activeTab}
+            onChange={handleHelpTabChange}
+          />
 
           <div className="min-h-[230px]">
             {activeTab === "tools" && (
