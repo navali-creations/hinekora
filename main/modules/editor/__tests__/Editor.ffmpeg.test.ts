@@ -418,7 +418,7 @@ describe("probeEditorAudioStream", () => {
       await renderEditorExportWithFfmpeg({
         muteAudio: true,
         outputPath: join(directory, "muted-output.mp4"),
-        resolution: "1080p",
+        resolution: "720p",
         segments: [
           {
             durationSeconds: 1,
@@ -432,11 +432,11 @@ describe("probeEditorAudioStream", () => {
           },
         ],
       });
-      expect(
-        spawn.mock.calls.filter(
-          ([executablePath]) => executablePath === ffmpegPath,
-        ),
-      ).toHaveLength(2);
+      const updatedFfmpegCalls = spawn.mock.calls.filter(
+        ([executablePath]) => executablePath === ffmpegPath,
+      );
+      expect(updatedFfmpegCalls).toHaveLength(2);
+      expect(updatedFfmpegCalls[1]?.[1]).toContain("23");
       expect(
         spawn.mock.calls.filter(
           ([executablePath]) => executablePath === ffprobePath,
