@@ -1,3 +1,31 @@
+## 0.10.0
+
+### Minor Changes
+
+- [`e90f003`](https://github.com/navali-creations/hinekora/commit/e90f003abb5013273675b8edf02139419af22642) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** League-aware media libraries and capture controls.
+
+  Hinekora now keeps Path of Exile league choices aligned with refreshed league data, remembers more of your library preferences, and polishes several dashboard, editor, and settings controls.
+
+  - **League defaults:** Fresh installs start on Standard. Successful league refreshes follow the provider's current league, including Standard between challenge leagues, while preserving saved choices.
+  - **Media libraries:** Clips, recordings, rewinds, bookmarks, saved edits, and the editor remember the selected league and show a fetching state while league data refreshes.
+  - **Clips and editor:** The Clips page remembers whether you were viewing death clips or manual replays, and the editor remembers the selected My Media filter.
+  - **Saved edits:** The delete-all action is hidden when there are no saved edits, and auto-pruning keeps the last five edits by default.
+  - **Dashboard and settings:** Capture mode tabs, locked settings, live preview, source controls, editor debug access, and overlay controls have been tightened up visually.
+  - **Privacy:** Usage analytics have been removed. Crash reporting is enabled by default and can be disabled in settings; the change takes effect after restarting Hinekora.
+
+### Patch Changes
+
+- [`f11fbd7`](https://github.com/navali-creations/hinekora/commit/f11fbd70b2fe88f391f882d4ce0add64c093747f) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Consistent navigation controls.
+
+  Tabs now use the same compact, rounded appearance across Hinekora.
+
+  - **Tab navigation:** Dashboard capture controls, Settings, Clips, My Media, and editor panels now share consistent selected, disabled, and hover states. Longer tab rails remain on one row and scroll horizontally when space is limited.
+  - **App bar:** Offline game status is easier to read, and game and league controls no longer show the heavy outlines that competed with the active selection.
+
 ## 0.9.0
 
 ### Minor Changes
