@@ -1,8 +1,9 @@
-import { mkdirSync, unlinkSync } from "node:fs";
+import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
 import { app } from "electron";
 
+import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
@@ -15,11 +16,7 @@ import {
 } from "~/main/modules/recording-storage/RecordingStorage.utils";
 import { ReplayClipsRepository } from "~/main/modules/replay-clips/ReplayClips.repository";
 import { SettingsStoreService } from "~/main/modules/settings-store";
-import {
-  createSafePathLogFields,
-  logInfo,
-  logWarn,
-} from "~/main/utils/app-log";
+import { logInfo } from "~/main/utils/app-log";
 import {
   assertObject,
   assertString,
@@ -35,6 +32,7 @@ import {
   rewindBufferSeconds,
 } from "~/types";
 import { StorageChannel } from "./Storage.channels";
+import { deleteGameLeagueStorage } from "./Storage.deletion";
 import type {
   DeleteGameLeagueDataResult,
   DiskSpaceCheck,
@@ -48,17 +46,16 @@ import {
   calculateDatabaseSize,
   calculateDiskUsage,
   calculatePathSize,
-  collectDeleteFiles,
   collectRecordingFiles,
   collectTemporaryFiles,
   getExistingFileSize,
   parseResolution,
-  removeEmptyParentDirectories,
   resolveClipPaths,
   resolveDatabaseFilePaths,
   type StorageFile,
   sumFileSizes,
 } from "./Storage.files";
+import { StorageFileDeletionService } from "./StorageFileDeletion.service";
 
 const STORAGE_LOG_SCOPE = "storage";
 const LOW_DISK_SPACE_THRESHOLD_BYTES = 1024 ** 3;
@@ -85,6 +82,7 @@ class StorageService {
   private appInstallationSizeCache: { path: string; sizeBytes: number } | null =
     null;
   private readonly database: DatabaseService;
+  private readonly fileDeletions: StorageFileDeletionService;
   private readonly recordingStorageRepository: RecordingStorageRepository;
   private readonly replayClipsRepository: ReplayClipsRepository;
 
@@ -102,6 +100,7 @@ class StorageService {
 
   constructor() {
     this.database = DatabaseService.getInstance();
+    this.fileDeletions = new StorageFileDeletionService(this.database);
     this.recordingStorageRepository = new RecordingStorageRepository(
       this.database,
     );
@@ -190,7 +189,9 @@ class StorageService {
   }
 
   getGameLeagueUsage(): StorageGameLeagueUsage[] {
-    RecordingStorageService.getInstance().refreshLibrary();
+    RecordingStorageService.getInstance().refreshLibrary({
+      publishUsage: false,
+    });
     const buckets = new Map<string, UsageBucket>();
 
     for (const clip of this.replayClipsRepository.listStorageUsage()) {
@@ -233,9 +234,9 @@ class StorageService {
       );
   }
 
-  deleteGameLeagueData(
+  async deleteGameLeagueData(
     input: StorageGameLeagueInput,
-  ): DeleteGameLeagueDataResult {
+  ): Promise<DeleteGameLeagueDataResult> {
     try {
       const settings = SettingsStoreService.getInstance().get();
       const recorderStatus = ManagedRecorderService.getInstance().getStatus();
@@ -254,46 +255,28 @@ class StorageService {
       }
 
       const storageRoot = this.resolveStorageRoot();
-      RecordingStorageService.getInstance().refreshLibrary();
+      RecordingStorageService.getInstance().refreshLibrary({
+        publishUsage: false,
+      });
       const filter = { game: input.game, league: input.leagueName };
       const clips = this.replayClipsRepository.listAll(filter);
       const recordings =
         this.recordingStorageRepository.listDeleteTargets(filter);
-      const files = collectDeleteFiles(clips, recordings, storageRoot);
-      let freedBytes = 0;
-
-      this.database.transaction(() => {
-        this.database.runQuery(
-          this.database.kysely
-            .deleteFrom("replay_clips")
-            .where("source_game", "=", input.game)
-            .where("source_league", "=", input.leagueName),
-        );
-        this.database.runQuery(
-          this.database.kysely
-            .deleteFrom("run_recordings")
-            .where("source_game", "=", input.game)
-            .where("source_league", "=", input.leagueName),
-        );
+      const { failedFileCount, freedBytes } = await deleteGameLeagueStorage({
+        bookmarks: BookmarksService.getInstance(),
+        clips,
+        database: this.database,
+        fileDeletions: this.fileDeletions,
+        game: input.game,
+        leagueName: input.leagueName,
+        recordingRepository: this.recordingStorageRepository,
+        recordings,
+        replayClipsRepository: this.replayClipsRepository,
+        storageRoot,
       });
 
-      let failedFileCount = 0;
-      for (const file of files) {
-        try {
-          unlinkSync(file.path);
-          freedBytes += file.size;
-          removeEmptyParentDirectories(file.path, storageRoot);
-        } catch (error) {
-          logWarn(STORAGE_LOG_SCOPE, "Failed to delete storage file", {
-            ...createSafePathLogFields(file.path, "recording"),
-            error: safeErrorMessage(error),
-          });
-
-          failedFileCount += 1;
-        }
-      }
-
       this.vacuumDatabase();
+      RecordingStorageService.getInstance().publishUsageChanged();
 
       logInfo(STORAGE_LOG_SCOPE, "Deleted game league data", {
         game: input.game,

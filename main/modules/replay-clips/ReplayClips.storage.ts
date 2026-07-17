@@ -1,22 +1,27 @@
 import { statSync } from "node:fs";
-import { rm, stat, unlink } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 
 import { app } from "electron";
 
+import { DatabaseService } from "~/main/modules/database";
 import { resolveRecordingStorageRoot } from "~/main/modules/recording-storage/RecordingStorage.utils";
 import { SettingsStoreService } from "~/main/modules/settings-store";
+import { StorageFileDeletionService } from "~/main/modules/storage/StorageFileDeletion.service";
 import {
   createSafePathLogFields,
   logInfo,
   logWarn,
 } from "~/main/utils/app-log";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
+import {
+  rollbackStagedFileDeletions,
+  type StagedFileDeletion,
+  stageFilesForDeletion,
+} from "~/main/utils/staged-file-deletion";
+import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 import type { ReplayClip } from "~/types";
-import {
-  areReplayClipPathsEqual,
-  createReplayClipPathKey,
-} from "./ReplayClips.file-operations";
+import { areReplayClipPathsEqual } from "./ReplayClips.file-operations";
 import {
   resolveReplayClipFilePath,
   sanitizeReplayClipStoragePathList,
@@ -25,8 +30,23 @@ import type { ReplayClipsRepository } from "./ReplayClips.repository";
 
 const logScope = "replay-clips";
 
+interface ReplayClipStoredFileCleanupResult {
+  deletedPaths: string[];
+  failedPaths?: string[];
+  freedBytes: number;
+}
+
 class ReplayClipStorageService {
-  constructor(private readonly repository: ReplayClipsRepository) {}
+  private readonly fileDeletions: StorageFileDeletionService;
+
+  constructor(
+    private readonly repository: ReplayClipsRepository,
+    fileDeletions?: StorageFileDeletionService,
+  ) {
+    this.fileDeletions =
+      fileDeletions ??
+      new StorageFileDeletionService(DatabaseService.getInstance());
+  }
 
   getStoredClipPath(id: string): string | null {
     const clip = this.repository.get(id);
@@ -124,34 +144,88 @@ class ReplayClipStorageService {
     return sizeBytes === clip.sizeBytes ? clip : { ...clip, sizeBytes };
   }
 
-  async deleteStoredClipFiles(
-    clip: ReplayClip,
-    isReferenced: (path: string) => boolean = (path) =>
-      this.isStoredPathReferenced(path),
-  ): Promise<void> {
-    const paths = new Set(
-      [clip.processedClipPath, clip.originalObsPath].filter(
-        (path): path is string => typeof path === "string" && path.length > 0,
-      ),
-    );
-
-    for (const path of paths) {
-      const storedPath = this.resolveClipFilePath(path, {
-        requireExistingFile: true,
-      });
-      if (!storedPath) {
-        continue;
+  async stageStoredClipFilesForDeletion(
+    clips: ReplayClip[],
+    pathReferenceCounts: Map<string, number>,
+    root: string,
+    options: { ignoreMissing?: boolean } = {},
+  ): Promise<StagedFileDeletion[]> {
+    const paths = new Map<string, string>();
+    for (const clip of clips) {
+      for (const path of [clip.processedClipPath, clip.originalObsPath]) {
+        if (path) {
+          const key = createStoragePathKey(path);
+          if (!paths.has(key)) {
+            paths.set(key, path);
+          }
+        }
       }
-      if (isReferenced(storedPath)) {
-        logInfo(logScope, "Replay clip file retained", {
-          clipId: clip.id,
-          reason: "shared-path",
-          ...createSafePathLogFields(storedPath, "recording"),
-        });
-        continue;
-      }
-      await unlink(storedPath);
     }
+
+    const deletionTargets: Array<{ path: string; size: number }> = [];
+    for (const path of paths.values()) {
+      const storedPath = resolveReplayClipFilePath(path, {
+        requireExistingFile: false,
+        storageRoot: root,
+      });
+      if (
+        !storedPath ||
+        this.isPathReferencedInCounts(storedPath, pathReferenceCounts)
+      ) {
+        if (storedPath) {
+          logInfo(logScope, "Replay clip file retained", {
+            reason: "shared-path",
+            ...createSafePathLogFields(storedPath, "recording"),
+          });
+        }
+        continue;
+      }
+      let fileStats: Awaited<ReturnType<typeof stat>>;
+      try {
+        fileStats = await stat(storedPath);
+      } catch (error) {
+        if (
+          options.ignoreMissing === true &&
+          (error as NodeJS.ErrnoException).code === "ENOENT"
+        ) {
+          continue;
+        }
+        throw error;
+      }
+      if (!fileStats.isFile()) {
+        throw new Error("Replay clip storage path is not a file");
+      }
+      deletionTargets.push({ path: storedPath, size: fileStats.size });
+    }
+
+    return stageFilesForDeletion(root, deletionTargets);
+  }
+
+  async rollbackStoredClipFileDeletion(
+    stagedFiles: StagedFileDeletion[],
+  ): Promise<void> {
+    await rollbackStagedFileDeletions(stagedFiles);
+  }
+
+  markStoredClipFileDeletionCommitted(
+    stagedFiles: StagedFileDeletion[],
+    root: string,
+  ): void {
+    this.fileDeletions.markCommitted(stagedFiles, root);
+  }
+
+  async finalizeStoredClipFileDeletion(
+    stagedFiles: StagedFileDeletion[],
+  ): Promise<ReplayClipStoredFileCleanupResult> {
+    const result = await this.fileDeletions.finalize(stagedFiles);
+
+    return {
+      deletedPaths: result.deletedPaths,
+      ...(result.failed.length > 0
+        ? { failedPaths: result.failed.map((file) => file.path) }
+        : {}),
+      freedBytes: result.freedBytes,
+    };
   }
 
   async deleteStoredPathIfUnreferenced(path: string): Promise<void> {
@@ -180,7 +254,7 @@ class ReplayClipStorageService {
   }
 
   isPathReferencedInCounts(path: string, counts: Map<string, number>): boolean {
-    return (counts.get(createReplayClipPathKey(path)) ?? 0) > 0;
+    return (counts.get(createStoragePathKey(path)) ?? 0) > 0;
   }
 
   removeClipPathReferences(
@@ -194,6 +268,12 @@ class ReplayClipStorageService {
       } else {
         counts.set(path, nextCount);
       }
+    }
+  }
+
+  addClipPathReferences(clip: ReplayClip, counts: Map<string, number>): void {
+    for (const path of uniqueClipPathKeys(clip)) {
+      counts.set(path, (counts.get(path) ?? 0) + 1);
     }
   }
 
@@ -216,7 +296,7 @@ function uniqueClipPathKeys(clip: {
   return new Set(
     [clip.processedClipPath, clip.originalObsPath]
       .filter((path): path is string => path !== null)
-      .map(createReplayClipPathKey),
+      .map(createStoragePathKey),
   );
 }
 

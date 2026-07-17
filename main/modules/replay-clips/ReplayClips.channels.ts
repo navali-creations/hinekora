@@ -10,6 +10,7 @@ enum ReplayClipsChannel {
   Copy = "replay-clips:copy",
   Delete = "replay-clips:delete",
   DeleteMany = "replay-clips:delete-many",
+  Deleted = "replay-clips:deleted",
   StatusChanged = "replay-clips:status-changed",
 }
 

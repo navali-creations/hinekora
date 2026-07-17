@@ -58,6 +58,7 @@ const replayClipStatusWindowRoles = new Set([
 const replayClipPreviewProgressWindowRoles = new Set([
   WindowName.ClipPreviewOverlay,
 ]);
+const replayClipDeletedWindowRoles = new Set([WindowName.Main]);
 
 interface ReplayClipOperationProgressOptions {
   onProgress?: (progress: ReplayClipOperationProgress) => void;
@@ -124,6 +125,35 @@ class ReplayClipsService {
       repository: this.repository,
       storageService: this.storageService,
     });
+    const recordingStorage = RecordingStorageService.getInstance();
+    recordingStorage.setReplayClipRetentionCleanupHandler(
+      async (idGroups, root) => {
+        const result =
+          await this.fileActionsService.deleteClipGroupsForRetention(
+            idGroups,
+            root,
+          );
+        if (result.deletedIds.length > 0) {
+          for (
+            let index = 0;
+            index < result.deletedIds.length;
+            index += 1_000
+          ) {
+            this.publishToWindowRoles(
+              ReplayClipsChannel.Deleted,
+              result.deletedIds.slice(index, index + 1_000),
+              replayClipDeletedWindowRoles,
+            );
+          }
+        }
+        return {
+          deletedIds: result.deletedIds,
+          deletedPaths: result.deletedPaths,
+          failed: result.failed,
+          freedBytes: result.freedBytes,
+        };
+      },
+    );
     setupReplayClipsIpcHandlers({
       copyClipToClipboard: (input, options) =>
         this.copyClipToClipboard(input, options),
@@ -292,7 +322,7 @@ class ReplayClipsService {
         : clip;
 
     BookmarksService.getInstance().linkReplayClip(resolvedClip);
-    this.cleanupRecordingStorageForClip(resolvedClip);
+    this.scheduleRecordingStorageCleanupForClip(resolvedClip);
     return resolvedClip;
   }
 
@@ -319,13 +349,23 @@ class ReplayClipsService {
   }
 
   async deleteClip(id: string): Promise<ReplayClipFileActionResult> {
-    return this.fileActionsService.deleteClip(id);
+    const result = await this.fileActionsService.deleteClip(id);
+    if (result.ok) {
+      RecordingStorageService.getInstance().publishUsageChanged();
+    }
+
+    return result;
   }
 
   async deleteManyClips(
     ids: string[],
   ): Promise<ReplayClipBatchFileActionResult> {
-    return this.fileActionsService.deleteManyClips(ids);
+    const result = await this.fileActionsService.deleteManyClips(ids);
+    if (result.deletedIds.length > 0) {
+      RecordingStorageService.getInstance().publishUsageChanged();
+    }
+
+    return result;
   }
 
   private updateClip(
@@ -342,9 +382,12 @@ class ReplayClipsService {
     return updated;
   }
 
-  private cleanupRecordingStorageForClip(clip: ReplayClip): void {
+  private scheduleRecordingStorageCleanupForClip(clip: ReplayClip): void {
     try {
-      RecordingStorageService.getInstance().cleanup({
+      RecordingStorageService.getInstance().scheduleCleanup({
+        estimatedAddedBytes: clip.sizeBytes,
+        force: clip.sizeBytes <= 0,
+        usageAlreadyAccounted: true,
         protectedPaths: [clip.processedClipPath, clip.originalObsPath].filter(
           (path): path is string => typeof path === "string" && path.length > 0,
         ),
@@ -358,8 +401,13 @@ class ReplayClipsService {
   }
 
   private persistAndPublish(clip: ReplayClip): void {
+    const previousClip = this.repository.get(clip.id);
     const publishedClip = clip;
     this.repository.upsert(publishedClip);
+    RecordingStorageService.getInstance().noteReplayClipUsageChange(
+      previousClip,
+      publishedClip,
+    );
     const publishedView = this.createReplayClipView(publishedClip);
     this.publishToWindowRoles(
       ReplayClipsChannel.StatusChanged,

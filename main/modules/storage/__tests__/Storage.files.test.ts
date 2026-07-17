@@ -106,7 +106,7 @@ describe("Storage.files", () => {
         [{ path: join(root, "outside.mp4") }, { path: emptyManagedPath }],
         storageRoot,
       ),
-    ).toEqual([]);
+    ).toEqual([{ path: resolve(emptyManagedPath), size: 0 }]);
   });
 
   it("calculates sizes, database sidecars, and resolutions", () => {

@@ -211,6 +211,20 @@ function createNoobsApi() {
 }
 
 describe("ManagedRecorderService", () => {
+  it("signals performance-sensitive game activity to storage maintenance", async () => {
+    const activityChanged = vi.spyOn(
+      RecordingStorageService,
+      "setPerformanceSensitiveActivityActive",
+    );
+    const service = createService();
+
+    await service.setGameRunningState(true);
+    expect(activityChanged).toHaveBeenLastCalledWith(true);
+
+    await service.setGameRunningState(false);
+    expect(activityChanged).toHaveBeenLastCalledWith(false);
+  });
+
   it("creates and reuses the singleton instance", () => {
     const singletonAccess = ManagedRecorderService as unknown as {
       instance: ManagedRecorderService | null;
@@ -1038,9 +1052,9 @@ describe("ManagedRecorderService", () => {
     } as unknown as BookmarksService);
     const registerRunRecording = vi.fn(() => ({ id: registeredRecording.id }));
     const getRecording = vi.fn(() => ({ recording: registeredRecording }));
-    const cleanup = vi.fn();
+    const scheduleCleanup = vi.fn();
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
-      cleanup,
+      scheduleCleanup,
       getRecording,
       registerRunRecording,
     } as unknown as RecordingStorageService);
@@ -1131,7 +1145,10 @@ describe("ManagedRecorderService", () => {
     );
     expect(getRecording).toHaveBeenCalledWith(registeredRecording.id);
     expect(finalizeRecordingSession).toHaveBeenCalledWith(registeredRecording);
-    expect(cleanup).toHaveBeenCalledWith({
+    expect(scheduleCleanup).toHaveBeenCalledWith({
+      estimatedAddedBytes: 0,
+      force: true,
+      usageAlreadyAccounted: true,
       protectedDirectories: [],
       protectedPaths: [savedPath],
     });
@@ -1143,9 +1160,9 @@ describe("ManagedRecorderService", () => {
     const service = createService();
     const noobs = createNoobsApi();
     const registerRunRecording = vi.fn();
-    const cleanup = vi.fn();
+    const scheduleCleanup = vi.fn();
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
-      cleanup,
+      scheduleCleanup,
       registerRunRecording,
     } as unknown as RecordingStorageService);
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
@@ -1193,7 +1210,10 @@ describe("ManagedRecorderService", () => {
         startedAt,
       }),
     );
-    expect(cleanup).toHaveBeenCalledWith({
+    expect(scheduleCleanup).toHaveBeenCalledWith({
+      estimatedAddedBytes: 0,
+      force: true,
+      usageAlreadyAccounted: true,
       protectedDirectories: [],
       protectedPaths: [savedPath],
     });
@@ -1203,9 +1223,9 @@ describe("ManagedRecorderService", () => {
     const previousPath = join(directory, "previous.mp4");
     const service = createService();
     const noobs = createNoobsApi();
-    const cleanup = vi.fn();
+    const scheduleCleanup = vi.fn();
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
-      cleanup,
+      scheduleCleanup,
     } as unknown as RecordingStorageService);
     const startedAt = new Date(Date.now() - 5_000).toISOString();
     const internals = service as unknown as {
@@ -1238,7 +1258,9 @@ describe("ManagedRecorderService", () => {
     expect(noobs.StopRecording).toHaveBeenCalled();
     expect(noobs.StartRecording).not.toHaveBeenCalled();
     expect(noobs.GetLastRecording).not.toHaveBeenCalled();
-    expect(cleanup).toHaveBeenCalledWith({
+    expect(scheduleCleanup).toHaveBeenCalledWith({
+      estimatedAddedBytes: 0,
+      force: false,
       protectedDirectories: [],
       protectedPaths: [],
     });
@@ -1274,9 +1296,9 @@ describe("ManagedRecorderService", () => {
 
   it("stops replay buffers even when no packaged recorder is active", async () => {
     const service = createService();
-    const cleanup = vi.fn();
+    const scheduleCleanup = vi.fn();
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
-      cleanup,
+      scheduleCleanup,
     } as unknown as RecordingStorageService);
     const internals = service as unknown as {
       noobs: null;
@@ -1298,7 +1320,9 @@ describe("ManagedRecorderService", () => {
       activeSessionDirectory: null,
       error: null,
     });
-    expect(cleanup).toHaveBeenCalledWith({
+    expect(scheduleCleanup).toHaveBeenCalledWith({
+      estimatedAddedBytes: 0,
+      force: false,
       protectedDirectories: [],
       protectedPaths: [],
     });
@@ -4153,11 +4177,11 @@ describe("ManagedRecorderService", () => {
 
   it("handles defensive recorder fallbacks without changing active recording state", async () => {
     const service = createService();
-    const cleanup = vi.fn(() => {
+    const scheduleCleanup = vi.fn(() => {
       throw new Error("cleanup failed");
     });
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
-      cleanup,
+      scheduleCleanup,
     } as unknown as RecordingStorageService);
     vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
       list: () => [],
@@ -4216,9 +4240,30 @@ describe("ManagedRecorderService", () => {
     expect(internals.getActiveRecordingDurationSeconds()).toBe(90);
 
     internals.cleanupRecordingStorage([null, join(directory, "clip.mp4")]);
-    expect(cleanup).toHaveBeenCalledWith({
+    expect(scheduleCleanup).toHaveBeenCalledWith({
+      estimatedAddedBytes: 0,
+      force: true,
+      usageAlreadyAccounted: true,
       protectedDirectories: [directory],
       protectedPaths: [join(directory, "clip.mp4")],
+    });
+    internals.cleanupRecordingStorage([directory]);
+    expect(scheduleCleanup).toHaveBeenCalledWith({
+      estimatedAddedBytes: 0,
+      force: true,
+      usageAlreadyAccounted: true,
+      protectedDirectories: [directory],
+      protectedPaths: [directory],
+    });
+    const measuredPath = join(directory, "measured.mp4");
+    writeFileSync(measuredPath, "data");
+    internals.cleanupRecordingStorage([measuredPath]);
+    expect(scheduleCleanup).toHaveBeenCalledWith({
+      estimatedAddedBytes: 4,
+      force: false,
+      usageAlreadyAccounted: true,
+      protectedDirectories: [directory],
+      protectedPaths: [measuredPath],
     });
 
     const stopped = internals.waitForRecordingStop();

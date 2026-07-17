@@ -7,10 +7,12 @@ import { CaptureProfilesService } from "~/main/modules/capture-profiles";
 import { DatabaseService } from "~/main/modules/database";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ProfilesService } from "~/main/modules/profiles";
+import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { resolveRecordingStorageRoot } from "~/main/modules/recording-storage/RecordingStorage.utils";
 import { ReplayClipsService } from "~/main/modules/replay-clips";
 import { sanitizeReplayClipStoragePathList } from "~/main/modules/replay-clips/ReplayClips.files";
 import { SettingsStoreService } from "~/main/modules/settings-store";
+import { logWarn } from "~/main/utils/app-log";
 import {
   handleValidationError,
   safeErrorMessage,
@@ -33,6 +35,8 @@ import type {
   StateImportResult,
   StateTransferResult,
 } from "./StateTransfer.dto";
+
+const STATE_TRANSFER_LOG_SCOPE = "state-transfer";
 
 function sanitizeImportedSettings(
   settings: AppSettings,
@@ -185,7 +189,7 @@ class StateTransferService {
     };
   }
 
-  importPortable(mode: StateImportMode): StateImportResult {
+  async importPortable(mode: StateImportMode): Promise<StateImportResult> {
     try {
       const parsedMode = StateImportModeSchema.parse(mode);
       if (!this.pendingImportBundle) {
@@ -240,9 +244,20 @@ class StateTransferService {
       });
 
       this.pendingImportBundle = null;
+      this.scheduleRecordingStorageCleanup();
       return { ok: true, backupPath, error: null };
     } catch (error) {
       return { ok: false, backupPath: null, error: safeErrorMessage(error) };
+    }
+  }
+
+  private scheduleRecordingStorageCleanup(): void {
+    try {
+      RecordingStorageService.getInstance().scheduleCleanup({ force: true });
+    } catch (error) {
+      logWarn(STATE_TRANSFER_LOG_SCOPE, "Recording storage cleanup failed", {
+        error: safeErrorMessage(error),
+      });
     }
   }
 

@@ -31,6 +31,9 @@ vi.mock("~/renderer/modules/updater/UpdateIndicator/UpdateIndicator", () => ({
 vi.mock("../DiskSpaceWarning/DiskSpaceWarning", () => ({
   default: () => null,
 }));
+vi.mock("../AppStorageUsageMeter/AppStorageUsageMeter", () => ({
+  AppStorageUsageMeter: () => <div data-testid="storage-usage-meter" />,
+}));
 vi.mock("../WhatsNewModal/WhatsNewModal", () => ({
   default: () => null,
 }));
@@ -137,6 +140,15 @@ describe("AppControls", () => {
     });
 
     expect(storeMocks.toggleRecorderOverlay).not.toHaveBeenCalled();
+  });
+
+  it("places storage usage immediately before the recorder overlay control", async () => {
+    const button = await renderControls();
+    const storageMeter = container.querySelector(
+      '[data-testid="storage-usage-meter"]',
+    );
+
+    expect(storageMeter?.nextElementSibling?.contains(button)).toBe(true);
   });
 
   it("keeps the recorder overlay button available while rewind or session recording is active", async () => {

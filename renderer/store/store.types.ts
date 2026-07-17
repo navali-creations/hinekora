@@ -250,7 +250,9 @@ export interface RecordingStorageSlice {
     selectedRecordingIds: Record<string, boolean>;
     isLoading: boolean;
     error: string | null;
-    hydrate: () => Promise<void>;
+    isUsageLoading: boolean;
+    usageError: string | null;
+    startListening: () => () => void;
     refreshUsage: () => Promise<void>;
     refreshRecordings: (query?: RunRecordingLibraryQuery) => Promise<void>;
     openRecording: (path: string) => Promise<void>;
@@ -375,6 +377,7 @@ export type BoundStore = AppMenuSlice &
   SavedEditsSlice &
   StateTransferSlice & {
     hydrate: () => Promise<void>;
+    isHydrated: boolean;
     startListeners: () => () => void;
   };
 

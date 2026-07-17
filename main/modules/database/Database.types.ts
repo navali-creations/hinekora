@@ -75,6 +75,12 @@ interface RecordingStoragePathMigrationTable {
   updated_at: TimestampColumn;
 }
 
+interface StorageFileDeletionOperationTable {
+  committed_at: TimestampColumn;
+  operation_id: string;
+  storage_root: string;
+}
+
 interface ReplayClipTable {
   id: string;
   kind: string;
@@ -197,6 +203,7 @@ export interface DatabaseSchema {
   profiles: ProfileTable;
   recording_storage_path_migrations: RecordingStoragePathMigrationTable;
   settings: SettingTable;
+  storage_file_deletion_operations: StorageFileDeletionOperationTable;
   replay_clips: ReplayClipTable;
   run_recordings: RunRecordingTable;
 }

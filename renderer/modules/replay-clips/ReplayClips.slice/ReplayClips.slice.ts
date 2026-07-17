@@ -234,10 +234,23 @@ export const createReplayClipsSlice: BoundStoreStateCreator<
           state.replayClips.selectedClipIds = {};
         });
       },
-      startListening: () =>
-        window.electron.replayClips.onStatusChanged((clip) => {
-          patchReplayClipState(clip);
-        }),
+      startListening: () => {
+        const stopStatusListener = window.electron.replayClips.onStatusChanged(
+          (clip) => {
+            patchReplayClipState(clip);
+          },
+        );
+        const stopDeletedListener = window.electron.replayClips.onDeleted(
+          (deletedIds) => {
+            void refreshReplayClipState({ deletedIds });
+          },
+        );
+
+        return () => {
+          stopStatusListener();
+          stopDeletedListener();
+        };
+      },
     },
   };
 };

@@ -51,6 +51,14 @@ interface ReplayClipStoragePathRow {
   processedClipPath: string | null;
 }
 
+interface ReplayClipStorageEntry {
+  createdAt: string;
+  id: string;
+  originalObsPath: string | null;
+  processedClipPath: string | null;
+  sizeBytes: number;
+}
+
 interface ReplayClipUsageSummary {
   clipCount: number;
   game: GameId;
@@ -146,6 +154,90 @@ class ReplayClipsRepository {
       originalObsPath: row.original_obs_path,
       processedClipPath: row.processed_clip_path,
     }));
+  }
+
+  listStorageEntriesPage(
+    after: { createdAt: string; id: string } | null,
+    limit: number,
+  ): ReplayClipStorageEntry[] {
+    const rows = this.database.db
+      .prepare(
+        `
+        SELECT
+          id,
+          original_obs_path,
+          processed_clip_path,
+          size_bytes,
+          created_at
+        FROM replay_clips
+        WHERE COALESCE(processed_clip_path, original_obs_path) IS NOT NULL
+          AND COALESCE(processed_clip_path, original_obs_path) != ''
+          ${after ? "AND (created_at > ? OR (created_at = ? AND id > ?))" : ""}
+        ORDER BY created_at ASC, id ASC
+        LIMIT ?
+      `,
+      )
+      .all(
+        ...(after
+          ? [after.createdAt, after.createdAt, after.id, limit]
+          : [limit]),
+      ) as Array<{
+      created_at: string;
+      id: string;
+      original_obs_path: string | null;
+      processed_clip_path: string | null;
+      size_bytes: number;
+    }>;
+
+    return rows.map((row) => ({
+      createdAt: row.created_at,
+      id: row.id,
+      originalObsPath: row.original_obs_path,
+      processedClipPath: row.processed_clip_path,
+      sizeBytes: Number(row.size_bytes),
+    }));
+  }
+
+  hasStoragePath(path: string, excludeId?: string): boolean {
+    const resolvedPath = resolve(path);
+    const row = this.database.db
+      .prepare(
+        `
+        SELECT 1
+        FROM replay_clips
+        WHERE (
+          processed_clip_path = ? COLLATE NOCASE
+          OR original_obs_path = ? COLLATE NOCASE
+        )
+        ${excludeId ? "AND id != ?" : ""}
+        LIMIT 1
+      `,
+      )
+      .get(resolvedPath, resolvedPath, ...(excludeId ? [excludeId] : []));
+
+    return row !== undefined;
+  }
+
+  getMaxStoragePathSize(path: string, excludeId?: string): number {
+    const resolvedPath = resolve(path);
+    const row = this.database.db
+      .prepare(
+        `
+        SELECT COALESCE(MAX(size_bytes), 0) AS size_bytes
+        FROM replay_clips
+        WHERE (
+          processed_clip_path = ? COLLATE NOCASE
+          OR original_obs_path = ? COLLATE NOCASE
+        )
+        ${excludeId ? "AND id != ?" : ""}
+      `,
+      )
+      .get(resolvedPath, resolvedPath, ...(excludeId ? [excludeId] : [])) as
+      | { size_bytes: number }
+      | undefined;
+
+    /* v8 ignore next -- SQLite aggregate queries always return one row; the fallback protects adapter drift. */
+    return Math.max(0, Number(row?.size_bytes ?? 0));
   }
 
   listStorageUsage(): ReplayClipUsageSummary[] {
@@ -275,6 +367,21 @@ class ReplayClipsRepository {
     return row ? mapReplayClipRow(row) : null;
   }
 
+  getMany(ids: string[]): ReplayClip[] {
+    if (ids.length === 0) {
+      return [];
+    }
+
+    return this.database
+      .queryAll(
+        this.database.kysely
+          .selectFrom("replay_clips")
+          .selectAll()
+          .where("id", "in", ids),
+      )
+      .map(mapReplayClipRow);
+  }
+
   getByTriggerLineHash(triggerLineHash: string): ReplayClip | null {
     const row = this.database.queryOne(
       this.database.kysely
@@ -402,6 +509,16 @@ class ReplayClipsRepository {
     );
   }
 
+  deleteMany(ids: string[]): void {
+    if (ids.length === 0) {
+      return;
+    }
+
+    this.database.runQuery(
+      this.database.kysely.deleteFrom("replay_clips").where("id", "in", ids),
+    );
+  }
+
   replaceAll(clips: ReplayClip[]): void {
     this.database.transaction(() => {
       this.database.runQuery(this.database.kysely.deleteFrom("replay_clips"));
@@ -471,6 +588,7 @@ class ReplayClipsRepository {
   }
 }
 
+export type { ReplayClipStorageEntry };
 export { ReplayClipsRepository };
 
 function createStoragePathRebaser(

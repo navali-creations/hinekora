@@ -2,6 +2,7 @@ import {
   type Dirent,
   existsSync,
   readdirSync,
+  realpathSync,
   rmdirSync,
   statfsSync,
   statSync,
@@ -128,6 +129,18 @@ function isPathInsideOrEqual(parent: string, child: string): boolean {
   );
 }
 
+function isRealPathInsideOrEqual(parent: string, child: string): boolean {
+  if (!isPathInsideOrEqual(resolve(parent), resolve(child))) {
+    return false;
+  }
+
+  try {
+    return isPathInsideOrEqual(realpathSync(parent), realpathSync(child));
+  } catch {
+    return false;
+  }
+}
+
 export type { ManagedFileStat };
 export {
   calculateDatabaseSize,
@@ -135,6 +148,7 @@ export {
   collectManagedFiles,
   getExistingFileSize,
   isPathInsideOrEqual,
+  isRealPathInsideOrEqual,
   removeEmptyParentDirectories,
   resolveDatabaseFilePaths,
 };

@@ -16,6 +16,7 @@ import type {
   ReplayClipUpdateResult,
   ReplayClipView,
 } from "./ReplayClips.dto";
+import { ReplayClipDeletedIdsSchema } from "./ReplayClips.dto";
 
 const ReplayClipsAPI = {
   get: async (id: string): Promise<ReplayClipDetail | null> =>
@@ -42,6 +43,18 @@ const ReplayClipsAPI = {
     ipcRenderer.invoke(ReplayClipsChannel.Delete, id),
   deleteMany: (ids: string[]): Promise<ReplayClipBatchFileActionResult> =>
     ipcRenderer.invoke(ReplayClipsChannel.DeleteMany, ids),
+  onDeleted: (callback: (ids: string[]) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, ids: unknown) => {
+      const parsedIds = ReplayClipDeletedIdsSchema.safeParse(ids);
+      if (parsedIds.success) {
+        callback(parsedIds.data);
+      }
+    };
+    ipcRenderer.on(ReplayClipsChannel.Deleted, listener);
+
+    return () =>
+      ipcRenderer.removeListener(ReplayClipsChannel.Deleted, listener);
+  },
   onStatusChanged: (callback: (clip: ReplayClipView) => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,

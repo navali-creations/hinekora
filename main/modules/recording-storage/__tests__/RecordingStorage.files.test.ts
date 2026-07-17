@@ -11,13 +11,9 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
-  calculateDatabaseSize,
   calculateDiskUsage,
   collectRecordingFiles,
-  createProtectedDirectories,
-  createProtectedPathSet,
   removeEmptyParentDirectories,
-  sumExistingFileSizes,
 } from "../RecordingStorage.files";
 
 let root: string;
@@ -31,16 +27,7 @@ afterEach(() => {
 });
 
 describe("RecordingStorage.files", () => {
-  it("calculates database and disk usage fallbacks", () => {
-    const databasePath = join(root, "hinekora.sqlite");
-    writeFileSync(databasePath, "db");
-    writeFileSync(`${databasePath}-wal`, "wal");
-    mkdirSync(join(root, "not-a-file.sqlite"));
-
-    expect(calculateDatabaseSize(":memory:")).toBe(0);
-    expect(calculateDatabaseSize(join(root, "missing.sqlite"))).toBe(0);
-    expect(calculateDatabaseSize(join(root, "not-a-file.sqlite"))).toBe(0);
-    expect(calculateDatabaseSize(databasePath)).toBe(5);
+  it("calculates disk usage fallbacks", () => {
     expect(calculateDiskUsage(join(root, "missing"))).toEqual({
       freeBytes: 0,
       totalBytes: 0,
@@ -68,28 +55,6 @@ describe("RecordingStorage.files", () => {
     expect(collectRecordingFiles(root)).toEqual([
       expect.objectContaining({ path: resolve(managedPath), size: 3 }),
     ]);
-  });
-
-  it("normalizes protected paths and sums existing files", () => {
-    const managedPath = join(root, "2026-06-12_10-30-00.mp4");
-    const emptyPath = join(root, "2026-06-12_10-31-00.mp4");
-    const clipDirectoryPath = join(root, "2026-06-12_10-32-00.mp4");
-    writeFileSync(managedPath, "run");
-    writeFileSync(emptyPath, "");
-    mkdirSync(clipDirectoryPath);
-
-    expect(sumExistingFileSizes(new Set([managedPath, emptyPath]))).toBe(3);
-    expect(sumExistingFileSizes(new Set([emptyPath, clipDirectoryPath]))).toBe(
-      0,
-    );
-    expect(createProtectedPathSet([managedPath, "", managedPath])).toEqual(
-      new Set([resolve(managedPath)]),
-    );
-    expect(createProtectedPathSet()).toEqual(new Set());
-    expect(createProtectedDirectories([clipDirectoryPath, ""])).toEqual([
-      resolve(clipDirectoryPath),
-    ]);
-    expect(createProtectedDirectories()).toEqual([]);
   });
 
   it("removes empty parent directories without crossing the storage root", () => {

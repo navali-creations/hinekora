@@ -19,6 +19,7 @@ export interface StorageSlice {
     fetchStorageInfo: () => Promise<void>;
     fetchGameLeagueUsage: () => Promise<void>;
     refresh: () => Promise<void>;
+    setError: (error: string | null) => void;
     deleteGameLeagueData: (
       input: StorageGameLeagueInput,
     ) => Promise<DeleteGameLeagueDataResult>;
@@ -93,6 +94,11 @@ export const createStorageSlice: BoundStoreStateCreator<StorageSlice> = (
       fetchGameLeagueUsage,
       refresh: async () => {
         await Promise.all([fetchStorageInfo(), fetchGameLeagueUsage()]);
+      },
+      setError: (error) => {
+        set((state) => {
+          state.storage.error = error;
+        });
       },
       deleteGameLeagueData: async (input) => {
         const deletingGameLeagueId = `${input.game}:${input.leagueName}`;

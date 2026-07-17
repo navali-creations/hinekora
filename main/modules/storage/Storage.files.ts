@@ -69,9 +69,10 @@ function collectDeleteFiles(
   const files = new Map<string, StorageFile>();
   for (const clip of clips) {
     for (const path of resolveClipPaths(clip, storageRoot)) {
-      const size = getExistingFileSize(path);
-      if (size > 0) {
-        files.set(path, { path, size });
+      const file = getExistingStorageFile(path);
+      /* v8 ignore next -- resolveClipPaths already required an existing file; null requires a filesystem race. */
+      if (file) {
+        files.set(path, file);
       }
     }
   }
@@ -81,13 +82,25 @@ function collectDeleteFiles(
     if (!path) {
       continue;
     }
-    const size = getExistingFileSize(path);
-    if (size > 0) {
-      files.set(path, { path, size });
+    const file = getExistingStorageFile(path);
+    /* v8 ignore next -- resolveManagedMediaPath already required an existing file; null requires a filesystem race. */
+    if (file) {
+      files.set(path, file);
     }
   }
 
   return [...files.values()];
+}
+
+function getExistingStorageFile(path: string): StorageFile | null {
+  try {
+    const stats = statSync(path);
+    /* v8 ignore next -- Callers resolve an existing regular file immediately before this second defensive stat. */
+    return stats.isFile() ? { path, size: Math.max(0, stats.size) } : null;
+  } catch {
+    /* v8 ignore next -- Covers a file disappearing between path validation and this defensive stat. */
+    return null;
+  }
 }
 
 function collectRecordingFiles(storageRoot: string): StorageFile[] {

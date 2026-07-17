@@ -1004,7 +1004,16 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
         ),
         recordingStorage: createBridgeDomain<
           EditorE2EElectron["recordingStorage"]
-        >("recordingStorage", {}),
+        >("recordingStorage", {
+          getUsage: async () => ({
+            clipsSizeBytes: 0,
+            diskFreeBytes: 900_000_000_000,
+            lowDiskSpace: false,
+            recordingsSizeBytes: 0,
+          }),
+          onUsageChanged: () => unsubscribe,
+          onRecordingsChanged: () => unsubscribe,
+        }),
         replayClips: createBridgeDomain<EditorE2EElectron["replayClips"]>(
           "replayClips",
           {
@@ -1013,6 +1022,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
 
               return { error: null, ok: true };
             },
+            onDeleted: () => unsubscribe,
             onStatusChanged: () => unsubscribe,
           },
         ),

@@ -35,6 +35,8 @@ const managedRecordingExtensions = new Set([
   ".webm",
 ]);
 const legacySessionDirectoryPrefix = "Hinekora-";
+const legacySessionDirectoryPrefixKey =
+  legacySessionDirectoryPrefix.toLowerCase();
 const flatManagedRecordingNamePattern =
   /^\d{4}-\d{2}-\d{2}[ _]\d{2}-\d{2}-\d{2}(?:-death-\d+s)?$/i;
 const managedMediaDirectoryNames = new Set(
@@ -50,7 +52,7 @@ const managedMediaDirectoryNames = new Set(
 
 type RecordingStorageMediaKind = keyof typeof RECORDING_STORAGE_DIRECTORY_NAMES;
 
-interface RecordingStorageCleanupCandidate {
+interface RecordingStorageFileEntry {
   path: string;
   size: number;
   mtimeMs: number;
@@ -82,7 +84,9 @@ function isManagedRecordingFilePath(root: string, path: string): boolean {
   if (
     parts
       .slice(0, -1)
-      .some((part) => part.startsWith(legacySessionDirectoryPrefix))
+      .some((part) =>
+        part.toLowerCase().startsWith(legacySessionDirectoryPrefixKey),
+      )
   ) {
     return true;
   }
@@ -96,7 +100,9 @@ function isManagedRecordingFilePath(root: string, path: string): boolean {
 
   return (
     parts.length === 1 &&
-    flatManagedRecordingNamePattern.test(basename(fileName, extension))
+    flatManagedRecordingNamePattern.test(
+      fileName.slice(0, Math.max(0, fileName.length - extension.length)),
+    )
   );
 }
 
@@ -309,7 +315,7 @@ function resolveSafeFilesystemErrorCode(error: unknown): string {
 /* v8 ignore stop */
 
 export type {
-  RecordingStorageCleanupCandidate,
+  RecordingStorageFileEntry,
   RecordingStorageMediaKind,
   RecordingStoragePathMigration,
 };

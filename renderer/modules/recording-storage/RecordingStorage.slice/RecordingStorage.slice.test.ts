@@ -12,17 +12,10 @@ import { createRecordingStorageSlice } from "./RecordingStorage.slice";
 
 function createUsage(): RecordingStorageUsage {
   return {
-    storageDirectory: "C:\\Videos\\Hinekora Recordings",
-    databasePath: "C:\\Data\\hinekora.sqlite",
     clipsSizeBytes: 0,
-    recordingsSizeBytes: 0,
-    databaseSizeBytes: 0,
-    totalTrackedSizeBytes: 0,
-    diskTotalBytes: 100,
     diskFreeBytes: 50,
-    diskWarningThresholdBytes: 10,
     lowDiskSpace: false,
-    calculatedAt: "2026-06-18T00:00:00.000Z",
+    recordingsSizeBytes: 0,
   };
 }
 
@@ -72,12 +65,18 @@ describe("RecordingStorage slice", () => {
   const getUsage = vi.fn();
   const listRecordingLibrary = vi.fn();
   const openRecording = vi.fn();
+  const onUsageChanged = vi.fn();
+  const onRecordingsChanged = vi.fn();
   const revealRecording = vi.fn();
   const deleteRecording = vi.fn();
   const deleteManyRecordings = vi.fn();
+  let recordingsChangedListener: ((ids: string[]) => void) | null;
+  let usageChangedListener: ((usage: RecordingStorageUsage) => void) | null;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    recordingsChangedListener = null;
+    usageChangedListener = null;
     getUsage.mockResolvedValue(createUsage());
     listRecordingLibrary.mockResolvedValue(createLibraryPage());
     openRecording.mockResolvedValue({ ok: true, error: null });
@@ -89,6 +88,20 @@ describe("RecordingStorage slice", () => {
       deletedPaths: [],
       failed: [],
     });
+    onUsageChanged.mockImplementation(
+      (listener: (usage: RecordingStorageUsage) => void) => {
+        usageChangedListener = listener;
+
+        return vi.fn();
+      },
+    );
+    onRecordingsChanged.mockImplementation(
+      (listener: (ids: string[]) => void) => {
+        recordingsChangedListener = listener;
+
+        return vi.fn();
+      },
+    );
 
     Object.defineProperty(window, "electron", {
       configurable: true,
@@ -96,6 +109,8 @@ describe("RecordingStorage slice", () => {
         recordingStorage: {
           getUsage,
           listRecordingLibrary,
+          onUsageChanged,
+          onRecordingsChanged,
           openRecording,
           revealRecording,
           deleteRecording,
@@ -103,6 +118,53 @@ describe("RecordingStorage slice", () => {
         },
       },
     });
+  });
+
+  it("updates usage from storage events without refreshing", () => {
+    const store = createTestStore();
+    const stopListening = store.getState().recordingStorage.startListening();
+    const usage = { ...createUsage(), recordingsSizeBytes: 25 };
+
+    usageChangedListener?.(usage);
+
+    expect(store.getState().recordingStorage.usage).toEqual(usage);
+    expect(getUsage).not.toHaveBeenCalled();
+    expect(onUsageChanged).toHaveBeenCalledTimes(1);
+    stopListening();
+  });
+
+  it("refreshes a loaded recording library after retention changes", async () => {
+    const store = createTestStore();
+    const stopListening = store.getState().recordingStorage.startListening();
+
+    recordingsChangedListener?.(["recording-1"]);
+    expect(listRecordingLibrary).not.toHaveBeenCalled();
+
+    await store.getState().recordingStorage.refreshRecordings({ game: "poe2" });
+    listRecordingLibrary.mockClear();
+    recordingsChangedListener?.(["recording-1"]);
+
+    await vi.waitFor(() => {
+      expect(listRecordingLibrary).toHaveBeenCalledWith({ game: "poe2" });
+    });
+    stopListening();
+  });
+
+  it("deduplicates concurrent usage refreshes", async () => {
+    let resolveUsage: ((usage: RecordingStorageUsage) => void) | undefined;
+    getUsage.mockReturnValueOnce(
+      new Promise<RecordingStorageUsage>((resolve) => {
+        resolveUsage = resolve;
+      }),
+    );
+    const store = createTestStore();
+
+    const firstRefresh = store.getState().recordingStorage.refreshUsage();
+    const secondRefresh = store.getState().recordingStorage.refreshUsage();
+
+    expect(getUsage).toHaveBeenCalledTimes(1);
+    resolveUsage?.(createUsage());
+    await Promise.all([firstRefresh, secondRefresh]);
   });
 
   it("refreshes after single recording cleanup warnings and keeps the warning", async () => {
@@ -123,7 +185,7 @@ describe("RecordingStorage slice", () => {
 
     await store.getState().recordingStorage.deleteRecording(recording.path);
 
-    expect(getUsage).toHaveBeenCalledTimes(1);
+    expect(getUsage).not.toHaveBeenCalled();
     expect(listRecordingLibrary).toHaveBeenCalledTimes(1);
     expect(store.getState().recordingStorage.selectedRecordingIds).toEqual({});
     expect(store.getState().recordingStorage.error).toBe("unlink failed");
@@ -134,7 +196,10 @@ describe("RecordingStorage slice", () => {
     listRecordingLibrary.mockResolvedValue(createLibraryPage([recording]));
     const store = createTestStore();
 
-    await store.getState().recordingStorage.hydrate();
+    await Promise.all([
+      store.getState().recordingStorage.refreshUsage(),
+      store.getState().recordingStorage.refreshRecordings(),
+    ]);
     await store.getState().recordingStorage.openRecording(recording.path);
     await store.getState().recordingStorage.revealRecording(recording.path);
 
@@ -164,20 +229,56 @@ describe("RecordingStorage slice", () => {
     });
   });
 
+  it("does not let an older library response replace a newer query", async () => {
+    let resolveFirst: ((page: RunRecordingLibraryPage) => void) | undefined;
+    let resolveSecond: ((page: RunRecordingLibraryPage) => void) | undefined;
+    listRecordingLibrary
+      .mockReturnValueOnce(
+        new Promise<RunRecordingLibraryPage>((resolve) => {
+          resolveFirst = resolve;
+        }),
+      )
+      .mockReturnValueOnce(
+        new Promise<RunRecordingLibraryPage>((resolve) => {
+          resolveSecond = resolve;
+        }),
+      );
+    const store = createTestStore();
+    const firstRefresh = store
+      .getState()
+      .recordingStorage.refreshRecordings({ game: "poe1" });
+    const secondRefresh = store
+      .getState()
+      .recordingStorage.refreshRecordings({ game: "poe2" });
+    const newerRecording = createRecording({ id: "newer" });
+
+    resolveSecond?.(createLibraryPage([newerRecording]));
+    await secondRefresh;
+    resolveFirst?.(createLibraryPage([createRecording({ id: "older" })]));
+    await firstRefresh;
+
+    expect(store.getState().recordingStorage.recordings).toEqual([
+      newerRecording,
+    ]);
+    expect(store.getState().recordingStorage.recordingsQuery).toEqual({
+      game: "poe2",
+    });
+  });
+
   it("stores refresh fallback errors", async () => {
     const store = createTestStore();
     getUsage.mockRejectedValueOnce("usage failed");
     listRecordingLibrary.mockRejectedValueOnce("library failed");
 
     await store.getState().recordingStorage.refreshUsage();
-    expect(store.getState().recordingStorage.error).toBe("Storage failed");
+    expect(store.getState().recordingStorage.usageError).toBe("Storage failed");
 
     await store.getState().recordingStorage.refreshRecordings();
     expect(store.getState().recordingStorage.error).toBe("Storage failed");
 
     getUsage.mockRejectedValueOnce(new Error("usage failed"));
     await store.getState().recordingStorage.refreshUsage();
-    expect(store.getState().recordingStorage.error).toBe("usage failed");
+    expect(store.getState().recordingStorage.usageError).toBe("usage failed");
 
     listRecordingLibrary.mockRejectedValueOnce(new Error("library failed"));
     await store.getState().recordingStorage.refreshRecordings();

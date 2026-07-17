@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useOnboardingActions } from "~/renderer/store";
 
 import { useOnboardingMutationRefresh } from "../../Onboarding.hooks/useOnboardingMutationRefresh/useOnboardingMutationRefresh";
+import { RepereButton } from "../RepereButton/RepereButton";
 
 type PopoverProps = {
   title: string;
@@ -65,6 +66,7 @@ function Popover({
           {isDismissingAll ? "Dismissing..." : "Dismiss All"}
         </button>
         <ReperePopover.AcknowledgeButton
+          as={RepereButton}
           className="btn btn-primary h-8 flex-1"
           type="button"
         >

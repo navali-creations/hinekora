@@ -184,7 +184,15 @@ describe("ReplayClipsRepository", () => {
 
     repository.upsert(clip);
     expect(repository.get(clip.id)?.id).toBe(clip.id);
+    expect(repository.getMany([])).toEqual([]);
+    expect(repository.getMaxStoragePathSize(clip.processedClipPath!)).toBe(
+      clip.sizeBytes,
+    );
+    expect(
+      repository.getMaxStoragePathSize(clip.processedClipPath!, clip.id),
+    ).toBe(0);
 
+    repository.deleteMany([]);
     repository.delete(clip.id);
     expect(repository.get(clip.id)).toBeNull();
 

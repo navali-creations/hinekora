@@ -3,6 +3,7 @@ import {
   mkdirSync,
   mkdtempSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +17,7 @@ import {
   collectManagedFiles,
   getExistingFileSize,
   isPathInsideOrEqual,
+  isRealPathInsideOrEqual,
   removeEmptyParentDirectories,
   resolveDatabaseFilePaths,
 } from "./storage-files";
@@ -106,6 +108,30 @@ describe("storage-files utils", () => {
     expect(isPathInsideOrEqual(storageRoot, join(root, "outside.mp4"))).toBe(
       false,
     );
+    expect(
+      isRealPathInsideOrEqual(storageRoot, join(root, "outside.mp4")),
+    ).toBe(false);
+  });
+
+  it("rejects child paths that resolve through a link outside the root", () => {
+    const externalRoot = mkdtempSync(
+      join(tmpdir(), "hinekora-storage-utils-external-"),
+    );
+    try {
+      const linkedDirectory = join(root, "linked");
+      symlinkSync(
+        externalRoot,
+        linkedDirectory,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+      const linkedFile = join(linkedDirectory, "clip.mp4");
+      writeFileSync(join(externalRoot, "clip.mp4"), "clip");
+
+      expect(isPathInsideOrEqual(root, linkedFile)).toBe(true);
+      expect(isRealPathInsideOrEqual(root, linkedFile)).toBe(false);
+    } finally {
+      rmSync(externalRoot, { recursive: true, force: true });
+    }
   });
 
   it("ignores filesystem races while collecting managed files", async () => {

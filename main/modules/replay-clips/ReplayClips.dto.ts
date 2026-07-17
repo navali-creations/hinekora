@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import type {
   GameId,
   QuickClipTrimRange,
@@ -77,6 +79,10 @@ export interface ReplayClipPreviewProgress {
   progress: number;
 }
 
+const ReplayClipDeletedIdsSchema = z
+  .array(z.string().min(1).max(128))
+  .max(1_000);
+
 export interface ReplayClipUpdateResult {
   detail: ReplayClipDetail | null;
   error: string | null;
@@ -119,3 +125,4 @@ export interface ReplayClipBatchFileActionResult {
 }
 
 export type { ReplayClip };
+export { ReplayClipDeletedIdsSchema };

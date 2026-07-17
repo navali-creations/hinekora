@@ -1,18 +1,17 @@
+import { z } from "zod";
+
 import type { GameId } from "~/types";
 
-export interface RecordingStorageUsage {
-  storageDirectory: string;
-  databasePath: string;
-  clipsSizeBytes: number;
-  recordingsSizeBytes: number;
-  databaseSizeBytes: number;
-  totalTrackedSizeBytes: number;
-  diskTotalBytes: number;
-  diskFreeBytes: number;
-  diskWarningThresholdBytes: number;
-  lowDiskSpace: boolean;
-  calculatedAt: string;
-}
+const RecordingStorageUsageSchema = z.object({
+  clipsSizeBytes: z.number().finite().nonnegative(),
+  diskFreeBytes: z.number().finite().nonnegative(),
+  lowDiskSpace: z.boolean(),
+  recordingsSizeBytes: z.number().finite().nonnegative(),
+});
+const RecordingStorageChangedIdsSchema = z
+  .array(z.string().min(1).max(2_048))
+  .max(100);
+export type RecordingStorageUsage = z.infer<typeof RecordingStorageUsageSchema>;
 
 export interface RunRecordingMetadata {
   id: string;
@@ -24,6 +23,8 @@ export interface RunRecordingMetadata {
   createdAt: string;
   updatedAt: string;
 }
+
+export { RecordingStorageChangedIdsSchema, RecordingStorageUsageSchema };
 
 export interface RunRecordingItem extends RunRecordingMetadata {
   fileName: string;

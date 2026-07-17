@@ -6,29 +6,41 @@ import type {
 export const createRecordingStorageSlice: BoundStoreStateCreator<
   RecordingStorageSlice
 > = (set, get) => {
-  const refreshUsage = async () => {
-    set((state) => {
-      state.recordingStorage.isLoading = true;
-      state.recordingStorage.error = null;
-    });
-
-    try {
-      const usage = await window.electron.recordingStorage.getUsage();
-      set((state) => {
-        state.recordingStorage.usage = usage;
-        state.recordingStorage.isLoading = false;
-      });
-    } catch (error) {
-      set((state) => {
-        state.recordingStorage.isLoading = false;
-        state.recordingStorage.error =
-          error instanceof Error ? error.message : "Storage failed";
-      });
+  let libraryRequestGeneration = 0;
+  let usageRequest: Promise<void> | null = null;
+  const refreshUsage = () => {
+    if (usageRequest) {
+      return usageRequest;
     }
+
+    usageRequest = (async () => {
+      set((state) => {
+        state.recordingStorage.isUsageLoading = true;
+        state.recordingStorage.usageError = null;
+      });
+
+      try {
+        const usage = await window.electron.recordingStorage.getUsage();
+        set((state) => {
+          state.recordingStorage.usage = usage;
+          state.recordingStorage.isUsageLoading = false;
+        });
+      } catch (error) {
+        set((state) => {
+          state.recordingStorage.isUsageLoading = false;
+          state.recordingStorage.usageError =
+            error instanceof Error ? error.message : "Storage failed";
+        });
+      } finally {
+        usageRequest = null;
+      }
+    })();
+    return usageRequest;
   };
 
   const refreshRecordings: RecordingStorageSlice["recordingStorage"]["refreshRecordings"] =
     async (queryInput) => {
+      const requestGeneration = ++libraryRequestGeneration;
       const query = queryInput ?? get().recordingStorage.recordingsQuery ?? {};
       set((state) => {
         state.recordingStorage.isLoading = true;
@@ -38,6 +50,9 @@ export const createRecordingStorageSlice: BoundStoreStateCreator<
       try {
         const recordingsPage =
           await window.electron.recordingStorage.listRecordingLibrary(query);
+        if (requestGeneration !== libraryRequestGeneration) {
+          return;
+        }
         set((state) => {
           state.recordingStorage.recordings = recordingsPage.items;
           state.recordingStorage.recordingsPage = recordingsPage;
@@ -47,6 +62,9 @@ export const createRecordingStorageSlice: BoundStoreStateCreator<
           state.recordingStorage.isLoading = false;
         });
       } catch (error) {
+        if (requestGeneration !== libraryRequestGeneration) {
+          return;
+        }
         set((state) => {
           state.recordingStorage.isLoading = false;
           state.recordingStorage.error =
@@ -54,10 +72,6 @@ export const createRecordingStorageSlice: BoundStoreStateCreator<
         });
       }
     };
-
-  const refreshRecordingsAndUsage = async () => {
-    await Promise.all([refreshRecordings(), refreshUsage()]);
-  };
 
   return {
     recordingStorage: {
@@ -69,8 +83,28 @@ export const createRecordingStorageSlice: BoundStoreStateCreator<
       selectedRecordingIds: {},
       isLoading: false,
       error: null,
-      hydrate: async () => {
-        await Promise.all([refreshUsage(), refreshRecordings()]);
+      isUsageLoading: false,
+      usageError: null,
+      startListening: () => {
+        const stopUsageListener =
+          window.electron.recordingStorage.onUsageChanged((usage) => {
+            set((state) => {
+              state.recordingStorage.usage = usage;
+              state.recordingStorage.isUsageLoading = false;
+              state.recordingStorage.usageError = null;
+            });
+          });
+        const stopRecordingsListener =
+          window.electron.recordingStorage.onRecordingsChanged(() => {
+            if (get().recordingStorage.recordingsQuery !== null) {
+              void refreshRecordings();
+            }
+          });
+
+        return () => {
+          stopUsageListener();
+          stopRecordingsListener();
+        };
       },
       refreshUsage,
       refreshRecordings,
@@ -103,7 +137,7 @@ export const createRecordingStorageSlice: BoundStoreStateCreator<
 
           state.recordingStorage.error = null;
         });
-        await refreshRecordingsAndUsage();
+        await refreshRecordings();
         set((state) => {
           state.recordingStorage.error = result.cleanupError ?? null;
         });
@@ -125,7 +159,7 @@ export const createRecordingStorageSlice: BoundStoreStateCreator<
           await window.electron.recordingStorage.deleteManyRecordings(
             selectedPaths,
           );
-        await refreshRecordingsAndUsage();
+        await refreshRecordings();
         set((state) => {
           state.recordingStorage.selectedRecordingIds = {};
           state.recordingStorage.error =

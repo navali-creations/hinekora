@@ -29,10 +29,15 @@ export const createStateTransferSlice: BoundStoreStateCreator<
     importPortable: async (mode) => {
       const result = await window.electron.stateTransfer.importPortable(mode);
       if (result.ok) {
+        const replayLibraryRefresh = get().replayClips.libraryQuery
+          ? get().replayClips.refreshLibrary()
+          : Promise.resolve();
         await Promise.all([
           get().settings.hydrate(),
           get().profiles.hydrate(),
           get().captureProfiles.hydrate(),
+          get().recordingStorage.refreshUsage(),
+          replayLibraryRefresh,
         ]);
       }
       set((state) => {

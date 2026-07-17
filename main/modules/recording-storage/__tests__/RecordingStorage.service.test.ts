@@ -24,22 +24,38 @@ import { createReplayClip } from "~/main/test/factories/replayClip";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
 import * as AppLog from "~/main/utils/app-log";
 import * as FileClipboard from "~/main/utils/file-clipboard";
+import {
+  clearIpcWindowRolesForTests,
+  registerIpcWindowRole,
+} from "~/main/utils/ipc-window-roles";
+import {
+  markStagedFileDeletionsCommitted,
+  resetStagedFileDeletionStateForTests,
+  stageFilesForDeletion,
+} from "~/main/utils/staged-file-deletion";
 
 import { createDefaultSettings } from "~/types";
+import { BookmarksService } from "../../bookmarks";
 import { DatabaseService } from "../../database";
+import { WindowName } from "../../main-window/MainWindow.types";
 import { ReplayClipsRepository } from "../../replay-clips/ReplayClips.repository";
 import { SettingsStoreService } from "../../settings-store";
+import { StorageFileDeletionService } from "../../storage/StorageFileDeletion.service";
 import { RecordingStorageChannel } from "../RecordingStorage.channels";
 import { RecordingStorageRepository } from "../RecordingStorage.repository";
 import { RecordingStorageService } from "../RecordingStorage.service";
 
 const electronMocks = vi.hoisted(() => ({
+  getAllWindows: vi.fn<() => Electron.BrowserWindow[]>(() => []),
   getPath: vi.fn(),
   openPath: vi.fn(),
   showItemInFolder: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
+  BrowserWindow: {
+    getAllWindows: electronMocks.getAllWindows,
+  },
   app: {
     getPath: electronMocks.getPath,
   },
@@ -57,13 +73,29 @@ let service: RecordingStorageService;
 let openPath: Mock<(path: string) => Promise<string>>;
 let showItemInFolder: Mock<(path: string) => void>;
 
+function listServiceRecordings(target: RecordingStorageService) {
+  target.listRecordingLibrary({ pageSize: 1 });
+  return listRepositoryRecordings(repository);
+}
+
+function listRepositoryRecordings(target: RecordingStorageRepository) {
+  return target.listLibraryPage({
+    pageIndex: 0,
+    pageSize: 100,
+    sortBy: "createdAt",
+    sortDirection: "desc",
+  }).items;
+}
+
 beforeEach(() => {
+  resetStagedFileDeletionStateForTests();
   root = mkdtempSync(join(tmpdir(), "hinekora-recording-storage-"));
   database = DatabaseService.getInstance(join(root, "hinekora.sqlite"));
   replayClipsRepository = new ReplayClipsRepository(database);
   repository = new RecordingStorageRepository(database);
   openPath = vi.fn<(path: string) => Promise<string>>().mockResolvedValue("");
   showItemInFolder = vi.fn<(path: string) => void>();
+  electronMocks.getAllWindows.mockReturnValue([]);
   electronMocks.getPath.mockReturnValue(join(root, "videos"));
   electronMocks.openPath.mockImplementation(openPath);
   electronMocks.showItemInFolder.mockImplementation(showItemInFolder);
@@ -83,6 +115,8 @@ afterEach(() => {
   electronMocks.openPath.mockReset();
   electronMocks.showItemInFolder.mockReset();
   vi.restoreAllMocks();
+  resetStagedFileDeletionStateForTests();
+  clearIpcWindowRolesForTests();
   DatabaseService.resetForTests();
   rmSync(root, { force: true, recursive: true });
 });
@@ -98,7 +132,7 @@ describe("RecordingStorageService", () => {
     RecordingStorageService.resetForTests();
   });
 
-  it("separates replay clip size from run recording size", () => {
+  it("separates replay clip size from run recording size", async () => {
     const runPath = join(root, "2026-06-12_10-30-00.mp4");
     const clipPath = join(root, "2026-06-12_10-30-00-death-10s.mp4");
     writeFileSync(runPath, "run");
@@ -106,17 +140,672 @@ describe("RecordingStorageService", () => {
     replayClipsRepository.upsert(
       createReplayClip({ processedClipPath: clipPath, sizeBytes: 4 }),
     );
+    service.refreshLibrary();
 
-    expect(service.getUsage()).toMatchObject({
-      storageDirectory: resolve(root),
+    await expect(service.getUsage()).resolves.toMatchObject({
       clipsSizeBytes: 4,
       recordingsSizeBytes: 3,
-      diskWarningThresholdBytes: 1024 ** 3,
     });
-    expect(service.getUsage().databaseSizeBytes).toBeGreaterThan(0);
   });
 
-  it("rebases replay clip rows when legacy manual clip folders migrate", () => {
+  it("does not reconcile recording files during a usage read", async () => {
+    const runPath = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(runPath, "run");
+
+    expect((await service.getUsage()).recordingsSizeBytes).toBe(0);
+
+    service.refreshLibrary();
+
+    expect((await service.getUsage()).recordingsSizeBytes).toBe(3);
+  });
+
+  it("shares an in-flight usage scan for concurrent readers", async () => {
+    const first = service.getUsage();
+    const second = service.getUsage();
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      expect.objectContaining({ clipsSizeBytes: 0, recordingsSizeBytes: 0 }),
+      expect.objectContaining({ clipsSizeBytes: 0, recordingsSizeBytes: 0 }),
+    ]);
+  });
+
+  it("restores pre-commit staged files regardless of storage metadata", async () => {
+    vi.useFakeTimers();
+    const recordingPath = join(root, "2026-06-12_10-30-00.mp4");
+    const replayPath = join(root, "2026-06-12_10-30-00-death-10s.mp4");
+    const unindexedPath = join(root, "2026-06-12_10-31-00.mp4");
+    writeFileSync(recordingPath, "recording");
+    writeFileSync(replayPath, "replay");
+    writeFileSync(unindexedPath, "unindexed");
+    repository.upsertRunRecording({
+      path: recordingPath,
+      sourceGame: "poe1",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:00:00.000Z",
+      stoppedAt: "2026-06-12T10:01:00.000Z",
+      sizeBytes: 9,
+    });
+    replayClipsRepository.upsert(
+      createReplayClip({ processedClipPath: replayPath, sizeBytes: 6 }),
+    );
+    await stageFilesForDeletion(root, [
+      { path: recordingPath, size: 9 },
+      { path: replayPath, size: 6 },
+      { path: unindexedPath, size: 9 },
+    ]);
+    resetStagedFileDeletionStateForTests();
+
+    const usage = service.getUsage();
+    await vi.runAllTimersAsync();
+    await usage;
+    vi.useRealTimers();
+    await vi.waitFor(() => expect(existsSync(recordingPath)).toBe(true));
+
+    expect(existsSync(recordingPath)).toBe(true);
+    expect(existsSync(replayPath)).toBe(true);
+    expect(existsSync(unindexedPath)).toBe(true);
+  });
+
+  it("finalizes post-commit staged files without storage metadata", async () => {
+    vi.useFakeTimers();
+    const recordingPath = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(recordingPath, "recording");
+    const staged = await stageFilesForDeletion(root, [
+      { path: recordingPath, size: 9 },
+    ]);
+    await markStagedFileDeletionsCommitted(staged);
+    resetStagedFileDeletionStateForTests();
+
+    const usage = service.getUsage();
+    await vi.runAllTimersAsync();
+    await usage;
+    vi.useRealTimers();
+    await vi.waitFor(() => expect(existsSync(recordingPath)).toBe(false));
+
+    expect(existsSync(recordingPath)).toBe(false);
+  });
+
+  it("continues bounded staged-deletion recovery until the root is drained", async () => {
+    vi.useFakeTimers();
+    const recover = vi
+      .spyOn(StorageFileDeletionService.prototype, "recover")
+      .mockResolvedValueOnce({
+        failed: [],
+        finalizedPaths: [],
+        hasMore: true,
+        restoredPaths: [],
+      })
+      .mockResolvedValueOnce({
+        failed: [],
+        finalizedPaths: [],
+        hasMore: false,
+        restoredPaths: [],
+      });
+
+    const usage = service.getUsage();
+    await vi.runAllTimersAsync();
+    await usage;
+    await vi.runAllTimersAsync();
+
+    expect(recover).toHaveBeenCalledTimes(2);
+  });
+
+  it("clears deferred recovery timers, guards empty work, and reports recovery failures", async () => {
+    vi.useFakeTimers();
+    const recover = vi
+      .spyOn(StorageFileDeletionService.prototype, "recover")
+      .mockRejectedValue(new Error("recovery failed"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const internals = service as unknown as {
+      pendingStagedDeletionRecoveryRoots: Set<string>;
+      runNextStagedDeletionRecovery(): void;
+      scheduleStagedDeletionRecovery(storageRoot: string): void;
+      stagedDeletionRecoveryRequest: {
+        promise: Promise<unknown>;
+        root: string;
+      } | null;
+    };
+
+    internals.scheduleStagedDeletionRecovery(root);
+    RecordingStorageService.setPerformanceSensitiveActivityActive(true);
+    (
+      service as unknown as {
+        handlePerformanceSensitiveActivity(active: boolean): void;
+      }
+    ).handlePerformanceSensitiveActivity(true);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(recover).not.toHaveBeenCalled();
+    internals.runNextStagedDeletionRecovery();
+    expect(recover).not.toHaveBeenCalled();
+
+    RecordingStorageService.setPerformanceSensitiveActivityActive(false);
+    (
+      service as unknown as {
+        handlePerformanceSensitiveActivity(active: boolean): void;
+      }
+    ).handlePerformanceSensitiveActivity(false);
+    await vi.runAllTimersAsync();
+    expect(recover).toHaveBeenCalledOnce();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Storage deletion recovery failed"),
+      expect.objectContaining({ error: "recovery failed" }),
+    );
+
+    internals.pendingStagedDeletionRecoveryRoots.clear();
+    internals.runNextStagedDeletionRecovery();
+    const heldRequest = { promise: Promise.resolve(), root };
+    internals.stagedDeletionRecoveryRequest = heldRequest;
+    internals.pendingStagedDeletionRecoveryRoots.add(root);
+    internals.runNextStagedDeletionRecovery();
+    expect(internals.stagedDeletionRecoveryRequest).toBe(heldRequest);
+    internals.stagedDeletionRecoveryRequest = null;
+  });
+
+  it("paginates inventory repositories and creates usage from the result", async () => {
+    const clips = Array.from({ length: 500 }, (_, index) => ({
+      createdAt: "2026-07-17T00:00:00.000Z",
+      id: `clip-${index}`,
+      originalObsPath: null,
+      processedClipPath: null,
+      sizeBytes: 0,
+    }));
+    const recordings = Array.from({ length: 500 }, (_, index) => ({
+      mtimeMs: index,
+      path: join(root, `recording-${index}.mkv`),
+      size: 1,
+    }));
+    vi.spyOn(ReplayClipsRepository.prototype, "listStorageEntriesPage")
+      .mockReturnValueOnce(clips)
+      .mockReturnValueOnce([]);
+    vi.spyOn(RecordingStorageRepository.prototype, "listStorageEntriesPage")
+      .mockReturnValueOnce(recordings)
+      .mockReturnValueOnce([]);
+    const internals = service as unknown as {
+      createStorageInventory(storageRoot: string): Promise<{
+        clipGroups: unknown[];
+        clipsSizeBytes: number;
+        recordingEntries: unknown[];
+        recordingsSizeBytes: number;
+        usageBytes: number;
+      }>;
+      createUsageFromInventory(
+        inventory: {
+          clipsSizeBytes: number;
+          recordingsSizeBytes: number;
+        },
+        storageRoot: string,
+      ): unknown;
+    };
+
+    const inventory = await internals.createStorageInventory(root);
+    expect(inventory.recordingEntries).toHaveLength(500);
+    expect(internals.createUsageFromInventory(inventory, root)).toEqual(
+      expect.objectContaining({
+        clipsSizeBytes: 0,
+        recordingsSizeBytes: 500,
+      }),
+    );
+  });
+
+  it("retains recovery work for both roots when storage settings change", async () => {
+    vi.useFakeTimers();
+    const nextRoot = mkdtempSync(
+      join(tmpdir(), "hinekora-recording-storage-next-"),
+    );
+    let settings = {
+      ...createDefaultSettings(),
+      recordingStoragePath: root,
+      recordingMaxStorageGb: 1,
+    };
+    let handleSettingsChange:
+      | ((next: ReturnType<SettingsStoreService["get"]>) => void)
+      | null = null;
+    vi.mocked(SettingsStoreService.getInstance).mockReturnValue({
+      get: () => settings,
+      onDidChange: (
+        listener: (next: ReturnType<SettingsStoreService["get"]>) => void,
+      ) => {
+        handleSettingsChange = listener;
+        return vi.fn();
+      },
+    } as unknown as SettingsStoreService);
+    service = new RecordingStorageService();
+    vi.spyOn(service, "cleanup").mockResolvedValue({
+      deletedCount: 0,
+      freedBytes: 0,
+      limitBytes: 1024 ** 3,
+      usageBytes: 0,
+    });
+    const recover = vi
+      .spyOn(StorageFileDeletionService.prototype, "recover")
+      .mockResolvedValue({
+        failed: [],
+        finalizedPaths: [],
+        hasMore: false,
+        restoredPaths: [],
+      });
+
+    settings = { ...settings, recordingStoragePath: nextRoot };
+    expect(handleSettingsChange).not.toBeNull();
+    handleSettingsChange!(settings);
+    await vi.runAllTimersAsync();
+
+    expect(recover.mock.calls.map(([storageRoot]) => storageRoot)).toEqual([
+      resolve(root),
+      resolve(nextRoot),
+    ]);
+    rmSync(nextRoot, { force: true, recursive: true });
+  });
+
+  it("schedules cleanup when the limit is reduced without changing roots", () => {
+    let handleSettingsChange:
+      | ((next: ReturnType<SettingsStoreService["get"]>) => void)
+      | null = null;
+    vi.mocked(SettingsStoreService.getInstance).mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: root,
+        recordingMaxStorageGb: 1,
+      }),
+      onDidChange: (
+        listener: (next: ReturnType<SettingsStoreService["get"]>) => void,
+      ) => {
+        handleSettingsChange = listener;
+        return vi.fn();
+      },
+    } as unknown as SettingsStoreService);
+    service = new RecordingStorageService();
+    const scheduleCleanup = vi.spyOn(service, "scheduleCleanup");
+
+    handleSettingsChange!({
+      ...createDefaultSettings(),
+      recordingStoragePath: root,
+      recordingMaxStorageGb: 0.5,
+    });
+    expect(scheduleCleanup).toHaveBeenCalledWith({ force: true });
+
+    scheduleCleanup.mockClear();
+    handleSettingsChange!({
+      ...createDefaultSettings(),
+      recordingStoragePath: root,
+      recordingMaxStorageGb: 0.5,
+    });
+    expect(scheduleCleanup).not.toHaveBeenCalled();
+  });
+
+  it("coalesces scheduled cleanup requests and their protected paths", async () => {
+    vi.useFakeTimers();
+    const cleanup = vi.spyOn(service, "cleanup").mockResolvedValue({
+      deletedCount: 0,
+      freedBytes: 0,
+      limitBytes: 1024 ** 3,
+      usageBytes: 0,
+    });
+
+    service.scheduleCleanup({
+      force: true,
+      protectedDirectories: [join(root, "session-a")],
+      protectedPaths: [join(root, "clip-a.mp4")],
+    });
+    service.scheduleCleanup({
+      protectedDirectories: [join(root, "session-b")],
+      protectedPaths: [join(root, "clip-b.mp4")],
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    expect(cleanup).toHaveBeenCalledWith({
+      protectedDirectories: [join(root, "session-a"), join(root, "session-b")],
+      protectedPaths: [join(root, "clip-a.mp4"), join(root, "clip-b.mp4")],
+    });
+  });
+
+  it("reports rejected scheduled cleanups and releases rejected queue entries", async () => {
+    vi.useFakeTimers();
+    const error = new Error("scheduled cleanup failed");
+    vi.spyOn(service, "cleanup").mockRejectedValueOnce(error);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    service.scheduleCleanup({ force: true });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Scheduled storage cleanup failed"),
+      expect.objectContaining({ error: "scheduled cleanup failed" }),
+    );
+
+    const internals = service as unknown as {
+      runCleanup: (options: object) => Promise<unknown>;
+    };
+    vi.spyOn(internals, "runCleanup")
+      .mockRejectedValueOnce(error)
+      .mockResolvedValueOnce({
+        deletedCount: 0,
+        freedBytes: 0,
+        limitBytes: 0,
+        usageBytes: 0,
+      });
+    const rejected = service.cleanup({ protectedPaths: ["rejected"] });
+    await expect(rejected).rejects.toBe(error);
+    await Promise.resolve();
+    const retried = service.cleanup({ protectedPaths: ["rejected"] });
+    expect(retried).not.toBe(rejected);
+    await expect(retried).resolves.toMatchObject({ deletedCount: 0 });
+  });
+
+  it("skips a scheduled scan when cached usage plus growth is under the limit", async () => {
+    await service.getUsage();
+    vi.useFakeTimers();
+    const cleanup = vi.spyOn(service, "cleanup");
+
+    service.scheduleCleanup({ estimatedAddedBytes: 1024 });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+
+  it("does not double-count growth already applied to the usage cache", async () => {
+    await service.getUsage();
+    service.noteUsageDelta("recordings", 1024 ** 3 - 5);
+    vi.useFakeTimers();
+    const cleanup = vi.spyOn(service, "cleanup").mockResolvedValue({
+      deletedCount: 0,
+      freedBytes: 0,
+      limitBytes: 1024 ** 3,
+      usageBytes: 1024 ** 3 - 5,
+    });
+
+    service.scheduleCleanup({
+      estimatedAddedBytes: 10,
+      usageAlreadyAccounted: true,
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(cleanup).not.toHaveBeenCalled();
+
+    service.scheduleCleanup({ usageAlreadyAccounted: true });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(cleanup).not.toHaveBeenCalled();
+  });
+
+  it("defers library scans while game or capture activity is active", () => {
+    const recordingPath = join(root, "2026-07-17 10-00-00.mp4");
+    writeFileSync(recordingPath, "recording");
+
+    RecordingStorageService.setPerformanceSensitiveActivityActive(true);
+    service.refreshLibrary({ publishUsage: false });
+    expect(repository.getItemByPath(recordingPath)).toBeNull();
+
+    RecordingStorageService.setPerformanceSensitiveActivityActive(false);
+    service.refreshLibrary({ publishUsage: false });
+    expect(repository.getItemByPath(recordingPath)).not.toBeNull();
+  });
+
+  it("publishes refreshed usage only to the main window", async () => {
+    const send = vi.fn();
+    const webContents = { id: 901, send };
+    registerIpcWindowRole(webContents, WindowName.Main);
+    electronMocks.getAllWindows.mockReturnValue([
+      {
+        isDestroyed: () => false,
+        webContents,
+      } as unknown as Electron.BrowserWindow,
+    ]);
+    replayClipsRepository.upsert(
+      createReplayClip({
+        processedClipPath: join(root, "clip.mp4"),
+        sizeBytes: 4,
+      }),
+    );
+
+    service.publishUsageChanged();
+
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith(
+        RecordingStorageChannel.UsageChanged,
+        expect.objectContaining({ clipsSizeBytes: 4 }),
+      );
+    });
+
+    const knownUsage = {
+      clipsSizeBytes: 2,
+      diskFreeBytes: 3,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 4,
+    };
+    service.publishUsageChanged(knownUsage, root);
+    service.publishRecordingsChanged(["recording-1"]);
+    await vi.waitFor(() => {
+      expect(send).toHaveBeenCalledWith(
+        RecordingStorageChannel.UsageChanged,
+        knownUsage,
+      );
+      expect(send).toHaveBeenCalledWith(
+        RecordingStorageChannel.RecordingsChanged,
+        ["recording-1"],
+      );
+    });
+  });
+
+  it("refreshes mismatched usage snapshots and reports refresh failures", async () => {
+    const send = vi.fn();
+    const webContents = { id: 902, send };
+    registerIpcWindowRole(webContents, WindowName.Main);
+    electronMocks.getAllWindows.mockReturnValue([
+      {
+        isDestroyed: () => false,
+        webContents,
+      } as unknown as Electron.BrowserWindow,
+    ]);
+    const usage = {
+      clipsSizeBytes: 0,
+      diskFreeBytes: 0,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    };
+    const getUsage = vi
+      .spyOn(service, "getUsage")
+      .mockResolvedValueOnce(usage)
+      .mockRejectedValueOnce(new Error("refresh failed"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    service.publishUsageChanged(usage, join(root, "old-root"));
+    await vi.waitFor(() => expect(getUsage).toHaveBeenCalledTimes(1));
+    service.publishUsageChanged();
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("Storage usage refresh failed"),
+        expect.objectContaining({ error: "refresh failed" }),
+      );
+    });
+  });
+
+  it("skips windows destroyed between role lookup and event delivery", async () => {
+    const send = vi.fn();
+    const isDestroyed = vi
+      .fn()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    const webContents = { id: 903, send };
+    registerIpcWindowRole(webContents, WindowName.Main);
+    electronMocks.getAllWindows.mockReturnValue([
+      { isDestroyed, webContents } as unknown as Electron.BrowserWindow,
+    ]);
+    const usage = {
+      clipsSizeBytes: 0,
+      diskFreeBytes: 0,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    };
+
+    service.publishUsageChanged(usage, root);
+    await Promise.resolve();
+    expect(send).not.toHaveBeenCalled();
+
+    isDestroyed
+      .mockReset()
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+    service.publishRecordingsChanged(["recording-1"]);
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it("applies known usage deltas without rescanning storage", async () => {
+    await service.getUsage();
+    const calculateUsage = vi.spyOn(
+      await import("../RecordingStorage.usage"),
+      "calculateRecordingStorageUsage",
+    );
+
+    service.noteUsageDelta("clips", 12);
+    service.noteUsageDelta("recordings", 7);
+
+    await expect(service.getUsage()).resolves.toMatchObject({
+      clipsSizeBytes: 12,
+      recordingsSizeBytes: 7,
+    });
+    expect(calculateUsage).not.toHaveBeenCalled();
+  });
+
+  it("keeps shared clip paths and recording ownership counted once", async () => {
+    const sharedClipPath = join(root, "shared-clip.mp4");
+    const firstClip = createReplayClip({
+      id: "shared-clip-1",
+      processedClipPath: sharedClipPath,
+      sizeBytes: 5,
+    });
+    replayClipsRepository.upsert(firstClip);
+    await expect(service.getUsage()).resolves.toMatchObject({
+      clipsSizeBytes: 5,
+      recordingsSizeBytes: 0,
+    });
+
+    const secondClip = createReplayClip({
+      id: "shared-clip-2",
+      processedClipPath: sharedClipPath,
+      sizeBytes: 5,
+    });
+    replayClipsRepository.upsert(secondClip);
+    service.noteReplayClipUsageChange(null, secondClip);
+    await expect(service.getUsage()).resolves.toMatchObject({
+      clipsSizeBytes: 5,
+      recordingsSizeBytes: 0,
+    });
+
+    const largerFirstClip = { ...firstClip, sizeBytes: 7 };
+    replayClipsRepository.upsert(largerFirstClip);
+    service.noteReplayClipUsageChange(firstClip, largerFirstClip);
+    await expect(service.getUsage()).resolves.toMatchObject({
+      clipsSizeBytes: 7,
+      recordingsSizeBytes: 0,
+    });
+
+    const recordingPath = join(root, "shared-recording.mp4");
+    repository.upsertRunRecording({
+      id: "shared-recording",
+      path: recordingPath,
+      sourceGame: "poe1",
+      sourceLeague: "Standard",
+      startedAt: "2026-07-17T00:00:00.000Z",
+      stoppedAt: "2026-07-17T00:01:00.000Z",
+      mtimeMs: 1,
+      sizeBytes: 11,
+    });
+    service.publishUsageChanged();
+    await expect(service.getUsage()).resolves.toMatchObject({
+      clipsSizeBytes: 7,
+      recordingsSizeBytes: 11,
+    });
+
+    const recordingClip = createReplayClip({
+      id: "recording-backed-clip",
+      processedClipPath: recordingPath,
+      sizeBytes: 11,
+    });
+    replayClipsRepository.upsert(recordingClip);
+    service.noteReplayClipUsageChange(null, recordingClip);
+    await expect(service.getUsage()).resolves.toMatchObject({
+      clipsSizeBytes: 18,
+      recordingsSizeBytes: 0,
+    });
+  });
+
+  it("does not count a registered recording already owned by a clip", () => {
+    const sharedPath = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(sharedPath, "shared");
+    replayClipsRepository.upsert(
+      createReplayClip({ processedClipPath: sharedPath, sizeBytes: 6 }),
+    );
+    const noteUsageDelta = vi.spyOn(service, "noteUsageDelta");
+
+    service.registerRunRecording({
+      path: sharedPath,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-07-17T00:00:00.000Z",
+      stoppedAt: "2026-07-17T00:01:00.000Z",
+    });
+
+    expect(noteUsageDelta).not.toHaveBeenCalled();
+  });
+
+  it("restarts an in-flight usage scan after a cacheless usage change", async () => {
+    const usageModule = await import("../RecordingStorage.usage");
+    let resolveFirstCalculation!: (value: {
+      clipsSizeBytes: number;
+      recordingsSizeBytes: number;
+      usageBytes: number;
+    }) => void;
+    const firstCalculation = new Promise<{
+      clipsSizeBytes: number;
+      recordingsSizeBytes: number;
+      usageBytes: number;
+    }>((resolvePromise) => {
+      resolveFirstCalculation = resolvePromise;
+    });
+    const calculateUsage = vi
+      .spyOn(usageModule, "calculateRecordingStorageUsage")
+      .mockImplementationOnce(() => firstCalculation);
+
+    const usageRequest = service.getUsage();
+    await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
+    replayClipsRepository.upsert(
+      createReplayClip({
+        id: "created-during-scan",
+        processedClipPath: join(root, "created-during-scan.mp4"),
+        sizeBytes: 5,
+      }),
+    );
+    service.noteUsageDelta("clips", 5);
+    resolveFirstCalculation({
+      clipsSizeBytes: 0,
+      recordingsSizeBytes: 0,
+      usageBytes: 0,
+    });
+
+    await expect(usageRequest).resolves.toMatchObject({ clipsSizeBytes: 5 });
+    expect(calculateUsage).toHaveBeenCalledTimes(2);
+  });
+
+  it("updates cached usage when a run recording is finalized", async () => {
+    await service.getUsage();
+    const recordingPath = join(root, "finalized-recording.mp4");
+    writeFileSync(recordingPath, "recording");
+
+    service.registerRunRecording({
+      path: recordingPath,
+      sourceGame: "poe1",
+      sourceLeague: "Standard",
+      startedAt: "2026-07-17T10:00:00.000Z",
+      stoppedAt: "2026-07-17T10:01:00.000Z",
+    });
+
+    await expect(service.getUsage()).resolves.toMatchObject({
+      recordingsSizeBytes: 9,
+    });
+  });
+
+  it("rebases replay clip rows when legacy manual clip folders migrate", async () => {
     const legacyDirectory = join(root, "Manual Clips");
     const canonicalDirectory = join(root, "Manual Replays");
     const legacyPath = join(legacyDirectory, "manual.mp4");
@@ -133,7 +822,8 @@ describe("RecordingStorageService", () => {
       }),
     );
 
-    expect(service.getUsage()).toEqual(
+    service.initializeStorageRoot();
+    expect(await service.getUsage()).toEqual(
       expect.objectContaining({
         clipsSizeBytes: 6,
       }),
@@ -334,7 +1024,7 @@ describe("RecordingStorageService", () => {
       stoppedAt: "2026-06-12T12:00:00.000Z",
     });
 
-    expect(service.listRecordings()).toEqual(
+    expect(listServiceRecordings(service)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           path: resolve(filePath),
@@ -358,9 +1048,9 @@ describe("RecordingStorageService", () => {
     const filePath = join(root, "2026-06-23 15-08-58.mp4");
     writeFileSync(filePath, createMp4WithDuration(78_250));
 
-    const recording = service
-      .listRecordings()
-      .find((item) => item.path === resolve(filePath));
+    const recording = listServiceRecordings(service).find(
+      (item) => item.path === resolve(filePath),
+    );
 
     expect(recording).toEqual(
       expect.objectContaining({
@@ -401,7 +1091,7 @@ describe("RecordingStorageService", () => {
     );
 
     vi.useFakeTimers({ now: new Date("2026-06-23T16:00:00.000Z") });
-    expect(service.listRecordings()).toEqual([
+    expect(listServiceRecordings(service)).toEqual([
       expect.objectContaining({
         durationSeconds: 16,
         path: resolve(filePath),
@@ -409,7 +1099,7 @@ describe("RecordingStorageService", () => {
     ]);
 
     vi.setSystemTime(new Date("2026-06-23T16:00:03.000Z"));
-    expect(service.listRecordings()).toEqual([
+    expect(listServiceRecordings(service)).toEqual([
       expect.objectContaining({
         durationSeconds: 16,
         path: resolve(filePath),
@@ -450,7 +1140,7 @@ describe("RecordingStorageService", () => {
       stoppedAt: "2026-06-12T12:00:00.000Z",
     });
 
-    const recordings = service.listRecordings();
+    const recordings = listServiceRecordings(service);
     const fileRecording = recordings.find(
       (recording) => recording.path === resolve(filePath),
     );
@@ -554,7 +1244,7 @@ describe("RecordingStorageService", () => {
       sizeBytes: stats.size,
     });
 
-    expect(service.listRecordings()).toEqual([
+    expect(listServiceRecordings(service)).toEqual([
       expect.objectContaining({
         path: resolve(filePath),
         sizeBytes: 3,
@@ -575,7 +1265,7 @@ describe("RecordingStorageService", () => {
       stoppedAt: "2026-06-12T10:30:00.000Z",
     });
 
-    expect(service.listRecordings()).toEqual([
+    expect(listServiceRecordings(service)).toEqual([
       expect.objectContaining({
         durationSeconds: 42.5,
         path: resolve(filePath),
@@ -597,20 +1287,20 @@ describe("RecordingStorageService", () => {
       mtimeMs: stats.mtimeMs,
       sizeBytes: stats.size,
     });
-    expect(repository.listRunRecordingItems()).toEqual([
+    expect(listRepositoryRecordings(repository)).toEqual([
       expect.objectContaining({
         durationSeconds: 16,
         path: resolve(filePath),
       }),
     ]);
 
-    expect(service.listRecordings()).toEqual([
+    expect(listServiceRecordings(service)).toEqual([
       expect.objectContaining({
         durationSeconds: 13.52,
         path: resolve(filePath),
       }),
     ]);
-    expect(repository.listRunRecordingItems()).toEqual([
+    expect(listRepositoryRecordings(repository)).toEqual([
       expect.objectContaining({
         durationSeconds: 13.52,
         path: resolve(filePath),
@@ -638,14 +1328,14 @@ describe("RecordingStorageService", () => {
         sizeBytes: stats.size,
       });
 
-      expect(service.listRecordings()).toEqual([
+      expect(listServiceRecordings(service)).toEqual([
         expect.objectContaining({
           durationSeconds: null,
           path: resolve(filePath),
         }),
       ]);
       vi.setSystemTime(new Date("2026-06-23T10:00:03.000Z"));
-      service.listRecordings();
+      listServiceRecordings(service);
 
       expect(logWarn).toHaveBeenCalledTimes(1);
       expect(logWarn).toHaveBeenCalledWith(
@@ -680,13 +1370,13 @@ describe("RecordingStorageService", () => {
     });
     writeFileSync(filePath, "not an mp4 anymore");
 
-    expect(service.listRecordings()).toEqual([
+    expect(listServiceRecordings(service)).toEqual([
       expect.objectContaining({
         durationSeconds: null,
         path: resolve(filePath),
       }),
     ]);
-    expect(repository.listRunRecordingItems()).toEqual([
+    expect(listRepositoryRecordings(repository)).toEqual([
       expect.objectContaining({
         durationSeconds: null,
         path: resolve(filePath),
@@ -907,17 +1597,17 @@ describe("RecordingStorageService", () => {
       ok: false,
       error: "Recording file is not available",
     });
-    expect(service.deleteRecording(validPath)).toEqual({
+    await expect(service.deleteRecording(validPath)).resolves.toEqual({
       ok: true,
       error: null,
     });
-    expect(service.deleteRecording(invalidPath)).toEqual({
+    await expect(service.deleteRecording(invalidPath)).resolves.toEqual({
       ok: false,
       error: "Recording file is not available",
     });
-    expect(
+    await expect(
       service.deleteRecording(join(root, "2026-06-12_12-00-00.mp4")),
-    ).toEqual({
+    ).resolves.toEqual({
       ok: false,
       error: "Recording file is not available",
     });
@@ -928,7 +1618,7 @@ describe("RecordingStorageService", () => {
     expect(showItemInFolder).toHaveBeenCalledWith(resolve(validPath));
   });
 
-  it("deletes stale run recording metadata", () => {
+  it("deletes stale run recording metadata", async () => {
     const missingPath = join(root, "2026-06-12_11-00-00.mp4");
     repository.upsertRunRecording({
       path: missingPath,
@@ -938,21 +1628,45 @@ describe("RecordingStorageService", () => {
       stoppedAt: "2026-06-12T12:00:00.000Z",
     });
 
-    expect(service.deleteRecording(missingPath)).toEqual({
+    await expect(service.deleteRecording(missingPath)).resolves.toEqual({
       ok: true,
       error: null,
     });
     expect(repository.getByPath(missingPath)).toBeNull();
   });
 
+  it("keeps a recording file that is still referenced by a replay clip", async () => {
+    const sharedPath = join(root, "2026-06-12_11-00-00.mp4");
+    writeFileSync(sharedPath, "shared");
+    repository.upsertRunRecording({
+      path: sharedPath,
+      sourceGame: "poe2",
+      sourceLeague: "Hardcore",
+      startedAt: "2026-06-12T11:00:00.000Z",
+      stoppedAt: "2026-06-12T12:00:00.000Z",
+    });
+    replayClipsRepository.upsert(
+      createReplayClip({ id: "shared-clip", originalObsPath: sharedPath }),
+    );
+
+    await expect(service.deleteRecording(sharedPath)).resolves.toEqual({
+      ok: true,
+      error: null,
+    });
+
+    expect(existsSync(sharedPath)).toBe(true);
+    expect(repository.getByPath(sharedPath)).toBeNull();
+    expect(replayClipsRepository.get("shared-clip")).not.toBeNull();
+  });
+
   it("reports recording file cleanup failures after deleting metadata", async () => {
     vi.resetModules();
-    vi.doMock("node:fs", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("node:fs")>();
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
 
       return {
         ...actual,
-        unlinkSync: vi.fn(() => {
+        unlink: vi.fn(() => {
           throw new Error("unlink failed");
         }),
       };
@@ -999,14 +1713,15 @@ describe("RecordingStorageService", () => {
       });
       const mockedService = new MockedRecordingStorageService();
 
-      expect(mockedService.deleteRecording(validPath)).toEqual({
+      await expect(mockedService.deleteRecording(validPath)).resolves.toEqual({
         ok: true,
         error: null,
-        cleanupError: "unlink failed",
+        cleanupError: "A staged recording file could not be removed",
       });
-      expect(existsSync(validPath)).toBe(true);
+      expect(existsSync(validPath)).toBe(false);
       expect(mockedRepository.getByPath(validPath)).toBeNull();
 
+      writeFileSync(validPath, "run");
       mockedRepository.upsertRunRecording({
         path: validPath,
         sourceGame: "poe2",
@@ -1014,27 +1729,36 @@ describe("RecordingStorageService", () => {
         startedAt: "2026-06-12T10:30:00.000Z",
         stoppedAt: "2026-06-12T11:30:00.000Z",
       });
-      expect(mockedService.deleteManyRecordings([validPath])).toEqual({
+      await expect(
+        mockedService.deleteManyRecordings([validPath]),
+      ).resolves.toEqual({
         ok: true,
         error: null,
         deletedPaths: [validPath],
         failed: [],
-        cleanupErrors: [{ path: validPath, error: "unlink failed" }],
+        cleanupErrors: [
+          {
+            path: validPath,
+            error: "A staged recording file could not be removed",
+          },
+        ],
       });
     } finally {
       resetDynamicDatabase();
-      vi.doUnmock("node:fs");
+      vi.doUnmock("node:fs/promises");
       vi.resetModules();
     }
   });
 
-  it("deletes many recordings with per-path failures", () => {
+  it("deletes many recordings with per-path failures", async () => {
     const validPath = join(root, "2026-06-12_10-30-00.mp4");
     const invalidPath = join(root, "boss-fight.mp4");
     writeFileSync(validPath, "run");
     writeFileSync(invalidPath, "run");
 
-    expect(service.deleteManyRecordings([validPath, invalidPath])).toEqual({
+    await expect(
+      service.deleteManyRecordings([validPath, invalidPath]),
+    ).resolves.toEqual({
       ok: false,
       error: "Some recordings could not be deleted",
       deletedPaths: [validPath],
@@ -1044,11 +1768,11 @@ describe("RecordingStorageService", () => {
     expect(existsSync(invalidPath)).toBe(true);
   });
 
-  it("deletes many recordings without failures", () => {
+  it("deletes many recordings without failures", async () => {
     const validPath = join(root, "2026-06-12_10-30-00.mp4");
     writeFileSync(validPath, "run");
 
-    expect(service.deleteManyRecordings([validPath])).toEqual({
+    await expect(service.deleteManyRecordings([validPath])).resolves.toEqual({
       ok: true,
       error: null,
       deletedPaths: [validPath],
@@ -1057,13 +1781,15 @@ describe("RecordingStorageService", () => {
     expect(existsSync(validPath)).toBe(false);
   });
 
-  it("uses a fallback error for batch delete failures without details", () => {
-    vi.spyOn(service, "deleteRecording").mockReturnValue({
+  it("uses a fallback error for batch delete failures without details", async () => {
+    vi.spyOn(service, "deleteRecording").mockResolvedValue({
       ok: false,
       error: null,
     });
 
-    expect(service.deleteManyRecordings(["2026-06-12_10-30-00.mp4"])).toEqual({
+    await expect(
+      service.deleteManyRecordings(["2026-06-12_10-30-00.mp4"]),
+    ).resolves.toEqual({
       ok: false,
       error: "Some recordings could not be deleted",
       deletedPaths: [],
@@ -1076,9 +1802,16 @@ describe("RecordingStorageService", () => {
     });
   });
 
-  it("returns safe errors when delete throws", () => {
+  it("returns safe errors when delete throws", async () => {
     const validPath = join(root, "2026-06-12_10-30-00.mp4");
     writeFileSync(validPath, "run");
+    repository.upsertRunRecording({
+      path: validPath,
+      sourceGame: "poe2",
+      sourceLeague: "Hardcore",
+      startedAt: "2026-06-12T10:30:00.000Z",
+      stoppedAt: "2026-06-12T11:30:00.000Z",
+    });
     vi.spyOn(
       RecordingStorageRepository.prototype,
       "deleteRunRecordingByPath",
@@ -1087,11 +1820,12 @@ describe("RecordingStorageService", () => {
     });
     const failingService = new RecordingStorageService();
 
-    expect(failingService.deleteRecording(validPath)).toEqual({
+    await expect(failingService.deleteRecording(validPath)).resolves.toEqual({
       ok: false,
       error: "delete failed",
     });
     expect(existsSync(validPath)).toBe(true);
+    expect(repository.getByPath(validPath)).not.toBeNull();
   });
 
   it("reports shell action failures without exposing broader filesystem access", async () => {
@@ -1184,7 +1918,7 @@ describe("RecordingStorageService", () => {
     });
   });
 
-  it("reports cleanup usage without deleting when storage limit is disabled", () => {
+  it("reports cleanup usage without deleting when storage limit is disabled", async () => {
     const clipPath = join(root, "2026-06-12_10-30-00-death-10s.mp4");
     const sessionDirectory = join(root, "Hinekora-2026-06-12_10-30-00");
     const oldPath = join(sessionDirectory, "old.mkv");
@@ -1192,8 +1926,9 @@ describe("RecordingStorageService", () => {
     writeFileSync(clipPath, "clip");
     writeFileSync(oldPath, "run");
     replayClipsRepository.upsert(
-      createReplayClip({ processedClipPath: clipPath }),
+      createReplayClip({ processedClipPath: clipPath, sizeBytes: 4 }),
     );
+    service.refreshLibrary({ publishUsage: false });
 
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
       get: () => ({
@@ -1203,15 +1938,325 @@ describe("RecordingStorageService", () => {
       }),
     } as unknown as SettingsStoreService);
 
-    expect(service.cleanup()).toEqual({
+    await expect(service.cleanup()).resolves.toEqual({
       deletedCount: 0,
       freedBytes: 0,
       limitBytes: 0,
-      usageBytes: 3,
+      usageBytes: 7,
     });
   });
 
-  it("deletes unprotected managed recordings when usage exceeds the limit", () => {
+  it("reports over-limit usage when every cleanup candidate is protected", async () => {
+    const protectedDirectory = join(root, "Hinekora-2026-06-12_10-30-00");
+    const protectedPath = join(protectedDirectory, "protected.mkv");
+    mkdirSync(protectedDirectory);
+    writeFileSync(protectedPath, "protected");
+    service.refreshLibrary({ publishUsage: false });
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: root,
+        recordingMaxStorageGb: 1 / 1024 ** 3,
+      }),
+    } as unknown as SettingsStoreService);
+
+    await expect(
+      service.cleanup({ protectedDirectories: [protectedDirectory] }),
+    ).resolves.toEqual({
+      deletedCount: 0,
+      freedBytes: 0,
+      limitBytes: 1,
+      usageBytes: 9,
+    });
+    expect(existsSync(protectedPath)).toBe(true);
+  });
+
+  it("coalesces equivalent cleanup requests while one is pending", async () => {
+    const first = service.cleanup({ protectedPaths: ["b", "a"] });
+    const second = service.cleanup({ protectedPaths: ["a", "b"] });
+
+    expect(second).toBe(first);
+    await first;
+  });
+
+  it("tries a backup candidate when the planned deletion fails", async () => {
+    const firstPath = join(root, "2026-06-12_10-30-00.mkv");
+    const secondPath = join(root, "2026-06-12_10-31-00.mkv");
+    writeFileSync(firstPath, "run");
+    writeFileSync(secondPath, "run");
+    service.refreshLibrary({ publishUsage: false });
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: root,
+        recordingMaxStorageGb: 4 / 1024 ** 3,
+      }),
+    } as unknown as SettingsStoreService);
+
+    type RetentionFile = {
+      kind: "recording";
+      mtimeMs: number;
+      path: string;
+      size: number;
+    };
+    type RetentionResult = {
+      deletedPaths: string[];
+      freedBytes: number;
+      recordingId: string | null;
+      usageReductionBytes: number;
+    };
+    const internals = service as unknown as {
+      deleteRecordingForRetention(
+        file: RetentionFile,
+        root: string,
+      ): Promise<RetentionResult>;
+    };
+    const originalDelete = internals.deleteRecordingForRetention.bind(service);
+    vi.spyOn(internals, "deleteRecordingForRetention")
+      .mockResolvedValueOnce({
+        deletedPaths: [],
+        freedBytes: 0,
+        recordingId: null,
+        usageReductionBytes: 0,
+      })
+      .mockImplementation(originalDelete);
+
+    await expect(service.cleanup()).resolves.toMatchObject({
+      deletedCount: 1,
+      freedBytes: 3,
+      usageBytes: 6,
+    });
+    expect([existsSync(firstPath), existsSync(secondPath)].sort()).toEqual([
+      false,
+      true,
+    ]);
+  });
+
+  it("continues cleanup when a bounded pass leaves more over-limit files", async () => {
+    for (let index = 0; index < 102; index += 1) {
+      const path = join(root, `recording-${index}.mkv`);
+      writeFileSync(path, "x");
+      repository.upsertRunRecording({
+        id: `recording-${index}`,
+        path,
+        sourceGame: "poe2",
+        sourceLeague: "Standard",
+        startedAt: "2026-07-17T00:00:00.000Z",
+        stoppedAt: "2026-07-17T00:01:00.000Z",
+        mtimeMs: index,
+        sizeBytes: 1,
+      });
+    }
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: root,
+        recordingMaxStorageGb: 2 / 1024 ** 3,
+      }),
+    } as unknown as SettingsStoreService);
+    const cleanup = vi.spyOn(service, "cleanup");
+
+    await service.cleanup();
+    await vi.waitFor(() => expect(cleanup).toHaveBeenCalledTimes(2));
+  });
+
+  it("continues cleanup when rows are deleted without freeing physical bytes", async () => {
+    const inventory = {
+      clipGroups: Array.from({ length: 101 }, (_, index) => ({
+        clipIds: [`clip-${index}`],
+        mtimeMs: index,
+        paths: [join(root, `clip-${index}.mp4`)],
+        size: 1,
+      })),
+      clipsSizeBytes: 101,
+      recordingEntries: [],
+      recordingsSizeBytes: 0,
+      usageBytes: 101,
+    };
+    vi.spyOn(service, "getUsage").mockResolvedValue({
+      clipsSizeBytes: 101,
+      diskFreeBytes: 0,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    const internals = service as unknown as {
+      createStorageInventory: (
+        storageRoot: string,
+      ) => Promise<typeof inventory>;
+    };
+    vi.spyOn(internals, "createStorageInventory").mockResolvedValue(inventory);
+    service.setReplayClipRetentionCleanupHandler(async (idGroups) => ({
+      deletedIds: idGroups.flat(),
+      deletedPaths: [],
+      failed: [],
+      freedBytes: 0,
+    }));
+    const setTimeoutSpy = vi
+      .spyOn(global, "setTimeout")
+      .mockImplementation(() => ({ unref: vi.fn() }) as never);
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: root,
+        recordingMaxStorageGb: 2 / 1024 ** 3,
+      }),
+    } as unknown as SettingsStoreService);
+
+    await expect(
+      service.cleanup({ protectedPaths: ["zero-byte-finalization"] }),
+    ).resolves.toMatchObject({ deletedCount: 0, freedBytes: 0 });
+    expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 0);
+  });
+
+  it("handles protected, invalid, orphaned, and missing retention recordings", async () => {
+    type RetentionFile = {
+      kind: "recording";
+      mtimeMs: number;
+      path: string;
+      size: number;
+    };
+    type RetentionResult = {
+      deletedPaths: string[];
+      freedBytes: number;
+      recordingId: string | null;
+      usageReductionBytes: number;
+    };
+    const internals = service as unknown as {
+      deleteRecordingForRetention(
+        file: RetentionFile,
+        storageRoot: string,
+      ): Promise<RetentionResult>;
+      deleteReplayClipsForRetention(
+        idGroups: string[][],
+        storageRoot: string,
+      ): Promise<unknown>;
+    };
+    const sharedPath = join(root, "shared.mp4");
+    writeFileSync(sharedPath, "shared");
+    replayClipsRepository.upsert(
+      createReplayClip({ processedClipPath: sharedPath, sizeBytes: 6 }),
+    );
+
+    await expect(
+      internals.deleteRecordingForRetention(
+        { kind: "recording", mtimeMs: 1, path: sharedPath, size: 6 },
+        root,
+      ),
+    ).resolves.toEqual({
+      deletedPaths: [],
+      freedBytes: 0,
+      recordingId: null,
+      usageReductionBytes: 0,
+    });
+
+    const directoryPath = join(root, "directory.mkv");
+    mkdirSync(directoryPath);
+    await expect(
+      internals.deleteRecordingForRetention(
+        { kind: "recording", mtimeMs: 1, path: directoryPath, size: 0 },
+        root,
+      ),
+    ).resolves.toEqual({
+      deletedPaths: [],
+      freedBytes: 0,
+      recordingId: null,
+      usageReductionBytes: 0,
+    });
+
+    const orphanedPath = join(root, "orphaned.mkv");
+    writeFileSync(orphanedPath, "orphaned");
+    await expect(
+      internals.deleteRecordingForRetention(
+        { kind: "recording", mtimeMs: 1, path: orphanedPath, size: 8 },
+        root,
+      ),
+    ).resolves.toEqual({
+      deletedPaths: [orphanedPath],
+      freedBytes: 8,
+      recordingId: null,
+      usageReductionBytes: 8,
+    });
+
+    const missingPath = join(root, "missing.mkv");
+    await expect(
+      internals.deleteRecordingForRetention(
+        { kind: "recording", mtimeMs: 1, path: missingPath, size: 5 },
+        root,
+      ),
+    ).resolves.toEqual({
+      deletedPaths: [],
+      freedBytes: 0,
+      recordingId: null,
+      usageReductionBytes: 5,
+    });
+
+    await expect(
+      internals.deleteReplayClipsForRetention([["clip-1", "clip-2"]], root),
+    ).resolves.toEqual({
+      deletedIds: [],
+      deletedPaths: [],
+      failed: [
+        {
+          id: "clip-1",
+          error: "Replay clip retention handler is unavailable",
+        },
+        {
+          id: "clip-2",
+          error: "Replay clip retention handler is unavailable",
+        },
+      ],
+      freedBytes: 0,
+    });
+  });
+
+  it("deletes the oldest replay clip when combined usage exceeds the limit", async () => {
+    const clipPath = join(root, "old-clip.mp4");
+    const recordingDirectory = join(root, "Hinekora-2026-06-12_10-30-00");
+    const recordingPath = join(recordingDirectory, "run.mkv");
+    mkdirSync(recordingDirectory);
+    writeFileSync(clipPath, "old-clip");
+    writeFileSync(recordingPath, "run");
+    replayClipsRepository.upsert(
+      createReplayClip({
+        createdAt: "2020-01-01T00:00:00.000Z",
+        processedClipPath: clipPath,
+        sizeBytes: 8,
+      }),
+    );
+    service.refreshLibrary({ publishUsage: false });
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: root,
+        recordingMaxStorageGb: 9 / 1024 ** 3,
+      }),
+    } as unknown as SettingsStoreService);
+    service.setReplayClipRetentionCleanupHandler(async (idGroups) => {
+      const ids = idGroups.flat();
+      rmSync(clipPath);
+      for (const id of ids) {
+        replayClipsRepository.delete(id);
+      }
+      return {
+        deletedIds: ids,
+        deletedPaths: [clipPath],
+        failed: [],
+        freedBytes: 8,
+      };
+    });
+
+    await expect(service.cleanup()).resolves.toEqual({
+      deletedCount: 1,
+      freedBytes: 8,
+      limitBytes: 9,
+      usageBytes: 11,
+    });
+    expect(existsSync(clipPath)).toBe(false);
+    expect(replayClipsRepository.get("clip-1")).toBeNull();
+    expect(existsSync(recordingPath)).toBe(true);
+  });
+
+  it("deletes unprotected managed recordings when usage exceeds the limit", async () => {
     const oldDirectory = join(root, "Hinekora-2026-06-12_10-30-00");
     const oldPath = join(oldDirectory, "2026-06-12_10-30-00.mkv");
     const clipPath = join(root, "2026-06-12_10-30-00-death-10s.mp4");
@@ -1219,8 +2264,9 @@ describe("RecordingStorageService", () => {
     writeFileSync(oldPath, "old-run");
     writeFileSync(clipPath, "clip");
     replayClipsRepository.upsert(
-      createReplayClip({ processedClipPath: clipPath }),
+      createReplayClip({ processedClipPath: clipPath, sizeBytes: 4 }),
     );
+    service.refreshLibrary({ publishUsage: false });
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
       get: () => ({
         ...createDefaultSettings(),
@@ -1229,26 +2275,93 @@ describe("RecordingStorageService", () => {
       }),
     } as unknown as SettingsStoreService);
 
-    expect(service.cleanup({ protectedPaths: [clipPath] })).toMatchObject({
-      deletedCount: 1,
-      freedBytes: 7,
-    });
+    await expect(
+      service.cleanup({ protectedPaths: [clipPath] }),
+    ).resolves.toMatchObject({ deletedCount: 1, freedBytes: 7 });
     expect(existsSync(oldPath)).toBe(false);
     expect(existsSync(clipPath)).toBe(true);
     expect(existsSync(oldDirectory)).toBe(false);
   });
 
-  it("logs and continues when cleanup cannot delete a selected path", async () => {
+  it("restores a staged recording when a replay reference appears before commit", async () => {
+    const oldDirectory = join(root, "Hinekora-2026-06-12_10-30-00");
+    const oldPath = join(oldDirectory, "2026-06-12_10-30-00.mkv");
+    mkdirSync(oldDirectory);
+    writeFileSync(oldPath, "old-run");
+    service.refreshLibrary({ publishUsage: false });
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: root,
+        recordingMaxStorageGb: 0.000000001,
+      }),
+    } as unknown as SettingsStoreService);
+    vi.spyOn(ReplayClipsRepository.prototype, "hasStoragePath")
+      .mockReturnValueOnce(false)
+      .mockReturnValueOnce(true);
+
+    await expect(service.cleanup()).resolves.toMatchObject({
+      deletedCount: 0,
+      freedBytes: 0,
+    });
+
+    expect(existsSync(oldPath)).toBe(true);
+    expect(repository.getItemByPath(oldPath)).toEqual(
+      expect.objectContaining({ exists: true, sizeBytes: 7 }),
+    );
+    expect(
+      database.db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM storage_file_deletion_operations",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("archives recording links when a retention candidate disappeared", async () => {
+    const missingPath = join(root, "2026-06-12_10-30-00.mkv");
+    repository.upsertRunRecording({
+      id: "missing-recording",
+      path: missingPath,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:00:00.000Z",
+      stoppedAt: "2026-06-12T10:01:00.000Z",
+      mtimeMs: 1,
+      sizeBytes: 100,
+    });
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: root,
+        recordingMaxStorageGb: 0.000000001,
+      }),
+    } as unknown as SettingsStoreService);
+    const archiveRecordingLinks = vi.spyOn(
+      BookmarksService.prototype,
+      "archiveRecordingLinks",
+    );
+
+    await service.cleanup();
+
+    expect(archiveRecordingLinks).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "missing-recording" }),
+    );
+    expect(repository.getItemByPath(missingPath)).toEqual(
+      expect.objectContaining({ exists: false, sizeBytes: 0 }),
+    );
+    service.refreshLibrary({ publishUsage: false });
+  });
+
+  it("keeps staged bytes counted when final deletion fails", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.resetModules();
-    vi.doMock("node:fs", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("node:fs")>();
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
 
       return {
         ...actual,
-        unlinkSync: vi.fn(() => {
-          throw new Error("unlink failed");
-        }),
+        unlink: vi.fn().mockRejectedValue(new Error("unlink failed")),
       };
     });
 
@@ -1278,26 +2391,28 @@ describe("RecordingStorageService", () => {
         }),
       } as unknown as typeof MockedSettingsStoreService.prototype);
       const mockedService = new MockedRecordingStorageService();
+      mockedService.refreshLibrary({ publishUsage: false });
 
-      expect(mockedService.cleanup()).toMatchObject({
+      await expect(mockedService.cleanup()).resolves.toMatchObject({
         deletedCount: 0,
         freedBytes: 0,
         usageBytes: 3,
       });
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining(
-          "WARN [recording-storage] Failed to delete recording file",
+          "WARN [recording-storage] Failed to finalize staged recording deletion",
         ),
         expect.objectContaining({ recordingFile: "2026-06-12_10-30-00.mp4" }),
       );
+      expect(existsSync(selectedPath)).toBe(false);
     } finally {
       resetDynamicDatabase();
-      vi.doUnmock("node:fs");
+      vi.doUnmock("node:fs/promises");
       vi.resetModules();
     }
   });
 
-  it("keeps recordings protected by directory during cleanup", () => {
+  it("keeps recordings protected by directory during cleanup", async () => {
     const protectedDirectory = join(root, "Hinekora-2026-06-12_10-30-00");
     const protectedPath = join(protectedDirectory, "2026-06-12_10-30-00.mkv");
     mkdirSync(protectedDirectory);
@@ -1309,18 +2424,19 @@ describe("RecordingStorageService", () => {
         recordingMaxStorageGb: 0,
       }),
     } as unknown as SettingsStoreService);
+    service.refreshLibrary({ publishUsage: false });
 
-    expect(
+    await expect(
       service.cleanup({ protectedDirectories: [protectedDirectory] }),
-    ).toMatchObject({
+    ).resolves.toMatchObject({
       deletedCount: 0,
       freedBytes: 0,
-      usageBytes: 0,
+      usageBytes: 9,
     });
     expect(existsSync(protectedPath)).toBe(true);
   });
 
-  it("deletes missing replay clip rows during cleanup", () => {
+  it("retains missing replay clip rows during cleanup", async () => {
     const nestedDirectory = join(root, "Hinekora-2026-06-12_10-30-00");
     const managedPath = join(nestedDirectory, "2026-06-12_10-30-00.mkv");
     mkdirSync(nestedDirectory, { recursive: true });
@@ -1339,31 +2455,24 @@ describe("RecordingStorageService", () => {
         recordingMaxStorageGb: 0.000000001,
       }),
     } as unknown as SettingsStoreService);
+    service.refreshLibrary({ publishUsage: false });
 
-    expect(service.cleanup()).toMatchObject({ deletedCount: 1 });
-    expect(service.getUsage()).toEqual(
+    await expect(service.cleanup()).resolves.toMatchObject({ deletedCount: 1 });
+    expect(await service.getUsage()).toEqual(
       expect.objectContaining({ clipsSizeBytes: 0 }),
     );
-    expect(replayClipsRepository.get("missing-clip")).toBeNull();
+    expect(replayClipsRepository.get("missing-clip")).not.toBeNull();
   });
 
   it("registers IPC handlers with validation", async () => {
     const { handlers } = mockIpcMainHandlers();
     const ipcService = new RecordingStorageService();
-    vi.spyOn(ipcService, "getUsage").mockReturnValue({
-      storageDirectory: root,
-      databasePath: ":memory:",
+    const getUsage = vi.spyOn(ipcService, "getUsage").mockResolvedValue({
       clipsSizeBytes: 0,
-      recordingsSizeBytes: 0,
-      databaseSizeBytes: 0,
-      totalTrackedSizeBytes: 0,
-      diskTotalBytes: 0,
       diskFreeBytes: 0,
-      diskWarningThresholdBytes: 1024 ** 3,
       lowDiskSpace: false,
-      calculatedAt: "2026-06-12T10:00:00.000Z",
+      recordingsSizeBytes: 0,
     });
-    vi.spyOn(ipcService, "listRecordings").mockReturnValue([]);
     vi.spyOn(ipcService, "listRecordingLibrary").mockReturnValue({
       availableLeagues: ["Standard"],
       items: [],
@@ -1403,23 +2512,36 @@ describe("RecordingStorageService", () => {
       ok: true,
       error: null,
     });
-    vi.spyOn(ipcService, "deleteRecording").mockReturnValue({
+    vi.spyOn(ipcService, "deleteRecording").mockResolvedValue({
       ok: true,
       error: null,
     });
-    vi.spyOn(ipcService, "deleteManyRecordings").mockReturnValue({
+    vi.spyOn(ipcService, "deleteManyRecordings").mockResolvedValue({
       ok: true,
       error: null,
       deletedPaths: ["clip.mp4"],
       failed: [],
     });
 
-    expect(await handlers.get(RecordingStorageChannel.GetUsage)?.({})).toEqual(
-      expect.objectContaining({ storageDirectory: root }),
+    expect(await handlers.get(RecordingStorageChannel.GetUsage)?.({})).toEqual({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 0,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    getUsage.mockRejectedValueOnce(
+      new Error(`Unable to scan ${join(root, "private", "recordings")}`),
     );
-    expect(
-      await handlers.get(RecordingStorageChannel.ListRecordings)?.({}),
-    ).toEqual([]);
+    expect(await handlers.get(RecordingStorageChannel.GetUsage)?.({})).toEqual({
+      ok: false,
+      error: "Recording storage usage is unavailable",
+    });
+
+    getUsage.mockRejectedValueOnce("native failure");
+    expect(await handlers.get(RecordingStorageChannel.GetUsage)?.({})).toEqual({
+      ok: false,
+      error: "Recording storage usage is unavailable",
+    });
     expect(
       await handlers.get(RecordingStorageChannel.GetRecording)?.(
         {},

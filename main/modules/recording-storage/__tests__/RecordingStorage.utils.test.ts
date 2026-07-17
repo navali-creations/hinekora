@@ -37,6 +37,9 @@ describe("RecordingStorage utils", () => {
         join(root, "2026-06-10 01-30-19-death-10s.mp4"),
       ),
     ).toBe(true);
+    expect(
+      isManagedRecordingFilePath(root, join(root, "2026-06-10_01-30-19.MP4")),
+    ).toBe(true);
   });
 
   it("recognizes managed media subdirectories", () => {

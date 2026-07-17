@@ -515,6 +515,8 @@ export const RecorderOverlayBoundsSchema = z.object({
 });
 export type RecorderOverlayBounds = z.infer<typeof RecorderOverlayBoundsSchema>;
 
+export const defaultRecordingMaxStorageGb = 50;
+
 export const AppSettingsSchema = z.object({
   setupCompleted: z.boolean().default(false),
   setupStep: AppSetupStepSchema.default(0),
@@ -540,7 +542,12 @@ export const AppSettingsSchema = z.object({
   selectedCaptureProfileId: z.string().min(1).max(128).nullable().default(null),
   selectedCaptureProfileIdsByGame: CaptureProfileSelectionMemorySchema,
   selectedProfileId: z.string().min(1).max(128).nullable().default(null),
-  recordingMaxStorageGb: z.number().int().min(0).max(100_000).default(50),
+  recordingMaxStorageGb: z
+    .number()
+    .int()
+    .min(0)
+    .max(100_000)
+    .default(defaultRecordingMaxStorageGb),
   poe1ClientTxtPath: z.string().max(2_048).nullable().default(null),
   poe2ClientTxtPath: z.string().max(2_048).nullable().default(null),
   poe1CharacterName: z.string().max(80).default(""),

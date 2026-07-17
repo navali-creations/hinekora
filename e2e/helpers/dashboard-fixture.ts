@@ -345,17 +345,10 @@ function createDashboardE2EFixture(
     captureProfile,
     recorderOverlayVisible: options.recorderOverlayVisible ?? false,
     recordingStorageUsage: {
-      calculatedAt: dashboardE2ENow,
       clipsSizeBytes: 0,
-      databasePath: "C:/Hinekora/hinekora.sqlite",
-      databaseSizeBytes: 1024,
       diskFreeBytes: 900_000_000_000,
-      diskTotalBytes: 1_000_000_000_000,
-      diskWarningThresholdBytes: 5_000_000_000,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
-      storageDirectory: "C:/Hinekora",
-      totalTrackedSizeBytes: 1024,
     },
     recorderStatus,
     replayClipDetails: options.replayClipDetails ?? {},
@@ -514,6 +507,7 @@ async function setupDashboardE2E(
           progress: number;
         }) => void;
         replayClipStatusChanged?: (clip: ReplayClipDetail["clip"]) => void;
+        recordingStorageUsageChanged?: (usage: RecordingStorageUsage) => void;
         updateAvailable?: (info: UpdateInfo) => void;
         updateProgress?: (progress: DownloadProgress) => void;
       } = {};
@@ -1229,6 +1223,12 @@ async function setupDashboardE2E(
           },
           getUsage: async () => clone(fixture.recordingStorageUsage),
           listRecordingLibrary: async () => clone(emptyRecordingPage),
+          onUsageChanged: (callback) => {
+            listeners.recordingStorageUsageChanged = callback;
+
+            return unsubscribe;
+          },
+          onRecordingsChanged: () => unsubscribe,
         }),
         replayClips: createBridgeDomain<DashboardE2EElectron["replayClips"]>(
           "replayClips",
@@ -1255,6 +1255,7 @@ async function setupDashboardE2E(
 
               return unsubscribe;
             },
+            onDeleted: () => unsubscribe,
             copy: async (input) => {
               const nextInput =
                 typeof input === "string"
@@ -1379,6 +1380,7 @@ async function setupDashboardE2E(
           "storage",
           {
             checkDiskSpace: async () => clone(diskCheck),
+            getGameLeagueUsage: async () => [],
             getInfo: async () => clone(fixture.storageInfo),
           },
         ),

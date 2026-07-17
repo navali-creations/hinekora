@@ -1,8 +1,9 @@
 import { access, copyFile, rename, rm } from "node:fs/promises";
-import { dirname, normalize, parse, resolve } from "node:path";
+import { dirname, parse, resolve } from "node:path";
 
 import { createEditorExportTempOutputPath } from "~/main/modules/editor/Editor.files";
 import { normalizeMediaFileStem } from "~/main/utils/media-file-name";
+import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 interface CommitReplayClipFileUpdateInput<T> {
   finalPath: string;
@@ -189,11 +190,7 @@ async function cleanupReplayClipFile(
 }
 
 function areReplayClipPathsEqual(left: string, right: string): boolean {
-  return createReplayClipPathKey(left) === createReplayClipPathKey(right);
-}
-
-function createReplayClipPathKey(path: string): string {
-  return normalize(resolve(path)).toLowerCase();
+  return createStoragePathKey(left) === createStoragePathKey(right);
 }
 
 async function resolveReplayClipRenameTarget(
@@ -241,6 +238,5 @@ async function replayClipPathExists(path: string): Promise<boolean> {
 export {
   areReplayClipPathsEqual,
   commitReplayClipFileUpdate,
-  createReplayClipPathKey,
   resolveReplayClipRenameTarget,
 };

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, type Mock, vi } from "vitest";
 
 import { DatabaseService } from "~/main/modules/database";
 import { WindowName } from "~/main/modules/main-window";
+import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import {
   clearIpcWindowRolesForTests,
@@ -46,6 +47,7 @@ function setupReplayClipsServiceTestHarness(
   electronMocks: ReplayClipsElectronMocks,
 ): void {
   beforeEach(() => {
+    RecordingStorageService.resetForTests();
     root = mkdtempSync(join(tmpdir(), "hinekora-replay-service-root-"));
     outsideRoot = mkdtempSync(
       join(tmpdir(), "hinekora-replay-service-outside-"),
@@ -77,6 +79,7 @@ function setupReplayClipsServiceTestHarness(
   });
 
   afterEach(() => {
+    RecordingStorageService.resetForTests();
     electronMocks.getAllWindows.mockReset();
     electronMocks.getPath.mockReset();
     electronMocks.openPath.mockReset();

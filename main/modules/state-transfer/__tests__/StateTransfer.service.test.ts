@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CaptureProfilesService } from "~/main/modules/capture-profiles";
 import { DatabaseService } from "~/main/modules/database";
 import { ProfilesService } from "~/main/modules/profiles";
+import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { ReplayClipsService } from "~/main/modules/replay-clips";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { createReplayClip } from "~/main/test/factories/replayClip";
@@ -47,6 +48,7 @@ let directory: string;
 let trustedRoot: string;
 let importedRoot: string;
 let database: DatabaseService;
+let cleanupRecordingStorage: ReturnType<typeof vi.fn>;
 
 function createBundle(
   overrides: Partial<Omit<StateBundle, "sections">> & {
@@ -107,6 +109,10 @@ beforeEach(() => {
   );
   electronMocks.getPath.mockReturnValue(join(directory, "videos"));
   electronMocks.getVersion.mockReturnValue("1.2.3");
+  cleanupRecordingStorage = vi.fn().mockResolvedValue(undefined);
+  vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+    scheduleCleanup: cleanupRecordingStorage,
+  } as unknown as RecordingStorageService);
 });
 
 afterEach(() => {
@@ -251,17 +257,17 @@ describe("StateTransferService", () => {
     });
   });
 
-  it("rejects import when no bundle has been previewed", () => {
+  it("rejects import when no bundle has been previewed", async () => {
     const service = new StateTransferService();
 
-    expect(service.importPortable("replace")).toEqual({
+    await expect(service.importPortable("replace")).resolves.toEqual({
       ok: false,
       backupPath: null,
       error: "No import bundle has been previewed",
     });
   });
 
-  it("backs up the database and sanitizes imported replay paths against the pre-import storage root", () => {
+  it("backs up the database and sanitizes imported replay paths against the pre-import storage root", async () => {
     const replaceAllProfiles = vi.fn();
     const replaceAllCaptureProfiles = vi.fn();
     const replaceSettings = vi.fn();
@@ -309,7 +315,7 @@ describe("StateTransferService", () => {
     vi.spyOn(ReplayClipsService, "getInstance").mockReturnValue({
       replaceAll: replaceAllReplayClips,
     } as unknown as ReplayClipsService);
-    const result = service.importPortable("replace");
+    const result = await service.importPortable("replace");
 
     expect(result.ok).toBe(true);
     expect(result.backupPath).toEqual(expect.stringMatching(/\.sqlite$/));
@@ -343,7 +349,7 @@ describe("StateTransferService", () => {
     }
   });
 
-  it("replaces imported state without a backup for in-memory databases", () => {
+  it("replaces imported state without a backup for in-memory databases", async () => {
     const memoryDatabase = new DatabaseService(":memory:");
     const replaceAllProfiles = vi.fn();
     const replaceAllCaptureProfiles = vi.fn();
@@ -368,7 +374,7 @@ describe("StateTransferService", () => {
     } as unknown as ReplayClipsService);
 
     try {
-      expect(service.importPortable("replace")).toEqual({
+      await expect(service.importPortable("replace")).resolves.toEqual({
         ok: true,
         backupPath: null,
         error: null,
@@ -387,7 +393,7 @@ describe("StateTransferService", () => {
     }
   });
 
-  it("merges imported state without creating a database backup", () => {
+  it("merges imported state without creating a database backup", async () => {
     const upsertProfiles = vi.fn();
     const upsertCaptureProfiles = vi.fn();
     const updateSettings = vi.fn();
@@ -428,7 +434,7 @@ describe("StateTransferService", () => {
       upsertMany: upsertReplayClips,
     } as unknown as ReplayClipsService);
 
-    expect(service.importPortable("merge")).toEqual({
+    await expect(service.importPortable("merge")).resolves.toEqual({
       ok: true,
       backupPath: null,
       error: null,
@@ -442,6 +448,44 @@ describe("StateTransferService", () => {
       [expect.objectContaining({ processedClipPath: clipPath })],
       trustedRoot,
     );
+  });
+
+  it("reports a committed import as successful when post-import cleanup fails", async () => {
+    const bundle = createBundle();
+    const service = new StateTransferService();
+    setPendingBundle(service, bundle);
+    cleanupRecordingStorage.mockImplementationOnce(() => {
+      throw new Error("cleanup failed");
+    });
+    vi.spyOn(DatabaseService, "getInstance").mockReturnValue(database);
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: trustedRoot,
+      }),
+      update: vi.fn(),
+    } as unknown as SettingsStoreService);
+    vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+      upsertMany: vi.fn(),
+    } as unknown as ProfilesService);
+    vi.spyOn(CaptureProfilesService, "getInstance").mockReturnValue({
+      upsertMany: vi.fn(),
+    } as unknown as CaptureProfilesService);
+    vi.spyOn(ReplayClipsService, "getInstance").mockReturnValue({
+      upsertMany: vi.fn(),
+    } as unknown as ReplayClipsService);
+
+    await expect(service.importPortable("merge")).resolves.toEqual({
+      ok: true,
+      backupPath: null,
+      error: null,
+    });
+    expect(cleanupRecordingStorage).toHaveBeenCalledTimes(1);
+    await expect(service.importPortable("merge")).resolves.toEqual({
+      ok: false,
+      backupPath: null,
+      error: "No import bundle has been previewed",
+    });
   });
 
   it("clears machine-local paths from imported settings", () => {
@@ -607,7 +651,7 @@ describe("StateTransferService", () => {
     });
   });
 
-  it("keeps a safe failure result when a replace import service fails", () => {
+  it("keeps a safe failure result when a replace import service fails", async () => {
     const bundle = createBundle();
     const service = new StateTransferService();
     setPendingBundle(service, bundle);
@@ -626,14 +670,14 @@ describe("StateTransferService", () => {
       },
     } as unknown as ProfilesService);
 
-    expect(service.importPortable("replace")).toEqual({
+    await expect(service.importPortable("replace")).resolves.toEqual({
       ok: false,
       backupPath: null,
       error: "failed while reading [path]",
     });
   });
 
-  it("keeps a safe failure result if the pending bundle disappears during import", () => {
+  it("keeps a safe failure result if the pending bundle disappears during import", async () => {
     const bundle = createBundle();
     const service = new StateTransferService();
     setPendingBundle(service, bundle);
@@ -649,7 +693,7 @@ describe("StateTransferService", () => {
       get: () => createDefaultSettings(),
     } as unknown as SettingsStoreService);
 
-    expect(service.importPortable("merge")).toEqual({
+    await expect(service.importPortable("merge")).resolves.toEqual({
       ok: false,
       backupPath: null,
       error: "No import bundle has been previewed",
@@ -677,9 +721,9 @@ describe("StateTransferService", () => {
     await expect(
       handlers.get(StateTransferChannel.PreviewImport)?.({}),
     ).resolves.toBeNull();
-    expect(
+    await expect(
       handlers.get(StateTransferChannel.ImportPortable)?.({}, "replace"),
-    ).toEqual({
+    ).resolves.toEqual({
       ok: false,
       backupPath: null,
       error: "No import bundle has been previewed",

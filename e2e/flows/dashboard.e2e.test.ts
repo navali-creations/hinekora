@@ -736,6 +736,39 @@ test("covers keybind settings keyboard recording", async ({ page }) => {
   await expect(recordingPrompt).not.toBeVisible();
 });
 
+test("opens data storage settings from the AppBar usage meter", async ({
+  page,
+}) => {
+  await setupDashboardE2E(page);
+
+  const storageMeter = page.getByRole("button", {
+    name: "0 GB used of 50 GB. Open data and storage settings",
+  });
+  await expect(storageMeter).toBeVisible();
+  const storageProgress = storageMeter.getByRole("progressbar");
+  await expect(storageProgress).toHaveAttribute("aria-valuenow", "0");
+  const [storageLabelBounds, storageProgressBounds] = await Promise.all([
+    storageMeter.getByText("0 GB / 50 GB", { exact: true }).boundingBox(),
+    storageProgress.boundingBox(),
+  ]);
+  expect(storageLabelBounds).not.toBeNull();
+  expect(storageProgressBounds).not.toBeNull();
+  expect(storageProgressBounds?.width).toBeCloseTo(
+    storageLabelBounds?.width ?? 0,
+    0,
+  );
+
+  await storageMeter.click();
+
+  await expect(page).toHaveURL(/\/settings\?tab=data-storage$/);
+  await expect(
+    page.getByRole("tab", { name: "Data & Storage" }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    page.getByText("Recording Storage", { exact: true }),
+  ).toBeVisible();
+});
+
 test("keeps content-width tabs on one horizontally scrollable row", async ({
   page,
 }) => {

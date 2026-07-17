@@ -440,7 +440,7 @@ describe("StorageService", () => {
     ]);
   });
 
-  it("reports zero app and database disk metadata for unavailable paths", () => {
+  it("reports zero app and database disk metadata for unavailable paths", async () => {
     DatabaseService.resetForTests();
     database = DatabaseService.getInstance(":memory:");
     electronMocks.getAppPath.mockImplementation(() => {
@@ -458,15 +458,15 @@ describe("StorageService", () => {
         databaseDiskFreeBytes: 0,
       }),
     );
-    expect(
+    await expect(
       service.deleteGameLeagueData({
         game: "poe1",
         leagueName: "Keepers",
       }),
-    ).toMatchObject({ success: true });
+    ).resolves.toMatchObject({ success: true });
   });
 
-  it("deletes selected game league rows and managed files", () => {
+  it("deletes selected game league rows and managed files", async () => {
     const clipPath = join(storageRoot, "2026-06-12_10-30-00-death-10s.mp4");
     const recordingPath = join(storageRoot, "2026-06-12_11-00-00.mp4");
     writeFileSync(clipPath, "clip");
@@ -487,12 +487,12 @@ describe("StorageService", () => {
     });
     const service = new StorageService();
 
-    expect(
+    await expect(
       service.deleteGameLeagueData({
         game: "poe1",
         leagueName: "Keepers",
       }),
-    ).toEqual({
+    ).resolves.toEqual({
       success: true,
       freedBytes: 13,
       deletedClipCount: 1,
@@ -504,19 +504,101 @@ describe("StorageService", () => {
     expect(recordingStorageRepository.listRunRecordings()).toEqual([]);
   });
 
-  it("deletes filesystem-only full recordings assigned to the active game league", () => {
+  it("preserves media paths referenced by a clip outside the deleted league", async () => {
+    const sharedPath = join(storageRoot, "shared-clip.mp4");
+    writeFileSync(sharedPath, "shared");
+    replayClipsRepository.upsert(
+      createReplayClip({
+        id: "selected-clip",
+        processedClipPath: sharedPath,
+        sourceGame: "poe1",
+        sourceLeague: "Keepers",
+      }),
+    );
+    replayClipsRepository.upsert(
+      createReplayClip({
+        id: "remaining-clip",
+        processedClipPath: sharedPath,
+        sourceGame: "poe2",
+        sourceLeague: "Standard",
+      }),
+    );
+
+    await expect(
+      new StorageService().deleteGameLeagueData({
+        game: "poe1",
+        leagueName: "Keepers",
+      }),
+    ).resolves.toMatchObject({
+      success: true,
+      deletedClipCount: 1,
+      freedBytes: 0,
+    });
+    expect(existsSync(sharedPath)).toBe(true);
+    expect(replayClipsRepository.get("selected-clip")).toBeNull();
+    expect(replayClipsRepository.get("remaining-clip")).not.toBeNull();
+  });
+
+  it("does not delete a new league clip added while existing files are staged", async () => {
+    const selectedPath = join(storageRoot, "2026-06-12_10-30-00-death-10s.mp4");
+    const newPath = join(storageRoot, "2026-06-12_10-31-00-death-10s.mp4");
+    writeFileSync(selectedPath, "selected");
+    replayClipsRepository.upsert(
+      createReplayClip({
+        id: "selected-clip",
+        processedClipPath: selectedPath,
+        sourceGame: "poe1",
+        sourceLeague: "Keepers",
+      }),
+    );
+    const service = new StorageService();
+    const serviceRepository = (
+      service as unknown as { replayClipsRepository: ReplayClipsRepository }
+    ).replayClipsRepository;
+    const listStoragePaths =
+      serviceRepository.listStoragePaths.bind(serviceRepository);
+    vi.spyOn(serviceRepository, "listStoragePaths").mockImplementationOnce(
+      () => {
+        const paths = listStoragePaths();
+        writeFileSync(newPath, "new");
+        replayClipsRepository.upsert(
+          createReplayClip({
+            id: "new-clip",
+            processedClipPath: newPath,
+            sourceGame: "poe1",
+            sourceLeague: "Keepers",
+          }),
+        );
+        return paths;
+      },
+    );
+
+    await expect(
+      service.deleteGameLeagueData({
+        game: "poe1",
+        leagueName: "Keepers",
+      }),
+    ).resolves.toMatchObject({ success: true, deletedClipCount: 1 });
+
+    expect(existsSync(selectedPath)).toBe(false);
+    expect(existsSync(newPath)).toBe(true);
+    expect(replayClipsRepository.get("selected-clip")).toBeNull();
+    expect(replayClipsRepository.get("new-clip")).not.toBeNull();
+  });
+
+  it("deletes filesystem-only full recordings assigned to the active game league", async () => {
     const fullRecordingDirectory = join(storageRoot, "Full Recordings");
     mkdirSync(fullRecordingDirectory);
     const recordingPath = join(fullRecordingDirectory, "orphan-run.mp4");
     writeFileSync(recordingPath, "recording");
     const service = new StorageService();
 
-    expect(
+    await expect(
       service.deleteGameLeagueData({
         game: "poe1",
         leagueName: "Keepers",
       }),
-    ).toEqual({
+    ).resolves.toEqual({
       success: true,
       freedBytes: 9,
       deletedClipCount: 0,
@@ -525,32 +607,31 @@ describe("StorageService", () => {
     expect(existsSync(recordingPath)).toBe(false);
   });
 
-  it("blocks deleting the active recording league", () => {
+  it("blocks deleting the active recording league", async () => {
     vi.spyOn(ManagedRecorderService, "getInstance").mockReturnValue({
       getStatus: () => mockRecorderStatus({ runRecordingActive: true }),
     } as unknown as ManagedRecorderService);
     const service = new StorageService();
 
-    expect(
+    await expect(
       service.deleteGameLeagueData({
         game: "poe1",
         leagueName: "Keepers",
       }),
-    ).toMatchObject({
+    ).resolves.toMatchObject({
       success: false,
       error: "Stop the active recording before deleting this league data",
     });
   });
 
   it("returns a cleanup warning when file deletion fails after row deletion", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.resetModules();
-    vi.doMock("node:fs", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("node:fs")>();
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
 
       return {
         ...actual,
-        unlinkSync: vi.fn(() => {
+        unlink: vi.fn(() => {
           throw new Error("unlink failed");
         }),
       };
@@ -604,12 +685,12 @@ describe("StorageService", () => {
       );
       const service = new MockedStorageService();
 
-      expect(
+      await expect(
         service.deleteGameLeagueData({
           game: "poe1",
           leagueName: "Keepers",
         }),
-      ).toEqual({
+      ).resolves.toEqual({
         success: true,
         cleanupError: "Failed to delete one or more files",
         freedBytes: 0,
@@ -617,20 +698,16 @@ describe("StorageService", () => {
         deletedClipCount: 1,
         deletedRecordingCount: 0,
       });
-      expect(existsSync(clipPath)).toBe(true);
+      expect(existsSync(clipPath)).toBe(false);
       expect(mockedReplayRepository.listAll()).toEqual([]);
-      expect(warn).toHaveBeenCalledWith(
-        expect.stringContaining("WARN [storage] Failed to delete storage file"),
-        expect.objectContaining({ error: expect.any(String) }),
-      );
     } finally {
       resetDynamicDatabase();
-      vi.doUnmock("node:fs");
+      vi.doUnmock("node:fs/promises");
       vi.resetModules();
     }
   });
 
-  it("returns a safe delete result when repository access fails", () => {
+  it("returns a safe delete result when repository access fails", async () => {
     vi.spyOn(ReplayClipsRepository.prototype, "listAll").mockImplementation(
       () => {
         throw new Error("repository failed");
@@ -638,12 +715,12 @@ describe("StorageService", () => {
     );
     const service = new StorageService();
 
-    expect(
+    await expect(
       service.deleteGameLeagueData({
         game: "poe1",
         leagueName: "Keepers",
       }),
-    ).toEqual({
+    ).resolves.toEqual({
       success: false,
       freedBytes: 0,
       deletedClipCount: 0,
@@ -652,7 +729,7 @@ describe("StorageService", () => {
     });
   });
 
-  it("leaves managed files and rows intact when league row deletion fails", () => {
+  it("leaves managed files and rows intact when league row deletion fails", async () => {
     const clipPath = join(storageRoot, "2026-06-12_10-30-00-death-10s.mp4");
     const recordingPath = join(storageRoot, "2026-06-12_11-00-00.mp4");
     writeFileSync(clipPath, "clip");
@@ -676,12 +753,12 @@ describe("StorageService", () => {
     });
     const service = new StorageService();
 
-    expect(
+    await expect(
       service.deleteGameLeagueData({
         game: "poe1",
         leagueName: "Keepers",
       }),
-    ).toEqual({
+    ).resolves.toEqual({
       success: false,
       freedBytes: 0,
       deletedClipCount: 0,
@@ -757,7 +834,7 @@ describe("StorageService", () => {
     }
   });
 
-  it("deletes zero-size clip rows without counting zero-byte media", () => {
+  it("deletes zero-size clip rows without counting zero-byte media", async () => {
     const emptyClipPath = resolve(
       join(storageRoot, "2026-06-12_10-30-00-death-10s.mp4"),
     );
@@ -771,18 +848,18 @@ describe("StorageService", () => {
     );
     const service = new StorageService();
 
-    expect(
+    await expect(
       service.deleteGameLeagueData({
         game: "poe1",
         leagueName: "Keepers",
       }),
-    ).toEqual({
+    ).resolves.toEqual({
       success: true,
       freedBytes: 0,
       deletedClipCount: 1,
       deletedRecordingCount: 0,
     });
-    expect(existsSync(emptyClipPath)).toBe(true);
+    expect(existsSync(emptyClipPath)).toBe(false);
     expect(replayClipsRepository.listAll()).toEqual([]);
   });
 
@@ -814,7 +891,7 @@ describe("StorageService", () => {
       storagePath: resolve(storageRoot),
       databasePath: database.path,
     });
-    vi.spyOn(service, "deleteGameLeagueData").mockReturnValue({
+    vi.spyOn(service, "deleteGameLeagueData").mockResolvedValue({
       success: true,
       freedBytes: 0,
       deletedClipCount: 0,

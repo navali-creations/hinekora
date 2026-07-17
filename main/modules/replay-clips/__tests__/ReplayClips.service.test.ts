@@ -12,10 +12,13 @@ import { createReplayClip } from "~/main/test/factories/replayClip";
 import { createDefaultSettings } from "~/types";
 import { ReplayClipsChannel } from "../ReplayClips.channels";
 import type { ReplayClip, ReplayClipDetail } from "../ReplayClips.dto";
+import type { ReplayClipFileActionsService } from "../ReplayClips.file-actions";
 import { ReplayClipPreviewService } from "../ReplayClips.preview";
 import { ReplayClipsRepository } from "../ReplayClips.repository";
 import { ReplayClipsService } from "../ReplayClips.service";
+import type { ReplayClipStorageService } from "../ReplayClips.storage";
 import {
+  database,
   openPath,
   outsideRoot,
   repository,
@@ -44,6 +47,16 @@ vi.mock("electron", () => ({
 
 setupReplayClipsServiceTestHarness(electronMocks);
 
+function getFileActionsService(
+  replayClipsService: ReplayClipsService,
+): ReplayClipFileActionsService {
+  return (
+    replayClipsService as unknown as {
+      fileActionsService: ReplayClipFileActionsService;
+    }
+  ).fileActionsService;
+}
+
 describe("ReplayClipsService file actions", () => {
   it("creates and reuses the singleton instance", () => {
     ReplayClipsService.resetForTests();
@@ -53,6 +66,80 @@ describe("ReplayClipsService file actions", () => {
 
     expect(first).toBe(second);
     ReplayClipsService.resetForTests();
+  });
+
+  it("bridges retention cleanup results back to recording storage", async () => {
+    const deletedIds = Array.from(
+      { length: 1_001 },
+      (_, index) => `clip-${index}`,
+    );
+    const cleanupResult = {
+      deletedIds,
+      deletedPaths: [join(root, "clip.mp4")],
+      failed: [],
+      freedBytes: 12,
+      ok: true,
+      error: null,
+    };
+    vi.spyOn(
+      getFileActionsService(service),
+      "deleteClipGroupsForRetention",
+    ).mockResolvedValue(cleanupResult);
+    const publishToWindowRoles = vi.spyOn(
+      service as unknown as {
+        publishToWindowRoles: (...args: unknown[]) => void;
+      },
+      "publishToWindowRoles",
+    );
+    const recordingStorage =
+      RecordingStorageService.getInstance() as unknown as {
+        replayClipRetentionCleanupHandler: (
+          idGroups: string[][],
+          storageRoot: string,
+        ) => Promise<unknown>;
+      };
+
+    await expect(
+      recordingStorage.replayClipRetentionCleanupHandler([["clip-1"]], root),
+    ).resolves.toEqual({
+      deletedIds,
+      deletedPaths: cleanupResult.deletedPaths,
+      failed: [],
+      freedBytes: 12,
+    });
+    expect(publishToWindowRoles).toHaveBeenCalledTimes(2);
+    expect(publishToWindowRoles).toHaveBeenNthCalledWith(
+      1,
+      ReplayClipsChannel.Deleted,
+      deletedIds.slice(0, 1_000),
+      expect.any(Set),
+    );
+    expect(publishToWindowRoles).toHaveBeenNthCalledWith(
+      2,
+      ReplayClipsChannel.Deleted,
+      deletedIds.slice(1_000),
+      expect.any(Set),
+    );
+
+    vi.mocked(
+      getFileActionsService(service).deleteClipGroupsForRetention,
+    ).mockResolvedValueOnce({
+      deletedIds: [],
+      deletedPaths: [],
+      failed: [],
+      freedBytes: 0,
+      ok: true,
+      error: null,
+    });
+    await expect(
+      recordingStorage.replayClipRetentionCleanupHandler([], root),
+    ).resolves.toEqual({
+      deletedIds: [],
+      deletedPaths: [],
+      failed: [],
+      freedBytes: 0,
+    });
+    expect(publishToWindowRoles).toHaveBeenCalledTimes(2);
   });
 
   it("lists stored clip file sizes", async () => {
@@ -382,6 +469,31 @@ describe("ReplayClipsService file actions", () => {
     expect(repository.get("clip-1")).toBeNull();
   });
 
+  it("stages files against the captured root after settings change", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    const clip = createReplayClip({ id: "clip-1", processedClipPath: path });
+    const storageService = (
+      service as unknown as { storageService: ReplayClipStorageService }
+    ).storageService;
+    vi.mocked(SettingsStoreService.getInstance).mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingStoragePath: outsideRoot,
+      }),
+    } as unknown as SettingsStoreService);
+
+    const stagedFiles = await storageService.stageStoredClipFilesForDeletion(
+      [clip],
+      new Map(),
+      root,
+    );
+
+    expect(existsSync(path)).toBe(false);
+    await storageService.rollbackStoredClipFileDeletion(stagedFiles);
+    expect(existsSync(path)).toBe(true);
+  });
+
   it("retains files still referenced by another clip", async () => {
     const path = join(root, "2026-06-12_10-30-00.mp4");
     writeFileSync(path, "video");
@@ -411,6 +523,123 @@ describe("ReplayClipsService file actions", () => {
     expect(existsSync(path)).toBe(true);
   });
 
+  it("restores a staged clip when a new path reference appears before commit", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({ id: "clip-1", processedClipPath: path }),
+    );
+    const storageService = (
+      service as unknown as { storageService: ReplayClipStorageService }
+    ).storageService;
+    const stageStoredClipFilesForDeletion =
+      storageService.stageStoredClipFilesForDeletion.bind(storageService);
+    vi.spyOn(
+      storageService,
+      "stageStoredClipFilesForDeletion",
+    ).mockImplementation(async (clips, counts, storageRoot, options) => {
+      const stagedFiles = await stageStoredClipFilesForDeletion(
+        clips,
+        counts,
+        storageRoot,
+        options,
+      );
+      repository.upsert(
+        createReplayClip({ id: "clip-2", processedClipPath: path }),
+      );
+      return stagedFiles;
+    });
+
+    await expect(service.deleteClip("clip-1")).resolves.toEqual({
+      ok: false,
+      error: "Replay clip storage references changed during deletion",
+    });
+
+    expect(existsSync(path)).toBe(true);
+    expect(repository.get("clip-1")).not.toBeNull();
+    expect(repository.get("clip-2")).not.toBeNull();
+    expect(
+      database.db
+        .prepare(
+          "SELECT COUNT(*) AS count FROM storage_file_deletion_operations",
+        )
+        .get(),
+    ).toEqual({ count: 0 });
+  });
+
+  it("restores path references when clip staging fails", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    repository.upsert(
+      createReplayClip({ id: "clip-1", processedClipPath: path }),
+    );
+    const storageService = (
+      service as unknown as { storageService: ReplayClipStorageService }
+    ).storageService;
+    vi.spyOn(
+      storageService,
+      "stageStoredClipFilesForDeletion",
+    ).mockRejectedValue(new Error("staging failed"));
+    const addClipPathReferences = vi.spyOn(
+      storageService,
+      "addClipPathReferences",
+    );
+
+    await expect(service.deleteClip("clip-1")).resolves.toEqual({
+      ok: false,
+      error: "staging failed",
+    });
+    expect(addClipPathReferences).toHaveBeenCalledOnce();
+    expect(repository.get("clip-1")).not.toBeNull();
+  });
+
+  it("reports deletion rollback failures without hiding the transaction error", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({ id: "clip-1", processedClipPath: path }),
+    );
+    const storageService = (
+      service as unknown as { storageService: ReplayClipStorageService }
+    ).storageService;
+    vi.spyOn(ReplayClipsRepository.prototype, "delete").mockImplementation(
+      () => {
+        throw new Error("database failed");
+      },
+    );
+    vi.spyOn(
+      storageService,
+      "rollbackStoredClipFileDeletion",
+    ).mockRejectedValue(new Error("rollback failed"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(service.deleteClip("clip-1")).resolves.toEqual({
+      ok: false,
+      error: "database failed",
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Replay clip deletion rollback failed"),
+      expect.objectContaining({ clipId: "clip-1", error: "rollback failed" }),
+    );
+  });
+
+  it("returns a safe result when reference snapshot creation throws", async () => {
+    repository.upsert(createReplayClip({ id: "clip-1" }));
+    const storageService = (
+      service as unknown as { storageService: ReplayClipStorageService }
+    ).storageService;
+    vi.spyOn(
+      storageService,
+      "createStoredPathReferenceCounts",
+    ).mockImplementation(() => {
+      throw new Error("snapshot failed");
+    });
+
+    await expect(service.deleteClip("clip-1")).resolves.toEqual({
+      ok: false,
+      error: "snapshot failed",
+    });
+  });
+
   it("loads shared path references once for a batch delete", async () => {
     const path = join(root, "2026-06-12_10-30-00.mp4");
     writeFileSync(path, "video");
@@ -432,6 +661,283 @@ describe("ReplayClipsService file actions", () => {
 
     expect(listStoragePaths).toHaveBeenCalledTimes(1);
     expect(existsSync(path)).toBe(true);
+    expect(repository.get("clip-2")).not.toBeNull();
+  });
+
+  it("restores shared path references after a batch persistence failure", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({ id: "clip-1", processedClipPath: path }),
+    );
+    repository.upsert(
+      createReplayClip({ id: "clip-2", processedClipPath: path }),
+    );
+    const deleteClip = ReplayClipsRepository.prototype.delete;
+    vi.spyOn(ReplayClipsRepository.prototype, "delete").mockImplementation(
+      function (this: ReplayClipsRepository, id) {
+        if (id === "clip-1") {
+          throw new Error("database failed");
+        }
+        deleteClip.call(this, id);
+      },
+    );
+
+    await expect(
+      service.deleteManyClips(["clip-1", "clip-2"]),
+    ).resolves.toMatchObject({
+      deletedIds: ["clip-2"],
+      failed: [{ id: "clip-1", error: "database failed" }],
+      ok: false,
+    });
+
+    expect(repository.get("clip-1")).not.toBeNull();
+    expect(repository.get("clip-2")).toBeNull();
+    expect(existsSync(path)).toBe(true);
+  });
+
+  it("retains an entire retention group when any file fails preflight", async () => {
+    const existingPath = join(root, "2026-06-12_10-30-00.mp4");
+    const missingPath = join(root, "2026-06-12_10-31-00.mp4");
+    writeFileSync(existingPath, "video");
+    repository.upsert(
+      createReplayClip({
+        id: "clip-1",
+        originalObsPath: missingPath,
+        processedClipPath: existingPath,
+      }),
+    );
+    const fileActions = getFileActionsService(service);
+    await expect(
+      fileActions.deleteClipGroupsForRetention([["clip-1"]], root),
+    ).resolves.toMatchObject({
+      deletedIds: [],
+      failed: [expect.objectContaining({ id: "clip-1" })],
+      freedBytes: 0,
+    });
+    expect(existsSync(existingPath)).toBe(true);
+    expect(repository.get("clip-1")).not.toBeNull();
+    expect(ReplayClipPreviewService.prototype.remove).not.toHaveBeenCalled();
+  });
+
+  it("restores staged clip files when the database transaction fails", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({ id: "clip-1", processedClipPath: path }),
+    );
+    vi.spyOn(ReplayClipsRepository.prototype, "deleteMany").mockImplementation(
+      () => {
+        throw new Error("database failed");
+      },
+    );
+    const fileActions = getFileActionsService(service);
+
+    await expect(
+      fileActions.deleteClipGroupsForRetention([["clip-1"]], root),
+    ).resolves.toMatchObject({
+      deletedIds: [],
+      failed: [expect.objectContaining({ id: "clip-1" })],
+      freedBytes: 0,
+    });
+    expect(existsSync(path)).toBe(true);
+    expect(repository.get("clip-1")).not.toBeNull();
+    expect(ReplayClipPreviewService.prototype.remove).not.toHaveBeenCalled();
+  });
+
+  it("reports retention rollback failures for every clip in the group", async () => {
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({ id: "clip-1", processedClipPath: path }),
+    );
+    const storageService = (
+      service as unknown as { storageService: ReplayClipStorageService }
+    ).storageService;
+    vi.spyOn(ReplayClipsRepository.prototype, "deleteMany").mockImplementation(
+      () => {
+        throw new Error("database failed");
+      },
+    );
+    vi.spyOn(
+      storageService,
+      "rollbackStoredClipFileDeletion",
+    ).mockRejectedValue(new Error("rollback failed"));
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(
+      getFileActionsService(service).deleteClipGroupsForRetention(
+        [["clip-1"]],
+        root,
+      ),
+    ).resolves.toMatchObject({
+      deletedIds: [],
+      failed: [{ id: "clip-1", error: "database failed" }],
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Replay clip retention rollback failed"),
+      expect.objectContaining({ error: "rollback failed" }),
+    );
+  });
+
+  it("reports missing retention ids and post-commit cleanup failures", async () => {
+    const fileActions = getFileActionsService(service);
+    await expect(
+      fileActions.deleteClipGroupsForRetention([["missing"]], root),
+    ).resolves.toMatchObject({
+      deletedIds: [],
+      failed: [{ id: "missing", error: "Clip was not found" }],
+    });
+
+    const path = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(path, "video");
+    repository.upsert(
+      createReplayClip({ id: "clip-1", processedClipPath: path }),
+    );
+    const storageService = (
+      service as unknown as { storageService: ReplayClipStorageService }
+    ).storageService;
+    vi.spyOn(
+      storageService,
+      "stageStoredClipFilesForDeletion",
+    ).mockResolvedValue([]);
+    vi.spyOn(
+      storageService,
+      "finalizeStoredClipFileDeletion",
+    ).mockResolvedValue({
+      deletedPaths: [],
+      failedPaths: [path],
+      freedBytes: 0,
+    });
+    vi.mocked(ReplayClipPreviewService.prototype.remove).mockRejectedValueOnce(
+      new Error("preview failed"),
+    );
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await expect(
+      fileActions.deleteClipGroupsForRetention([["clip-1"]], root),
+    ).resolves.toMatchObject({
+      cleanupErrors: [
+        { id: "clip-1", error: "A staged clip file could not be removed" },
+      ],
+      deletedIds: ["clip-1"],
+    });
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Replay clip preview cleanup failed"),
+      expect.objectContaining({ clipId: "clip-1", error: "preview failed" }),
+    );
+  });
+
+  it("handles missing and non-file storage paths during deletion staging", async () => {
+    const storageService = (
+      service as unknown as { storageService: ReplayClipStorageService }
+    ).storageService;
+    const missingPath = join(root, "2026-06-12_10-30-00.mp4");
+    const missingClip = createReplayClip({ processedClipPath: missingPath });
+
+    await expect(
+      storageService.stageStoredClipFilesForDeletion(
+        [missingClip],
+        new Map(),
+        root,
+        { ignoreMissing: true },
+      ),
+    ).resolves.toEqual([]);
+
+    const directoryPath = join(root, "2026-06-12_10-31-00.mp4");
+    mkdirSync(directoryPath);
+    await expect(
+      storageService.stageStoredClipFilesForDeletion(
+        [createReplayClip({ processedClipPath: directoryPath })],
+        new Map(),
+        root,
+      ),
+    ).rejects.toThrow("Replay clip storage path is not a file");
+  });
+
+  it("deletes case-insensitive shared clip paths once during retention", async () => {
+    const sharedPath = join(root, "2026-06-12_10-30-00.mp4");
+    writeFileSync(sharedPath, "video");
+    repository.upsert(
+      createReplayClip({ id: "clip-1", processedClipPath: sharedPath }),
+    );
+    repository.upsert(
+      createReplayClip({
+        id: "clip-2",
+        originalObsPath: sharedPath.toUpperCase(),
+        processedClipPath: null,
+      }),
+    );
+    const fileActions = getFileActionsService(service);
+    const storageService = (
+      service as unknown as {
+        storageService: {
+          createStoredPathReferenceCounts(): Map<string, number>;
+          removeClipPathReferences(
+            clip: ReplayClip,
+            counts: Map<string, number>,
+          ): void;
+          resolveClipFilePath(
+            path: string,
+            options: { requireExistingFile: boolean },
+          ): string | null;
+        };
+      }
+    ).storageService;
+    const referenceCounts = storageService.createStoredPathReferenceCounts();
+    storageService.removeClipPathReferences(
+      repository.get("clip-1")!,
+      referenceCounts,
+    );
+    storageService.removeClipPathReferences(
+      repository.get("clip-2")!,
+      referenceCounts,
+    );
+
+    expect(referenceCounts.size).toBe(0);
+    expect(
+      storageService.resolveClipFilePath(sharedPath.toUpperCase(), {
+        requireExistingFile: false,
+      }),
+    ).toBe(sharedPath.toUpperCase());
+
+    await expect(
+      fileActions.deleteClipGroupsForRetention([["clip-1", "clip-2"]], root),
+    ).resolves.toMatchObject({
+      deletedIds: ["clip-1", "clip-2"],
+      deletedPaths: [resolve(sharedPath)],
+      freedBytes: 5,
+    });
+    expect(existsSync(sharedPath)).toBe(false);
+    expect(repository.get("clip-1")).toBeNull();
+    expect(repository.get("clip-2")).toBeNull();
+    expect(ReplayClipPreviewService.prototype.remove).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares one path snapshot while isolating retention group failures", async () => {
+    const existingPath = join(root, "2026-06-12_10-30-00.mp4");
+    const missingPath = join(root, "2026-06-12_10-31-00.mp4");
+    writeFileSync(existingPath, "video");
+    repository.upsert(
+      createReplayClip({ id: "clip-1", processedClipPath: existingPath }),
+    );
+    repository.upsert(
+      createReplayClip({ id: "clip-2", processedClipPath: missingPath }),
+    );
+    const listStoragePaths = vi.spyOn(
+      ReplayClipsRepository.prototype,
+      "listStoragePaths",
+    );
+    const fileActions = getFileActionsService(service);
+
+    await expect(
+      fileActions.deleteClipGroupsForRetention([["clip-1"], ["clip-2"]], root),
+    ).resolves.toMatchObject({
+      deletedIds: ["clip-1"],
+      failed: [expect.objectContaining({ id: "clip-2" })],
+    });
+    expect(listStoragePaths).toHaveBeenCalledTimes(1);
+    expect(repository.get("clip-1")).toBeNull();
     expect(repository.get("clip-2")).not.toBeNull();
   });
 
@@ -520,18 +1026,24 @@ describe("ReplayClipsService file actions", () => {
       await expect(mockedService.deleteClip("clip-1")).resolves.toEqual({
         ok: true,
         error: null,
-        cleanupError: "unlink failed",
+        cleanupError: "A staged clip file could not be removed",
       });
-      expect(existsSync(path)).toBe(true);
+      expect(existsSync(path)).toBe(false);
       expect(mockedRepository.get("clip-1")).toBeNull();
 
+      writeFileSync(path, "video");
       mockedRepository.upsert(createReplayClip({ processedClipPath: path }));
       await expect(mockedService.deleteManyClips(["clip-1"])).resolves.toEqual({
         ok: true,
         error: null,
         deletedIds: ["clip-1"],
         failed: [],
-        cleanupErrors: [{ id: "clip-1", error: "unlink failed" }],
+        cleanupErrors: [
+          {
+            id: "clip-1",
+            error: "A staged clip file could not be removed",
+          },
+        ],
       });
     } finally {
       resetDynamicDatabase();
@@ -771,7 +1283,8 @@ describe("ReplayClipsService file actions", () => {
       }),
     } as unknown as ManagedRecorderService);
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
-      cleanup,
+      noteReplayClipUsageChange: vi.fn(),
+      scheduleCleanup: cleanup,
     } as unknown as RecordingStorageService);
     vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
       showClipPreviewOverlay: vi.fn(),
@@ -789,6 +1302,9 @@ describe("ReplayClipsService file actions", () => {
       processedClipPath: resolve(replayPath),
     });
     expect(cleanup).toHaveBeenCalledWith({
+      estimatedAddedBytes: 5,
+      force: false,
+      usageAlreadyAccounted: true,
       protectedPaths: [resolve(replayPath), resolve(replayPath)],
     });
   });

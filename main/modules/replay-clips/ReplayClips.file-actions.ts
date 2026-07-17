@@ -3,6 +3,7 @@ import { stat } from "node:fs/promises";
 import { shell } from "electron";
 
 import { BookmarksService } from "~/main/modules/bookmarks";
+import { DatabaseService } from "~/main/modules/database";
 import {
   createSafePathLogFields,
   logError,
@@ -61,6 +62,17 @@ interface ReplayClipFileActionsDependencies {
   readDuration: (path: string | null) => number | null;
   repository: ReplayClipsRepository;
   storageService: ReplayClipStorageService;
+}
+
+interface ReplayClipDeletionResult extends ReplayClipFileActionResult {
+  deletedPaths: string[];
+  freedBytes: number;
+}
+
+interface ReplayClipBatchDeletionResult
+  extends ReplayClipBatchFileActionResult {
+  deletedPaths: string[];
+  freedBytes: number;
 }
 
 class ReplayClipFileActionsService {
@@ -134,16 +146,39 @@ class ReplayClipFileActionsService {
   }
 
   async deleteClip(id: string): Promise<ReplayClipFileActionResult> {
-    return this.queueClipFileOperation(id, () =>
+    const {
+      deletedPaths: _deletedPaths,
+      freedBytes: _freedBytes,
+      ...result
+    } = await this.queueClipFileOperation(id, () =>
       this.queueStoredFileMutation(() => this.deleteClipQueued(id)),
     );
+    return result;
   }
 
   async deleteManyClips(
     ids: string[],
   ): Promise<ReplayClipBatchFileActionResult> {
+    const {
+      deletedPaths: _deletedPaths,
+      freedBytes: _freedBytes,
+      ...result
+    } = await this.dependencies.operationCoordinator.queueClipOperations(
+      ids,
+      () => this.queueStoredFileMutation(() => this.deleteManyClipsQueued(ids)),
+    );
+    return result;
+  }
+
+  async deleteClipGroupsForRetention(
+    idGroups: string[][],
+    root: string,
+  ): Promise<ReplayClipBatchDeletionResult> {
+    const ids = [...new Set(idGroups.flat())];
     return this.dependencies.operationCoordinator.queueClipOperations(ids, () =>
-      this.queueStoredFileMutation(() => this.deleteManyClipsQueued(ids)),
+      this.queueStoredFileMutation(() =>
+        this.deleteClipGroupsForRetentionQueued(idGroups, root),
+      ),
     );
   }
 
@@ -347,54 +382,125 @@ class ReplayClipFileActionsService {
   private async deleteClipQueued(
     id: string,
     pathReferenceCounts?: Map<string, number>,
-  ): Promise<ReplayClipFileActionResult> {
+  ): Promise<ReplayClipDeletionResult> {
     try {
       const clip = this.dependencies.repository.get(id);
       if (!clip) {
-        return { ok: false, error: "Clip was not found" };
+        return {
+          ok: false,
+          error: "Clip was not found",
+          deletedPaths: [],
+          freedBytes: 0,
+        };
       }
 
-      BookmarksService.getInstance().deleteReplayClipLinks(id);
-      this.dependencies.repository.delete(id);
-      await this.dependencies.previewService.remove(id);
-      if (pathReferenceCounts) {
-        this.dependencies.storageService.removeClipPathReferences(
-          clip,
-          pathReferenceCounts,
-        );
-      }
+      const referenceCounts =
+        pathReferenceCounts ??
+        this.dependencies.storageService.createStoredPathReferenceCounts();
+      this.dependencies.storageService.removeClipPathReferences(
+        clip,
+        referenceCounts,
+      );
+      const storageRoot = this.dependencies.storageService.resolveStorageRoot();
+      let stagedFiles: Awaited<
+        ReturnType<ReplayClipStorageService["stageStoredClipFilesForDeletion"]>
+      >;
       try {
-        await this.dependencies.storageService.deleteStoredClipFiles(
-          clip,
-          pathReferenceCounts
-            ? (path) =>
-                this.dependencies.storageService.isPathReferencedInCounts(
-                  path,
-                  pathReferenceCounts,
-                )
-            : undefined,
-        );
+        stagedFiles =
+          await this.dependencies.storageService.stageStoredClipFilesForDeletion(
+            [clip],
+            referenceCounts,
+            storageRoot,
+            { ignoreMissing: true },
+          );
       } catch (error) {
-        const cleanupError = safeErrorMessage(error);
+        this.dependencies.storageService.addClipPathReferences(
+          clip,
+          referenceCounts,
+        );
+        return {
+          ok: false,
+          error: safeErrorMessage(error),
+          deletedPaths: [],
+          freedBytes: 0,
+        };
+      }
+
+      try {
+        DatabaseService.getInstance().transaction(() => {
+          BookmarksService.getInstance().deleteReplayClipLinks(id);
+          this.dependencies.repository.delete(id);
+          this.assertStagedFilesAreUnreferenced(stagedFiles);
+          this.dependencies.storageService.markStoredClipFileDeletionCommitted(
+            stagedFiles,
+            storageRoot,
+          );
+        });
+      } catch (error) {
+        this.dependencies.storageService.addClipPathReferences(
+          clip,
+          referenceCounts,
+        );
+        try {
+          await this.dependencies.storageService.rollbackStoredClipFileDeletion(
+            stagedFiles,
+          );
+        } catch (rollbackError) {
+          logWarn(
+            REPLAY_CLIPS_LOG_SCOPE,
+            "Replay clip deletion rollback failed",
+            {
+              clipId: clip.id,
+              error: safeErrorMessage(rollbackError),
+            },
+          );
+        }
+        return {
+          ok: false,
+          error: safeErrorMessage(error),
+          deletedPaths: [],
+          freedBytes: 0,
+        };
+      }
+
+      await this.removeClipPreview(id);
+      const cleanup =
+        await this.dependencies.storageService.finalizeStoredClipFileDeletion(
+          stagedFiles,
+        );
+      if (cleanup.failedPaths && cleanup.failedPaths.length > 0) {
+        const cleanupError = "A staged clip file could not be removed";
         logWarn(REPLAY_CLIPS_LOG_SCOPE, "Replay clip file cleanup failed", {
           clipId: clip.id,
           error: cleanupError,
         });
-        return { ok: true, error: null, cleanupError };
+        return {
+          ok: true,
+          error: null,
+          cleanupError,
+          deletedPaths: cleanup.deletedPaths,
+          freedBytes: cleanup.freedBytes,
+        };
       }
-
-      return { ok: true, error: null };
+      return { ok: true, error: null, ...cleanup };
     } catch (error) {
-      return { ok: false, error: safeErrorMessage(error) };
+      return {
+        ok: false,
+        error: safeErrorMessage(error),
+        deletedPaths: [],
+        freedBytes: 0,
+      };
     }
   }
 
   private async deleteManyClipsQueued(
     ids: string[],
-  ): Promise<ReplayClipBatchFileActionResult> {
+  ): Promise<ReplayClipBatchDeletionResult> {
     const deletedIds: string[] = [];
+    const deletedPaths: string[] = [];
     const failed: Array<{ id: string; error: string }> = [];
     const cleanupErrors: Array<{ id: string; error: string }> = [];
+    let freedBytes = 0;
     const pathReferenceCounts =
       this.dependencies.storageService.createStoredPathReferenceCounts();
 
@@ -402,6 +508,8 @@ class ReplayClipFileActionsService {
       const result = await this.deleteClipQueued(id, pathReferenceCounts);
       if (result.ok) {
         deletedIds.push(id);
+        deletedPaths.push(...result.deletedPaths);
+        freedBytes += result.freedBytes;
         if (result.cleanupError) {
           cleanupErrors.push({ id, error: result.cleanupError });
         }
@@ -414,9 +522,170 @@ class ReplayClipFileActionsService {
       ok: failed.length === 0,
       error: failed.length === 0 ? null : "Some clips could not be deleted",
       deletedIds,
+      deletedPaths,
       failed,
+      freedBytes,
       ...(cleanupErrors.length > 0 ? { cleanupErrors } : {}),
     };
+  }
+
+  private async deleteClipGroupsForRetentionQueued(
+    idGroups: string[][],
+    root: string,
+  ): Promise<ReplayClipBatchDeletionResult> {
+    const deletedIds: string[] = [];
+    const deletedPaths: string[] = [];
+    const failed: Array<{ id: string; error: string }> = [];
+    const cleanupErrors: Array<{ id: string; error: string }> = [];
+    let freedBytes = 0;
+    const pathReferenceCounts =
+      this.dependencies.storageService.createStoredPathReferenceCounts();
+
+    for (const ids of idGroups) {
+      const clipsById = new Map(
+        this.dependencies.repository
+          .getMany(ids)
+          .map((clip) => [clip.id, clip]),
+      );
+      const clips = ids
+        .map((id) => clipsById.get(id))
+        .filter((clip): clip is ReplayClip => clip !== undefined);
+      const missingIds = ids.filter((id) => !clipsById.has(id));
+      if (missingIds.length > 0) {
+        failed.push(
+          ...missingIds.map((id) => ({ id, error: "Clip was not found" })),
+        );
+        continue;
+      }
+
+      for (const clip of clips) {
+        this.dependencies.storageService.removeClipPathReferences(
+          clip,
+          pathReferenceCounts,
+        );
+      }
+
+      let stagedFiles: Awaited<
+        ReturnType<ReplayClipStorageService["stageStoredClipFilesForDeletion"]>
+      >;
+      try {
+        stagedFiles =
+          await this.dependencies.storageService.stageStoredClipFilesForDeletion(
+            clips,
+            pathReferenceCounts,
+            root,
+          );
+      } catch (error) {
+        for (const clip of clips) {
+          this.dependencies.storageService.addClipPathReferences(
+            clip,
+            pathReferenceCounts,
+          );
+        }
+        const cleanupError = safeErrorMessage(error);
+        logWarn(
+          REPLAY_CLIPS_LOG_SCOPE,
+          "Replay clip retention cleanup failed",
+          {
+            clipCount: clips.length,
+            error: cleanupError,
+          },
+        );
+        failed.push(
+          ...clips.map((clip) => ({ id: clip.id, error: cleanupError })),
+        );
+        continue;
+      }
+
+      try {
+        DatabaseService.getInstance().transaction(() => {
+          for (const clip of clips) {
+            BookmarksService.getInstance().deleteReplayClipLinks(clip.id);
+          }
+          this.dependencies.repository.deleteMany(ids);
+          this.assertStagedFilesAreUnreferenced(stagedFiles);
+          this.dependencies.storageService.markStoredClipFileDeletionCommitted(
+            stagedFiles,
+            root,
+          );
+        });
+      } catch (error) {
+        for (const clip of clips) {
+          this.dependencies.storageService.addClipPathReferences(
+            clip,
+            pathReferenceCounts,
+          );
+        }
+        try {
+          await this.dependencies.storageService.rollbackStoredClipFileDeletion(
+            stagedFiles,
+          );
+        } catch (rollbackError) {
+          logWarn(
+            REPLAY_CLIPS_LOG_SCOPE,
+            "Replay clip retention rollback failed",
+            { error: safeErrorMessage(rollbackError) },
+          );
+        }
+        const persistenceError = safeErrorMessage(error);
+        failed.push(
+          ...clips.map((clip) => ({ id: clip.id, error: persistenceError })),
+        );
+        continue;
+      }
+
+      const cleanup =
+        await this.dependencies.storageService.finalizeStoredClipFileDeletion(
+          stagedFiles,
+        );
+      deletedPaths.push(...cleanup.deletedPaths);
+      freedBytes += cleanup.freedBytes;
+      if (cleanup.failedPaths && cleanup.failedPaths.length > 0) {
+        cleanupErrors.push(
+          ...clips.map((clip) => ({
+            id: clip.id,
+            error: "A staged clip file could not be removed",
+          })),
+        );
+      }
+      for (const clip of clips) {
+        await this.removeClipPreview(clip.id);
+        deletedIds.push(clip.id);
+      }
+    }
+
+    return {
+      ok: failed.length === 0,
+      error: failed.length === 0 ? null : "Some clips could not be deleted",
+      deletedIds,
+      deletedPaths,
+      failed,
+      freedBytes,
+      ...(cleanupErrors.length > 0 ? { cleanupErrors } : {}),
+    };
+  }
+
+  private async removeClipPreview(id: string): Promise<void> {
+    try {
+      await this.dependencies.previewService.remove(id);
+    } catch (error) {
+      logWarn(REPLAY_CLIPS_LOG_SCOPE, "Replay clip preview cleanup failed", {
+        clipId: id,
+        error: safeErrorMessage(error),
+      });
+    }
+  }
+
+  private assertStagedFilesAreUnreferenced(
+    stagedFiles: Array<{ path: string }>,
+  ): void {
+    if (
+      stagedFiles.some((file) =>
+        this.dependencies.repository.hasStoragePath(file.path),
+      )
+    ) {
+      throw new Error("Replay clip storage references changed during deletion");
+    }
   }
 
   private async renderReplayClipQuickTrim(input: {

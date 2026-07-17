@@ -41,6 +41,7 @@ describe("Hinekora fresh-install migrations", () => {
     expect(tableExists(db, "replay_clips")).toBe(true);
     expect(tableExists(db, "run_recordings")).toBe(true);
     expect(tableExists(db, "recording_storage_path_migrations")).toBe(true);
+    expect(tableExists(db, "storage_file_deletion_operations")).toBe(true);
     expect(tableExists(db, "editor_projects")).toBe(true);
     expect(tableExists(db, "editor_project_source_leagues")).toBe(true);
     expect(tableExists(db, "poe_leagues")).toBe(true);

@@ -53,24 +53,10 @@ interface RunRecordingLibraryPageResult {
   totalCount: number;
 }
 
-interface RunRecordingCleanupCandidate {
+interface RunRecordingStorageEntry {
   mtimeMs: number;
   path: string;
   size: number;
-}
-
-interface RunRecordingCleanupInput {
-  limitBytes: number;
-  protectedDirectories?: string[];
-  protectedPaths?: string[];
-}
-
-interface RunRecordingCleanupSelection {
-  files: RunRecordingCleanupCandidate[];
-  freedBytes: number;
-  limitBytes: number;
-  targetUsageBytes: number;
-  usageBytes: number;
 }
 
 interface RunRecordingUsageSummary {
@@ -159,12 +145,6 @@ function normalizeDurationSeconds(durationSeconds: number | null | undefined) {
   return Math.round(durationSeconds * 1_000) / 1_000;
 }
 
-function normalizePathList(paths: string[] | undefined): string[] {
-  return (paths ?? [])
-    .filter((path) => path.length > 0)
-    .map((path) => resolve(path));
-}
-
 class RecordingStorageRepository {
   constructor(private readonly database: DatabaseService) {}
 
@@ -177,17 +157,6 @@ class RecordingStorageRepository {
     );
 
     return rows.map(mapRunRecordingRow);
-  }
-
-  listRunRecordingItems(): RunRecordingItem[] {
-    const rows = this.database.queryAll(
-      this.database.kysely
-        .selectFrom("run_recordings")
-        .selectAll()
-        .orderBy("created_at", "desc"),
-    );
-
-    return rows.map(mapRunRecordingItemRow);
   }
 
   listRunRecordingSyncItems(): RunRecordingSyncItem[] {
@@ -351,60 +320,33 @@ class RecordingStorageRepository {
     }));
   }
 
-  selectCleanupCandidates(
-    input: RunRecordingCleanupInput,
-  ): RunRecordingCleanupSelection {
-    const limitBytes = input.limitBytes;
-    const targetUsageBytes = limitBytes > 0 ? Math.floor(limitBytes * 0.95) : 0;
-    const protectedPaths = normalizePathList(input.protectedPaths);
-    const protectedDirectories = normalizePathList(input.protectedDirectories);
-    const rows = this.database.queryAll(
-      this.createCleanupCandidateQuery({
-        protectedDirectories,
-        protectedPaths,
-      })
-        .select(["path", "size_bytes", "mtime_ms"])
-        .orderBy("mtime_ms", "asc"),
-    );
-    const candidates = rows.map((row) => ({
+  listStorageEntriesPage(
+    after: { mtimeMs: number; path: string } | null,
+    limit: number,
+  ): RunRecordingStorageEntry[] {
+    const rows = this.database.db
+      .prepare(
+        `
+        SELECT path, size_bytes, mtime_ms
+        FROM run_recordings
+        WHERE exists_on_disk = 1
+          AND size_bytes > 0
+          ${after ? "AND (mtime_ms > ? OR (mtime_ms = ? AND path > ?))" : ""}
+        ORDER BY mtime_ms ASC, path ASC
+        LIMIT ?
+      `,
+      )
+      .all(
+        ...(after
+          ? [after.mtimeMs, after.mtimeMs, after.path, limit]
+          : [limit]),
+      ) as Array<{ mtime_ms: number; path: string; size_bytes: number }>;
+
+    return rows.map((row) => ({
       mtimeMs: row.mtime_ms,
       path: row.path,
       size: row.size_bytes,
     }));
-    const usageBytes = candidates.reduce(
-      (sum, candidate) => sum + candidate.size,
-      0,
-    );
-    if (limitBytes <= 0 || usageBytes <= limitBytes) {
-      return {
-        files: [],
-        freedBytes: 0,
-        limitBytes,
-        targetUsageBytes,
-        usageBytes,
-      };
-    }
-
-    const selectedFiles: RunRecordingCleanupCandidate[] = [];
-    let projectedUsageBytes = usageBytes;
-    let freedBytes = 0;
-    for (const candidate of candidates) {
-      if (projectedUsageBytes <= targetUsageBytes) {
-        break;
-      }
-
-      selectedFiles.push(candidate);
-      projectedUsageBytes -= candidate.size;
-      freedBytes += candidate.size;
-    }
-
-    return {
-      files: selectedFiles,
-      freedBytes,
-      limitBytes,
-      targetUsageBytes,
-      usageBytes,
-    };
   }
 
   count(filter: RunRecordingLibraryFilter = {}): number {
@@ -575,29 +517,6 @@ class RecordingStorageRepository {
     return query;
   }
 
-  private createCleanupCandidateQuery(input: {
-    protectedDirectories: string[];
-    protectedPaths: string[];
-  }): RunRecordingFilterQuery {
-    let query = this.database.kysely
-      .selectFrom("run_recordings")
-      .where("exists_on_disk", "=", 1)
-      .where("size_bytes", ">", 0);
-
-    for (const path of input.protectedPaths) {
-      query = query.where("path", "!=", path);
-    }
-
-    for (const directory of input.protectedDirectories) {
-      query = query
-        .where("path", "!=", directory)
-        .where("path", "not like", `${directory}\\%`)
-        .where("path", "not like", `${directory}/%`);
-    }
-
-    return query;
-  }
-
   private getLibrarySortColumn(sortBy: RunRecordingLibrarySortKey) {
     switch (sortBy) {
       case "durationSeconds":
@@ -614,4 +533,5 @@ class RecordingStorageRepository {
   }
 }
 
+export type { RunRecordingStorageEntry };
 export { RecordingStorageRepository };

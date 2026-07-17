@@ -358,8 +358,16 @@ class BookmarksService {
     this.repository.deleteBookmarksForRecording(recordingId);
   }
 
+  deleteBookmarksForRecordings(recordingIds: string[]): void {
+    this.repository.deleteBookmarksForRecordings(recordingIds);
+  }
+
   deleteReplayClipLinks(replayClipId: string): void {
     this.repository.deleteReplayClipLinks(replayClipId);
+  }
+
+  deleteReplayClipLinksMany(replayClipIds: string[]): void {
+    this.repository.deleteReplayClipLinksMany(replayClipIds);
   }
 
   private createTrackedBookmark(

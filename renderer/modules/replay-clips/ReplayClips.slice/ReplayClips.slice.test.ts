@@ -39,12 +39,15 @@ describe("ReplayClips slice", () => {
   const reveal = vi.fn();
   const deleteClip = vi.fn();
   const deleteMany = vi.fn();
+  const onDeleted = vi.fn();
   const onStatusChanged = vi.fn();
+  let deletedListener: ((ids: string[]) => void) | null = null;
   let statusChangedListener: ((clip: ReplayClipView) => void) | null = null;
   const unsubscribe = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
+    deletedListener = null;
     statusChangedListener = null;
     listLibrary.mockResolvedValue(createLibraryPage());
     saveManualReplay.mockResolvedValue(null);
@@ -63,6 +66,10 @@ describe("ReplayClips slice", () => {
         return unsubscribe;
       },
     );
+    onDeleted.mockImplementation((listener: (ids: string[]) => void) => {
+      deletedListener = listener;
+      return unsubscribe;
+    });
 
     Object.defineProperty(window, "electron", {
       configurable: true,
@@ -74,6 +81,7 @@ describe("ReplayClips slice", () => {
           reveal,
           delete: deleteClip,
           deleteMany,
+          onDeleted,
           onStatusChanged,
         },
       },
@@ -249,12 +257,14 @@ describe("ReplayClips slice", () => {
     store.getState().replayClips.clearSelectedClips();
     const stopListening = store.getState().replayClips.startListening();
     statusChangedListener?.(clip);
+    store.getState().replayClips.setSelectedClipIds({ [clip.id]: true });
+    deletedListener?.([clip.id]);
     await Promise.resolve();
     await Promise.resolve();
     stopListening();
 
     expect(store.getState().replayClips.selectedClipIds).toEqual({});
-    expect(store.getState().replayClips.activeClip).toBe(clip);
+    expect(store.getState().replayClips.activeClip).toBeNull();
     expect(unsubscribe).toHaveBeenCalled();
   });
 

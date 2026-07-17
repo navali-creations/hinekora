@@ -1,11 +1,5 @@
 import type { Page } from "@playwright/test";
 
-const ignoredConsoleErrorPrefixes = [
-  "Invalid DOM property `popovertarget`.",
-  "Invalid DOM property `popovertargetaction`.",
-  "Invalid DOM property `%s`. Did you mean `%s`? popovertarget popoverTarget",
-  "Invalid DOM property `%s`. Did you mean `%s`? popovertargetaction popoverTargetAction",
-] as const;
 const expectedMediaAccessErrorPrefix = "Access to video at 'hinekora-media://";
 const protocolFailurePairingWindowMs = 250;
 const protocolResourceErrors = new Set([
@@ -73,10 +67,6 @@ function captureUnexpectedConsoleErrors(page: Page): void {
     if (protocolResourceErrors.has(text)) {
       unmatchedProtocolErrors.push({ capturedAt: Date.now(), text });
     }
-    if (ignoredConsoleErrorPrefixes.some((prefix) => text.startsWith(prefix))) {
-      return;
-    }
-
     unexpectedErrors.push(text);
   });
 }

@@ -5,6 +5,15 @@ import { describe, expect, it } from "vitest";
 import { DatabaseService } from "../../database";
 import { RecordingStorageRepository } from "../RecordingStorage.repository";
 
+function listRecordingItems(repository: RecordingStorageRepository) {
+  return repository.listLibraryPage({
+    pageIndex: 0,
+    pageSize: 100,
+    sortBy: "createdAt",
+    sortDirection: "desc",
+  }).items;
+}
+
 describe("RecordingStorageRepository", () => {
   it("upserts run recording metadata by normalized path", () => {
     const database = new DatabaseService(":memory:");
@@ -137,26 +146,23 @@ describe("RecordingStorageRepository", () => {
         },
       ]),
     );
-    expect(
-      repository.selectCleanupCandidates({
-        limitBytes: 20,
-        protectedPaths: [small.path],
-      }),
-    ).toMatchObject({
-      files: [
+    expect(repository.listStorageEntriesPage(null, 100)).toEqual(
+      expect.arrayContaining([
         expect.objectContaining({ path: resolve("recordings/large.mkv") }),
-        expect.objectContaining({
-          path: resolve("recordings/other-game.mkv"),
-        }),
-      ],
-      freedBytes: 80,
-      usageBytes: 80,
-    });
+        expect.objectContaining({ path: resolve("recordings/other-game.mkv") }),
+        expect.objectContaining({ path: small.path }),
+      ]),
+    );
 
     repository.updateFileState(small.path, { exists: false, sizeBytes: 0 });
     expect(repository.getItemById(small.id)).toEqual(
       expect.objectContaining({ exists: false, sizeBytes: 0 }),
     );
+    expect(
+      repository
+        .listRunRecordingSyncItems()
+        .find((item) => item.path === small.path),
+    ).toEqual(expect.objectContaining({ exists: false, sizeBytes: 0 }));
     repository.updateFileState(small.path, { exists: true, sizeBytes: 12 });
     expect(repository.getItemById(small.id)).toEqual(
       expect.objectContaining({ exists: true, sizeBytes: 12 }),
@@ -211,9 +217,9 @@ describe("RecordingStorageRepository", () => {
     });
 
     expect(
-      repository
-        .listRunRecordingItems()
-        .find((item) => item.path.endsWith("invalid-duration.mkv")),
+      listRecordingItems(repository).find((item) =>
+        item.path.endsWith("invalid-duration.mkv"),
+      ),
     ).toEqual(expect.objectContaining({ durationSeconds: 12.346 }));
     repository.updateFileState("recordings/invalid-duration.mkv", {
       durationSeconds: null,
@@ -221,32 +227,41 @@ describe("RecordingStorageRepository", () => {
       sizeBytes: 50,
     });
     expect(
-      repository
-        .listRunRecordingItems()
-        .find((item) => item.path.endsWith("invalid-duration.mkv")),
+      listRecordingItems(repository).find((item) =>
+        item.path.endsWith("invalid-duration.mkv"),
+      ),
     ).toEqual(expect.objectContaining({ durationSeconds: null }));
-    expect(
-      repository.selectCleanupCandidates({
-        limitBytes: 50,
+    expect(repository.listStorageEntriesPage(null, 100)).toEqual([
+      expect.objectContaining({
+        path: resolve("recordings/invalid-duration.mkv"),
+        size: 50,
       }),
-    ).toMatchObject({
-      files: [
-        expect.objectContaining({
-          path: resolve("recordings/invalid-duration.mkv"),
-        }),
-      ],
-      freedBytes: 50,
-      usageBytes: 60,
-    });
+      expect.objectContaining({
+        path: resolve("recordings/small-extra.mkv"),
+        size: 10,
+      }),
+    ]);
+    const firstStoragePage = repository.listStorageEntriesPage(null, 1);
+    expect(
+      repository.listStorageEntriesPage(
+        {
+          mtimeMs: firstStoragePage[0]!.mtimeMs,
+          path: firstStoragePage[0]!.path,
+        },
+        1,
+      ),
+    ).toEqual([
+      expect.objectContaining({ path: resolve("recordings/small-extra.mkv") }),
+    ]);
     repository.updateFileState("recordings/invalid-duration.mkv", {
       durationSeconds: 60,
       exists: false,
       sizeBytes: 0,
     });
     expect(
-      repository
-        .listRunRecordingItems()
-        .find((item) => item.path.endsWith("invalid-duration.mkv")),
+      listRecordingItems(repository).find((item) =>
+        item.path.endsWith("invalid-duration.mkv"),
+      ),
     ).toEqual(expect.objectContaining({ durationSeconds: null }));
 
     database.close();

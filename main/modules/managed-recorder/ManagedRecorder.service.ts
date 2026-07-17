@@ -2523,6 +2523,14 @@ class ManagedRecorderService {
 
   private setStatus(update: Partial<ManagedRecorderStatus>): void {
     this.status = { ...this.status, ...update };
+    RecordingStorageService.setPerformanceSensitiveActivityActive(
+      this.status.gameRunning ||
+        this.status.recording ||
+        this.status.bufferActive ||
+        this.status.runRecordingActive ||
+        this.status.isStartingRecording ||
+        this.status.isStoppingRecording,
+    );
     this.publishStatus();
   }
 
@@ -2581,11 +2589,23 @@ class ManagedRecorderService {
   }
 
   private cleanupRecordingStorage(protectedPaths: Array<string | null>): void {
+    const paths = protectedPaths.filter(
+      (path): path is string => typeof path === "string" && path.length > 0,
+    );
+    let estimatedAddedBytes = 0;
+    for (const path of paths) {
+      try {
+        const fileStats = statSync(path);
+        estimatedAddedBytes += fileStats.isFile() ? fileStats.size : 0;
+      } catch {}
+    }
+
     try {
-      RecordingStorageService.getInstance().cleanup({
-        protectedPaths: protectedPaths.filter(
-          (path): path is string => typeof path === "string" && path.length > 0,
-        ),
+      RecordingStorageService.getInstance().scheduleCleanup({
+        estimatedAddedBytes,
+        force: paths.length > 0 && estimatedAddedBytes === 0,
+        ...(paths.length > 0 ? { usageAlreadyAccounted: true } : {}),
+        protectedPaths: paths,
         protectedDirectories: this.status.activeSessionDirectory
           ? [this.status.activeSessionDirectory]
           : [],

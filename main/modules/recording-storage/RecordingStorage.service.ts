@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, statSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
+import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { app, shell } from "electron";
+import { app, BrowserWindow, shell } from "electron";
 
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
@@ -11,26 +12,39 @@ import { normalizeMediaLibraryPageQuery } from "~/main/modules/media-library/Med
 import { createRunRecordingMediaUrl } from "~/main/modules/media-protocol";
 import { ReplayClipsRepository } from "~/main/modules/replay-clips/ReplayClips.repository";
 import { SettingsStoreService } from "~/main/modules/settings-store";
+import { StorageFileDeletionService } from "~/main/modules/storage/StorageFileDeletion.service";
 import {
   createSafePathLogFields,
   logInfo,
   logWarn,
 } from "~/main/utils/app-log";
 import * as FileClipboard from "~/main/utils/file-clipboard";
-import {
-  assertNumber,
-  assertObject,
-  assertString,
-  handleValidationError,
-  IpcValidationError,
-  safeErrorMessage,
-} from "~/main/utils/ipc-validation";
-import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
+import { safeErrorMessage } from "~/main/utils/ipc-validation";
+import { getIpcWindowRole } from "~/main/utils/ipc-window-roles";
 import { readMp4DurationSeconds } from "~/main/utils/media-metadata";
-import { isPathInsideOrEqual } from "~/main/utils/storage-files";
+import {
+  getStagedFileDeletionTrashSize,
+  rollbackStagedFileDeletions,
+  stageFilesForDeletion,
+} from "~/main/utils/staged-file-deletion";
+import {
+  isPathInsideOrEqual,
+  isRealPathInsideOrEqual,
+} from "~/main/utils/storage-files";
+import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
-import { type GameId, GameIdSchema } from "~/types";
+import type { GameId, ReplayClip } from "~/types";
 import { RecordingStorageChannel } from "./RecordingStorage.channels";
+import {
+  type RecordingStorageCleanupOptions,
+  type RecordingStorageCleanupSchedule,
+  RecordingStorageCleanupScheduler,
+} from "./RecordingStorage.cleanup-scheduler";
+import { RECORDING_STORAGE_LOG_SCOPE } from "./RecordingStorage.constants";
+import {
+  deleteRecordingFile,
+  recoverRecordingStorageDeletions,
+} from "./RecordingStorage.deletion";
 import type {
   RecordingStorageBatchFileActionResult,
   RecordingStorageFileActionResult,
@@ -40,17 +54,23 @@ import type {
   RunRecordingItem,
   RunRecordingLibraryPage,
   RunRecordingLibraryQuery,
-  RunRecordingLibrarySortDirection,
-  RunRecordingLibrarySortKey,
   RunRecordingMetadata,
 } from "./RecordingStorage.dto";
 import {
-  calculateDatabaseSize,
   calculateDiskUsage,
   collectRecordingFiles,
   removeEmptyParentDirectories,
 } from "./RecordingStorage.files";
+import { getManagedStoragePaths } from "./RecordingStorage.inventory";
+import { setupRecordingStorageIpcHandlers } from "./RecordingStorage.ipc";
 import { RecordingStorageRepository } from "./RecordingStorage.repository";
+import {
+  createRecordingStorageInventory,
+  type RecordingStorageCleanupSelection,
+  type RecordingStorageInventory,
+  selectRecordingStorageCleanupCandidates,
+} from "./RecordingStorage.retention";
+import { calculateRecordingStorageUsage } from "./RecordingStorage.usage";
 import {
   applyRecordingStoragePathMigrations,
   isManagedRecordingFilePath,
@@ -61,29 +81,14 @@ import {
   resolveRecordingStorageRoot,
 } from "./RecordingStorage.utils";
 
-const RECORDING_STORAGE_LOG_SCOPE = "recording-storage";
-const storageLimitSafetyFactor = 1024 ** 3;
-const lowDiskSpaceWarningThresholdBytes = 1024 ** 3;
+const bytesPerGigabyte = 1024 ** 3;
+const lowDiskSpaceWarningThresholdBytes = bytesPerGigabyte;
 const defaultLibraryPageSize = 20;
-const maxLibraryPageSize = 100;
 const recordingLibrarySyncCacheMs = 2_000;
-const librarySortKeys: RunRecordingLibrarySortKey[] = [
-  "createdAt",
-  "durationSeconds",
-  "fileName",
-  "sizeBytes",
-  "sourceLeague",
-];
-const librarySortDirections: RunRecordingLibrarySortDirection[] = [
-  "asc",
-  "desc",
-];
-
-interface RecordingStorageCleanupOptions {
-  protectedDirectories?: string[];
-  protectedPaths?: string[];
-}
-
+const storageInventoryPageSize = 500;
+const storageMaintenanceContinuationDelayMs = 1_000;
+const storageMaintenanceStartDelayMs = 60_000;
+const storageUsageCacheMs = 5 * 60_000;
 interface RecordingStorageCleanupResult {
   deletedCount: number;
   freedBytes: number;
@@ -97,6 +102,24 @@ interface RecordingLibrarySyncCache {
   syncedAtMs: number;
 }
 
+interface RecordingStorageUsageCache {
+  calculatedAtMs: number;
+  root: string;
+  usage: RecordingStorageUsage;
+}
+
+interface ReplayClipRetentionCleanupResult {
+  deletedIds: string[];
+  deletedPaths: string[];
+  failed: Array<{ id: string; error: string }>;
+  freedBytes: number;
+}
+
+type ReplayClipRetentionCleanupHandler = (
+  idGroups: string[][],
+  root: string,
+) => Promise<ReplayClipRetentionCleanupResult>;
+
 interface ExistingFileStats {
   mtimeMs: number;
   sizeBytes: number;
@@ -108,11 +131,38 @@ interface RecordingFileDurationState extends ExistingFileStats {
 
 class RecordingStorageService {
   private static instance: RecordingStorageService | null = null;
+  private static performanceSensitiveActivityActive = false;
 
   private readonly durationProbeFailureLoggedPaths = new Set<string>();
   private readonly durationVerifiedFileStateByPath = new Map<string, string>();
   private recordingLibrarySyncCache: RecordingLibrarySyncCache | null = null;
+  private usageCache: RecordingStorageUsageCache | null = null;
+  private usageGeneration = 0;
+  private usageRequest: {
+    promise: Promise<RecordingStorageUsage>;
+    root: string;
+  } | null = null;
+  private stagedDeletionRecoveryRequest: {
+    promise: Promise<{ hasMore: boolean }>;
+    root: string;
+  } | null = null;
+  private stagedDeletionRecoveryTimer: NodeJS.Timeout | null = null;
+  private readonly pendingStagedDeletionRecoveryRoots = new Set<string>();
+  private cleanupQueue: Promise<void> = Promise.resolve();
+  private readonly cleanupRequests = new Map<
+    string,
+    Promise<RecordingStorageCleanupResult>
+  >();
+  private replayClipRetentionCleanupHandler: ReplayClipRetentionCleanupHandler | null =
+    null;
+  private readonly cleanupScheduler: RecordingStorageCleanupScheduler;
+  private settingsUnsubscribe: (() => void) | null = null;
+  private previousStorageSettings: {
+    limitGigabytes: number;
+    root: string;
+  } | null = null;
   private readonly database: DatabaseService;
+  private readonly fileDeletions: StorageFileDeletionService;
   private readonly replayClipsRepository: ReplayClipsRepository;
   private readonly repository: RecordingStorageRepository;
 
@@ -124,50 +174,252 @@ class RecordingStorageService {
     return RecordingStorageService.instance;
   }
 
+  static setPerformanceSensitiveActivityActive(active: boolean): void {
+    RecordingStorageService.performanceSensitiveActivityActive = active;
+    RecordingStorageService.instance?.handlePerformanceSensitiveActivity(
+      active,
+    );
+  }
+
   static resetForTests(): void {
+    RecordingStorageService.instance?.settingsUnsubscribe?.();
+    RecordingStorageService.instance?.cleanupScheduler.dispose();
+    RecordingStorageService.instance?.clearStagedDeletionRecoveryTimer();
+    RecordingStorageService.instance?.pendingStagedDeletionRecoveryRoots.clear();
     RecordingStorageService.instance = null;
+    RecordingStorageService.performanceSensitiveActivityActive = false;
   }
 
   constructor() {
     const database = DatabaseService.getInstance();
     this.database = database;
+    this.fileDeletions = new StorageFileDeletionService(database);
     this.replayClipsRepository = new ReplayClipsRepository(database);
     this.repository = new RecordingStorageRepository(database);
-    this.setupHandlers();
+    this.cleanupScheduler = new RecordingStorageCleanupScheduler({
+      cleanup: (options) => this.cleanup(options),
+      getSnapshot: () => this.getCleanupSchedulerSnapshot(),
+      handleError: (error) => {
+        logWarn(
+          RECORDING_STORAGE_LOG_SCOPE,
+          "Scheduled storage cleanup failed",
+          {
+            error: safeErrorMessage(error),
+          },
+        );
+      },
+      invalidateUsageCache: () => this.invalidateUsageCache(),
+    });
+    this.cleanupScheduler.setPerformanceSensitiveActivityActive(
+      RecordingStorageService.performanceSensitiveActivityActive,
+    );
+    const settingsStore = SettingsStoreService.getInstance();
+    const settings = settingsStore.get();
+    this.previousStorageSettings = {
+      limitGigabytes: settings.recordingMaxStorageGb,
+      root: this.resolveStorageRoot(settings.recordingStoragePath),
+    };
+    if (typeof settingsStore.onDidChange === "function") {
+      this.settingsUnsubscribe = settingsStore.onDidChange((nextSettings) => {
+        this.handleStorageSettingsChanged(nextSettings);
+      });
+    }
+    setupRecordingStorageIpcHandlers({
+      copyRecordingToClipboard: (path) => this.copyRecordingToClipboard(path),
+      deleteManyRecordings: (paths) => this.deleteManyRecordings(paths),
+      deleteRecording: (path) => this.deleteRecording(path),
+      getRecording: (id) => this.getRecording(id),
+      getUsage: () => this.getUsage(),
+      listRecordingLibrary: (query) => this.listRecordingLibrary(query),
+      openRecording: (path) => this.openRecording(path),
+      revealRecording: (path) => this.revealRecording(path),
+    });
   }
 
-  getUsage(): RecordingStorageUsage {
+  async getUsage(): Promise<RecordingStorageUsage> {
     const settings = SettingsStoreService.getInstance().get();
     const root = this.resolveStorageRoot(settings.recordingStoragePath);
-    this.ensureStorageRoot(root);
-    this.syncRecordingLibrary(root, settings);
+    if (
+      this.usageCache?.root === root &&
+      Date.now() - this.usageCache.calculatedAtMs < storageUsageCacheMs
+    ) {
+      return this.usageCache.usage;
+    }
+    if (this.usageRequest?.root === root) {
+      return this.usageRequest.promise;
+    }
 
-    const clipsSizeBytes = this.replayClipsRepository
-      .listStorageUsage()
-      .reduce((sum, bucket) => sum + bucket.sizeBytes, 0);
-    const recordingsSizeBytes = this.repository
-      .listStorageUsage()
-      .reduce((sum, bucket) => sum + bucket.sizeBytes, 0);
-    const databasePath = DatabaseService.getInstance().path;
-    const databaseSizeBytes = calculateDatabaseSize(databasePath);
-    const disk = calculateDiskUsage(root);
+    const generation = this.usageGeneration;
+    const promise = (async () => {
+      await yieldToEventLoop();
+      const totals = await calculateRecordingStorageUsage({
+        recordingRepository: this.repository,
+        replayClipsRepository: this.replayClipsRepository,
+        root,
+      });
+      if (generation !== this.usageGeneration) {
+        return this.getUsage();
+      }
 
-    return {
-      storageDirectory: root,
-      databasePath,
-      clipsSizeBytes,
-      recordingsSizeBytes,
-      databaseSizeBytes,
-      totalTrackedSizeBytes:
-        clipsSizeBytes + recordingsSizeBytes + databaseSizeBytes,
-      diskTotalBytes: disk.totalBytes,
-      diskFreeBytes: disk.freeBytes,
-      diskWarningThresholdBytes: lowDiskSpaceWarningThresholdBytes,
-      lowDiskSpace:
-        disk.freeBytes > 0 &&
-        disk.freeBytes < lowDiskSpaceWarningThresholdBytes,
-      calculatedAt: new Date().toISOString(),
+      const usage = this.createUsage(
+        root,
+        totals.clipsSizeBytes,
+        totals.recordingsSizeBytes,
+      );
+      this.usageCache = { calculatedAtMs: Date.now(), root, usage };
+      this.cleanupScheduler.resetEstimatedUsageGrowth();
+      this.scheduleStagedDeletionRecovery(root);
+      return usage;
+    })();
+    this.usageRequest = { promise, root };
+    const clearRequest = () => {
+      if (this.usageRequest?.promise === promise) {
+        this.usageRequest = null;
+      }
     };
+    void promise.then(clearRequest, clearRequest);
+    return promise;
+  }
+
+  publishUsageChanged(usage?: RecordingStorageUsage, usageRoot?: string): void {
+    const settings = SettingsStoreService.getInstance().get();
+    const root = this.resolveStorageRoot(settings.recordingStoragePath);
+    if (usage && usageRoot && usageRoot !== root) {
+      usage = undefined;
+    }
+    if (usage) {
+      this.usageGeneration += 1;
+      this.usageRequest = null;
+      this.usageCache = { calculatedAtMs: Date.now(), root, usage };
+      this.cleanupScheduler.resetEstimatedUsageGrowth();
+    } else {
+      this.invalidateUsageCache();
+    }
+    const targetWindows = this.getMainWindows();
+    if (targetWindows.length === 0) {
+      return;
+    }
+
+    void (usage ? Promise.resolve(usage) : this.getUsage()).then(
+      (nextUsage) => {
+        for (const window of targetWindows) {
+          if (!window.isDestroyed()) {
+            window.webContents.send(
+              RecordingStorageChannel.UsageChanged,
+              nextUsage,
+            );
+          }
+        }
+      },
+      (error) => {
+        logWarn(RECORDING_STORAGE_LOG_SCOPE, "Storage usage refresh failed", {
+          error: safeErrorMessage(error),
+        });
+      },
+    );
+  }
+
+  noteUsageDelta(category: "clips" | "recordings", deltaBytes: number): void {
+    if (!Number.isFinite(deltaBytes) || deltaBytes === 0) {
+      return;
+    }
+    const settings = SettingsStoreService.getInstance().get();
+    const root = this.resolveStorageRoot(settings.recordingStoragePath);
+    if (this.usageCache?.root !== root) {
+      this.usageGeneration += 1;
+      this.usageRequest = null;
+      return;
+    }
+
+    const usage = this.usageCache.usage;
+    const nextUsage = {
+      ...usage,
+      clipsSizeBytes:
+        category === "clips"
+          ? Math.max(0, usage.clipsSizeBytes + deltaBytes)
+          : usage.clipsSizeBytes,
+      recordingsSizeBytes:
+        category === "recordings"
+          ? Math.max(0, usage.recordingsSizeBytes + deltaBytes)
+          : usage.recordingsSizeBytes,
+    };
+    this.publishUsageChanged(nextUsage, root);
+  }
+
+  noteReplayClipUsageChange(
+    previousClip: ReplayClip | null,
+    nextClip: ReplayClip,
+  ): void {
+    const settings = SettingsStoreService.getInstance().get();
+    const root = this.resolveStorageRoot(settings.recordingStoragePath);
+    const previousPaths = previousClip
+      ? getManagedStoragePaths(root, previousClip)
+      : [];
+    const nextPaths = getManagedStoragePaths(root, nextClip);
+    const previousKeys = new Set(previousPaths.map(createStoragePathKey));
+    const nextKeys = new Set(nextPaths.map(createStoragePathKey));
+    const pathsUnchanged =
+      previousClip !== null &&
+      previousKeys.size === nextKeys.size &&
+      [...previousKeys].every((key) => nextKeys.has(key));
+    if (pathsUnchanged && previousClip.sizeBytes === nextClip.sizeBytes) {
+      return;
+    }
+
+    const pathsByKey = new Map<string, string>();
+    for (const path of [...previousPaths, ...nextPaths]) {
+      pathsByKey.set(createStoragePathKey(path), path);
+    }
+    const affectedPaths = [...pathsByKey.values()];
+    const hasSharedClipPath = affectedPaths.some((path) =>
+      this.replayClipsRepository.hasStoragePath(path, nextClip.id),
+    );
+    const hasRecordingPath = affectedPaths.some(
+      (path) => this.repository.getItemByPath(path) !== null,
+    );
+
+    if (!hasSharedClipPath && (!hasRecordingPath || pathsUnchanged)) {
+      this.noteUsageDelta(
+        "clips",
+        nextClip.sizeBytes - (previousClip?.sizeBytes ?? 0),
+      );
+      return;
+    }
+
+    if (
+      previousClip &&
+      pathsUnchanged &&
+      nextPaths.length === 1 &&
+      hasSharedClipPath
+    ) {
+      const sharedSizeBytes = this.replayClipsRepository.getMaxStoragePathSize(
+        nextPaths[0]!,
+        nextClip.id,
+      );
+      this.noteUsageDelta(
+        "clips",
+        Math.max(sharedSizeBytes, nextClip.sizeBytes) -
+          Math.max(sharedSizeBytes, previousClip.sizeBytes),
+      );
+      return;
+    }
+
+    this.publishUsageChanged();
+  }
+
+  publishRecordingsChanged(ids: string[]): void {
+    if (ids.length === 0) {
+      return;
+    }
+
+    for (const window of this.getMainWindows()) {
+      if (!window.isDestroyed()) {
+        window.webContents.send(
+          RecordingStorageChannel.RecordingsChanged,
+          ids.slice(0, 100),
+        );
+      }
+    }
   }
 
   initializeStorageRoot(): void {
@@ -176,18 +428,13 @@ class RecordingStorageService {
     this.ensureStorageRoot(root);
   }
 
-  listRecordings(): RunRecordingItem[] {
+  refreshLibrary(options: { publishUsage?: boolean } = {}): void {
     const settings = SettingsStoreService.getInstance().get();
     const root = this.resolveStorageRoot(settings.recordingStoragePath);
     this.syncRecordingLibrary(root, settings);
-
-    return this.repository.listRunRecordingItems();
-  }
-
-  refreshLibrary(): void {
-    const settings = SettingsStoreService.getInstance().get();
-    const root = this.resolveStorageRoot(settings.recordingStoragePath);
-    this.syncRecordingLibrary(root, settings);
+    if (options.publishUsage !== false) {
+      this.publishUsageChanged();
+    }
   }
 
   migrateLegacyMediaDirectories(root: string): void {
@@ -226,7 +473,9 @@ class RecordingStorageService {
     const normalizedQuery = this.normalizeLibraryQuery(query);
     const settings = SettingsStoreService.getInstance().get();
     const root = this.resolveStorageRoot(settings.recordingStoragePath);
-    this.syncRecordingLibrary(root, settings);
+    if (this.syncRecordingLibrary(root, settings)) {
+      this.publishUsageChanged();
+    }
     const filter = {
       game: normalizedQuery.game,
       ...(normalizedQuery.league.length > 0
@@ -283,7 +532,9 @@ class RecordingStorageService {
   }): { items: RunRecordingDetail[]; totalCount: number } {
     const settings = SettingsStoreService.getInstance().get();
     const root = this.resolveStorageRoot(settings.recordingStoragePath);
-    this.syncRecordingLibrary(root, settings);
+    if (this.syncRecordingLibrary(root, settings)) {
+      this.publishUsageChanged();
+    }
     const filter = {
       ...(input.createdAfter ? { createdAfter: input.createdAfter } : {}),
       ...(input.excludeIds && input.excludeIds.length > 0
@@ -322,6 +573,7 @@ class RecordingStorageService {
 
   registerRunRecording(input: RunRecordingCreateInput): RunRecordingMetadata {
     const resolvedPath = resolve(input.path);
+    const previousRecording = this.repository.getItemByPath(resolvedPath);
     const fileStats = this.getExistingFileStats(resolvedPath);
     const mediaDurationSeconds =
       input.durationSeconds === undefined && fileStats.sizeBytes > 0
@@ -343,7 +595,13 @@ class RecordingStorageService {
         sizeBytes: fileStats.sizeBytes,
       });
     }
-    this.invalidateRecordingLibrarySyncCache();
+    this.recordingLibrarySyncCache = null;
+    if (!this.replayClipsRepository.hasStoragePath(resolvedPath)) {
+      this.noteUsageDelta(
+        "recordings",
+        fileStats.sizeBytes - (previousRecording?.sizeBytes ?? 0),
+      );
+    }
     logInfo(RECORDING_STORAGE_LOG_SCOPE, "Run recording registered", {
       game: recording.sourceGame,
       league: recording.sourceLeague,
@@ -398,67 +656,67 @@ class RecordingStorageService {
     }
   }
 
-  deleteRecording(path: string): RecordingStorageFileActionResult {
+  async deleteRecording(
+    path: string,
+    options: { publishUsage?: boolean } = {},
+  ): Promise<RecordingStorageFileActionResult> {
     try {
       const recordingPath = this.resolveManagedRecordingPath(path);
       if (!recordingPath) {
         return { ok: false, error: "Recording file is not available" };
       }
 
-      const fileExists = existsSync(recordingPath);
-      const recording = this.repository.getItemByPath(recordingPath);
-      const deletedMetadata =
-        this.repository.deleteRunRecordingByPath(recordingPath);
-      if (!fileExists && !deletedMetadata) {
-        return { ok: false, error: "Recording file is not available" };
-      }
-      if (recording) {
-        BookmarksService.getInstance().deleteBookmarksForRecording(
-          recording.id,
-        );
-      }
-
-      if (fileExists) {
-        try {
-          unlinkSync(recordingPath);
-          this.invalidateRecordingLibrarySyncCache();
-          const settings = SettingsStoreService.getInstance().get();
-          const root = this.resolveStorageRoot(settings.recordingStoragePath);
-          removeEmptyParentDirectories(recordingPath, root);
-        } catch (error) {
-          const cleanupError = safeErrorMessage(error);
-          logWarn(
-            RECORDING_STORAGE_LOG_SCOPE,
-            "Run recording file cleanup failed",
-            {
-              ...createSafePathLogFields(recordingPath, "recording"),
-              error: cleanupError,
-            },
-          );
-
-          return { ok: true, error: null, cleanupError };
-        }
-      }
+      const settings = SettingsStoreService.getInstance().get();
+      const root = this.resolveStorageRoot(settings.recordingStoragePath);
+      const deletion = await deleteRecordingFile({
+        dependencies: {
+          bookmarks: BookmarksService.getInstance(),
+          database: this.database,
+          fileDeletions: this.fileDeletions,
+          recordingRepository: this.repository,
+          replayClipsRepository: this.replayClipsRepository,
+        },
+        path: recordingPath,
+        root,
+      });
 
       logInfo(RECORDING_STORAGE_LOG_SCOPE, "Run recording deleted", {
-        deletedMetadata,
+        deletedMetadata: deletion.deletedMetadata,
         ...createSafePathLogFields(recordingPath, "recording"),
       });
+      if (deletion.cleanupError) {
+        logWarn(
+          RECORDING_STORAGE_LOG_SCOPE,
+          "Run recording file cleanup failed",
+          createSafePathLogFields(recordingPath, "recording"),
+        );
+      }
       this.invalidateRecordingLibrarySyncCache();
+      if (options.publishUsage !== false) {
+        this.publishUsageChanged();
+      }
 
-      return { ok: true, error: null };
+      return {
+        ok: true,
+        error: null,
+        ...(deletion.cleanupError
+          ? { cleanupError: deletion.cleanupError }
+          : {}),
+      };
     } catch (error) {
       return { ok: false, error: safeErrorMessage(error) };
     }
   }
 
-  deleteManyRecordings(paths: string[]): RecordingStorageBatchFileActionResult {
+  async deleteManyRecordings(
+    paths: string[],
+  ): Promise<RecordingStorageBatchFileActionResult> {
     const deletedPaths: string[] = [];
     const failed: Array<{ path: string; error: string }> = [];
     const cleanupErrors: Array<{ path: string; error: string }> = [];
 
     for (const path of paths) {
-      const result = this.deleteRecording(path);
+      const result = await this.deleteRecording(path, { publishUsage: false });
       if (result.ok) {
         deletedPaths.push(path);
         if (result.cleanupError) {
@@ -468,6 +726,10 @@ class RecordingStorageService {
       }
 
       failed.push({ path, error: result.error ?? "Recording delete failed" });
+    }
+
+    if (deletedPaths.length > 0) {
+      this.publishUsageChanged();
     }
 
     return {
@@ -480,22 +742,87 @@ class RecordingStorageService {
     };
   }
 
+  setReplayClipRetentionCleanupHandler(
+    handler: ReplayClipRetentionCleanupHandler,
+  ): void {
+    this.replayClipRetentionCleanupHandler = handler;
+  }
+
   cleanup(
     options: RecordingStorageCleanupOptions = {},
-  ): RecordingStorageCleanupResult {
+  ): Promise<RecordingStorageCleanupResult> {
+    const requestKey = createCleanupRequestKey(options);
+    const pendingRequest = this.cleanupRequests.get(requestKey);
+    if (pendingRequest) {
+      return pendingRequest;
+    }
+
+    const run = this.cleanupQueue.then(() => this.runCleanup(options));
+    this.cleanupRequests.set(requestKey, run);
+    this.cleanupQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    void run.then(
+      () => this.cleanupRequests.delete(requestKey),
+      () => this.cleanupRequests.delete(requestKey),
+    );
+    return run;
+  }
+
+  scheduleCleanup(schedule: RecordingStorageCleanupSchedule = {}): void {
+    const { usageAlreadyAccounted = false, ...nextSchedule } = schedule;
     const settings = SettingsStoreService.getInstance().get();
-    const limitBytes =
-      settings.recordingMaxStorageGb * storageLimitSafetyFactor;
     const root = this.resolveStorageRoot(settings.recordingStoragePath);
-    this.syncRecordingLibrary(root, settings);
-    const selection = this.repository.selectCleanupCandidates({
+    if (
+      usageAlreadyAccounted &&
+      this.usageCache?.root === root &&
+      (nextSchedule.estimatedAddedBytes ?? 0) > 0
+    ) {
+      nextSchedule.estimatedAddedBytes = 0;
+    }
+    this.cleanupScheduler.schedule(nextSchedule);
+  }
+
+  private async runCleanup(
+    options: RecordingStorageCleanupOptions,
+  ): Promise<RecordingStorageCleanupResult> {
+    const settings = SettingsStoreService.getInstance().get();
+    const limitBytes = settings.recordingMaxStorageGb * bytesPerGigabyte;
+    const root = this.resolveStorageRoot(settings.recordingStoragePath);
+    const usageSnapshot = await this.getUsage();
+    const usageTotals = {
+      clipsSizeBytes: usageSnapshot.clipsSizeBytes,
+      recordingsSizeBytes: usageSnapshot.recordingsSizeBytes,
+      usageBytes:
+        usageSnapshot.clipsSizeBytes + usageSnapshot.recordingsSizeBytes,
+    };
+    if (limitBytes <= 0 || usageTotals.usageBytes <= limitBytes) {
+      logInfo(RECORDING_STORAGE_LOG_SCOPE, "Storage cleanup skipped", {
+        usageBytes: usageTotals.usageBytes,
+        limitBytes,
+      });
+      this.publishUsageChanged(
+        this.createUsage(
+          root,
+          usageTotals.clipsSizeBytes,
+          usageTotals.recordingsSizeBytes,
+        ),
+        root,
+      );
+      return {
+        deletedCount: 0,
+        freedBytes: 0,
+        limitBytes,
+        usageBytes: usageTotals.usageBytes,
+      };
+    }
+
+    const inventory = await this.createStorageInventory(root);
+    const selection = selectRecordingStorageCleanupCandidates({
+      inventory,
       limitBytes,
-      ...(options.protectedDirectories
-        ? { protectedDirectories: options.protectedDirectories }
-        : {}),
-      ...(options.protectedPaths
-        ? { protectedPaths: options.protectedPaths }
-        : {}),
+      options,
     });
 
     if (selection.files.length === 0) {
@@ -504,52 +831,102 @@ class RecordingStorageService {
         limitBytes,
       });
 
-      return {
+      const result = {
         deletedCount: 0,
         freedBytes: 0,
         limitBytes,
         usageBytes: selection.usageBytes,
       };
+      this.publishUsageChanged(
+        this.createUsageFromInventory(inventory, root),
+        root,
+      );
+
+      return result;
     }
 
     const deletedPaths: string[] = [];
-    let actualFreedBytes = 0;
-    for (const file of selection.files) {
-      try {
-        const recording = this.repository.getItemByPath(file.path);
-        unlinkSync(file.path);
-        deletedPaths.push(file.path);
-        actualFreedBytes += file.size;
-        if (recording) {
-          BookmarksService.getInstance().archiveRecordingLinks(recording);
-        }
-        this.repository.updateFileState(file.path, {
-          exists: false,
-          sizeBytes: 0,
-        });
-        removeEmptyParentDirectories(file.path, root);
-      } catch (error) {
-        logWarn(
-          RECORDING_STORAGE_LOG_SCOPE,
-          "Failed to delete recording file",
-          {
-            ...createSafePathLogFields(file.path, "recording"),
-            error: safeErrorMessage(error),
-          },
-        );
+    const changedRecordingIds: string[] = [];
+    let cursor = 0;
+    let freedClipBytes = 0;
+    let freedRecordingBytes = 0;
+    let deletedItemCount = 0;
+    let recordingUsageReductionBytes = 0;
+    let remainingUsageBytes = selection.usageBytes;
+
+    while (
+      remainingUsageBytes > selection.targetUsageBytes &&
+      cursor < selection.files.length
+    ) {
+      const batch: typeof selection.files = [];
+      let projectedUsageBytes = remainingUsageBytes;
+      while (
+        projectedUsageBytes > selection.targetUsageBytes &&
+        cursor < selection.files.length
+      ) {
+        const candidate = selection.files[cursor++]!;
+        batch.push(candidate);
+        projectedUsageBytes -= candidate.size;
       }
+
+      let batchUsageReductionBytes = 0;
+      for (const file of batch) {
+        if (file.kind === "clip") {
+          continue;
+        }
+
+        const result = await this.deleteRecordingForRetention(file, root);
+        deletedPaths.push(...result.deletedPaths);
+        freedRecordingBytes += result.freedBytes;
+        recordingUsageReductionBytes += result.usageReductionBytes;
+        batchUsageReductionBytes += result.usageReductionBytes;
+        if (result.recordingId) {
+          changedRecordingIds.push(result.recordingId);
+          deletedItemCount += 1;
+        }
+      }
+
+      const selectedClipIdGroups = batch.flatMap((file) =>
+        file.kind === "clip" ? [file.clipIds] : [],
+      );
+      const clipCleanup = await this.deleteReplayClipsForRetention(
+        selectedClipIdGroups,
+        root,
+      );
+      deletedPaths.push(...clipCleanup.deletedPaths);
+      freedClipBytes += clipCleanup.freedBytes;
+      deletedItemCount += clipCleanup.deletedIds.length;
+      batchUsageReductionBytes += clipCleanup.freedBytes;
+      remainingUsageBytes = Math.max(
+        0,
+        remainingUsageBytes - batchUsageReductionBytes,
+      );
     }
 
-    const deletedClipRows = this.deleteMissingReplayClipRows();
-    this.invalidateRecordingLibrarySyncCache();
+    const actualFreedBytes = freedRecordingBytes + freedClipBytes;
+    this.recordingLibrarySyncCache = null;
+    const usage = this.createUsage(
+      root,
+      Math.max(0, inventory.clipsSizeBytes - freedClipBytes),
+      Math.max(0, inventory.recordingsSizeBytes - recordingUsageReductionBytes),
+    );
+    this.publishUsageChanged(usage, root);
+    this.publishRecordingsChanged(changedRecordingIds);
     logInfo(RECORDING_STORAGE_LOG_SCOPE, "Storage cleanup completed", {
       deletedCount: deletedPaths.length,
-      deletedClipRows,
       freedBytes: actualFreedBytes,
       usageBytes: selection.usageBytes,
       limitBytes,
       targetUsageBytes: selection.targetUsageBytes,
     });
+
+    if (
+      remainingUsageBytes > selection.targetUsageBytes &&
+      selection.hasMoreCandidates &&
+      (remainingUsageBytes < selection.usageBytes || deletedItemCount > 0)
+    ) {
+      setTimeout(() => void this.cleanup(options), 0);
+    }
 
     return {
       deletedCount: deletedPaths.length,
@@ -559,262 +936,138 @@ class RecordingStorageService {
     };
   }
 
-  private setupHandlers(): void {
-    registerGuardedIpcHandler(
-      RecordingStorageChannel.GetRecording,
-      [WindowName.Main],
-      (_event, id: unknown) => {
-        try {
-          assertString(
-            id,
-            "recording id",
-            RecordingStorageChannel.GetRecording,
-            {
-              min: 1,
-              max: 2_048,
-            },
-          );
+  private async deleteRecordingForRetention(
+    file: Extract<
+      RecordingStorageCleanupSelection["files"][number],
+      { kind: "recording" }
+    >,
+    root: string,
+  ): Promise<{
+    deletedPaths: string[];
+    freedBytes: number;
+    recordingId: string | null;
+    usageReductionBytes: number;
+  }> {
+    const recording = this.repository.getItemByPath(file.path);
+    try {
+      if (this.replayClipsRepository.hasStoragePath(file.path)) {
+        return {
+          deletedPaths: [],
+          freedBytes: 0,
+          recordingId: null,
+          usageReductionBytes: 0,
+        };
+      }
+      const fileStats = await stat(file.path);
+      if (!fileStats.isFile()) {
+        throw new Error("Recording storage path is not a file");
+      }
+      const stagedFiles = await stageFilesForDeletion(root, [
+        { path: file.path, size: fileStats.size },
+      ]);
 
-          return this.getRecording(id);
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      RecordingStorageChannel.GetUsage,
-      [WindowName.Main],
-      () => this.getUsage(),
-    );
-    registerGuardedIpcHandler(
-      RecordingStorageChannel.ListRecordings,
-      [WindowName.Main],
-      () => this.listRecordings(),
-    );
-    registerGuardedIpcHandler(
-      RecordingStorageChannel.ListRecordingLibrary,
-      [WindowName.Main],
-      (_event, query: unknown) => {
-        try {
-          return this.listRecordingLibrary(
-            this.validateRecordingLibraryQuery(query),
-          );
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      RecordingStorageChannel.OpenRecording,
-      [WindowName.Main],
-      (_event, path: unknown) => {
-        try {
-          assertString(
-            path,
-            "recording path",
-            RecordingStorageChannel.OpenRecording,
-            { min: 1, max: 2_048 },
-          );
+      try {
+        this.database.transaction(() => {
+          if (this.replayClipsRepository.hasStoragePath(file.path)) {
+            throw new Error(
+              "Recording storage references changed during retention cleanup",
+            );
+          }
+          if (recording) {
+            BookmarksService.getInstance().archiveRecordingLinks(recording);
+          }
+          this.repository.updateFileState(file.path, {
+            exists: false,
+            sizeBytes: 0,
+          });
+          this.fileDeletions.markCommitted(stagedFiles, root);
+        });
+      } catch (error) {
+        await rollbackStagedFileDeletions(stagedFiles);
+        throw error;
+      }
 
-          return this.openRecording(path);
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      RecordingStorageChannel.RevealRecording,
-      [WindowName.Main],
-      (_event, path: unknown) => {
-        try {
-          assertString(
-            path,
-            "recording path",
-            RecordingStorageChannel.RevealRecording,
-            { min: 1, max: 2_048 },
-          );
+      const cleanup = await this.fileDeletions.finalize(stagedFiles);
+      if (cleanup.failed.length > 0) {
+        logWarn(
+          RECORDING_STORAGE_LOG_SCOPE,
+          "Failed to finalize staged recording deletion",
+          createSafePathLogFields(file.path, "recording"),
+        );
+      } else {
+        removeEmptyParentDirectories(file.path, root);
+      }
 
-          return this.revealRecording(path);
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      RecordingStorageChannel.CopyRecording,
-      [WindowName.Main],
-      (_event, path: unknown) => {
-        try {
-          assertString(
-            path,
-            "recording path",
-            RecordingStorageChannel.CopyRecording,
-            { min: 1, max: 2_048 },
-          );
+      return {
+        deletedPaths: cleanup.deletedPaths,
+        freedBytes: cleanup.freedBytes,
+        recordingId: recording?.id ?? null,
+        usageReductionBytes:
+          cleanup.failed.length === 0 ? Math.max(0, file.size) : 0,
+      };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        this.database.transaction(() => {
+          if (recording) {
+            BookmarksService.getInstance().archiveRecordingLinks(recording);
+          }
+          this.repository.updateFileState(file.path, {
+            exists: false,
+            sizeBytes: 0,
+          });
+        });
+        return {
+          deletedPaths: [],
+          freedBytes: 0,
+          recordingId: recording?.id ?? null,
+          usageReductionBytes: Math.max(0, file.size),
+        };
+      }
 
-          return this.copyRecordingToClipboard(path);
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      RecordingStorageChannel.DeleteRecording,
-      [WindowName.Main],
-      (_event, path: unknown) => {
-        try {
-          assertString(
-            path,
-            "recording path",
-            RecordingStorageChannel.DeleteRecording,
-            { min: 1, max: 2_048 },
-          );
-
-          return this.deleteRecording(path);
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
-    registerGuardedIpcHandler(
-      RecordingStorageChannel.DeleteManyRecordings,
-      [WindowName.Main],
-      (_event, paths: unknown) => {
-        try {
-          return this.deleteManyRecordings(
-            this.validateRecordingPathList(paths),
-          );
-        } catch (error) {
-          return handleValidationError(error);
-        }
-      },
-    );
+      logWarn(RECORDING_STORAGE_LOG_SCOPE, "Failed to delete recording file", {
+        ...createSafePathLogFields(file.path, "recording"),
+        error: safeErrorMessage(error),
+      });
+      return {
+        deletedPaths: [],
+        freedBytes: 0,
+        recordingId: null,
+        usageReductionBytes: 0,
+      };
+    }
   }
 
-  private validateRecordingLibraryQuery(
-    value: unknown,
-  ): RunRecordingLibraryQuery {
-    if (value === undefined) {
-      return {};
+  private async deleteReplayClipsForRetention(
+    idGroups: string[][],
+    root: string,
+  ): Promise<ReplayClipRetentionCleanupResult> {
+    if (idGroups.length === 0) {
+      return {
+        deletedIds: [],
+        deletedPaths: [],
+        failed: [],
+        freedBytes: 0,
+      };
+    }
+    if (!this.replayClipRetentionCleanupHandler) {
+      const failed = idGroups.flat().map((id) => ({
+        id,
+        error: "Replay clip retention handler is unavailable",
+      }));
+      logWarn(
+        RECORDING_STORAGE_LOG_SCOPE,
+        "Replay clip retention cleanup skipped",
+        { failedCount: failed.length },
+      );
+      return {
+        deletedIds: [],
+        deletedPaths: [],
+        failed,
+        freedBytes: 0,
+      };
     }
 
-    assertObject(
-      value,
-      "recording library query",
-      RecordingStorageChannel.ListRecordingLibrary,
-    );
-    const query: RunRecordingLibraryQuery = {};
-    if (value.game !== undefined) {
-      assertString(
-        value.game,
-        "game",
-        RecordingStorageChannel.ListRecordingLibrary,
-        {
-          min: 1,
-          max: 16,
-        },
-      );
-      const game = GameIdSchema.safeParse(value.game);
-      if (!game.success) {
-        throw new IpcValidationError(
-          RecordingStorageChannel.ListRecordingLibrary,
-          "game is invalid",
-        );
-      }
-      query.game = game.data;
-    }
-    if (value.league !== undefined) {
-      assertString(
-        value.league,
-        "league",
-        RecordingStorageChannel.ListRecordingLibrary,
-        { min: 1, max: 80 },
-      );
-      query.league = value.league;
-    }
-    if (value.pageIndex !== undefined) {
-      assertNumber(
-        value.pageIndex,
-        "page index",
-        RecordingStorageChannel.ListRecordingLibrary,
-        { integer: true, min: 0, max: 10_000 },
-      );
-      query.pageIndex = value.pageIndex;
-    }
-    if (value.pageSize !== undefined) {
-      assertNumber(
-        value.pageSize,
-        "page size",
-        RecordingStorageChannel.ListRecordingLibrary,
-        { integer: true, min: 1, max: maxLibraryPageSize },
-      );
-      query.pageSize = value.pageSize;
-    }
-    if (value.sortBy !== undefined) {
-      assertString(
-        value.sortBy,
-        "sort field",
-        RecordingStorageChannel.ListRecordingLibrary,
-        { min: 1, max: 32 },
-      );
-      if (
-        !librarySortKeys.includes(value.sortBy as RunRecordingLibrarySortKey)
-      ) {
-        throw new IpcValidationError(
-          RecordingStorageChannel.ListRecordingLibrary,
-          "sort field is invalid",
-        );
-      }
-      query.sortBy = value.sortBy as RunRecordingLibrarySortKey;
-    }
-    if (value.sortDirection !== undefined) {
-      assertString(
-        value.sortDirection,
-        "sort direction",
-        RecordingStorageChannel.ListRecordingLibrary,
-        { min: 1, max: 8 },
-      );
-      if (
-        !librarySortDirections.includes(
-          value.sortDirection as RunRecordingLibrarySortDirection,
-        )
-      ) {
-        throw new IpcValidationError(
-          RecordingStorageChannel.ListRecordingLibrary,
-          "sort direction is invalid",
-        );
-      }
-      query.sortDirection =
-        value.sortDirection as RunRecordingLibrarySortDirection;
-    }
-
-    return query;
-  }
-
-  private validateRecordingPathList(value: unknown): string[] {
-    if (!Array.isArray(value)) {
-      throw new IpcValidationError(
-        RecordingStorageChannel.DeleteManyRecordings,
-        "recording paths must be an array",
-      );
-    }
-    if (value.length > 100) {
-      throw new IpcValidationError(
-        RecordingStorageChannel.DeleteManyRecordings,
-        "recording paths is too large",
-      );
-    }
-
-    return value.map((path) => {
-      assertString(
-        path,
-        "recording path",
-        RecordingStorageChannel.DeleteManyRecordings,
-        { min: 1, max: 2_048 },
-      );
-
-      return path;
-    });
+    return this.replayClipRetentionCleanupHandler(idGroups, root);
   }
 
   private normalizeLibraryQuery(
@@ -860,7 +1113,8 @@ class RecordingStorageService {
     const resolvedPath = resolve(path);
     if (
       !isPathInsideOrEqual(root, resolvedPath) ||
-      !isManagedRecordingFilePath(root, resolvedPath)
+      !isManagedRecordingFilePath(root, resolvedPath) ||
+      (existsSync(resolvedPath) && !isRealPathInsideOrEqual(root, resolvedPath))
     ) {
       return null;
     }
@@ -884,7 +1138,8 @@ class RecordingStorageService {
           (path): path is string => typeof path === "string" && path.length > 0,
         )
         .map((path) => resolve(path))
-        .filter((path) => existsSync(path)),
+        .filter((path) => existsSync(path))
+        .map(createStoragePathKey),
     );
   }
 
@@ -915,10 +1170,251 @@ class RecordingStorageService {
     return resolveRecordingStorageRoot(configuredPath, app.getPath("videos"));
   }
 
+  private async createStorageInventory(
+    root: string,
+  ): Promise<RecordingStorageInventory> {
+    const [clips, recordings, stagedDeletionSizeBytes] = await Promise.all([
+      this.loadStorageEntries(
+        (after: { createdAt: string; id: string } | null, limit) =>
+          this.replayClipsRepository.listStorageEntriesPage(after, limit),
+        (entry) => ({ createdAt: entry.createdAt, id: entry.id }),
+      ),
+      this.loadStorageEntries(
+        (after: { mtimeMs: number; path: string } | null, limit) =>
+          this.repository.listStorageEntriesPage(after, limit),
+        (entry) => ({ mtimeMs: entry.mtimeMs, path: entry.path }),
+      ),
+      getStagedFileDeletionTrashSize(root),
+    ]);
+    const inventory = await createRecordingStorageInventory({
+      clips,
+      recordings,
+      root,
+    });
+
+    return {
+      ...inventory,
+      recordingsSizeBytes:
+        inventory.recordingsSizeBytes + stagedDeletionSizeBytes,
+      usageBytes: inventory.usageBytes + stagedDeletionSizeBytes,
+    };
+  }
+
+  private scheduleStagedDeletionRecovery(root: string): void {
+    this.pendingStagedDeletionRecoveryRoots.add(resolve(root));
+    this.schedulePendingStagedDeletionRecovery();
+  }
+
+  private schedulePendingStagedDeletionRecovery(
+    delayMs = storageMaintenanceStartDelayMs,
+  ): void {
+    if (
+      RecordingStorageService.performanceSensitiveActivityActive ||
+      this.stagedDeletionRecoveryTimer ||
+      this.stagedDeletionRecoveryRequest ||
+      this.pendingStagedDeletionRecoveryRoots.size === 0
+    ) {
+      return;
+    }
+
+    this.stagedDeletionRecoveryTimer = setTimeout(() => {
+      this.stagedDeletionRecoveryTimer = null;
+      this.runNextStagedDeletionRecovery();
+    }, delayMs);
+    this.stagedDeletionRecoveryTimer.unref?.();
+  }
+
+  private runNextStagedDeletionRecovery(): void {
+    if (
+      RecordingStorageService.performanceSensitiveActivityActive ||
+      this.stagedDeletionRecoveryRequest
+    ) {
+      return;
+    }
+    const pendingRoot = this.pendingStagedDeletionRecoveryRoots
+      .values()
+      .next().value;
+    if (!pendingRoot) {
+      return;
+    }
+    this.pendingStagedDeletionRecoveryRoots.delete(pendingRoot);
+
+    const promise = recoverRecordingStorageDeletions({
+      fileDeletions: this.fileDeletions,
+      root: pendingRoot,
+    });
+    this.stagedDeletionRecoveryRequest = { promise, root: pendingRoot };
+    const finish = () => {
+      /* v8 ignore next -- Only the recovery promise stored immediately above can settle this closure. */
+      if (this.stagedDeletionRecoveryRequest?.promise === promise) {
+        this.stagedDeletionRecoveryRequest = null;
+      }
+      this.schedulePendingStagedDeletionRecovery(
+        storageMaintenanceContinuationDelayMs,
+      );
+    };
+    void promise.then(
+      (result) => {
+        if (result.hasMore) {
+          this.pendingStagedDeletionRecoveryRoots.add(pendingRoot);
+        }
+        finish();
+      },
+      (error) => {
+        logWarn(
+          RECORDING_STORAGE_LOG_SCOPE,
+          "Storage deletion recovery failed",
+          {
+            error: safeErrorMessage(error),
+          },
+        );
+        finish();
+      },
+    );
+  }
+
+  private clearStagedDeletionRecoveryTimer(): void {
+    if (!this.stagedDeletionRecoveryTimer) {
+      return;
+    }
+    clearTimeout(this.stagedDeletionRecoveryTimer);
+    this.stagedDeletionRecoveryTimer = null;
+  }
+
+  private handlePerformanceSensitiveActivity(active: boolean): void {
+    this.cleanupScheduler.setPerformanceSensitiveActivityActive(active);
+    if (active) {
+      this.clearStagedDeletionRecoveryTimer();
+      return;
+    }
+    this.schedulePendingStagedDeletionRecovery();
+  }
+
+  private async loadStorageEntries<T, TCursor>(
+    loadPage: (after: TCursor | null, limit: number) => T[],
+    createCursor: (entry: T) => TCursor,
+  ): Promise<T[]> {
+    const entries: T[] = [];
+    let cursor: TCursor | null = null;
+    for (;;) {
+      await yieldToEventLoop();
+      const page = loadPage(cursor, storageInventoryPageSize);
+      entries.push(...page);
+      if (page.length < storageInventoryPageSize) {
+        return entries;
+      }
+      cursor = createCursor(page.at(-1)!);
+    }
+  }
+
+  private createUsageFromInventory(
+    inventory: RecordingStorageInventory,
+    root: string,
+  ): RecordingStorageUsage {
+    return this.createUsage(
+      root,
+      inventory.clipsSizeBytes,
+      inventory.recordingsSizeBytes,
+    );
+  }
+
+  private createUsage(
+    root: string,
+    clipsSizeBytes: number,
+    recordingsSizeBytes: number,
+  ): RecordingStorageUsage {
+    const disk = calculateDiskUsage(root);
+
+    return {
+      clipsSizeBytes,
+      diskFreeBytes: disk.freeBytes,
+      lowDiskSpace:
+        disk.freeBytes > 0 &&
+        disk.freeBytes < lowDiskSpaceWarningThresholdBytes,
+      recordingsSizeBytes,
+    };
+  }
+
+  private handleStorageSettingsChanged(
+    settings: ReturnType<SettingsStoreService["get"]>,
+  ): void {
+    const next = {
+      limitGigabytes: settings.recordingMaxStorageGb,
+      root: this.resolveStorageRoot(settings.recordingStoragePath),
+    };
+    const previous = this.previousStorageSettings;
+    this.previousStorageSettings = next;
+    /* v8 ignore next -- The constructor initializes the previous snapshot before subscribing to settings changes. */
+    if (!previous) {
+      return;
+    }
+
+    const rootChanged = previous.root !== next.root;
+    const limitReduced =
+      next.limitGigabytes > 0 &&
+      (previous.limitGigabytes === 0 ||
+        next.limitGigabytes < previous.limitGigabytes);
+    if (rootChanged) {
+      this.invalidateRecordingLibrarySyncCache();
+      this.scheduleStagedDeletionRecovery(previous.root);
+    }
+    if (rootChanged || limitReduced) {
+      this.scheduleCleanup({ force: true });
+      this.scheduleStagedDeletionRecovery(next.root);
+    }
+  }
+
+  private invalidateUsageCache(): void {
+    this.usageGeneration += 1;
+    this.usageCache = null;
+    this.usageRequest = null;
+  }
+
+  private getCleanupSchedulerSnapshot(): {
+    cachedUsageBytes: number | null;
+    limitBytes: number;
+  } {
+    const settings = SettingsStoreService.getInstance().get();
+    const root = this.resolveStorageRoot(settings.recordingStoragePath);
+    const cachedUsage =
+      this.usageCache?.root === root ? this.usageCache.usage : null;
+
+    return {
+      cachedUsageBytes: cachedUsage
+        ? cachedUsage.clipsSizeBytes + cachedUsage.recordingsSizeBytes
+        : null,
+      limitBytes: settings.recordingMaxStorageGb * bytesPerGigabyte,
+    };
+  }
+
+  private getMainWindows(): Electron.BrowserWindow[] {
+    try {
+      const getAllWindows = BrowserWindow?.getAllWindows;
+      /* v8 ignore next -- Electron's BrowserWindow export always provides getAllWindows; this guards partial test/runtime shims. */
+      if (typeof getAllWindows !== "function") {
+        return [];
+      }
+
+      return getAllWindows
+        .call(BrowserWindow)
+        .filter(
+          (window) =>
+            !window.isDestroyed() &&
+            getIpcWindowRole({ sender: window.webContents }) ===
+              WindowName.Main,
+        );
+    } catch {
+      return [];
+    }
+  }
+
   private syncRecordingLibrary(
     root: string,
     settings: ReturnType<SettingsStoreService["get"]>,
-  ): void {
+  ): boolean {
+    if (RecordingStorageService.performanceSensitiveActivityActive) {
+      return false;
+    }
     const settingsKey = `${settings.activeGame}:${settings.activeLeague}`;
     const now = Date.now();
     if (
@@ -927,7 +1423,7 @@ class RecordingStorageService {
       now - this.recordingLibrarySyncCache.syncedAtMs <
         recordingLibrarySyncCacheMs
     ) {
-      return;
+      return false;
     }
 
     this.ensureStorageRoot(root);
@@ -935,17 +1431,19 @@ class RecordingStorageService {
     const metadataByPath = new Map(
       this.repository
         .listRunRecordingSyncItems()
-        .map((recording) => [resolve(recording.path), recording]),
+        .map((recording) => [createStoragePathKey(recording.path), recording]),
     );
     const seenRecordingPaths = new Set<string>();
+    let didMutate = false;
 
     for (const file of collectRecordingFiles(root)) {
       if (!this.isRunRecordingLibraryPath(file.path, root, clipPaths)) {
         continue;
       }
 
-      seenRecordingPaths.add(file.path);
-      const existing = metadataByPath.get(file.path);
+      const filePathKey = createStoragePathKey(file.path);
+      seenRecordingPaths.add(filePathKey);
+      const existing = metadataByPath.get(filePathKey);
       if (existing) {
         const fileChanged =
           !existing.exists ||
@@ -1003,6 +1501,7 @@ class RecordingStorageService {
             mtimeMs: file.mtimeMs,
             sizeBytes: file.size,
           });
+          didMutate = true;
         }
         continue;
       }
@@ -1029,11 +1528,12 @@ class RecordingStorageService {
         mtimeMs: file.mtimeMs,
         sizeBytes: file.size,
       });
+      didMutate = true;
     }
 
     for (const metadata of metadataByPath.values()) {
       const path = resolve(metadata.path);
-      if (seenRecordingPaths.has(path)) {
+      if (seenRecordingPaths.has(createStoragePathKey(path))) {
         continue;
       }
 
@@ -1044,6 +1544,7 @@ class RecordingStorageService {
           BookmarksService.getInstance().archiveRecordingLinks(recording);
         }
         this.repository.updateFileState(path, { exists: false, sizeBytes: 0 });
+        didMutate = true;
       }
     }
 
@@ -1052,10 +1553,15 @@ class RecordingStorageService {
       settingsKey,
       syncedAtMs: now,
     };
+    if (didMutate) {
+      this.invalidateUsageCache();
+    }
+    return didMutate;
   }
 
   private invalidateRecordingLibrarySyncCache(): void {
     this.recordingLibrarySyncCache = null;
+    this.invalidateUsageCache();
   }
 
   private isRunRecordingLibraryPath(
@@ -1066,7 +1572,7 @@ class RecordingStorageService {
     const resolvedPath = resolve(path);
 
     return (
-      !clipPaths.has(resolvedPath) &&
+      !clipPaths.has(createStoragePathKey(resolvedPath)) &&
       !isPathInsideOrEqual(
         resolveRecordingStorageMediaDirectory(root, "deathClips"),
         resolvedPath,
@@ -1151,27 +1657,26 @@ class RecordingStorageService {
       return { mtimeMs: 0, sizeBytes: 0 };
     }
   }
-
-  private deleteMissingReplayClipRows(): number {
-    let deletedRows = 0;
-    for (const clip of this.replayClipsRepository.listStoragePaths()) {
-      const paths = [clip.processedClipPath, clip.originalObsPath].filter(
-        (path): path is string => typeof path === "string" && path.length > 0,
-      );
-      if (paths.length === 0 || paths.some((path) => existsSync(path))) {
-        continue;
-      }
-
-      this.replayClipsRepository.delete(clip.id);
-      deletedRows += 1;
-    }
-
-    return deletedRows;
-  }
 }
 
-export type { RecordingStorageCleanupOptions, RecordingStorageCleanupResult };
 export { RecordingStorageService };
+
+function yieldToEventLoop(): Promise<void> {
+  return new Promise((resolvePromise) => setImmediate(resolvePromise));
+}
+
+function createCleanupRequestKey(
+  options: RecordingStorageCleanupOptions,
+): string {
+  const directories = [...(options.protectedDirectories ?? [])]
+    .map(createStoragePathKey)
+    .sort();
+  const paths = [...(options.protectedPaths ?? [])]
+    .map(createStoragePathKey)
+    .sort();
+
+  return JSON.stringify({ directories, paths });
+}
 
 function areRecordingDurationsEqual(
   first: number | null,

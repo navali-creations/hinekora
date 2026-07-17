@@ -742,7 +742,7 @@ describe("BookmarksService", () => {
       expect.objectContaining({ bookmarkCount: 1, clipCount: 1 }),
     );
 
-    service.deleteReplayClipLinks("death-clip");
+    service.deleteReplayClipLinksMany(["death-clip", "missing-clip"]);
 
     expect(service.listActivitySessionTimeline(session.id)?.clips).toEqual([]);
     expect(

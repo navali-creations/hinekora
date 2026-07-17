@@ -2,15 +2,17 @@ import UpdateIndicator from "~/renderer/modules/updater/UpdateIndicator/UpdateIn
 
 import { AppHelpMenu } from "../AppHelpMenu/AppHelpMenu";
 import { AppRecorderOverlayToggle } from "../AppRecorderOverlayToggle/AppRecorderOverlayToggle";
+import { AppStorageUsageMeter } from "../AppStorageUsageMeter/AppStorageUsageMeter";
 import { AppWindowControls } from "../AppWindowControls/AppWindowControls";
 import DiskSpaceWarning from "../DiskSpaceWarning/DiskSpaceWarning";
 import WhatsNewModal from "../WhatsNewModal/WhatsNewModal";
 
 const AppControls = () => {
   return (
-    <div className="flex gap-0">
+    <div className="flex items-center gap-0">
       <UpdateIndicator />
       <DiskSpaceWarning />
+      <AppStorageUsageMeter />
       <AppRecorderOverlayToggle />
       <AppHelpMenu />
       <AppWindowControls />

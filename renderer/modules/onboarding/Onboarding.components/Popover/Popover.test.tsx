@@ -1,5 +1,5 @@
 import type { PopoverComponentProps } from "@repere/react";
-import { act, type ReactNode } from "react";
+import { act, type ElementType, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -29,10 +29,23 @@ vi.mock("@repere/react", () => {
       </section>
     ),
     {
-      AcknowledgeButton: ({ children, ...props }: { children: ReactNode }) => (
-        <button {...props} type="button" onClick={storeMocks.acknowledge}>
+      AcknowledgeButton: ({
+        as: Component = "button",
+        children,
+        ...props
+      }: {
+        as?: ElementType;
+        children: ReactNode;
+      }) => (
+        <Component
+          {...props}
+          popovertarget="repere-popover"
+          popovertargetaction="hide"
+          type="button"
+          onClick={storeMocks.acknowledge}
+        >
           {children}
-        </button>
+        </Component>
       ),
       Content: ({
         children,

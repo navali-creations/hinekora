@@ -94,6 +94,7 @@ export const useBoundStore = create<BoundStore>()(
         ...updaterSlice,
         ...changelogSlice,
         ...savedEditsSlice,
+        isHydrated: false,
         hydrate: async () => {
           await Promise.all([
             settingsSlice.settings.hydrate(),
@@ -110,6 +111,9 @@ export const useBoundStore = create<BoundStore>()(
             poeProcessSlice.poeProcess.hydrate(),
             clientLogSlice.clientLog.hydrate(),
           ]);
+          args[0]((state) => {
+            state.isHydrated = true;
+          });
         },
         startListeners: () => {
           const unsubscribers = [
@@ -124,6 +128,7 @@ export const useBoundStore = create<BoundStore>()(
             settingsSlice.settings.startListening(),
             clientLogSlice.clientLog.startListening(),
             replayClipsSlice.replayClips.startListening(),
+            recordingStorageSlice.recordingStorage.startListening(),
             updaterSlice.updater.startListening(),
           ];
 

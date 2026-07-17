@@ -34,6 +34,8 @@ import type {
 } from "./Bookmarks.dto";
 import { locationBookmarkCategories } from "./Bookmarks.dto";
 
+const bookmarkDeleteBatchSize = 500;
+
 interface BookmarkRow {
   id: string;
   source_game: GameId;
@@ -863,52 +865,76 @@ class BookmarksRepository {
   }
 
   deleteBookmarksForRecording(recordingId: string): void {
+    this.deleteBookmarksForRecordings([recordingId]);
+  }
+
+  deleteBookmarksForRecordings(recordingIds: string[]): void {
+    if (recordingIds.length === 0) {
+      return;
+    }
     this.database.transaction(() => {
-      const activitySessionIds =
-        this.listActivitySessionIdsForRecordingBookmarks(recordingId);
-      this.database.db
-        .prepare(
-          `
-          DELETE FROM bookmarks
-          WHERE id IN (
-            SELECT bookmark_id
-            FROM bookmark_links
-            WHERE target_kind = 'recording'
-              AND target_id = ?
+      const activitySessionIds: string[] = [];
+      for (const ids of chunkIds(recordingIds)) {
+        activitySessionIds.push(
+          ...this.listActivitySessionIdsForRecordingBookmarks(ids),
+        );
+        const placeholders = ids.map(() => "?").join(", ");
+        this.database.db
+          .prepare(
+            `
+            DELETE FROM bookmarks
+            WHERE id IN (
+              SELECT bookmark_id
+              FROM bookmark_links
+              WHERE target_kind = 'recording'
+                AND target_id IN (${placeholders})
+            )
+          `,
           )
-        `,
-        )
-        .run(recordingId);
+          .run(...ids);
+      }
       this.refreshActivitySessionCounters(activitySessionIds);
     });
   }
 
   deleteReplayClipLinks(replayClipId: string): void {
-    this.database.transaction(() => {
-      const activitySessionIds =
-        this.listActivitySessionIdsForReplayClip(replayClipId);
-      this.database.db
-        .prepare(
-          `
-          DELETE FROM bookmarks
-          WHERE category = 'rewind-manual-replay'
-            AND id IN (
-              SELECT bookmark_id
-              FROM activity_session_clips
-              WHERE target_kind = 'replay-clip'
-                AND target_id = ?
-                AND bookmark_id IS NOT NULL
-            )
-        `,
-        )
-        .run(replayClipId);
+    this.deleteReplayClipLinksMany([replayClipId]);
+  }
 
-      this.database.runQuery(
-        this.database.kysely
-          .deleteFrom("activity_session_clips")
-          .where("target_kind", "=", "replay-clip")
-          .where("target_id", "=", replayClipId),
-      );
+  deleteReplayClipLinksMany(replayClipIds: string[]): void {
+    if (replayClipIds.length === 0) {
+      return;
+    }
+    this.database.transaction(() => {
+      const activitySessionIds: string[] = [];
+      for (const ids of chunkIds(replayClipIds)) {
+        activitySessionIds.push(
+          ...this.listActivitySessionIdsForReplayClips(ids),
+        );
+        const placeholders = ids.map(() => "?").join(", ");
+        this.database.db
+          .prepare(
+            `
+            DELETE FROM bookmarks
+            WHERE category = 'rewind-manual-replay'
+              AND id IN (
+                SELECT bookmark_id
+                FROM activity_session_clips
+                WHERE target_kind = 'replay-clip'
+                  AND target_id IN (${placeholders})
+                  AND bookmark_id IS NOT NULL
+              )
+          `,
+          )
+          .run(...ids);
+
+        this.database.runQuery(
+          this.database.kysely
+            .deleteFrom("activity_session_clips")
+            .where("target_kind", "=", "replay-clip")
+            .where("target_id", "in", ids),
+        );
+      }
       this.refreshActivitySessionCounters(activitySessionIds);
     });
   }
@@ -1194,8 +1220,9 @@ class BookmarksRepository {
   }
 
   private listActivitySessionIdsForRecordingBookmarks(
-    recordingId: string,
+    recordingIds: string[],
   ): string[] {
+    const placeholders = recordingIds.map(() => "?").join(", ");
     const rows = this.database.db
       .prepare(
         `
@@ -1204,23 +1231,25 @@ class BookmarksRepository {
         INNER JOIN bookmark_links AS activity_links
           ON activity_links.bookmark_id = recording_links.bookmark_id
         WHERE recording_links.target_kind = 'recording'
-          AND recording_links.target_id = ?
+          AND recording_links.target_id IN (${placeholders})
           AND activity_links.target_kind = 'activity-session'
       `,
       )
-      .all(recordingId) as Array<{ id: string }>;
+      .all(...recordingIds) as Array<{ id: string }>;
 
     return rows.map((row) => row.id);
   }
 
-  private listActivitySessionIdsForReplayClip(replayClipId: string): string[] {
+  private listActivitySessionIdsForReplayClips(
+    replayClipIds: string[],
+  ): string[] {
     const rows = this.database.queryAll(
       this.database.kysely
         .selectFrom("activity_session_clips")
         .select("activity_session_id")
         .distinct()
         .where("target_kind", "=", "replay-clip")
-        .where("target_id", "=", replayClipId),
+        .where("target_id", "in", replayClipIds),
     ) as Array<{ activity_session_id: string }>;
 
     return rows.map((row) => row.activity_session_id);
@@ -1599,6 +1628,14 @@ class BookmarksRepository {
       .where("bookmark_links.target_id", "=", activitySessionId)
       .where("bookmark_links.archived", "=", 0);
   }
+}
+
+function chunkIds(ids: string[]): string[][] {
+  const chunks: string[][] = [];
+  for (let index = 0; index < ids.length; index += bookmarkDeleteBatchSize) {
+    chunks.push(ids.slice(index, index + bookmarkDeleteBatchSize));
+  }
+  return chunks;
 }
 
 export { BookmarksRepository };

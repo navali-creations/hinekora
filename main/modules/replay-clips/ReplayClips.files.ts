@@ -2,6 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { isManagedRecordingFilePath } from "~/main/modules/recording-storage/RecordingStorage.utils";
+import { isRealPathInsideOrEqual } from "~/main/utils/storage-files";
 
 import type { ReplayClip } from "~/types";
 
@@ -24,11 +25,19 @@ function resolveReplayClipFilePath(
     return null;
   }
 
+  const pathExists = existsSync(resolvedPath);
+  if (
+    pathExists &&
+    !isRealPathInsideOrEqual(options.storageRoot, resolvedPath)
+  ) {
+    return null;
+  }
+
   if (!options.requireExistingFile) {
     return resolvedPath;
   }
 
-  if (!existsSync(resolvedPath)) {
+  if (!pathExists) {
     return null;
   }
 
@@ -44,6 +53,7 @@ function resolveReplayClipFilePath(
 
     return resolvedPath;
   } catch {
+    /* v8 ignore next -- The file can only disappear between existsSync and statSync in a host filesystem race. */
     return null;
   }
 }

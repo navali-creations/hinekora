@@ -118,7 +118,9 @@ describe("ReplayClipsService replay-trigger workflow", () => {
       showClipPreviewOverlay: vi.fn(),
     } as unknown as OverlayWindowsService);
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
-      cleanup: vi.fn(),
+      noteReplayClipUsageChange: vi.fn(),
+      scheduleCleanup: vi.fn(),
+      publishUsageChanged: vi.fn(),
     } as unknown as RecordingStorageService);
 
     const first = service.saveManualReplay();
@@ -488,7 +490,9 @@ describe("ReplayClipsService replay-trigger workflow", () => {
       showClipPreviewOverlay: vi.fn(),
     } as unknown as OverlayWindowsService);
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
-      cleanup: vi.fn(),
+      noteReplayClipUsageChange: vi.fn(),
+      scheduleCleanup: vi.fn(),
+      publishUsageChanged: vi.fn(),
     } as unknown as RecordingStorageService);
 
     await expect(
@@ -560,8 +564,11 @@ describe("ReplayClipsService replay-trigger workflow", () => {
     vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
       showClipPreviewOverlay,
     } as unknown as OverlayWindowsService);
+    const noteReplayClipUsageChange = vi.fn();
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
-      cleanup,
+      noteReplayClipUsageChange,
+      scheduleCleanup: cleanup,
+      publishUsageChanged: vi.fn(),
     } as unknown as RecordingStorageService);
 
     const event = {
@@ -604,7 +611,14 @@ describe("ReplayClipsService replay-trigger workflow", () => {
       status: "ready",
     });
     expect(cleanup).toHaveBeenCalledWith({
+      estimatedAddedBytes: 5,
+      force: false,
+      usageAlreadyAccounted: true,
       protectedPaths: [resolve(replayPath), resolve(replayPath)],
     });
+    expect(noteReplayClipUsageChange).toHaveBeenCalledWith(
+      expect.objectContaining({ sizeBytes: 0 }),
+      expect.objectContaining({ sizeBytes: 5 }),
+    );
   });
 });

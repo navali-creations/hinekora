@@ -8,9 +8,12 @@ import type {
   RecordingStorageFileActionResult,
   RecordingStorageUsage,
   RunRecordingDetail,
-  RunRecordingItem,
   RunRecordingLibraryPage,
   RunRecordingLibraryQuery,
+} from "./RecordingStorage.dto";
+import {
+  RecordingStorageChangedIdsSchema,
+  RecordingStorageUsageSchema,
 } from "./RecordingStorage.dto";
 
 const RecordingStorageAPI = {
@@ -19,9 +22,46 @@ const RecordingStorageAPI = {
       .invoke(RecordingStorageChannel.GetRecording, id)
       .then(unwrapIpcResult),
   getUsage: (): Promise<RecordingStorageUsage> =>
-    ipcRenderer.invoke(RecordingStorageChannel.GetUsage),
-  listRecordings: (): Promise<RunRecordingItem[]> =>
-    ipcRenderer.invoke(RecordingStorageChannel.ListRecordings),
+    ipcRenderer
+      .invoke(RecordingStorageChannel.GetUsage)
+      .then(unwrapIpcResult)
+      .then((usage) => RecordingStorageUsageSchema.parse(usage)),
+  onUsageChanged: (
+    callback: (usage: RecordingStorageUsage) => void,
+  ): (() => void) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      usage: RecordingStorageUsage,
+    ) => {
+      const parsedUsage = RecordingStorageUsageSchema.safeParse(usage);
+      if (parsedUsage.success) {
+        callback(parsedUsage.data);
+      }
+    };
+
+    ipcRenderer.on(RecordingStorageChannel.UsageChanged, listener);
+
+    return () =>
+      ipcRenderer.removeListener(
+        RecordingStorageChannel.UsageChanged,
+        listener,
+      );
+  },
+  onRecordingsChanged: (callback: (ids: string[]) => void): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, ids: unknown) => {
+      const parsedIds = RecordingStorageChangedIdsSchema.safeParse(ids);
+      if (parsedIds.success) {
+        callback(parsedIds.data);
+      }
+    };
+
+    ipcRenderer.on(RecordingStorageChannel.RecordingsChanged, listener);
+    return () =>
+      ipcRenderer.removeListener(
+        RecordingStorageChannel.RecordingsChanged,
+        listener,
+      );
+  },
   listRecordingLibrary: (
     query?: RunRecordingLibraryQuery,
   ): Promise<RunRecordingLibraryPage> =>
