@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DatabaseService } from "~/main/modules/database";
+import { isWindowsOS } from "~/main/utils/platform";
 import {
   getStagedFileDeletionOperationId,
   resetStagedFileDeletionStateForTests,
@@ -38,7 +39,7 @@ describe("StorageFileDeletionService", () => {
     database.transaction(() =>
       service.markCommitted(
         stagedFiles,
-        process.platform === "win32" ? root.toUpperCase() : root,
+        isWindowsOS() ? root.toUpperCase() : root,
       ),
     );
     resetStagedFileDeletionStateForTests();

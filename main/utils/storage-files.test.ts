@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { isWindowsOS } from "./platform";
 import {
   calculateDatabaseSize,
   calculateDiskUsage,
@@ -122,7 +123,7 @@ describe("storage-files utils", () => {
       symlinkSync(
         externalRoot,
         linkedDirectory,
-        process.platform === "win32" ? "junction" : "dir",
+        isWindowsOS() ? "junction" : "dir",
       );
       const linkedFile = join(linkedDirectory, "clip.mp4");
       writeFileSync(join(externalRoot, "clip.mp4"), "clip");

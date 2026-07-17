@@ -7,6 +7,8 @@ import { dirname, join, resolve } from "node:path";
 import ts from "typescript";
 import { afterEach, describe, expect, it } from "vitest";
 
+import { isWindowsOS } from "~/main/utils/platform";
+
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
@@ -17,27 +19,24 @@ afterEach(async () => {
   );
 });
 
-describe.runIf(process.platform === "win32")(
-  "hinekora media Electron integration",
-  () => {
-    it("streams native file ranges through the custom protocol", async () => {
-      const root = await mkdtemp(join(tmpdir(), "hinekora-media-probe-"));
-      temporaryDirectories.push(root);
-      const mediaPath = join(root, "probe.mp4");
-      await writeFile(mediaPath, "0123456789");
-      const mediaModulePath = await transpileMediaModules(root);
-      const result = await runElectronProbe(mediaModulePath, mediaPath);
+describe.runIf(isWindowsOS())("hinekora media Electron integration", () => {
+  it("streams native file ranges through the custom protocol", async () => {
+    const root = await mkdtemp(join(tmpdir(), "hinekora-media-probe-"));
+    temporaryDirectories.push(root);
+    const mediaPath = join(root, "probe.mp4");
+    await writeFile(mediaPath, "0123456789");
+    const mediaModulePath = await transpileMediaModules(root);
+    const result = await runElectronProbe(mediaModulePath, mediaPath);
 
-      expect(result).toEqual({
-        body: "2345",
-        cacheControl: "no-store",
-        contentLength: "4",
-        contentRange: "bytes 2-5/10",
-        status: 206,
-      });
-    }, 20_000);
-  },
-);
+    expect(result).toEqual({
+      body: "2345",
+      cacheControl: "no-store",
+      contentLength: "4",
+      contentRange: "bytes 2-5/10",
+      status: 206,
+    });
+  }, 20_000);
+});
 
 async function transpileMediaModules(outputDirectory: string): Promise<string> {
   const sourceDirectory = resolve("main/modules/media-protocol");

@@ -8,6 +8,7 @@ import { OverlayWindowsService } from "~/main/modules/overlay-windows";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { createReplayClip } from "~/main/test/factories/replayClip";
+import { isWindowsOS } from "~/main/utils/platform";
 
 import { createDefaultSettings } from "~/types";
 import { ReplayClipsChannel } from "../ReplayClips.channels";
@@ -855,8 +856,11 @@ describe("ReplayClipsService file actions", () => {
     ).rejects.toThrow("Replay clip storage path is not a file");
   });
 
-  it("deletes case-insensitive shared clip paths once during retention", async () => {
+  it("deletes shared clip paths once using host casing semantics during retention", async () => {
     const sharedPath = join(root, "2026-06-12_10-30-00.mp4");
+    const sharedPathAlias = isWindowsOS()
+      ? sharedPath.toUpperCase()
+      : sharedPath;
     writeFileSync(sharedPath, "video");
     repository.upsert(
       createReplayClip({ id: "clip-1", processedClipPath: sharedPath }),
@@ -864,7 +868,7 @@ describe("ReplayClipsService file actions", () => {
     repository.upsert(
       createReplayClip({
         id: "clip-2",
-        originalObsPath: sharedPath.toUpperCase(),
+        originalObsPath: sharedPathAlias,
         processedClipPath: null,
       }),
     );
@@ -896,10 +900,10 @@ describe("ReplayClipsService file actions", () => {
 
     expect(referenceCounts.size).toBe(0);
     expect(
-      storageService.resolveClipFilePath(sharedPath.toUpperCase(), {
+      storageService.resolveClipFilePath(sharedPathAlias, {
         requireExistingFile: false,
       }),
-    ).toBe(sharedPath.toUpperCase());
+    ).toBe(sharedPathAlias);
 
     await expect(
       fileActions.deleteClipGroupsForRetention([["clip-1", "clip-2"]], root),

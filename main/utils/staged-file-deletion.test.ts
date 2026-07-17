@@ -14,6 +14,7 @@ import { dirname, join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { isWindowsOS } from "./platform";
 import {
   finalizeStagedFileDeletions,
   getStagedFileDeletionTrashSize,
@@ -455,7 +456,7 @@ describe("staged file deletion", () => {
       await symlink(
         externalRoot,
         linkedDirectory,
-        process.platform === "win32" ? "junction" : "dir",
+        isWindowsOS() ? "junction" : "dir",
       );
       const externalPath = join(externalRoot, "clip.mp4");
       await writeFile(externalPath, "clip");
@@ -481,7 +482,7 @@ describe("staged file deletion", () => {
       await symlink(
         externalRoot,
         join(root, ".hinekora-retention-trash"),
-        process.platform === "win32" ? "junction" : "dir",
+        isWindowsOS() ? "junction" : "dir",
       );
 
       await expect(recoverStagedFileDeletions(root)).resolves.toEqual({
@@ -505,7 +506,7 @@ describe("staged file deletion", () => {
       await symlink(
         externalRoot,
         linkedDirectory,
-        process.platform === "win32" ? "junction" : "dir",
+        isWindowsOS() ? "junction" : "dir",
       );
       const trashDirectory = join(root, ".hinekora-retention-trash");
       const operationDirectory = join(trashDirectory, "operation");
@@ -550,7 +551,7 @@ describe("staged file deletion", () => {
       await symlink(
         externalOperationDirectory,
         operationDirectory,
-        process.platform === "win32" ? "junction" : "dir",
+        isWindowsOS() ? "junction" : "dir",
       );
 
       await expect(recoverStagedFileDeletions(root)).resolves.toEqual({

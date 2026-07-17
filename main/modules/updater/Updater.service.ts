@@ -7,6 +7,7 @@ import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { logError, logInfo, logWarn } from "~/main/utils/app-log";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
 import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
+import { isWindowsOS } from "~/main/utils/platform";
 import { resolveDevFile } from "~/main/utils/resolve-dev-path";
 
 import type {
@@ -534,7 +535,7 @@ class UpdaterService {
   // ─── Helpers ──────────────────────────────────────────────────────────
 
   private canUseNativeAutoUpdater(): boolean {
-    if (process.platform !== "win32") {
+    if (!isWindowsOS()) {
       return true;
     }
 

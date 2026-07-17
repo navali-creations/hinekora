@@ -4,6 +4,8 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { isWindowsOS } from "~/main/utils/platform";
+
 import {
   createRecordingStorageInventory,
   selectRecordingStorageCleanupCandidates,
@@ -49,8 +51,11 @@ describe("recording storage retention", () => {
     ]);
   });
 
-  it("groups shared paths case-insensitively and does not double-count recordings", async () => {
+  it("groups shared paths using host casing semantics and does not double-count recordings", async () => {
     const sharedPath = join(root, "Shared.mp4");
+    const sharedPathAlias = isWindowsOS()
+      ? sharedPath.toUpperCase()
+      : sharedPath;
     const inventory = await createRecordingStorageInventory({
       clips: [
         {
@@ -63,12 +68,12 @@ describe("recording storage retention", () => {
         {
           createdAt: "2026-01-02T00:00:00.000Z",
           id: "clip-2",
-          originalObsPath: sharedPath.toUpperCase(),
+          originalObsPath: sharedPathAlias,
           processedClipPath: null,
           sizeBytes: 40,
         },
       ],
-      recordings: [{ mtimeMs: 1, path: sharedPath.toLowerCase(), size: 40 }],
+      recordings: [{ mtimeMs: 1, path: sharedPathAlias, size: 40 }],
       root,
     });
 

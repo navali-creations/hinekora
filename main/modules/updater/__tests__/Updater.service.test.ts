@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { mockIpcMainHandlers } from "~/main/test/ipc";
+import { isWindowsOS } from "~/main/utils/platform";
 
 import { UpdaterChannel } from "../Updater.channels";
 import { UpdaterService } from "../Updater.service";
@@ -839,9 +840,7 @@ Second paragraph
       canUseNativeAutoUpdater(): boolean;
     };
     fsMocks.existsSync.mockReturnValue(false);
-    expect(missingInternals.canUseNativeAutoUpdater()).toBe(
-      process.platform !== "win32",
-    );
+    expect(missingInternals.canUseNativeAutoUpdater()).toBe(!isWindowsOS());
 
     const present = new UpdaterService();
     const presentInternals = present as unknown as {

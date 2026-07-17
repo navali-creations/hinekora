@@ -6,6 +6,8 @@ import { promisify } from "node:util";
 
 import { afterEach, describe, expect, it } from "vitest";
 
+import { isWindowsOS } from "~/main/utils/platform";
+
 import { renderReplayClipQuickTrim } from "../ReplayClips.render";
 
 const execFileAsync = promisify(execFile);
@@ -21,7 +23,7 @@ afterEach(async () => {
   );
 });
 
-describe.runIf(process.platform === "win32")(
+describe.runIf(isWindowsOS())(
   "replay clip preview rendering integration",
   () => {
     it("renders a playable 720p H.264 proxy with the bundled ffmpeg", async () => {

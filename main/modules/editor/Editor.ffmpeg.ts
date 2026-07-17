@@ -15,6 +15,7 @@ import {
 } from "~/main/utils/app-log";
 import { isAsarVirtualPath } from "~/main/utils/asar-path";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
+import { isWindowsOS } from "~/main/utils/platform";
 
 import type { EditorExportResolution } from "./Editor.dto";
 import {
@@ -504,8 +505,7 @@ function resolveNoobsBinaryPath(
   binaryName: "ffmpeg" | "ffprobe",
 ): string | null {
   /* v8 ignore start -- Binary lookup branches depend on OS packaging paths and process.platform. */
-  const executableName =
-    process.platform === "win32" ? `${binaryName}.exe` : binaryName;
+  const executableName = isWindowsOS() ? `${binaryName}.exe` : binaryName;
   const configured = process.env.HINEKORA_FFMPEG_PATH?.trim();
   const configuredPath = configured ? resolve(configured) : null;
   const resourcesPath =

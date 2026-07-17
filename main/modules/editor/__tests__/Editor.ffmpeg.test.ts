@@ -7,6 +7,8 @@ import { join } from "node:path";
 import type { Mock } from "vitest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { isWindowsOS } from "~/main/utils/platform";
+
 import {
   createFfmpegProgressReporter,
   parseFfmpegProgressSeconds,
@@ -218,8 +220,7 @@ describe("probeEditorAudioStream", () => {
   it("skips asar virtual packaged ffmpeg paths", async () => {
     vi.resetModules();
     const directory = mkdtempSync(join(tmpdir(), "hinekora-editor-ffmpeg-"));
-    const executableName =
-      process.platform === "win32" ? "ffmpeg.exe" : "ffmpeg";
+    const executableName = isWindowsOS() ? "ffmpeg.exe" : "ffmpeg";
     const resourcesPath = join(directory, "resources");
     const virtualPath = join(
       resourcesPath,
@@ -343,7 +344,7 @@ describe("probeEditorAudioStream", () => {
     const ffmpegPath = join(directory, "ffmpeg.exe");
     const ffprobePath = join(
       directory,
-      process.platform === "win32" ? "ffprobe.exe" : "ffprobe",
+      isWindowsOS() ? "ffprobe.exe" : "ffprobe",
     );
     const sourcePath = join(directory, "source.mp4");
     const previousFfmpegPath = process.env.HINEKORA_FFMPEG_PATH;
