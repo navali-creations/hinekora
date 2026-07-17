@@ -33,6 +33,7 @@ import {
   resetStagedFileDeletionStateForTests,
   stageFilesForDeletion,
 } from "~/main/utils/staged-file-deletion";
+import * as StorageFiles from "~/main/utils/storage-files";
 
 import { createDefaultSettings } from "~/types";
 import { BookmarksService } from "../../bookmarks";
@@ -656,15 +657,39 @@ describe("RecordingStorageService", () => {
       await import("../RecordingStorage.usage"),
       "calculateRecordingStorageUsage",
     );
+    const calculateDiskUsage = vi
+      .spyOn(StorageFiles, "calculateDiskUsage")
+      .mockReturnValue({ freeBytes: 321, totalBytes: 1_000 });
 
     service.noteUsageDelta("clips", 12);
     service.noteUsageDelta("recordings", 7);
 
     await expect(service.getUsage()).resolves.toMatchObject({
       clipsSizeBytes: 12,
+      diskFreeBytes: 321,
       recordingsSizeBytes: 7,
     });
     expect(calculateUsage).not.toHaveBeenCalled();
+    expect(calculateDiskUsage).toHaveBeenCalledTimes(2);
+  });
+
+  it("distinguishes an unavailable disk probe from zero free space", async () => {
+    const calculateDiskUsage = vi
+      .spyOn(StorageFiles, "calculateDiskUsage")
+      .mockReturnValueOnce({ freeBytes: 0, totalBytes: 0 })
+      .mockReturnValueOnce({ freeBytes: 0, totalBytes: 1_000 });
+
+    await expect(service.getUsage()).resolves.toMatchObject({
+      diskFreeBytes: null,
+      lowDiskSpace: false,
+    });
+
+    service.publishUsageChanged();
+    await expect(service.getUsage()).resolves.toMatchObject({
+      diskFreeBytes: 0,
+      lowDiskSpace: true,
+    });
+    expect(calculateDiskUsage).toHaveBeenCalledTimes(2);
   });
 
   it("keeps shared clip paths and recording ownership counted once", async () => {

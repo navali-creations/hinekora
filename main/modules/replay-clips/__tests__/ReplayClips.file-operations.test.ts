@@ -2,7 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   areReplayClipPathsEqual,
@@ -17,16 +17,28 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await rm(root, { force: true, recursive: true });
+  vi.restoreAllMocks();
 });
 
 describe("commitReplayClipFileUpdate", () => {
-  it("compares replay clip paths case-insensitively", () => {
+  it("compares replay clip path casing using platform semantics", () => {
+    const platform = vi.spyOn(process, "platform", "get");
+
+    platform.mockReturnValue("win32");
     expect(
       areReplayClipPathsEqual(
         join(root, "Replay Clip.mp4"),
         join(root, "replay clip.MP4"),
       ),
     ).toBe(true);
+
+    platform.mockReturnValue("linux");
+    expect(
+      areReplayClipPathsEqual(
+        join(root, "Replay Clip.mp4"),
+        join(root, "replay clip.MP4"),
+      ),
+    ).toBe(false);
     expect(
       areReplayClipPathsEqual(
         join(root, "Replay Clip.mp4"),

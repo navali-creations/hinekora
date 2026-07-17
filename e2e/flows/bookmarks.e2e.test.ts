@@ -4,6 +4,7 @@ import type {
   BookmarkCategory,
   BookmarkLibraryItem,
 } from "../../main/modules/bookmarks";
+import { selectAppBarGame } from "../helpers/appbar-fixture";
 import {
   expectNoUnexpectedDashboardBridgeCalls,
   getDashboardE2ECalls,
@@ -276,7 +277,7 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
       pageIndex: 0,
     });
 
-  await page.getByRole("button", { name: /Path of Exile 1/ }).click();
+  await selectAppBarGame(page, "poe1");
   await expect(page.getByText("Highgate").first()).toBeVisible();
   await expect(page.getByText("Atlas Hideout")).toBeHidden();
   await expect
@@ -287,7 +288,7 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
       league: "Mirage",
       pageIndex: 0,
     });
-  await page.getByRole("button", { name: /Path of Exile 2/ }).click();
+  await selectAppBarGame(page, "poe2");
   await expect(page.getByText("Atlas Hideout").first()).toBeVisible();
 
   await page

@@ -4,7 +4,7 @@ import type { GameId } from "~/types";
 
 const RecordingStorageUsageSchema = z.object({
   clipsSizeBytes: z.number().finite().nonnegative(),
-  diskFreeBytes: z.number().finite().nonnegative(),
+  diskFreeBytes: z.number().finite().nonnegative().nullable(),
   lowDiskSpace: z.boolean(),
   recordingsSizeBytes: z.number().finite().nonnegative(),
 });

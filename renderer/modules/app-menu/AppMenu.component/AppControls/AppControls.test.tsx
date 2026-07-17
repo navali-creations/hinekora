@@ -28,9 +28,6 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("~/renderer/modules/updater/UpdateIndicator/UpdateIndicator", () => ({
   default: () => null,
 }));
-vi.mock("../DiskSpaceWarning/DiskSpaceWarning", () => ({
-  default: () => null,
-}));
 vi.mock("../AppStorageUsageMeter/AppStorageUsageMeter", () => ({
   AppStorageUsageMeter: () => <div data-testid="storage-usage-meter" />,
 }));

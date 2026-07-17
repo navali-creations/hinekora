@@ -11,14 +11,18 @@ import {
 
 import { defaultRecordingMaxStorageGb } from "~/types";
 import {
+  calculateDiskBoundUsagePercentage,
   calculateStorageUsagePercentage,
   formatStorageGigabytes,
 } from "./AppStorageUsageMeter.utils";
 
 const STORAGE_WARNING_PERCENTAGE = 90;
 const STORAGE_USAGE_RETRY_DELAY_MS = 30_000;
+const LOW_DISK_SPACE_TOOLTIP =
+  "Recording drive space is critically low. New recordings and clips may fail unless space is freed.";
 const STORAGE_WARNING_TOOLTIP =
   "Storage is within 10% of its limit. Once full, the oldest recordings and clips will be deleted and replaced by new recordings and clips.";
+const COMBINED_STORAGE_WARNING_TOOLTIP = `${LOW_DISK_SPACE_TOOLTIP} ${STORAGE_WARNING_TOOLTIP}`;
 
 function AppStorageUsageMeter() {
   const navigate = useNavigate();
@@ -70,29 +74,47 @@ function AppStorageUsageMeter() {
   const usedBytes = usage
     ? usage.clipsSizeBytes + usage.recordingsSizeBytes
     : null;
-  const usagePercentage = calculateStorageUsagePercentage(
-    usedBytes ?? 0,
-    recordingMaxStorageGb,
-  );
+  const diskFreeBytes = usage?.diskFreeBytes ?? null;
+  const hasConfiguredStorageLimit = recordingMaxStorageGb > 0;
+  const hasKnownUsagePercentage =
+    usedBytes !== null && (hasConfiguredStorageLimit || diskFreeBytes !== null);
+  const usagePercentage = hasConfiguredStorageLimit
+    ? calculateStorageUsagePercentage(usedBytes ?? 0, recordingMaxStorageGb)
+    : calculateDiskBoundUsagePercentage(usedBytes ?? 0, diskFreeBytes);
   const usedLabel =
     usedBytes === null ? "--" : formatStorageGigabytes(usedBytes);
-  const limitLabel =
-    recordingMaxStorageGb > 0 ? `${recordingMaxStorageGb} GB` : "Unlimited";
+  const diskFreeLabel =
+    diskFreeBytes === null ? "--" : formatStorageGigabytes(diskFreeBytes);
+  const limitLabel = hasConfiguredStorageLimit
+    ? `${recordingMaxStorageGb} GB`
+    : diskFreeLabel;
   let usageLabel = usageError
     ? "Recording storage usage is unavailable"
     : "Loading recording storage usage";
   if (usedBytes !== null && usageError) {
     usageLabel = `${usedLabel} used; storage usage may be out of date`;
   } else if (usedBytes !== null) {
-    usageLabel =
-      recordingMaxStorageGb > 0
-        ? `${usedLabel} used of ${limitLabel}`
-        : `${usedLabel} used with no storage limit`;
+    if (hasConfiguredStorageLimit) {
+      usageLabel = `${usedLabel} used of ${limitLabel}`;
+    } else if (diskFreeBytes === null) {
+      usageLabel = `${usedLabel} used; recording drive free space is unavailable`;
+    } else {
+      usageLabel = `${usedLabel} used; ${diskFreeLabel} free on the recording drive`;
+    }
   }
+  const isDiskSpaceLow = usage?.lowDiskSpace === true;
   const isNearStorageLimit =
-    recordingMaxStorageGb > 0 &&
+    hasConfiguredStorageLimit &&
     usedBytes !== null &&
     usagePercentage >= STORAGE_WARNING_PERCENTAGE;
+  const isAtStorageLimit = hasConfiguredStorageLimit && usagePercentage >= 100;
+  let storageWarningTooltip = STORAGE_WARNING_TOOLTIP;
+  if (isDiskSpaceLow) {
+    storageWarningTooltip = isNearStorageLimit
+      ? COMBINED_STORAGE_WARNING_TOOLTIP
+      : LOW_DISK_SPACE_TOOLTIP;
+  }
+  const showStorageWarning = isDiskSpaceLow || isNearStorageLimit;
   const isUsagePending =
     isUsageLoading || (usedBytes === null && usageError === null);
 
@@ -105,15 +127,25 @@ function AppStorageUsageMeter() {
 
   return (
     <div className="flex shrink-0 items-center gap-0.5">
-      {isNearStorageLimit && (
+      {showStorageWarning && (
         <span
-          aria-label={STORAGE_WARNING_TOOLTIP}
-          className="tooltip tooltip-bottom tooltip-warning no-drag inline-flex h-8 w-5 items-center justify-center text-warning"
-          data-tip={STORAGE_WARNING_TOOLTIP}
-          role="status"
-          tabIndex={0}
+          className={clsx(
+            "tooltip tooltip-bottom no-drag inline-flex h-8 w-5 items-center justify-center",
+            {
+              "tooltip-error text-error": isDiskSpaceLow,
+              "tooltip-warning text-warning": !isDiskSpaceLow,
+            },
+          )}
+          data-tip={storageWarningTooltip}
         >
-          <FiAlertTriangle aria-hidden="true" size={12} />
+          <span
+            aria-label={storageWarningTooltip}
+            className="inline-flex h-full w-full items-center justify-center"
+            role="status"
+            tabIndex={0}
+          >
+            <FiAlertTriangle aria-hidden="true" size={12} />
+          </span>
         </span>
       )}
       <span
@@ -135,20 +167,25 @@ function AppStorageUsageMeter() {
               aria-label={usageLabel}
               aria-valuemax={100}
               aria-valuemin={0}
-              aria-valuenow={usedBytes === null ? undefined : usagePercentage}
+              aria-valuenow={
+                hasKnownUsagePercentage ? usagePercentage : undefined
+              }
               className="relative block h-1 w-full overflow-hidden rounded-full bg-base-content/20"
               role="progressbar"
             >
-              <span
-                className={clsx("absolute inset-y-0 left-0", {
-                  "bg-error": usagePercentage >= 100,
-                  "bg-primary": usagePercentage < STORAGE_WARNING_PERCENTAGE,
-                  "bg-warning":
-                    usagePercentage >= STORAGE_WARNING_PERCENTAGE &&
-                    usagePercentage < 100,
-                })}
-                style={{ width: `${usagePercentage}%` }}
-              />
+              {hasKnownUsagePercentage && (
+                <span
+                  className={clsx("absolute inset-y-0 left-0", {
+                    "bg-error": isAtStorageLimit || isDiskSpaceLow,
+                    "bg-primary": !isNearStorageLimit && !isDiskSpaceLow,
+                    "bg-warning":
+                      isNearStorageLimit &&
+                      !isAtStorageLimit &&
+                      !isDiskSpaceLow,
+                  })}
+                  style={{ width: `${usagePercentage}%` }}
+                />
+              )}
             </span>
           </span>
         </button>

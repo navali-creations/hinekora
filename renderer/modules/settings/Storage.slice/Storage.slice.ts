@@ -1,6 +1,5 @@
 import type {
   DeleteGameLeagueDataResult,
-  DiskSpaceCheck,
   StorageGameLeagueInput,
   StorageGameLeagueUsage,
   StorageInfo,
@@ -13,8 +12,6 @@ export interface StorageSlice {
     gameLeagueUsage: StorageGameLeagueUsage[];
     isLoading: boolean;
     error: string | null;
-    diskFreeBytes: number | null;
-    isDiskLow: boolean;
     deletingGameLeagueId: string | null;
     fetchStorageInfo: () => Promise<void>;
     fetchGameLeagueUsage: () => Promise<void>;
@@ -23,7 +20,6 @@ export interface StorageSlice {
     deleteGameLeagueData: (
       input: StorageGameLeagueInput,
     ) => Promise<DeleteGameLeagueDataResult>;
-    checkDiskSpace: () => Promise<void>;
   };
 }
 
@@ -38,14 +34,9 @@ export const createStorageSlice: BoundStoreStateCreator<StorageSlice> = (
     });
 
     try {
-      const [info, diskCheck] = await Promise.all([
-        window.electron.storage.getInfo(),
-        window.electron.storage.checkDiskSpace(),
-      ]);
+      const info = await window.electron.storage.getInfo();
       set((state) => {
         state.storage.info = info;
-        state.storage.diskFreeBytes = diskCheck.diskFreeBytes;
-        state.storage.isDiskLow = diskCheck.isLow;
         state.storage.isLoading = false;
       });
     } catch (error) {
@@ -87,8 +78,6 @@ export const createStorageSlice: BoundStoreStateCreator<StorageSlice> = (
       gameLeagueUsage: [],
       isLoading: false,
       error: null,
-      diskFreeBytes: null,
-      isDiskLow: false,
       deletingGameLeagueId: null,
       fetchStorageInfo,
       fetchGameLeagueUsage,
@@ -145,16 +134,6 @@ export const createStorageSlice: BoundStoreStateCreator<StorageSlice> = (
 
           return result;
         }
-      },
-      checkDiskSpace: async () => {
-        try {
-          const diskCheck: DiskSpaceCheck =
-            await window.electron.storage.checkDiskSpace();
-          set((state) => {
-            state.storage.diskFreeBytes = diskCheck.diskFreeBytes;
-            state.storage.isDiskLow = diskCheck.isLow;
-          });
-        } catch {}
       },
     },
   };

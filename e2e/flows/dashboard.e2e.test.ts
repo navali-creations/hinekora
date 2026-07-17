@@ -1,18 +1,21 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
-import type { PoeProcessState } from "../../main/modules/poe-process/PoeProcess.dto";
-import type { CapturePreviewSource, GameId } from "../../types";
+import type { CapturePreviewSource } from "../../types";
+import { selectAppBarGame } from "../helpers/appbar-fixture";
 import {
-  emitDashboardAuraLockChanged,
   emitDashboardPoeProcessStart,
   emitDashboardPoeProcessStop,
-  emitDashboardRecorderOverlayVisibility,
   expectNoUnexpectedDashboardBridgeCalls,
   getDashboardE2ECalls,
   scheduleDashboardCaptureSources,
   setDashboardCaptureSources,
   setupDashboardE2E,
 } from "../helpers/dashboard-fixture";
+import {
+  createPoeProcessState,
+  type PoeProcessVariant,
+  poeProcessVariants,
+} from "../helpers/poe-process-fixture";
 
 const dashboardScreenSource: CapturePreviewSource = {
   displayId: "1",
@@ -24,87 +27,25 @@ const dashboardScreenSource: CapturePreviewSource = {
   width: 2560,
 };
 
-interface ProcessVariantCase {
-  game: GameId;
-  name: string;
-  processName: string;
+interface ProcessVariantCase extends PoeProcessVariant {
   source: CapturePreviewSource;
 }
 
-const processVariantCases: ProcessVariantCase[] = [
-  {
-    game: "poe1",
-    name: "Path of Exile 1 Steam",
-    processName: "PathOfExileSteam.exe",
+const processVariantCases: ProcessVariantCase[] = poeProcessVariants.map(
+  (variant) => ({
+    ...variant,
     source: {
       displayId: null,
+      game: variant.game,
       height: 1440,
-      id: "window:poe1-steam:1",
+      id: `window:${variant.id}:1`,
       kind: "window",
-      game: "poe1",
-      name: "Path of Exile 1",
+      name: variant.game === "poe2" ? "Path of Exile 2" : "Path of Exile 1",
       thumbnailDataUrl: null,
       width: 2560,
     },
-  },
-  {
-    game: "poe1",
-    name: "Path of Exile 1 standalone",
-    processName: "PathOfExile.exe",
-    source: {
-      displayId: null,
-      height: 1440,
-      id: "window:poe1-standalone:1",
-      kind: "window",
-      game: "poe1",
-      name: "Path of Exile 1",
-      thumbnailDataUrl: null,
-      width: 2560,
-    },
-  },
-  {
-    game: "poe2",
-    name: "Path of Exile 2 Steam",
-    processName: "PathOfExileSteam.exe",
-    source: {
-      displayId: null,
-      height: 1440,
-      id: "window:poe2-steam:1",
-      kind: "window",
-      game: "poe2",
-      name: "Path of Exile 2",
-      thumbnailDataUrl: null,
-      width: 2560,
-    },
-  },
-  {
-    game: "poe2",
-    name: "Path of Exile 2 standalone",
-    processName: "PathOfExile.exe",
-    source: {
-      displayId: null,
-      height: 1440,
-      id: "window:poe2-standalone:1",
-      kind: "window",
-      game: "poe2",
-      name: "Path of Exile 2",
-      thumbnailDataUrl: null,
-      width: 2560,
-    },
-  },
-];
-
-function createPoeProcessState(
-  input: Pick<ProcessVariantCase, "game" | "processName">,
-): PoeProcessState {
-  return {
-    game: input.game,
-    isRunning: true,
-    pid: input.game === "poe2" ? 4242 : 4241,
-    processName: input.processName,
-    windowTitle: input.game === "poe2" ? "Path of Exile 2" : "Path of Exile",
-  };
-}
+  }),
+);
 
 async function openLivePreviewSourceSelect(sourceSelect: Locator) {
   await sourceSelect.click();
@@ -313,7 +254,7 @@ test("covers unavailable PoE live preview sources and auto-start alerts", async 
   ).toBeHidden();
 });
 
-test("updates appbar and live preview sources for PoE process variants", async ({
+test("updates live preview sources for PoE process variants", async ({
   page,
 }) => {
   await setupDashboardE2E(page);
@@ -321,14 +262,10 @@ test("updates appbar and live preview sources for PoE process variants", async (
   const sourceSelect = page.getByRole("combobox", {
     name: /^Capture source$/,
   });
-  const poe1Button = page.getByRole("button", { name: /Path of Exile 1/ });
-  const poe2Button = page.getByRole("button", { name: /Path of Exile 2/ });
 
   await unlockCaptureProfile(page);
   await setDashboardCaptureSources(page, [dashboardScreenSource]);
   await emitDashboardPoeProcessStop(page);
-  await expect(poe1Button).toContainText("Offline");
-  await expect(poe2Button).toContainText("Offline");
 
   for (const processVariant of processVariantCases) {
     await setDashboardCaptureSources(page, [
@@ -344,14 +281,6 @@ test("updates appbar and live preview sources for PoE process variants", async (
       createPoeProcessState(processVariant),
     );
 
-    await expect(
-      processVariant.game === "poe1" ? poe1Button : poe2Button,
-      `${processVariant.name} should mark the owning game as running`,
-    ).toContainText("Running");
-    await expect(
-      processVariant.game === "poe1" ? poe2Button : poe1Button,
-      `${processVariant.name} should not mark the other game as running`,
-    ).toContainText("Offline");
     await expect
       .poll(async () => {
         const calls = await getDashboardE2ECalls(page);
@@ -391,7 +320,7 @@ test("updates appbar and live preview sources for PoE process variants", async (
     await expect
       .poll(() => openLivePreviewSourceSelect(sourceSelect))
       .toEqual(expectedSourceOptions);
-    await (processVariant.game === "poe1" ? poe1Button : poe2Button).click();
+    await selectAppBarGame(page, processVariant.game);
     await expect(
       sourceSelect.locator(`option[value="${processVariant.source.id}"]`),
     ).toBeEnabled();
@@ -400,8 +329,6 @@ test("updates appbar and live preview sources for PoE process variants", async (
 
     await setDashboardCaptureSources(page, [dashboardScreenSource]);
     await emitDashboardPoeProcessStop(page);
-    await expect(poe1Button).toContainText("Offline");
-    await expect(poe2Button).toContainText("Offline");
   }
 });
 
@@ -413,7 +340,6 @@ test("retries live preview source refresh when the game window appears after pro
   const sourceSelect = page.getByRole("combobox", {
     name: /^Capture source$/,
   });
-  const poe2Button = page.getByRole("button", { name: /Path of Exile 2/ });
   const poe2Source = processVariantCases.find(
     (processVariant) => processVariant.name === "Path of Exile 2 Steam",
   )?.source;
@@ -424,7 +350,6 @@ test("retries live preview source refresh when the game window appears after pro
   await unlockCaptureProfile(page);
   await setDashboardCaptureSources(page, [dashboardScreenSource]);
   await emitDashboardPoeProcessStop(page);
-  await expect(poe2Button).toContainText("Offline");
   const callsBeforeStart = await getDashboardE2ECalls(page);
   const requestCountBeforeStart = callsBeforeStart.captureSourceRequests.length;
   const responseCountBeforeStart =
@@ -443,7 +368,6 @@ test("retries live preview source refresh when the game window appears after pro
     }),
   );
 
-  await expect(poe2Button).toContainText("Running");
   await expect
     .poll(async () => {
       const calls = await getDashboardE2ECalls(page);
@@ -736,39 +660,6 @@ test("covers keybind settings keyboard recording", async ({ page }) => {
   await expect(recordingPrompt).not.toBeVisible();
 });
 
-test("opens data storage settings from the AppBar usage meter", async ({
-  page,
-}) => {
-  await setupDashboardE2E(page);
-
-  const storageMeter = page.getByRole("button", {
-    name: "0 GB used of 50 GB. Open data and storage settings",
-  });
-  await expect(storageMeter).toBeVisible();
-  const storageProgress = storageMeter.getByRole("progressbar");
-  await expect(storageProgress).toHaveAttribute("aria-valuenow", "0");
-  const [storageLabelBounds, storageProgressBounds] = await Promise.all([
-    storageMeter.getByText("0 GB / 50 GB", { exact: true }).boundingBox(),
-    storageProgress.boundingBox(),
-  ]);
-  expect(storageLabelBounds).not.toBeNull();
-  expect(storageProgressBounds).not.toBeNull();
-  expect(storageProgressBounds?.width).toBeCloseTo(
-    storageLabelBounds?.width ?? 0,
-    0,
-  );
-
-  await storageMeter.click();
-
-  await expect(page).toHaveURL(/\/settings\?tab=data-storage$/);
-  await expect(
-    page.getByRole("tab", { name: "Data & Storage" }),
-  ).toHaveAttribute("aria-selected", "true");
-  await expect(
-    page.getByText("Recording Storage", { exact: true }),
-  ).toBeVisible();
-});
-
 test("keeps content-width tabs on one horizontally scrollable row", async ({
   page,
 }) => {
@@ -842,10 +733,10 @@ test("restores clips view and media league across library routes", async ({
   await expect(page.getByLabel("Library league")).toHaveValue("Standard");
 
   await page.getByLabel("Library league").selectOption("__all__");
-  await page.getByRole("button", { name: /Path of Exile 1/ }).click();
+  await selectAppBarGame(page, "poe1");
   await expect(page.getByLabel("Library league")).toHaveValue("Mirage");
   await page.getByLabel("Library league").selectOption("Standard");
-  await page.getByRole("button", { name: /Path of Exile 2/ }).click();
+  await selectAppBarGame(page, "poe2");
   await expect(page.getByLabel("Library league")).toHaveValue("__all__");
 
   await expect
@@ -858,126 +749,4 @@ test("restores clips view and media league across library routes", async ({
         { poe2MediaLibraryLeague: "Standard" },
       ]),
     );
-});
-
-test("covers dashboard app shell game, overlay, and window controls", async ({
-  page,
-}) => {
-  await setupDashboardE2E(page);
-
-  await page.getByRole("button", { name: /Path of Exile 1/ }).click();
-  await expect
-    .poll(async () => {
-      const calls = await getDashboardE2ECalls(page);
-
-      return calls.clientLogActiveGames.at(-1);
-    })
-    .toEqual({ game: "poe1" });
-  await expect(page.getByLabel("poe1 league")).toHaveValue("Mirage");
-  await page.getByLabel("poe1 league").selectOption("Standard");
-  await expect
-    .poll(async () => {
-      const calls = await getDashboardE2ECalls(page);
-
-      return calls.settingsUpdates;
-    })
-    .toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          activeGame: "poe1",
-          activeLeague: "Mirage",
-          selectedCaptureProfileId: "default-capture-poe1",
-        }),
-        expect.objectContaining({
-          poe1SelectedLeague: "Standard",
-        }),
-      ]),
-    );
-
-  await page.getByTitle("Show Overlay").click();
-  await expect
-    .poll(async () => {
-      const calls = await getDashboardE2ECalls(page);
-
-      return calls.recorderOverlayToggles;
-    })
-    .toBe(1);
-  await expect(page.getByTitle("Hide Overlay")).toBeVisible();
-
-  await page.getByTitle("Minimize").click();
-  await page.getByTitle("Maximize").click();
-  await page.getByTitle("Restore").click();
-  await page.getByTitle("Close").click();
-  await expect
-    .poll(async () => {
-      const calls = await getDashboardE2ECalls(page);
-
-      return calls.mainWindowActions;
-    })
-    .toEqual(["minimize", "maximize", "unmaximize", "close"]);
-});
-
-test("reflects startup and focus-gate recorder overlay visibility from main", async ({
-  page,
-}) => {
-  await setupDashboardE2E(page, { recorderOverlayVisible: true });
-
-  await expect(page.getByTitle("Hide Overlay")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-
-  await emitDashboardRecorderOverlayVisibility(page, false);
-  await expect(page.getByTitle("Show Overlay")).toHaveAttribute(
-    "aria-pressed",
-    "false",
-  );
-
-  await emitDashboardRecorderOverlayVisibility(page, true);
-  await expect(page.getByTitle("Hide Overlay")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-
-  await expect
-    .poll(async () => {
-      const calls = await getDashboardE2ECalls(page);
-
-      return calls.recorderVisibilityEvents;
-    })
-    .toEqual([false, true]);
-});
-
-test("keeps recorder overlay control stable during aura lock bridge events", async ({
-  page,
-}) => {
-  await setupDashboardE2E(page, {
-    auraLocked: true,
-    recorderOverlayVisible: true,
-  });
-
-  await expect(page.getByTitle("Hide Overlay")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-
-  await emitDashboardAuraLockChanged(page, false);
-  await expect(page.getByTitle("Hide Overlay")).toHaveAttribute(
-    "aria-pressed",
-    "true",
-  );
-
-  await expect
-    .poll(async () => {
-      const calls = await getDashboardE2ECalls(page);
-
-      return {
-        auraLockEvents: calls.auraLockEvents,
-        recorderVisibilityEvents: calls.recorderVisibilityEvents,
-      };
-    })
-    .toEqual({
-      auraLockEvents: [false],
-      recorderVisibilityEvents: [],
-    });
 });

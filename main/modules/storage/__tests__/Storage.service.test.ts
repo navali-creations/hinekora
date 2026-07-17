@@ -771,67 +771,13 @@ describe("StorageService", () => {
     expect(recordingStorageRepository.listRunRecordings()).toHaveLength(1);
   });
 
-  it("checks disk space and reveals resolved storage paths", async () => {
-    vi.resetModules();
-    vi.doMock("../Storage.files", async (importOriginal) => {
-      const actual = await importOriginal<typeof import("../Storage.files")>();
+  it("reveals resolved storage paths", () => {
+    const service = new StorageService();
 
-      return {
-        ...actual,
-        calculateDiskUsage: vi
-          .fn()
-          .mockReturnValueOnce({
-            freeBytes: 512 * 1024 ** 2,
-            totalBytes: 10,
-          })
-          .mockReturnValueOnce({ freeBytes: 0, totalBytes: 10 }),
-      };
+    expect(service.revealPaths()).toEqual({
+      storagePath: resolve(storageRoot),
+      databasePath: database.path,
     });
-
-    let resetDynamicDatabase: () => void = () => {};
-    try {
-      const { DatabaseService: MockedDatabaseService } = await import(
-        "~/main/modules/database"
-      );
-      resetDynamicDatabase = () => MockedDatabaseService.resetForTests();
-      const { mockIpcMainHandlers: mockDynamicIpcMainHandlers } = await import(
-        "~/main/test/ipc"
-      );
-      const { SettingsStoreService: MockedSettingsStoreService } = await import(
-        "~/main/modules/settings-store"
-      );
-      const { StorageService: MockedStorageService } = await import(
-        "../Storage.service"
-      );
-      const mockedDatabase = MockedDatabaseService.getInstance(
-        join(root, "mocked-hinekora.sqlite"),
-      );
-      mockDynamicIpcMainHandlers();
-      vi.spyOn(MockedSettingsStoreService, "getInstance").mockReturnValue({
-        get: () => ({
-          ...createDefaultSettings(),
-          recordingStoragePath: storageRoot,
-        }),
-      } as unknown as typeof MockedSettingsStoreService.prototype);
-      const service = new MockedStorageService();
-
-      expect(service.checkDiskSpace()).toEqual({
-        diskFreeBytes: 512 * 1024 ** 2,
-        isLow: true,
-      });
-      expect(service.checkDiskSpace()).toEqual({
-        diskFreeBytes: 0,
-        isLow: false,
-      });
-      expect(service.revealPaths()).toEqual({
-        storagePath: resolve(storageRoot),
-        databasePath: mockedDatabase.path,
-      });
-    } finally {
-      resetDynamicDatabase();
-      vi.doUnmock("../Storage.files");
-      vi.resetModules();
-    }
   });
 
   it("deletes zero-size clip rows without counting zero-byte media", async () => {
@@ -883,10 +829,6 @@ describe("StorageService", () => {
       calculatedAt: "2026-06-12T10:00:00.000Z",
     });
     vi.spyOn(service, "getGameLeagueUsage").mockReturnValue([]);
-    vi.spyOn(service, "checkDiskSpace").mockReturnValue({
-      diskFreeBytes: 0,
-      isLow: false,
-    });
     vi.spyOn(service, "revealPaths").mockReturnValue({
       storagePath: resolve(storageRoot),
       databasePath: database.path,
@@ -904,10 +846,6 @@ describe("StorageService", () => {
     expect(
       await ipcHandlers.get(StorageChannel.GetGameLeagueUsage)?.({}),
     ).toEqual([]);
-    expect(await ipcHandlers.get(StorageChannel.CheckDiskSpace)?.({})).toEqual({
-      diskFreeBytes: 0,
-      isLow: false,
-    });
     expect(await ipcHandlers.get(StorageChannel.RevealPaths)?.({})).toEqual({
       storagePath: resolve(storageRoot),
       databasePath: database.path,

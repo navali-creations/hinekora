@@ -58,11 +58,6 @@ export interface DeleteGameLeagueDataResult {
   error?: string;
 }
 
-export interface DiskSpaceCheck {
-  diskFreeBytes: number;
-  isLow: boolean;
-}
-
 export interface StorageRevealPathsResult {
   storagePath: string;
   databasePath: string;

@@ -332,17 +332,15 @@ class RecordingStorageService {
     }
 
     const usage = this.usageCache.usage;
-    const nextUsage = {
-      ...usage,
-      clipsSizeBytes:
-        category === "clips"
-          ? Math.max(0, usage.clipsSizeBytes + deltaBytes)
-          : usage.clipsSizeBytes,
-      recordingsSizeBytes:
-        category === "recordings"
-          ? Math.max(0, usage.recordingsSizeBytes + deltaBytes)
-          : usage.recordingsSizeBytes,
-    };
+    const nextUsage = this.createUsage(
+      root,
+      category === "clips"
+        ? Math.max(0, usage.clipsSizeBytes + deltaBytes)
+        : usage.clipsSizeBytes,
+      category === "recordings"
+        ? Math.max(0, usage.recordingsSizeBytes + deltaBytes)
+        : usage.recordingsSizeBytes,
+    );
     this.publishUsageChanged(nextUsage, root);
   }
 
@@ -1324,12 +1322,13 @@ class RecordingStorageService {
     recordingsSizeBytes: number,
   ): RecordingStorageUsage {
     const disk = calculateDiskUsage(root);
+    const diskSpaceAvailable = disk.totalBytes > 0;
 
     return {
       clipsSizeBytes,
-      diskFreeBytes: disk.freeBytes,
+      diskFreeBytes: diskSpaceAvailable ? disk.freeBytes : null,
       lowDiskSpace:
-        disk.freeBytes > 0 &&
+        diskSpaceAvailable &&
         disk.freeBytes < lowDiskSpaceWarningThresholdBytes,
       recordingsSizeBytes,
     };

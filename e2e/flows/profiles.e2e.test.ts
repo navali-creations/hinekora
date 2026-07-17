@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import type { CapturePreviewSource, GameId } from "../../types";
+import { selectAppBarGame } from "../helpers/appbar-fixture";
 import {
   expectNoUnexpectedDashboardBridgeCalls,
   getDashboardE2ECalls,
@@ -179,14 +180,6 @@ async function expectSourceOptionDisabled(
   ).toHaveJSProperty("disabled", disabled);
 }
 
-async function selectAppbarGame(page: Page, label: string): Promise<void> {
-  await page
-    .getByRole("tab")
-    .filter({ hasText: label })
-    .getByRole("button", { name: new RegExp(label) })
-    .click();
-}
-
 async function openCaptureSettingsTab(page: Page, name: string): Promise<void> {
   await page
     .getByRole("tablist", { name: "Recording settings" })
@@ -241,7 +234,7 @@ test("covers capture profile game switching, source sync, field persistence, and
   await expectSourceOptionDisabled(sourceSelect, poe1WindowSource.id, true);
   await expectSourceOptionDisabled(sourceSelect, poe2WindowSource.id, false);
 
-  await selectAppbarGame(page, "Path of Exile 1");
+  await selectAppBarGame(page, "poe1");
   await expect(captureProfileSelect).toHaveValue("default-capture-poe1");
   await expect(sourceSelect).toHaveValue(poe1WindowSource.id);
   await expectSourceOptionDisabled(sourceSelect, profileScreenSource.id, false);
@@ -363,7 +356,7 @@ test("covers capture profile game switching, source sync, field persistence, and
       ]),
     );
 
-  await selectAppbarGame(page, "Path of Exile 2");
+  await selectAppBarGame(page, "poe2");
   await expect(captureProfileSelect).toHaveValue("capture-profile-1");
   await expect(sourceSelect).toHaveValue(profileScreenSource.id);
   await expectSourceOptionDisabled(sourceSelect, poe1WindowSource.id, true);

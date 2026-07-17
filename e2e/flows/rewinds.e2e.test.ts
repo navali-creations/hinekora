@@ -8,6 +8,7 @@ import type {
   BookmarkCategory,
 } from "../../main/modules/bookmarks";
 import type { ReplayClipDetail } from "../../main/modules/replay-clips";
+import { selectAppBarGame } from "../helpers/appbar-fixture";
 import {
   expectNoUnexpectedDashboardBridgeCalls,
   setupDashboardE2E,
@@ -195,11 +196,11 @@ test("covers rewind table pagination, sorting, filtering, and disabled processin
     page.getByRole("columnheader", { name: "League" }),
   ).toBeVisible();
 
-  await page.getByRole("button", { name: /Path of Exile 1/ }).click();
+  await selectAppBarGame(page, "poe1");
   await expect(page.getByLabel("Library league")).toHaveValue("Mirage");
   await page.getByLabel("Library league").selectOption("Standard");
   await expect(page.getByText("Showing 1 to 1 of 1 results")).toBeVisible();
-  await page.getByRole("button", { name: /Path of Exile 2/ }).click();
+  await selectAppBarGame(page, "poe2");
   await page.getByLabel("Library league").selectOption("Runes of Aldur");
 
   await page.getByRole("button", { name: /Saved/ }).first().click();

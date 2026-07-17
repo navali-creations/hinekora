@@ -19,8 +19,8 @@ function DiskSpaceWarning() {
     >
       <AlertTriangle size={16} />
       <span>
-        Low disk space: {formatBytes(usage.diskFreeBytes)} free in the recording
-        folder.
+        Low disk space: {formatBytes(usage.diskFreeBytes ?? 0)} free in the
+        recording folder.
       </span>
     </div>
   );

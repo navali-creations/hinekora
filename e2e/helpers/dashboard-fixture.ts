@@ -35,10 +35,7 @@ import type {
   ReplayClipUpdateInput,
 } from "../../main/modules/replay-clips";
 import { normalizeLeagueSettingsUpdate } from "../../main/modules/settings-store/SettingsStore.normalization";
-import type {
-  DiskSpaceCheck,
-  StorageInfo,
-} from "../../main/modules/storage/Storage.dto";
+import type { StorageInfo } from "../../main/modules/storage/Storage.dto";
 import type { DownloadProgress, UpdateInfo } from "../../main/modules/updater";
 import {
   type AppSettings,
@@ -167,6 +164,8 @@ interface DashboardE2EOptions {
   activitySessionTimelines?: Record<string, ActivitySessionTimeline>;
   auraLocked?: boolean;
   bookmarks?: BookmarkLibraryItem[];
+  recordingMaxStorageGb?: number;
+  recordingStorageUsage?: Partial<RecordingStorageUsage>;
   recorderOverlayVisible?: boolean;
   replayClipDetails?: Record<string, ReplayClipDetail>;
   replayClipOperationDelayMs?: number;
@@ -194,8 +193,9 @@ function createDashboardE2EFixture(
     activeGame === "poe1" ? "default-capture-poe1" : "capture-profile-1";
   const selectedProfileId =
     activeGame === "poe1" ? "profile-poe1" : "profile-1";
+  const defaultSettings = createDefaultSettings();
   const settings: AppSettings = {
-    ...createDefaultSettings(),
+    ...defaultSettings,
     activeGame,
     activeLeague,
     installedGames: ["poe1", "poe2"],
@@ -206,6 +206,8 @@ function createDashboardE2EFixture(
     recordingClipQuality: "high",
     recordingEncoder: "hardware_h264",
     recordingFps: 60,
+    recordingMaxStorageGb:
+      options.recordingMaxStorageGb ?? defaultSettings.recordingMaxStorageGb,
     recordingRunQuality: "moderate",
     setupCompleted: true,
     setupStep: 3,
@@ -349,6 +351,7 @@ function createDashboardE2EFixture(
       diskFreeBytes: 900_000_000_000,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
+      ...options.recordingStorageUsage,
     },
     recorderStatus,
     replayClipDetails: options.replayClipDetails ?? {},
@@ -774,11 +777,6 @@ async function setupDashboardE2E(
         sortDirection: "desc",
         totalCount: 0,
       };
-      const diskCheck: DiskSpaceCheck = {
-        diskFreeBytes: fixture.storageInfo.diskFreeBytes,
-        isLow: false,
-      };
-
       Object.defineProperty(navigator, "mediaDevices", {
         configurable: true,
         value: {
@@ -1379,7 +1377,6 @@ async function setupDashboardE2E(
         storage: createBridgeDomain<DashboardE2EElectron["storage"]>(
           "storage",
           {
-            checkDiskSpace: async () => clone(diskCheck),
             getGameLeagueUsage: async () => [],
             getInfo: async () => clone(fixture.storageInfo),
           },

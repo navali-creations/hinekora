@@ -29,4 +29,25 @@ function calculateStorageUsagePercentage(
   );
 }
 
-export { calculateStorageUsagePercentage, formatStorageGigabytes };
+function calculateDiskBoundUsagePercentage(
+  usedBytes: number,
+  diskFreeBytes: number | null,
+): number {
+  if (
+    !Number.isFinite(usedBytes) ||
+    usedBytes <= 0 ||
+    diskFreeBytes === null ||
+    !Number.isFinite(diskFreeBytes) ||
+    diskFreeBytes < 0
+  ) {
+    return 0;
+  }
+
+  return Math.min(100, (usedBytes / (usedBytes + diskFreeBytes)) * 100);
+}
+
+export {
+  calculateDiskBoundUsagePercentage,
+  calculateStorageUsagePercentage,
+  formatStorageGigabytes,
+};

@@ -52,14 +52,12 @@ describe("Storage slice", () => {
   const getInfo = vi.fn();
   const getGameLeagueUsage = vi.fn();
   const deleteGameLeagueData = vi.fn();
-  const checkDiskSpace = vi.fn();
   const revealPaths = vi.fn();
 
   beforeEach(() => {
     vi.clearAllMocks();
     getInfo.mockResolvedValue(createStorageInfo());
     getGameLeagueUsage.mockResolvedValue([createGameLeagueUsage()]);
-    checkDiskSpace.mockResolvedValue({ diskFreeBytes: 50, isLow: false });
     deleteGameLeagueData.mockResolvedValue({
       success: true,
       cleanupError: "Failed to delete one or more files",
@@ -80,7 +78,6 @@ describe("Storage slice", () => {
           getInfo,
           getGameLeagueUsage,
           deleteGameLeagueData,
-          checkDiskSpace,
           revealPaths,
         },
       },
@@ -131,7 +128,6 @@ describe("Storage slice", () => {
       error: null,
       gameLeagueUsage: [createGameLeagueUsage()],
       info: createStorageInfo(),
-      isDiskLow: false,
       isLoading: false,
     });
   });
@@ -197,18 +193,5 @@ describe("Storage slice", () => {
       success: false,
     });
     expect(store.getState().storage.deletingGameLeagueId).toBeNull();
-  });
-
-  it("updates and ignores failures while checking disk space", async () => {
-    const store = createTestStore();
-    checkDiskSpace
-      .mockResolvedValueOnce({ diskFreeBytes: 1, isLow: true })
-      .mockRejectedValueOnce(new Error("offline"));
-
-    await store.getState().storage.checkDiskSpace();
-    expect(store.getState().storage.isDiskLow).toBe(true);
-
-    await store.getState().storage.checkDiskSpace();
-    expect(store.getState().storage.isDiskLow).toBe(true);
   });
 });

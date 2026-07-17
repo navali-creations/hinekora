@@ -1066,12 +1066,10 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
             },
           },
         ),
-        storage: createBridgeDomain<EditorE2EElectron["storage"]>("storage", {
-          checkDiskSpace: async () => ({
-            diskFreeBytes: 1_000_000_000,
-            isLow: false,
-          }),
-        }),
+        storage: createBridgeDomain<EditorE2EElectron["storage"]>(
+          "storage",
+          {},
+        ),
         stateTransfer: createBridgeDomain<EditorE2EElectron["stateTransfer"]>(
           "stateTransfer",
           {},

@@ -177,28 +177,41 @@ describe("AppStorageUsageMeter", () => {
     });
   });
 
-  it("renders the unlimited and loading states", async () => {
+  it("shows free space on the recording disk when no limit is configured", async () => {
     storeMocks.recordingMaxStorageGb = 0;
     let button = await renderMeter();
+    let progress = container.querySelector('[role="progressbar"]');
 
-    expect(button.textContent).toContain("0.3 GB / Unlimited");
-    expect(
-      container
-        .querySelector('[role="progressbar"]')
-        ?.getAttribute("aria-valuenow"),
-    ).toBe("0");
+    expect(button.textContent).toContain("0.3 GB / 100 GB");
+    expect(button.textContent).not.toContain("free");
+    expect(button.getAttribute("aria-label")).toBe(
+      "0.3 GB used; 100 GB free on the recording drive. Open data and storage settings",
+    );
+    expect(Number(progress?.getAttribute("aria-valuenow"))).toBeCloseTo(
+      (0.3 / 100.3) * 100,
+    );
+    expect(progress?.querySelector("span")?.className).toContain("bg-primary");
+
+    storeMocks.usage = { ...createUsage(), diskFreeBytes: null };
+    button = await renderMeter();
+    progress = container.querySelector('[role="progressbar"]');
+
+    expect(button.textContent).toContain("0.3 GB / --");
+    expect(button.getAttribute("aria-label")).toBe(
+      "0.3 GB used; recording drive free space is unavailable. Open data and storage settings",
+    );
+    expect(progress?.hasAttribute("aria-valuenow")).toBe(false);
+    expect(progress?.querySelector("span")).toBeNull();
 
     storeMocks.usage = null;
     storeMocks.isUsageLoading = true;
     button = await renderMeter();
+    progress = container.querySelector('[role="progressbar"]');
 
-    expect(button.textContent).toContain("-- / Unlimited");
+    expect(button.textContent).toContain("-- / --");
+    expect(button.textContent).not.toContain("free");
     expect(button.getAttribute("aria-busy")).toBe("true");
-    expect(
-      container
-        .querySelector('[role="progressbar"]')
-        ?.hasAttribute("aria-valuenow"),
-    ).toBe(false);
+    expect(progress?.hasAttribute("aria-valuenow")).toBe(false);
   });
 
   it("reports a failed usage read without remaining busy", async () => {
@@ -268,12 +281,67 @@ describe("AppStorageUsageMeter", () => {
     await renderMeter();
 
     const warning = container.querySelector('[role="status"]');
-    expect(warning?.getAttribute("data-tip")).toBe(
+    expect(warning?.closest(".tooltip")?.getAttribute("data-tip")).toBe(
       "Storage is within 10% of its limit. Once full, the oldest recordings and clips will be deleted and replaced by new recordings and clips.",
     );
     expect(warning?.getAttribute("tabindex")).toBe("0");
     expect(
       container.querySelector('[role="progressbar"] span')?.className,
     ).toContain("bg-warning");
+  });
+
+  it("shows a critical warning when the recording disk is low", async () => {
+    storeMocks.recordingMaxStorageGb = 0;
+    storeMocks.usage = {
+      ...createUsage(),
+      diskFreeBytes: 0,
+      lowDiskSpace: true,
+    };
+
+    await renderMeter();
+
+    const warning = container.querySelector('[role="status"]');
+    expect(warning?.closest(".tooltip")?.getAttribute("data-tip")).toBe(
+      "Recording drive space is critically low. New recordings and clips may fail unless space is freed.",
+    );
+    expect(warning?.closest(".tooltip")?.className).toContain("tooltip-error");
+    expect(
+      container.querySelector('[role="progressbar"] span')?.className,
+    ).toContain("bg-error");
+  });
+
+  it("preserves both warnings when disk space and configured storage are low", async () => {
+    storeMocks.usage = {
+      ...createUsage(),
+      clipsSizeBytes: 4 * GIGABYTE,
+      diskFreeBytes: 0.5 * GIGABYTE,
+      lowDiskSpace: true,
+      recordingsSizeBytes: 40 * GIGABYTE,
+    };
+
+    await renderMeter();
+
+    const warning = container.querySelector('[role="status"]');
+    expect(warning?.closest(".tooltip")?.getAttribute("data-tip")).toBe(
+      "Recording drive space is critically low. New recordings and clips may fail unless space is freed. Storage is within 10% of its limit. Once full, the oldest recordings and clips will be deleted and replaced by new recordings and clips.",
+    );
+    expect(warning?.closest(".tooltip")?.className).toContain("tooltip-error");
+    expect(
+      container.querySelector('[role="progressbar"] span')?.className,
+    ).toContain("bg-error");
+  });
+
+  it("uses the error progress color at the configured storage limit", async () => {
+    storeMocks.usage = {
+      ...createUsage(),
+      clipsSizeBytes: 8 * GIGABYTE,
+      recordingsSizeBytes: 40 * GIGABYTE,
+    };
+
+    await renderMeter();
+
+    expect(
+      container.querySelector('[role="progressbar"] span')?.className,
+    ).toContain("bg-error");
   });
 });

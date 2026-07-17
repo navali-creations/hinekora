@@ -35,7 +35,6 @@ import { StorageChannel } from "./Storage.channels";
 import { deleteGameLeagueStorage } from "./Storage.deletion";
 import type {
   DeleteGameLeagueDataResult,
-  DiskSpaceCheck,
   StorageBreakdownItem,
   StorageGameLeagueInput,
   StorageGameLeagueUsage,
@@ -58,7 +57,6 @@ import {
 import { StorageFileDeletionService } from "./StorageFileDeletion.service";
 
 const STORAGE_LOG_SCOPE = "storage";
-const LOW_DISK_SPACE_THRESHOLD_BYTES = 1024 ** 3;
 const STORAGE_PATH_ANCHORS = ["Hinekora Recordings", "Hinekora"];
 const FALLBACK_REWIND_BUFFER_RESOLUTION = { width: 1920, height: 1080 };
 const REWIND_BUFFER_BASE_BITRATES: Record<RecordingQuality, number> = {
@@ -316,16 +314,6 @@ class StorageService {
     }
   }
 
-  checkDiskSpace(): DiskSpaceCheck {
-    const disk = calculateDiskUsage(this.resolveStorageRoot());
-
-    return {
-      diskFreeBytes: disk.freeBytes,
-      isLow:
-        disk.freeBytes > 0 && disk.freeBytes < LOW_DISK_SPACE_THRESHOLD_BYTES,
-    };
-  }
-
   revealPaths(): StorageRevealPathsResult {
     return {
       storagePath: this.resolveStorageRoot(),
@@ -363,11 +351,6 @@ class StorageService {
           };
         }
       },
-    );
-    registerGuardedIpcHandler(
-      StorageChannel.CheckDiskSpace,
-      [WindowName.Main],
-      () => this.checkDiskSpace(),
     );
     registerGuardedIpcHandler(
       StorageChannel.RevealPaths,

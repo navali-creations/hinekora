@@ -13,6 +13,13 @@ interface E2ERunningPoeProcessStateInput {
   windowTitle?: string;
 }
 
+interface PoeProcessVariant {
+  game: GameId;
+  id: string;
+  name: string;
+  processName: string;
+}
+
 function e2ePoeProcessSnapshotFactory() {
   const games = ["poe1", "poe2"] as const;
 
@@ -108,6 +115,43 @@ type E2EPoeProcessSnapshotFactory = ReturnType<
 const e2ePoeProcessSnapshotFactorySource =
   e2ePoeProcessSnapshotFactory.toString();
 const e2ePoeProcessSnapshotFactoryScript = `"use strict"; return (${e2ePoeProcessSnapshotFactorySource});`;
+const poeProcessStateFactory = e2ePoeProcessSnapshotFactory();
+const poeProcessVariants: PoeProcessVariant[] = [
+  {
+    game: "poe1",
+    id: "poe1-steam",
+    name: "Path of Exile 1 Steam",
+    processName: "PathOfExileSteam.exe",
+  },
+  {
+    game: "poe1",
+    id: "poe1-standalone",
+    name: "Path of Exile 1 standalone",
+    processName: "PathOfExile.exe",
+  },
+  {
+    game: "poe2",
+    id: "poe2-steam",
+    name: "Path of Exile 2 Steam",
+    processName: "PathOfExileSteam.exe",
+  },
+  {
+    game: "poe2",
+    id: "poe2-standalone",
+    name: "Path of Exile 2 standalone",
+    processName: "PathOfExile.exe",
+  },
+];
 
-export type { E2EPoeProcessSnapshotFactory };
-export { e2ePoeProcessSnapshotFactoryScript };
+function createPoeProcessState(
+  input: Pick<PoeProcessVariant, "game" | "processName">,
+): PoeProcessState {
+  return poeProcessStateFactory.createRunningPoeProcessState(input);
+}
+
+export type { E2EPoeProcessSnapshotFactory, PoeProcessVariant };
+export {
+  createPoeProcessState,
+  e2ePoeProcessSnapshotFactoryScript,
+  poeProcessVariants,
+};
