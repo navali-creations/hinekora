@@ -1,3 +1,69 @@
+## 0.11.0
+
+### Minor Changes
+
+- [`f94494e`](https://github.com/navali-creations/hinekora/commit/f94494ef139c6c26cbe54db8db573acfd1b29447) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** A practical Capture Guide with ready-to-use recording templates.
+
+  Hinekora now helps you choose capture settings without needing to understand video formats or calculate storage requirements yourself.
+
+  - **Capture templates:** Choose a preset for long sessions, everyday recording, sharp gameplay, or maximum detail. The selected template is saved as a capture profile while preserving your current capture source and other personalized settings.
+  - **Storage planning:** Compare approximate file sizes from 10-minute clips through 24-hour sessions (seek help if you do that btw) across supported resolutions, motion settings, picture detail, and recording formats.
+  - **Format comparison:** See plain-language guidance for H.264, H.265, AV1, and the processor fallback, including compatibility, file-size, and gaming-performance tradeoffs.
+  - **Easy access:** Open the guide from the dismissible Templates banner under Capture Settings or from the Help menu. Dismissed banner visibility can be restored from Help settings.
+  - **Capture quality:** Recording resolution choices now start at 720p, preventing lower-quality output while retaining options through 4K and ultrawide 1440p.
+
+- [`46050f1`](https://github.com/navali-creations/hinekora/commit/46050f1f5e8d3ce3207bdf93cc720e978de05ea4) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Kakao Games support for Path of Exile and Path of Exile 2.
+
+  Hinekora can now detect the Kakao Games editions and use their client logs, allowing Korean players to complete setup and use capture features normally.
+
+  Kakao Games compatibility builds on solutions shared by [@Heath-knell](https://github.com/Heath-knell).
+
+  - **Game detection:** Recognizes the Kakao Games executable for both Path of Exile games.
+  - **Client logs:** Accepts KakaoClient.txt alongside Client.txt for game activity and death detection.
+  - **Setup and settings:** Uses clearer client-log wording and shows the expected file location for standard and Kakao Games installations.
+
+- [`5d37a0e`](https://github.com/navali-creations/hinekora/commit/5d37a0ea132befd15fcd1c3e3d077a58f18f1871) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Per-overlay visibility controls for multi-monitor play.
+
+  Hinekora can now keep selected overlays visible whenever Path of Exile or Path of Exile 2 is running, even when the game window is not focused, while still respecting overlays you hide manually.
+
+  Capture stream recovery and the suggestion to keep aura overlays available across focus changes were contributed by [@Heath-knell](https://github.com/Heath-knell).
+
+  - **Overlay settings:** Choose independent focus behavior for recording controls, aura overlays, clip previews, and the grid lines overlay.
+  - **Overlay coordination:** Opening the grid lines overlay temporarily hides other overlays, and requested overlays return when editing finishes or game focus changes.
+  - **Aura reliability:** The requested aura profile follows the running game and restores correctly after closing or restarting the game.
+  - **Capture recovery:** Live Preview and aura capture recover from replaced or temporarily unavailable game windows without continuous background polling.
+  - **Capture performance:** Dashboard Live Preview stops while recording or rewind is active, leaving more capture capacity available for gameplay.
+
+- [`4d7b9a3`](https://github.com/navali-creations/hinekora/commit/4d7b9a391acce22ceedb357c2f9b3e839283efbc) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Recording storage limits and usage in the app bar.
+
+  Hinekora now shows how much space recordings and clips use, enforces the configured storage limit, and makes the storage settings directly accessible from the app bar.
+
+  - **App bar:** View combined recording and clip usage with a compact progress bar, then click it to open Data & Storage settings. A warning appears when usage reaches 90% of the limit.
+  - **Storage limit:** Choose the maximum storage in gigabytes, or set it to 0 for unlimited storage.
+  - **Automatic cleanup:** When the limit is exceeded, Hinekora removes the oldest recordings and clips to make room for new captures while protecting active recording and rewind files.
+  - **Cleanup reliability:** Storage maintenance is deferred during performance-sensitive capture work when possible and safely resumes after an interrupted cleanup.
+
+### Patch Changes
+
+- [`557cb9f`](https://github.com/navali-creations/hinekora/commit/557cb9fc64a4041366ff198e84e08d45226048d6) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Smoother recording and playback during demanding gameplay.
+
+  Hinekora now prioritizes capture and playback over nonessential previews and storage calculations, reducing contention that could cause dropped frames or slideshow-like video.
+
+  - **NVIDIA recording:** Real-time capture now favors consistent frame delivery under heavy GPU load.
+  - **Recording playback:** Timeline thumbnails pause while a recording is playing so they do not compete with video playback.
+  - **Background work:** Aura editing previews use a lighter frame rate, while storage usage checks stay out of the capture path when a game or recording is active.
+  - **App bar:** Storage usage loads in the background and handles refresh failures without delaying startup or capture.
+
 ## 0.10.0
 
 ### Minor Changes
