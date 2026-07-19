@@ -220,8 +220,17 @@ describe("ProfilesService", () => {
       cropRegions: [expect.objectContaining({ id: "crop-1" })],
     });
     expect(duplicate.id).not.toBe(source.id);
+    expect(() =>
+      service.duplicate({
+        sourceId: "missing-profile",
+        name: "Missing Copy",
+      }),
+    ).toThrow("source profile was not found");
 
     const listSpy = vi.spyOn(service, "list");
+    expect(() => service.delete("missing-profile")).toThrow(
+      "profile was not found",
+    );
     expect(service.delete(source.id)).toEqual([duplicate]);
     expect(listSpy).toHaveBeenCalledOnce();
     listSpy.mockClear();

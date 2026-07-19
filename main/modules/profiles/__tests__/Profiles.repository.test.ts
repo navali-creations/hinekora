@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createDefaultProfile } from "~/types";
 import { DatabaseService } from "../../database";
@@ -67,6 +67,12 @@ describe("ProfilesRepository", () => {
     repository.delete(created.id);
     expect(repository.list()).toEqual([]);
     expect(repository.count()).toBe(0);
+
+    const queryOneSpy = vi
+      .spyOn(database, "queryOne")
+      .mockReturnValueOnce(undefined);
+    expect(repository.count()).toBe(0);
+    queryOneSpy.mockRestore();
 
     const replacement = createDefaultProfile({
       name: "Replacement",
