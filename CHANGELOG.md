@@ -1,3 +1,32 @@
+## 0.12.0
+
+### Minor Changes
+
+- [`bed2713`](https://github.com/navali-creations/hinekora/commit/bed271324ea9e804d16807450de0775fd7d72333) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** More accurate and complete aura editing.
+
+  Aura Manager now matches the in-game aura overlay more closely and keeps rapid profile edits reliable.
+
+  - **Layout preview:** Source areas and aura positions use the correct game aspect ratio, so preview placement matches the actual overlay more accurately.
+  - **Aura controls:** Rename auras and adjust scale, thickness, opacity, mirroring, straightening, and rotation from organized controls.
+  - **Profile workflow:** Create, rename, copy, save, scope, or delete aura profiles directly from Aura Manager, with per-game availability, shortcuts for common actions, and a protected empty default when the final profile is deleted.
+  - **Profile reliability:** Rapid edits across multiple profiles are saved without one profile overwriting another.
+
+- [`bbf01e1`](https://github.com/navali-creations/hinekora/commit/bbf01e1ef2545f31f4c388ebf7ece652ec4a6bbe) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Removed:** Aura profile management from Settings.
+
+  The Aura Profiles card has been removed from Settings now that profile management is available directly in Aura Manager.
+
+### Patch Changes
+
+- [`bbf5c90`](https://github.com/navali-creations/hinekora/commit/bbf5c90b5bfa9d564e9f9ba4a879737b546b04f6) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Stable Saved Edits page actions while changing leagues.
+
+  The Saved Edits page now keeps its league selector and delete-all action steady while saved edit results refresh after a league change.
+
 ## 0.11.0
 
 ### Minor Changes
