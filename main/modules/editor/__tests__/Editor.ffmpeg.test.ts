@@ -391,15 +391,15 @@ describe("probeEditorAudioStream", () => {
             startSeconds: 0,
           },
           {
-            durationSeconds: 1,
+            durationSeconds: 1.5,
             inSeconds: 0,
             kind: "clip",
-            outSeconds: 1,
-            playbackRate: 1,
+            outSeconds: 3,
+            playbackRate: 2,
             source: {
               path: sourcePath,
             },
-            sourceDurationSeconds: 1,
+            sourceDurationSeconds: 3,
             startSeconds: 1,
           },
         ],
@@ -414,6 +414,7 @@ describe("probeEditorAudioStream", () => {
       const args = ffmpegCalls[0]?.[1] ?? [];
       expect(args).toContain("-crf");
       expect(args).toContain("21");
+      expect(args[args.indexOf("-t") + 1]).toBe("3.000");
       expect(ffprobeCalls).toHaveLength(1);
       expect(ffprobeCalls[0]?.[1]).toContain(sourcePath);
       expect(progress).toHaveBeenCalledWith(1);

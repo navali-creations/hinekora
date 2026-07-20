@@ -15,6 +15,7 @@ import {
   editorTimelinePlaybackRates,
   type GameId,
   isEditorTimelinePlaybackRate,
+  maxEditorExportDurationSeconds,
 } from "~/types";
 import { EditorChannel } from "./Editor.channels";
 import type {
@@ -48,7 +49,6 @@ const maxEditorMediaAssetFilterKeys = 200;
 const maxEditorMediaAssetPageIndex = 10_000;
 const maxEditorMediaAssetPageSize = 50;
 const maxEditorProjectListLimit = 100;
-const maxEditorExportDurationSeconds = 4 * 60 * 60;
 const maxEditorExportClips = 200;
 const maxEditorProjectTracks = 8;
 const maxEditorSaveProjectPayloadBytes = 2 * 1024 * 1024;

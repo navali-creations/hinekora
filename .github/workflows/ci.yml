@@ -285,6 +285,9 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@1.96.1
 
+      - name: Run Windows media integration tests
+        run: pnpm test:main:media-integration
+
       - name: Package Windows app
         run: pnpm package
 

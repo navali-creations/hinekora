@@ -21,6 +21,7 @@
     "check:fix": "biome check --write .",
     "test": "node scripts/vitest-electron.mjs run --config vitest.main.config.mts && vitest run --config vitest.renderer.config.mts",
     "test:main": "node scripts/vitest-electron.mjs run --config vitest.main.config.mts",
+    "test:main:media-integration": "node scripts/vitest-electron.mjs run --config vitest.main.config.mts main/modules/editor/__tests__/Editor.ffmpeg.integration.test.ts main/modules/replay-clips/__tests__/ReplayClips.render.integration.test.ts",
     "test:main:coverage": "node scripts/vitest-electron.mjs run --config vitest.main.config.mts --coverage",
     "test:renderer": "vitest run --config vitest.renderer.config.mts",
     "test:renderer:coverage": "vitest run --config vitest.renderer.config.mts --coverage",

@@ -12,4 +12,21 @@ function isPlaybackInsideClip(input: {
   );
 }
 
-export { isPlaybackInsideClip };
+function findContiguousTimelineClip(input: {
+  currentClip: EditorTimelineClip;
+  timelineClips: EditorTimelineClip[];
+  toleranceSeconds: number;
+}): EditorTimelineClip | null {
+  const clipEndSeconds =
+    input.currentClip.startSeconds + input.currentClip.durationSeconds;
+
+  return (
+    input.timelineClips.find(
+      (clip) =>
+        clip.id !== input.currentClip.id &&
+        Math.abs(clip.startSeconds - clipEndSeconds) <= input.toleranceSeconds,
+    ) ?? null
+  );
+}
+
+export { findContiguousTimelineClip, isPlaybackInsideClip };

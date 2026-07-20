@@ -1056,7 +1056,6 @@ describe("EditorService IPC", () => {
       outSeconds: 20,
       sourceOutSeconds: 10,
     });
-    delete (staleClip as { playbackRate?: unknown }).playbackRate;
     const staleProject = createEditorProject({
       assets: [staleAsset],
       durationSeconds: 10,
@@ -1825,18 +1824,13 @@ describe("EditorService IPC", () => {
       ).toMatchObject({ path: clipPath });
       expect(
         internals.createExportClips([
-          (() => {
-            const legacyClip = createExportClip({
-              durationSeconds: 1,
-              inSeconds: 2,
-              outSeconds: 3,
-              source: { id: "recording-1", kind: "recording" },
-              startSeconds: 2,
-            });
-            delete (legacyClip as { playbackRate?: unknown }).playbackRate;
-
-            return legacyClip;
-          })(),
+          createExportClip({
+            durationSeconds: 1,
+            inSeconds: 2,
+            outSeconds: 3,
+            source: { id: "recording-1", kind: "recording" },
+            startSeconds: 2,
+          }),
           createExportClip({
             durationSeconds: 5,
             outSeconds: 3,

@@ -309,6 +309,70 @@ describe("useEditorPreviewPlayback", () => {
     expect(storeMocks.setPreviewPlaying).toHaveBeenCalledWith(false);
   });
 
+  it("resumes a same-source clip after a 16x clip reaches a contiguous boundary", async () => {
+    const fastClip = createEditorTestTimelineClip(asset, {
+      durationSeconds: 0.25,
+      id: "timeline-fast",
+      inSeconds: 0,
+      outSeconds: 4,
+      playbackRate: 16,
+      startSeconds: 0,
+    });
+    const nextClip = createEditorTestTimelineClip(asset, {
+      durationSeconds: 1,
+      id: "timeline-next",
+      inSeconds: 0,
+      outSeconds: 1,
+      startSeconds: 0.25,
+    });
+    const speedProject = createEditorTestProject(asset, {
+      durationSeconds: 1.25,
+      tracks: [
+        {
+          clips: [fastClip, nextClip],
+          id: "video-track",
+          kind: "video",
+          label: "Video",
+        },
+      ],
+    });
+    configureEditorState({
+      isPreviewPlaying: true,
+      playbackSeconds: 0.24,
+      project: speedProject,
+      selectedClipId: fastClip.id,
+    });
+    await renderHarness();
+    const video = container.querySelector<HTMLVideoElement>(
+      '[data-testid="preview-video"]',
+    );
+    if (!video) {
+      throw new Error("Expected preview video to render");
+    }
+
+    const play = vi.mocked(HTMLMediaElement.prototype.play);
+    play.mockClear();
+    video.currentTime = 4;
+    await act(async () => {
+      video.dispatchEvent(new Event("ended", { bubbles: true }));
+    });
+
+    expect(storeMocks.setPlaybackSeconds).toHaveBeenCalledWith(0.25);
+    expect(storeMocks.setPlaybackSeconds).not.toHaveBeenCalledWith(0);
+    expect(storeMocks.setPreviewPlaying).not.toHaveBeenCalledWith(false);
+
+    configureEditorState({
+      isPreviewPlaying: true,
+      playbackSeconds: 0.25,
+      project: speedProject,
+      selectedClipId: fastClip.id,
+    });
+    await renderHarness();
+
+    expect(video.currentTime).toBe(0);
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
   it("ignores paused time updates from a selected clip outside the playhead", async () => {
     const firstClip = createEditorTestTimelineClip(asset, {
       durationSeconds: 2,

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { EditorTimelineClip } from "~/main/modules/editor";
 
-import { isPlaybackInsideClip } from "./useEditorPreviewPlayback.utils";
+import {
+  findContiguousTimelineClip,
+  isPlaybackInsideClip,
+} from "./useEditorPreviewPlayback.utils";
 
 const clip: EditorTimelineClip = {
   assetKey: "clip:asset-1",
@@ -24,5 +27,33 @@ describe("useEditorPreviewPlayback utils", () => {
     expect(isPlaybackInsideClip({ clip, playbackSeconds: 3 })).toBe(true);
     expect(isPlaybackInsideClip({ clip, playbackSeconds: 4.25 })).toBe(true);
     expect(isPlaybackInsideClip({ clip, playbackSeconds: 5 })).toBe(false);
+  });
+
+  it("finds only clips that begin within the contiguous boundary tolerance", () => {
+    const contiguousClip = {
+      ...clip,
+      id: "timeline-contiguous",
+      startSeconds: 5.019,
+    };
+    const separatedClip = {
+      ...clip,
+      id: "timeline-separated",
+      startSeconds: 5.021,
+    };
+
+    expect(
+      findContiguousTimelineClip({
+        currentClip: clip,
+        timelineClips: [clip, separatedClip, contiguousClip],
+        toleranceSeconds: 0.02,
+      }),
+    ).toBe(contiguousClip);
+    expect(
+      findContiguousTimelineClip({
+        currentClip: clip,
+        timelineClips: [clip, separatedClip],
+        toleranceSeconds: 0.02,
+      }),
+    ).toBe(null);
   });
 });

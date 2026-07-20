@@ -86,7 +86,8 @@ function isEditorShortcutSuppressedTarget(target: EventTarget | null): boolean {
   return (
     isEditorShortcutEditableTarget(target) ||
     target.closest('dialog[open], [role="dialog"], [aria-modal="true"]') !==
-      null
+      null ||
+    target.closest('[role="menu"]') !== null
   );
 }
 

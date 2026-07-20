@@ -5,8 +5,6 @@ import type {
   EditorTimelineClip,
 } from "~/main/modules/editor";
 
-import { defaultEditorTimelinePlaybackRate } from "~/types";
-
 interface EditorRecordingBookmarkSource {
   assetKey: string;
   clipId: string | null;
@@ -172,8 +170,7 @@ function resolveEditorBookmarkTimelineMapping(input: {
 
   const timelineSeconds = roundEditorBookmarkSeconds(
     clip.startSeconds +
-      (sourceSeconds - sourceStartSeconds) /
-        (clip.playbackRate ?? defaultEditorTimelinePlaybackRate),
+      (sourceSeconds - sourceStartSeconds) / clip.playbackRate,
   );
 
   return {
@@ -243,13 +240,11 @@ function resolveEditorBookmarkTimelineHighlightMapping(input: {
 
   return {
     durationSeconds: roundEditorBookmarkSeconds(
-      visibleDurationSeconds /
-        (clip.playbackRate ?? defaultEditorTimelinePlaybackRate),
+      visibleDurationSeconds / clip.playbackRate,
     ),
     timelineSeconds: roundEditorBookmarkSeconds(
       clip.startSeconds +
-        (visibleBookmarkStartSeconds - sourceStartSeconds) /
-          (clip.playbackRate ?? defaultEditorTimelinePlaybackRate),
+        (visibleBookmarkStartSeconds - sourceStartSeconds) / clip.playbackRate,
     ),
   };
 }
@@ -323,9 +318,7 @@ function toEditorRecordingBookmarkSource(
 function resolveClipVisibleSourceEndSeconds(clip: EditorTimelineClip): number {
   return Math.min(
     clip.outSeconds,
-    clip.inSeconds +
-      clip.durationSeconds *
-        (clip.playbackRate ?? defaultEditorTimelinePlaybackRate),
+    clip.inSeconds + clip.durationSeconds * clip.playbackRate,
   );
 }
 
@@ -349,8 +342,7 @@ function resolveMappedBookmarkDurationSeconds(input: {
     input.sourceEndSeconds,
   );
   const mappedDurationSeconds = roundEditorBookmarkSeconds(
-    (clippedEndSeconds - input.sourceSeconds) /
-      (input.clip.playbackRate ?? defaultEditorTimelinePlaybackRate),
+    (clippedEndSeconds - input.sourceSeconds) / input.clip.playbackRate,
   );
 
   return mappedDurationSeconds > 0 ? mappedDurationSeconds : null;

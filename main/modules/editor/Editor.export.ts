@@ -1,8 +1,4 @@
-import {
-  defaultEditorTimelinePlaybackRate,
-  type EditorTimelinePlaybackRate,
-  isEditorTimelinePlaybackRate,
-} from "~/types";
+import { defaultEditorTimelinePlaybackRate } from "~/types";
 import type {
   EditorExportClipInput,
   EditorExportResolution,
@@ -63,7 +59,7 @@ function createEditorExportSegments(
       first.inSeconds - second.inSeconds,
   )) {
     const startSeconds = roundToMilliseconds(Math.max(0, clip.startSeconds));
-    const playbackRate = normalizeEditorExportPlaybackRate(clip.playbackRate);
+    const playbackRate = clip.playbackRate;
     const sourceRangeDurationSeconds = roundToMilliseconds(
       clip.outSeconds - clip.inSeconds,
     );
@@ -185,7 +181,7 @@ function validateEditorExportTimeline(input: {
       first.inSeconds - second.inSeconds,
   )) {
     const startSeconds = roundToMilliseconds(clip.startSeconds);
-    const playbackRate = normalizeEditorExportPlaybackRate(clip.playbackRate);
+    const playbackRate = clip.playbackRate;
     const sourceRangeDurationSeconds = roundToMilliseconds(
       clip.outSeconds - clip.inSeconds,
     );
@@ -234,16 +230,6 @@ function createGapSegment(
 
 function createScaleFilter(size: EditorExportSize): string {
   return `scale=${size.width}:${size.height}:force_original_aspect_ratio=decrease,pad=${size.width}:${size.height}:(ow-iw)/2:(oh-ih)/2,setsar=1,format=yuv420p`;
-}
-
-function normalizeEditorExportPlaybackRate(
-  playbackRate: number | undefined,
-): EditorTimelinePlaybackRate {
-  return typeof playbackRate === "number" &&
-    Number.isFinite(playbackRate) &&
-    isEditorTimelinePlaybackRate(playbackRate)
-    ? playbackRate
-    : defaultEditorTimelinePlaybackRate;
 }
 
 function createVideoSpeedFilter(playbackRate: number): string {

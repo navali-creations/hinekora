@@ -3,7 +3,6 @@ import type {
   EditorTimelineClip,
 } from "~/main/modules/editor";
 
-import { defaultEditorTimelinePlaybackRate } from "~/types";
 import {
   normalizeEditorDuration,
   roundToMilliseconds,
@@ -82,8 +81,7 @@ function trimTimelineClipStart(input: {
     clip: input.clip,
     sourceRange,
   });
-  const playbackRate =
-    input.clip.playbackRate ?? defaultEditorTimelinePlaybackRate;
+  const playbackRate = input.clip.playbackRate;
   const clipEndSeconds = roundToMilliseconds(
     input.clip.startSeconds + input.clip.durationSeconds,
   );
@@ -128,8 +126,7 @@ function trimTimelineClipEnd(input: {
     clip: input.clip,
     sourceRange,
   });
-  const playbackRate =
-    input.clip.playbackRate ?? defaultEditorTimelinePlaybackRate;
+  const playbackRate = input.clip.playbackRate;
   const earliestEndSeconds = roundToMilliseconds(
     input.clip.startSeconds +
       currentRange.minimumDurationSeconds / playbackRate,
@@ -164,8 +161,7 @@ function resolveTimelineClipSourceRange(input: {
   assetDurationSeconds: number;
   clip: EditorTimelineClip;
 }): TimelineClipSourceRange {
-  const playbackRate =
-    input.clip.playbackRate ?? defaultEditorTimelinePlaybackRate;
+  const playbackRate = input.clip.playbackRate;
   const assetDurationSeconds = normalizeEditorDuration(
     Math.max(
       input.assetDurationSeconds,

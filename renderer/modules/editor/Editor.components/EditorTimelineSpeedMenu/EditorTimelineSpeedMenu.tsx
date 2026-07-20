@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { type MouseEvent, useEffect, useRef, useState } from "react";
+import { type MouseEvent, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { FiCheck } from "react-icons/fi";
 import { TbTimeDuration30 } from "react-icons/tb";
@@ -8,19 +8,17 @@ import { useBoundStore } from "~/renderer/store";
 
 import {
   defaultEditorTimelinePlaybackRate,
+  type EditorTimelinePlaybackRate,
   editorTimelinePlaybackRates,
   isEditorTimelinePlaybackRate,
 } from "~/types";
+import { createUnavailablePlaybackRates } from "./EditorTimelineSpeedMenu.utils";
+import { useEditorTimelineSpeedMenu } from "./useEditorTimelineSpeedMenu/useEditorTimelineSpeedMenu";
+
+const noUnavailablePlaybackRates: ReadonlySet<EditorTimelinePlaybackRate> =
+  new Set();
 
 function EditorTimelineSpeedMenu() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const menuRef = useRef<HTMLUListElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{
-    bottom: number;
-    left: number;
-  } | null>(null);
   const isProcessing = useBoundStore(
     (state) =>
       state.editor.clipboardState.status === "copying" ||
@@ -35,68 +33,31 @@ function EditorTimelineSpeedMenu() {
   const selectedPlaybackRate =
     selectedTimelineClip?.playbackRate ?? defaultEditorTimelinePlaybackRate;
   const canChangeClipSpeed = !isProcessing && selectedTimelineClip !== null;
-
-  useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const handlePointerDown = (event: PointerEvent) => {
-      if (
-        event.target instanceof Node &&
-        !containerRef.current?.contains(event.target) &&
-        !menuRef.current?.contains(event.target)
-      ) {
-        setIsOpen(false);
-      }
-    };
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-
-      setIsOpen(false);
-      triggerRef.current?.focus();
-    };
-
-    const updateMenuPosition = () => {
-      const triggerBounds = triggerRef.current?.getBoundingClientRect();
-      if (!triggerBounds) {
-        return;
-      }
-
-      setMenuPosition({
-        bottom: window.innerHeight - triggerBounds.top + 4,
-        left: triggerBounds.left + triggerBounds.width / 2,
-      });
-    };
-
-    updateMenuPosition();
-    document.addEventListener("pointerdown", handlePointerDown);
-    document.addEventListener("keydown", handleKeyDown);
-    window.addEventListener("resize", updateMenuPosition);
-    window.addEventListener("scroll", updateMenuPosition, true);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown);
-      document.removeEventListener("keydown", handleKeyDown);
-      window.removeEventListener("resize", updateMenuPosition);
-      window.removeEventListener("scroll", updateMenuPosition, true);
-    };
-  }, [isOpen]);
-
-  const handleToggleMenu = () => {
-    const triggerBounds = triggerRef.current?.getBoundingClientRect();
-    if (!isOpen && triggerBounds) {
-      setMenuPosition({
-        bottom: window.innerHeight - triggerBounds.top + 4,
-        left: triggerBounds.left + triggerBounds.width / 2,
-      });
-    }
-
-    setIsOpen((currentIsOpen) => !currentIsOpen);
-  };
+  const {
+    closeMenuAndFocusTrigger,
+    containerRef,
+    handleMenuKeyDown,
+    handleToggleMenu,
+    handleTriggerKeyDown,
+    isOpen,
+    menuPosition,
+    menuRef,
+    setMenuItemRef,
+    triggerRef,
+  } = useEditorTimelineSpeedMenu({
+    canChangeClipSpeed,
+    selectedPlaybackRate,
+  });
+  const unavailablePlaybackRates = useMemo(
+    () =>
+      isOpen
+        ? createUnavailablePlaybackRates({
+            clipId: selectedClipId,
+            project,
+          })
+        : noUnavailablePlaybackRates,
+    [isOpen, project, selectedClipId],
+  );
 
   const handlePlaybackRateClick = (event: MouseEvent<HTMLUListElement>) => {
     if (!canChangeClipSpeed || !(event.target instanceof Element)) {
@@ -107,14 +68,14 @@ function EditorTimelineSpeedMenu() {
       "button[data-playback-rate]",
     );
     const playbackRate = Number(option?.dataset.playbackRate);
-    if (!isEditorTimelinePlaybackRate(playbackRate)) {
+    if (option?.disabled || !isEditorTimelinePlaybackRate(playbackRate)) {
       return;
     }
 
     useBoundStore
       .getState()
       .editor.setSelectedTimelineClipPlaybackRate(playbackRate);
-    setIsOpen(false);
+    closeMenuAndFocusTrigger();
   };
 
   return (
@@ -127,16 +88,17 @@ function EditorTimelineSpeedMenu() {
           aria-expanded={isOpen}
           aria-haspopup="menu"
           aria-label={`Clip speed: ${selectedPlaybackRate}x`}
-          className={clsx(
-            "btn btn-square btn-xs h-6 min-h-6 w-6",
-            selectedPlaybackRate === defaultEditorTimelinePlaybackRate
-              ? "btn-ghost"
-              : "btn-primary",
-          )}
+          className={clsx("btn btn-square btn-xs h-6 min-h-6 w-6", {
+            "btn-ghost":
+              selectedPlaybackRate === defaultEditorTimelinePlaybackRate,
+            "btn-primary":
+              selectedPlaybackRate !== defaultEditorTimelinePlaybackRate,
+          })}
           disabled={!canChangeClipSpeed}
           ref={triggerRef}
           type="button"
           onClick={handleToggleMenu}
+          onKeyDown={handleTriggerKeyDown}
         >
           <TbTimeDuration30 size={20} />
         </button>
@@ -151,8 +113,9 @@ function EditorTimelineSpeedMenu() {
             role="menu"
             style={menuPosition}
             onClick={handlePlaybackRateClick}
+            onKeyDown={handleMenuKeyDown}
           >
-            {editorTimelinePlaybackRates.map((playbackRate) => {
+            {editorTimelinePlaybackRates.map((playbackRate, index) => {
               const isSelected = playbackRate === selectedPlaybackRate;
 
               return (
@@ -164,7 +127,10 @@ function EditorTimelineSpeedMenu() {
                       { active: isSelected },
                     )}
                     data-playback-rate={playbackRate}
+                    disabled={unavailablePlaybackRates.has(playbackRate)}
+                    ref={(item) => setMenuItemRef(index, item)}
                     role="menuitemradio"
+                    tabIndex={isSelected ? 0 : -1}
                     type="button"
                   >
                     <span>{playbackRate}x</span>

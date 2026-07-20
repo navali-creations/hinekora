@@ -5,7 +5,10 @@ import { useEditorShallow } from "~/renderer/store";
 import { defaultEditorTimelinePlaybackRate } from "~/types";
 import { publishEditorPlaybackVisualTime } from "../../Editor.utils/Editor.utils";
 import { useEditorPreviewFrame } from "../useEditorPreviewFrame/useEditorPreviewFrame";
-import { isPlaybackInsideClip } from "./useEditorPreviewPlayback.utils";
+import {
+  findContiguousTimelineClip,
+  isPlaybackInsideClip,
+} from "./useEditorPreviewPlayback.utils";
 
 const playbackSyncToleranceSeconds = 0.08;
 const clipBoundaryToleranceSeconds = 0.02;
@@ -86,13 +89,14 @@ function useEditorPreviewPlayback() {
   const mediaUrl =
     previewClip?.mediaUrl ??
     (!hasTimelineClips ? selectedAsset?.mediaUrl : null);
+  const previewMediaIdentity = previewClip?.id ?? mediaUrl;
   const title = previewClip?.name ?? selectedAsset?.name ?? "Preview";
   const previewPlaybackRate =
     previewClip?.playbackRate ?? defaultEditorTimelinePlaybackRate;
   const sourceSeconds = playbackClip
     ? playbackClip.inSeconds +
       Math.max(0, playbackSeconds - playbackClip.startSeconds) *
-        (playbackClip.playbackRate ?? defaultEditorTimelinePlaybackRate)
+        playbackClip.playbackRate
     : (previewClip?.inSeconds ?? playbackSeconds);
 
   useEffect(() => {
@@ -163,7 +167,7 @@ function useEditorPreviewPlayback() {
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !mediaUrl) {
+    if (!video || !mediaUrl || !previewMediaIdentity) {
       return;
     }
 
@@ -175,7 +179,7 @@ function useEditorPreviewPlayback() {
     void video.play().catch(() => {
       setPreviewPlaying(false);
     });
-  }, [isPreviewPlaying, mediaUrl, setPreviewPlaying]);
+  }, [isPreviewPlaying, mediaUrl, previewMediaIdentity, setPreviewPlaying]);
 
   const syncPlaybackPosition = useCallback(
     (options: { force?: boolean } = {}) => {
@@ -191,8 +195,7 @@ function useEditorPreviewPlayback() {
 
       const nextPlaybackSeconds =
         previewClip.startSeconds +
-        (video.currentTime - previewClip.inSeconds) /
-          (previewClip.playbackRate ?? defaultEditorTimelinePlaybackRate);
+        (video.currentTime - previewClip.inSeconds) / previewClip.playbackRate;
       const clipEndSeconds =
         previewClip.startSeconds + previewClip.durationSeconds;
 
@@ -201,12 +204,11 @@ function useEditorPreviewPlayback() {
           previewClip.outSeconds - clipBoundaryToleranceSeconds ||
         nextPlaybackSeconds >= clipEndSeconds - clipBoundaryToleranceSeconds
       ) {
-        const contiguousClip = timelineClips.find(
-          (clip) =>
-            clip.id !== previewClip.id &&
-            Math.abs(clip.startSeconds - clipEndSeconds) <=
-              clipBoundaryToleranceSeconds,
-        );
+        const contiguousClip = findContiguousTimelineClip({
+          currentClip: previewClip,
+          timelineClips,
+          toleranceSeconds: clipBoundaryToleranceSeconds,
+        });
 
         if (
           !contiguousClip &&
@@ -342,6 +344,21 @@ function useEditorPreviewPlayback() {
       syncPlaybackPosition({ force: true });
       setPreviewPlaying(false);
       return;
+    }
+
+    if (previewClip) {
+      const contiguousClip = findContiguousTimelineClip({
+        currentClip: previewClip,
+        timelineClips,
+        toleranceSeconds: clipBoundaryToleranceSeconds,
+      });
+      if (contiguousClip) {
+        publishPlaybackSeconds(
+          previewClip.startSeconds + previewClip.durationSeconds,
+          { force: true },
+        );
+        return;
+      }
     }
 
     publishPlaybackSeconds(0, { force: true });

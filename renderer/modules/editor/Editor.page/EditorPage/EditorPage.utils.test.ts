@@ -125,4 +125,16 @@ describe("EditorPage utils", () => {
 
     dialog.remove();
   });
+
+  it("suppresses editor shortcuts inside menus", () => {
+    const menu = document.createElement("div");
+    const button = document.createElement("button");
+    menu.setAttribute("role", "menu");
+    menu.append(button);
+    document.body.append(menu);
+
+    expect(isEditorShortcutSuppressedTarget(button)).toBe(true);
+
+    menu.remove();
+  });
 });

@@ -1,4 +1,3 @@
-import { defaultEditorTimelinePlaybackRate } from "~/types";
 import {
   calculateTimelineDuration,
   createEditorTrimHistoryLabel,
@@ -61,8 +60,7 @@ function createEditorTimelineTrimActions({
               ),
               clip,
             });
-            const playbackRate =
-              clip.playbackRate ?? defaultEditorTimelinePlaybackRate;
+            const playbackRate = clip.playbackRate;
             const firstClip = {
               ...clip,
               durationSeconds: firstDurationSeconds,

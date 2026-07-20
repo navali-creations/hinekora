@@ -312,6 +312,31 @@ describe("Editor timeline clip slice", () => {
     expect(store.getState().editor.project?.durationSeconds).toBe(15);
   });
 
+  it("keeps the project exportable when a slower speed exceeds the duration limit", () => {
+    const store = createTestStore();
+    const asset = createEditorTestAsset({ durationSeconds: 4_000 });
+    const project = createEditorTestProject(asset);
+    const longClip = createEditorTestTimelineClip(asset, {
+      durationSeconds: 4_000,
+      outSeconds: 4_000,
+      sourceOutSeconds: 4_000,
+    });
+    const longProject = {
+      ...project,
+      activeClipId: longClip.id,
+      durationSeconds: 4_000,
+      tracks: [{ ...project.tracks[0]!, clips: [longClip] }],
+    };
+    loadEditorProject(store, longProject, [asset], {
+      selectedClipId: longClip.id,
+    });
+
+    store.getState().editor.setSelectedTimelineClipPlaybackRate(0.25);
+
+    expect(store.getState().editor.project).toBe(longProject);
+    expect(store.getState().editor.historyPast).toEqual([]);
+  });
+
   it("keeps project identity when selected clip speed cannot change", () => {
     const store = createTestStore();
     const asset = createEditorTestAsset();

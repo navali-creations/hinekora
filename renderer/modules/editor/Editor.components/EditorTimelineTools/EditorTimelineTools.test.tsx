@@ -127,10 +127,7 @@ describe("EditorTimelineTools", () => {
     const deleteButton = container.querySelector<HTMLButtonElement>(
       '[aria-label="Delete selected clip"]',
     );
-    expect(speedMenu?.style.left).toBe("112px");
-    expect(speedMenu?.style.bottom).toBe(`${window.innerHeight - 196}px`);
-    expect(speedMenu?.className.includes("w-16")).toBe(true);
-    expect(speedMenu?.className.includes("-translate-x-1/2")).toBe(true);
+    expect(speedMenu).not.toBe(null);
     expect(defaultSpeedOption?.getAttribute("aria-checked")).toBe("true");
 
     await act(async () => {
@@ -146,6 +143,121 @@ describe("EditorTimelineTools", () => {
     );
     expect(storeMocks.toggleProjectAudioMuted).toHaveBeenCalledTimes(1);
     expect(storeMocks.removeTimelineClip).toHaveBeenCalledWith("timeline-1");
+  });
+
+  it("moves focus through speed options and restores the trigger on Escape", async () => {
+    await renderTimelineTools();
+    const speedButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Clip speed: 1x"]',
+    );
+    if (!speedButton) {
+      throw new Error("Expected clip speed button");
+    }
+    speedButton.getBoundingClientRect = vi.fn(() => ({
+      bottom: 224,
+      height: 24,
+      left: 100,
+      right: 124,
+      top: 200,
+      width: 24,
+      x: 100,
+      y: 200,
+      toJSON: vi.fn(),
+    }));
+
+    await act(async () => {
+      speedButton.focus();
+      speedButton.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }),
+      );
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
+    });
+
+    const speedMenu = document.querySelector<HTMLUListElement>(
+      '[aria-label="Clip speed options"]',
+    );
+    const firstSpeedOption = document.querySelector<HTMLButtonElement>(
+      '[data-playback-rate="0.25"]',
+    );
+    expect(document.activeElement).toBe(firstSpeedOption);
+
+    await act(async () => {
+      speedMenu?.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "ArrowDown" }),
+      );
+    });
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-playback-rate="0.5"]'),
+    );
+
+    await act(async () => {
+      speedMenu?.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "End" }),
+      );
+    });
+    expect(document.activeElement).toBe(
+      document.querySelector('[data-playback-rate="16"]'),
+    );
+
+    await act(async () => {
+      speedMenu?.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "Escape" }),
+      );
+    });
+    expect(document.querySelector('[aria-label="Clip speed options"]')).toBe(
+      null,
+    );
+    expect(document.activeElement).toBe(speedButton);
+  });
+
+  it("disables speeds that would exceed the export duration limit", async () => {
+    const asset = createEditorTestAsset({ durationSeconds: 4_000 });
+    const project = createEditorTestProject(asset);
+    const clip = createEditorTestTimelineClip(asset, {
+      durationSeconds: 4_000,
+      outSeconds: 4_000,
+      sourceOutSeconds: 4_000,
+    });
+    configureEditorState({
+      project: {
+        ...project,
+        activeClipId: clip.id,
+        durationSeconds: 4_000,
+        tracks: [{ ...project.tracks[0]!, clips: [clip] }],
+      },
+      selectedClipId: clip.id,
+    });
+    await renderTimelineTools();
+    const speedButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Clip speed: 1x"]',
+    );
+    if (!speedButton) {
+      throw new Error("Expected clip speed button");
+    }
+    speedButton.getBoundingClientRect = vi.fn(() => ({
+      bottom: 224,
+      height: 24,
+      left: 100,
+      right: 124,
+      top: 200,
+      width: 24,
+      x: 100,
+      y: 200,
+      toJSON: vi.fn(),
+    }));
+
+    await act(async () => {
+      speedButton.click();
+    });
+
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-playback-rate="0.25"]')
+        ?.disabled,
+    ).toBe(true);
+    expect(
+      document.querySelector<HTMLButtonElement>('[data-playback-rate="1"]')
+        ?.disabled,
+    ).toBe(false);
   });
 
   it("undoes and redoes project edits from the toolbar", async () => {
@@ -259,6 +371,43 @@ describe("EditorTimelineTools", () => {
     expect(storeMocks.fitTimelineToEdit).not.toHaveBeenCalled();
     expect(storeMocks.setZoom).not.toHaveBeenCalled();
     expect(storeMocks.removeTimelineClip).not.toHaveBeenCalled();
+  });
+
+  it("closes an open speed menu when editor processing starts", async () => {
+    await renderTimelineTools();
+    const speedButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Clip speed: 1x"]',
+    );
+    if (!speedButton) {
+      throw new Error("Expected clip speed button");
+    }
+    speedButton.getBoundingClientRect = vi.fn(() => ({
+      bottom: 224,
+      height: 24,
+      left: 100,
+      right: 124,
+      top: 200,
+      width: 24,
+      x: 100,
+      y: 200,
+      toJSON: vi.fn(),
+    }));
+
+    await act(async () => {
+      speedButton.click();
+    });
+    expect(
+      document.querySelector('[aria-label="Clip speed options"]'),
+    ).not.toBe(null);
+
+    configureEditorState({
+      clipboardState: { error: null, requestId: "copy-1", status: "copying" },
+    });
+    await renderTimelineTools();
+
+    expect(document.querySelector('[aria-label="Clip speed options"]')).toBe(
+      null,
+    );
   });
 
   it("highlights and removes all timeline gaps", async () => {

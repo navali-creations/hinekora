@@ -5,7 +5,6 @@ import type {
   EditorTimelineClip,
 } from "~/main/modules/editor";
 
-import { defaultEditorTimelinePlaybackRate } from "~/types";
 import {
   calculateTimelineDuration,
   clampEditorTimelineZoom,
@@ -302,8 +301,7 @@ function createEditorWorkspaceActions({
                 return clip;
               }
 
-              const playbackRate =
-                clip.playbackRate ?? defaultEditorTimelinePlaybackRate;
+              const playbackRate = clip.playbackRate;
               const durationSeconds = roundToMilliseconds(
                 range.durationSeconds / playbackRate,
               );

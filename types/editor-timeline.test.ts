@@ -5,6 +5,7 @@ import {
   defaultEditorTimelinePlaybackRate,
   editorTimelinePlaybackRates,
   isEditorTimelinePlaybackRate,
+  maxEditorExportDurationSeconds,
   normalizeTimelineProject,
 } from "./editor-timeline";
 
@@ -54,6 +55,7 @@ describe("editor timeline helpers", () => {
       0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4, 8, 16,
     ]);
     expect(defaultEditorTimelinePlaybackRate).toBe(1);
+    expect(maxEditorExportDurationSeconds).toBe(14_400);
     expect(isEditorTimelinePlaybackRate(16)).toBe(true);
     expect(isEditorTimelinePlaybackRate(1.1)).toBe(false);
   });

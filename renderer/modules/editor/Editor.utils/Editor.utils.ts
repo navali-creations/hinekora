@@ -31,9 +31,11 @@ export {
   roundToMilliseconds,
 } from "./EditorTime.utils";
 export {
+  canSetTimelineClipPlaybackRate,
   clampTrimRange,
   createEditorTrimHistoryLabel,
   createTimelineClipFromAsset,
+  createTimelineClipPlaybackRateProject,
   minimumTimelineClipDurationSeconds,
   moveTimelineClipWithinTrack,
   resolveTimelineClipSnap,

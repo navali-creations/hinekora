@@ -11,10 +11,7 @@ import type {
   EditorWorkspace,
 } from "~/main/modules/editor";
 
-import {
-  defaultEditorTimelinePlaybackRate,
-  normalizeTimelineProject,
-} from "~/types";
+import { normalizeTimelineProject } from "~/types";
 import {
   createEditorDefaultFileName,
   roundToMilliseconds,
@@ -195,7 +192,7 @@ function createEditorExportClips(
       durationSeconds: clip.durationSeconds,
       inSeconds: clip.inSeconds,
       outSeconds: clip.outSeconds,
-      playbackRate: clip.playbackRate ?? defaultEditorTimelinePlaybackRate,
+      playbackRate: clip.playbackRate,
       source: {
         id: asset.id,
         kind: asset.kind,

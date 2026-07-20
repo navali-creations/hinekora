@@ -61,18 +61,14 @@ interface EditorE2ECalls {
   deleteAllCount: number;
   deletedProjectIds: string[];
   deletedSavedEditIds: string[];
-  exportRequests: unknown[];
+  exportRequests: EditorExportInput[];
   mediaAssetQueries: unknown[];
   revealedClipIds: string[];
   revealedExportIds: string[];
   revealedSavedEditIds: string[];
   recordingBookmarkQueries: Array<{ query: unknown; recordingId: string }>;
   savedEditDeleteAllCount: number;
-  savedProjects: Array<{
-    id: string;
-    title: string;
-    tracks: Array<{ clips: TimelineClipSnapshot[] }>;
-  }>;
+  savedProjects: EditorProject[];
   settingsUpdates: Array<Record<string, unknown>>;
   unexpectedBridgeCalls: string[];
   workspaceQueries: unknown[];
@@ -656,7 +652,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
         deleteAllCount: 0,
         deletedProjectIds: [] as string[],
         deletedSavedEditIds: [] as string[],
-        exportRequests: [] as unknown[],
+        exportRequests: [] as EditorExportInput[],
         mediaAssetQueries: [] as unknown[],
         revealedClipIds: [] as string[],
         revealedExportIds: [] as string[],
