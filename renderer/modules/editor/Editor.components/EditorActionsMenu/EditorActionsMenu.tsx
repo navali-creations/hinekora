@@ -16,9 +16,7 @@ function EditorActionsMenu() {
   const detailsRef = useRef<HTMLDetailsElement>(null);
   const { isProcessing, toggleSidePanel, visibleSidePanel } = useEditorShallow(
     (editor) => ({
-      isProcessing:
-        editor.clipboardState.status === "copying" ||
-        editor.exportState.status === "exporting",
+      isProcessing: editor.clipboardState.status === "copying",
       toggleSidePanel: editor.toggleSidePanel,
       visibleSidePanel: editor.visibleSidePanel,
     }),

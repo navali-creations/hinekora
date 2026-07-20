@@ -100,6 +100,7 @@ export const useBoundStore = create<BoundStore>()(
         isHydrated: false,
         hydrate: async () => {
           await Promise.all([
+            editorSlice.editor.hydrateExportState(),
             settingsSlice.settings.hydrate(),
             poeLeaguesSlice.poeLeagues.hydrate(),
           ]);
@@ -125,6 +126,7 @@ export const useBoundStore = create<BoundStore>()(
             captureProfilesSlice.captureProfiles.startListening(),
             profilesSlice.profiles.startListening(),
             cropEditorSlice.cropEditor.startListening(),
+            editorSlice.editor.startExportStateListening(),
             managedRecorderSlice.managedRecorder.startListening(),
             poeLeaguesSlice.poeLeagues.startListening(),
             poeProcessSlice.poeProcess.startListening(),

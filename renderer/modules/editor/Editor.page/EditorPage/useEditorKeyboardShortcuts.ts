@@ -56,8 +56,7 @@ function useEditorKeyboardShortcuts(): void {
       setSelectedBookmarkId: bookmarks.setEditorRecordingSelectedBookmarkId,
     }),
   );
-  const isProcessing =
-    clipboardStatus === "copying" || exportStatus === "exporting";
+  const isProcessing = clipboardStatus === "copying";
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -85,6 +84,11 @@ function useEditorKeyboardShortcuts(): void {
         if (key === "b") {
           event.preventDefault();
           toggleSidePanel("bookmarks");
+          return;
+        }
+
+        if (exportStatus === "exporting" && (key === "c" || key === "s")) {
+          event.preventDefault();
           return;
         }
 
@@ -225,6 +229,7 @@ function useEditorKeyboardShortcuts(): void {
     hoveredTimelineGap,
     hasProject,
     isProcessing,
+    exportStatus,
     playbackSeconds,
     previewHasAudio,
     redoProjectChange,

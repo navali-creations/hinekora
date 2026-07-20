@@ -20,9 +20,7 @@ const noUnavailablePlaybackRates: ReadonlySet<EditorTimelinePlaybackRate> =
 
 function EditorTimelineSpeedMenu() {
   const isProcessing = useBoundStore(
-    (state) =>
-      state.editor.clipboardState.status === "copying" ||
-      state.editor.exportState.status === "exporting",
+    (state) => state.editor.clipboardState.status === "copying",
   );
   const project = useBoundStore((state) => state.editor.project);
   const selectedClipId = useBoundStore((state) => state.editor.selectedClipId);

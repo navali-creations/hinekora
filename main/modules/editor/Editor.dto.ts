@@ -162,7 +162,16 @@ export interface EditorExportInput {
   mode: EditorExportMode;
   muteAudio?: boolean;
   overwriteSource: EditorMediaReference | null;
+  projectId: string;
   resolution: EditorExportResolution;
+}
+
+export interface EditorCancelExportInput {
+  exportRequestId: string;
+}
+
+export interface EditorCancelExportResult {
+  cancelled: boolean;
 }
 
 export interface EditorCopyToClipboardInput {
@@ -187,6 +196,22 @@ export interface EditorExportResult {
 export interface EditorExportProgress {
   exportRequestId: string;
   progress: number;
+}
+
+export type EditorExportLifecycleStatus =
+  | "failed"
+  | "exporting"
+  | "idle"
+  | "ready";
+
+export interface EditorExportLifecycle {
+  error: string | null;
+  exportRequestId: string | null;
+  fileName: string | null;
+  progress: number;
+  projectId: string | null;
+  result: EditorExportResult | null;
+  status: EditorExportLifecycleStatus;
 }
 
 export interface EditorExportFileActionResult {

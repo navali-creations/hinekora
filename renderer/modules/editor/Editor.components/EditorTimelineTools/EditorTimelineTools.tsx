@@ -24,9 +24,7 @@ function EditorTimelineTools() {
   );
   const hasUndo = useBoundStore((state) => state.editor.historyPast.length > 0);
   const isProcessing = useBoundStore(
-    (state) =>
-      state.editor.clipboardState.status === "copying" ||
-      state.editor.exportState.status === "exporting",
+    (state) => state.editor.clipboardState.status === "copying",
   );
   const project = useBoundStore((state) => state.editor.project);
   const previewHasAudio = useBoundStore(

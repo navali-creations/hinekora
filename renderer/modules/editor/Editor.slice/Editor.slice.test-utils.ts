@@ -2,6 +2,7 @@ import { beforeEach, vi } from "vitest";
 
 import type { RecordingBookmark } from "~/main/modules/bookmarks";
 import type {
+  EditorExportLifecycle,
   EditorExportProgress,
   EditorExportResult,
   EditorMediaAsset,
@@ -18,14 +19,18 @@ type EditorSliceTestStore = ReturnType<typeof createEditorSliceTestStore>;
 
 function createEditorApiMock() {
   return {
+    cancelExport: vi.fn(),
     copyExport: vi.fn(),
     copyProjectToClipboard: vi.fn(),
     createProject: vi.fn(),
     deleteAllProjects: vi.fn(),
     deleteProject: vi.fn(),
+    dismissExport: vi.fn(),
     exportProject: vi.fn(),
+    getExportLifecycle: vi.fn(),
     getWorkspace: vi.fn(),
     listMediaAssets: vi.fn(),
+    onExportLifecycleChanged: vi.fn(),
     onExportProgress: vi.fn(),
     revealExport: vi.fn(),
     saveProject: vi.fn(),
@@ -59,6 +64,7 @@ function setupEditorSliceTest() {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    window.sessionStorage.clear();
     editorApi = createEditorApiMock();
     progressTracker = installEditorApiMock(editorApi);
   });
@@ -73,11 +79,30 @@ function setupEditorSliceTest() {
 function installEditorApiMock(
   editorApi: ReturnType<typeof createEditorApiMock>,
 ) {
+  let exportLifecycleCallback:
+    | ((lifecycle: EditorExportLifecycle) => void)
+    | null = null;
   let exportProgressCallback:
     | ((progress: EditorExportProgress) => void)
     | null = null;
   let unsubscribeExportProgress = vi.fn();
+  const unsubscribeExportLifecycle = vi.fn();
 
+  editorApi.dismissExport.mockResolvedValue(undefined);
+  editorApi.getExportLifecycle.mockResolvedValue({
+    error: null,
+    exportRequestId: null,
+    fileName: null,
+    progress: 0,
+    projectId: null,
+    result: null,
+    status: "idle",
+  });
+  editorApi.onExportLifecycleChanged.mockImplementation((callback) => {
+    exportLifecycleCallback = callback;
+
+    return unsubscribeExportLifecycle;
+  });
   editorApi.onExportProgress.mockImplementation((callback) => {
     exportProgressCallback = callback;
 
@@ -95,7 +120,9 @@ function installEditorApiMock(
   });
 
   return {
+    getExportLifecycleCallback: () => exportLifecycleCallback,
     getExportProgressCallback: () => exportProgressCallback,
+    getExportLifecycleUnsubscribe: () => unsubscribeExportLifecycle,
     setExportProgressUnsubscribe: (
       unsubscribe: typeof unsubscribeExportProgress,
     ) => {

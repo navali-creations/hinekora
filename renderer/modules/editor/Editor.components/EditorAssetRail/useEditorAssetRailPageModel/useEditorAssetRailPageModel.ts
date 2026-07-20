@@ -27,9 +27,7 @@ function useEditorAssetRailPageModel(scope: MediaLibraryScope) {
     project,
     savedEditPageIndex,
   } = useEditorShallow((editor) => ({
-    isProcessing:
-      editor.clipboardState.status === "copying" ||
-      editor.exportState.status === "exporting",
+    isProcessing: editor.clipboardState.status === "copying",
     mediaAssetPage: editor.mediaAssetPage,
     mediaAssetPendingQuery: editor.mediaAssetPendingQuery,
     mediaAssetQuery: editor.mediaAssetQuery,

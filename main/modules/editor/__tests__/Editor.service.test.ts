@@ -305,6 +305,7 @@ describe("EditorService IPC", () => {
       totalCount: 0,
     });
     vi.spyOn(service, "createProject").mockReturnValue(emptyProject);
+    vi.spyOn(service, "cancelExport").mockResolvedValue({ cancelled: true });
     vi.spyOn(service, "deleteAllProjects").mockReturnValue(emptyWorkspace);
     vi.spyOn(service, "deleteProject").mockReturnValue(emptyWorkspace);
     vi.spyOn(service, "saveProject").mockReturnValue(emptyProject);
@@ -376,6 +377,15 @@ describe("EditorService IPC", () => {
       ),
     ).toEqual(emptyProject);
     expect(service.saveProject).toHaveBeenCalledWith({ project: emptyProject });
+    expect(
+      await handlers.get(EditorChannel.CancelExport)?.(
+        {},
+        { exportRequestId: "export-request-1" },
+      ),
+    ).toEqual({ cancelled: true });
+    expect(service.cancelExport).toHaveBeenCalledWith({
+      exportRequestId: "export-request-1",
+    });
 
     expect(
       await handlers.get(EditorChannel.GetWorkspace)?.({}, { projectId: "" }),
@@ -446,6 +456,10 @@ describe("EditorService IPC", () => {
     expect(await handlers.get(EditorChannel.CopyExport)?.({}, "")).toEqual({
       ok: false,
       error: "export id is too short",
+    });
+    expect(await handlers.get(EditorChannel.CancelExport)?.({}, null)).toEqual({
+      ok: false,
+      error: "editor cancel export input must be an object",
     });
     expect(await handlers.get(EditorChannel.RevealExport)?.({}, "")).toEqual({
       ok: false,
@@ -1332,6 +1346,7 @@ describe("EditorService IPC", () => {
         outputPath: string;
       }) => {
         input.onProgress?.(0.5);
+        input.onProgress?.(1);
         await writeFile(input.outputPath, "rendered");
       },
     );
@@ -1355,6 +1370,23 @@ describe("EditorService IPC", () => {
             }
           | undefined,
         progress: { exportRequestId: string; progress: number },
+      ) => void;
+      sendExportLifecycle: (
+        sender:
+          | {
+              isDestroyed: () => boolean;
+              send: (channel: EditorChannel, lifecycle: unknown) => void;
+            }
+          | undefined,
+        lifecycle: {
+          error: string | null;
+          exportRequestId: string | null;
+          fileName: string | null;
+          progress: number;
+          projectId: string | null;
+          result: null;
+          status: "idle";
+        },
       ) => void;
     };
     vi.spyOn(internals, "createExportClips").mockReturnValue([
@@ -1387,6 +1419,45 @@ describe("EditorService IPC", () => {
         exportRequestId: "export-request-1",
         progress: 0.5,
       });
+      expect(sender.send).toHaveBeenCalledWith(
+        EditorChannel.ExportLifecycleChanged,
+        expect.objectContaining({
+          exportRequestId: "export-request-1",
+          progress: 0.5,
+          projectId: "project-1",
+          status: "exporting",
+        }),
+      );
+      expect(sender.send).toHaveBeenCalledWith(
+        EditorChannel.ExportLifecycleChanged,
+        expect.objectContaining({
+          exportRequestId: "export-request-1",
+          progress: 0.98,
+          status: "exporting",
+        }),
+      );
+      expect(
+        await handlers.get(EditorChannel.GetExportLifecycle)?.({ sender }),
+      ).toMatchObject({
+        exportRequestId: "export-request-1",
+        progress: 1,
+        projectId: "project-1",
+        status: "ready",
+      });
+      expect(
+        await handlers.get(EditorChannel.DismissExport)?.({ sender }),
+      ).toBeUndefined();
+      expect(
+        await handlers.get(EditorChannel.GetExportLifecycle)?.({ sender }),
+      ).toEqual({
+        error: null,
+        exportRequestId: null,
+        fileName: null,
+        progress: 0,
+        projectId: null,
+        result: null,
+        status: "idle",
+      });
 
       internals.sendExportProgress(undefined, {
         exportRequestId: "export-request-1",
@@ -1395,6 +1466,29 @@ describe("EditorService IPC", () => {
       internals.sendExportProgress(
         { isDestroyed: () => true, send: vi.fn() },
         { exportRequestId: "export-request-1", progress: 0.25 },
+      );
+      const idleLifecycle = {
+        error: null,
+        exportRequestId: null,
+        fileName: null,
+        progress: 0,
+        projectId: null,
+        result: null,
+        status: "idle" as const,
+      };
+      internals.sendExportLifecycle(undefined, idleLifecycle);
+      internals.sendExportLifecycle(
+        { isDestroyed: () => true, send: vi.fn() },
+        idleLifecycle,
+      );
+      internals.sendExportLifecycle(
+        {
+          isDestroyed: () => false,
+          send: () => {
+            throw new Error("send failed");
+          },
+        },
+        idleLifecycle,
       );
       internals.sendExportProgress(
         {
@@ -1407,6 +1501,218 @@ describe("EditorService IPC", () => {
       );
     } finally {
       clearIpcWindowRolesForTests();
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("cancels active exports and removes their partial output", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hinekora-editor-cancel-"));
+    const videosPath = join(directory, "videos");
+    const sourcePath = join(directory, "source.mp4");
+    await writeFile(sourcePath, "source");
+    vi.spyOn(app, "getPath").mockImplementation((name) =>
+      name === "videos" ? videosPath : directory,
+    );
+    let resolveRenderStarted: () => void = () => undefined;
+    const renderStarted = new Promise<void>((resolve) => {
+      resolveRenderStarted = resolve;
+    });
+    const renderExportWithFfmpeg = vi.fn(
+      async (input: {
+        outputPath: string;
+        queueOptions?: { signal?: AbortSignal };
+        signal?: AbortSignal;
+      }) => {
+        await writeFile(input.outputPath, "partial");
+        resolveRenderStarted();
+        const signal = input.signal;
+        if (!signal) {
+          throw new Error("Expected an export cancellation signal");
+        }
+        await new Promise<void>((_resolve, reject) => {
+          if (signal.aborted) {
+            reject(signal.reason);
+            return;
+          }
+          signal.addEventListener("abort", () => reject(signal.reason), {
+            once: true,
+          });
+        });
+      },
+    );
+    const service = new EditorService({ renderExportWithFfmpeg });
+    const internals = service as unknown as {
+      activeExports: Map<string, unknown>;
+      createExportClips: () => Array<{
+        durationSeconds: number;
+        inSeconds: number;
+        outSeconds: number;
+        source: { path: string };
+        startSeconds: number;
+      }>;
+    };
+    vi.spyOn(internals, "createExportClips").mockReturnValue([
+      {
+        durationSeconds: 1,
+        inSeconds: 0,
+        outSeconds: 1,
+        source: { path: sourcePath },
+        startSeconds: 0,
+      },
+    ]);
+
+    try {
+      const exportResult = service.exportProject(createExportInput()).then(
+        () => null,
+        (error: unknown) => error,
+      );
+      await renderStarted;
+      expect(service.getExportLifecycle()).toMatchObject({
+        exportRequestId: "export-request-1",
+        status: "exporting",
+      });
+      service.dismissExport();
+      expect(service.getExportLifecycle().status).toBe("exporting");
+      await expect(
+        service.exportProject(
+          createExportInput({ exportRequestId: "export-request-2" }),
+        ),
+      ).rejects.toThrow("Another editor video is already processing");
+      await expect(
+        service.copyProjectToClipboard({
+          clips: [createExportClip()],
+          durationSeconds: 1,
+          fileName: "copy.mp4",
+          resolution: "720p",
+        }),
+      ).resolves.toEqual({
+        error: "Wait for the current video save to finish",
+        ok: false,
+      });
+      vi.mocked(console.error).mockClear();
+      vi.mocked(console.info).mockClear();
+
+      await expect(
+        service.cancelExport({ exportRequestId: "export-request-1" }),
+      ).resolves.toEqual({ cancelled: true });
+      expect(await exportResult).toMatchObject({ name: "AbortError" });
+      expect(console.error).not.toHaveBeenCalled();
+      expect(console.info).toHaveBeenCalledWith(
+        expect.stringContaining("INFO [editor] Editor export cancelled"),
+        expect.objectContaining({ exportRequestId: "export-request-1" }),
+      );
+      expect(renderExportWithFfmpeg).toHaveBeenCalledWith(
+        expect.objectContaining({
+          queueOptions: { signal: expect.any(AbortSignal) },
+          signal: expect.any(AbortSignal),
+        }),
+      );
+      await expect(
+        readdir(join(videosPath, "Hinekora", "Exports")),
+      ).resolves.toEqual([]);
+      expect(internals.activeExports.size).toBe(0);
+      expect(service.getExportLifecycle().status).toBe("idle");
+      await expect(
+        service.cancelExport({ exportRequestId: "export-request-1" }),
+      ).resolves.toEqual({ cancelled: false });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("does not cancel an export while its completed file is being committed", async () => {
+    const service = new EditorService();
+    const abortController = new AbortController();
+    const internals = service as unknown as {
+      activeExports: Map<
+        string,
+        {
+          abortController: AbortController;
+          completion: Promise<void>;
+          phase: "committing";
+          resolveCompletion: () => void;
+        }
+      >;
+    };
+    internals.activeExports.set("export-request-1", {
+      abortController,
+      completion: Promise.resolve(),
+      phase: "committing",
+      resolveCompletion: () => undefined,
+    });
+
+    await expect(
+      service.cancelExport({ exportRequestId: "export-request-1" }),
+    ).resolves.toEqual({ cancelled: false });
+    expect(abortController.signal.aborted).toBe(false);
+  });
+
+  it("rejects duplicate active export request ids", () => {
+    const service = new EditorService();
+    const internals = service as unknown as {
+      activeExports: Map<string, unknown>;
+      createActiveExport: (exportRequestId: string) => {
+        resolveCompletion: () => void;
+      };
+    };
+    const activeExport = internals.createActiveExport("export-request-1");
+
+    expect(() => internals.createActiveExport("export-request-1")).toThrow(
+      "Editor export request is already active",
+    );
+
+    activeExport.resolveCompletion();
+    internals.activeExports.clear();
+  });
+
+  it("reports export finalization failures through the lifecycle", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "hinekora-editor-finalization-"),
+    );
+    vi.spyOn(app, "getPath").mockImplementation((name) =>
+      name === "videos" ? directory : tmpdir(),
+    );
+    const renderExportWithFfmpeg = vi.fn(
+      async (input: { outputPath: string }) => {
+        await writeFile(input.outputPath, "rendered");
+      },
+    );
+    const statExportFile = vi
+      .fn()
+      .mockRejectedValue(new Error("stat failed")) as unknown as typeof stat;
+    const service = new EditorService({
+      renderExportWithFfmpeg,
+      statExportFile,
+    });
+    const internals = service as unknown as {
+      createExportClips: () => Array<{
+        durationSeconds: number;
+        inSeconds: number;
+        outSeconds: number;
+        source: { path: string };
+        startSeconds: number;
+      }>;
+    };
+    vi.spyOn(internals, "createExportClips").mockReturnValue([
+      {
+        durationSeconds: 1,
+        inSeconds: 0,
+        outSeconds: 1,
+        source: { path: join(directory, "source.mp4") },
+        startSeconds: 0,
+      },
+    ]);
+
+    try {
+      await expect(service.exportProject(createExportInput())).rejects.toThrow(
+        "stat failed",
+      );
+      expect(service.getExportLifecycle()).toMatchObject({
+        error: "stat failed",
+        exportRequestId: "export-request-1",
+        status: "failed",
+      });
+    } finally {
       await rm(directory, { force: true, recursive: true });
     }
   });
@@ -1453,6 +1759,11 @@ describe("EditorService IPC", () => {
       await expect(service.exportProject(createExportInput())).rejects.toThrow(
         "render failed",
       );
+      expect(service.getExportLifecycle()).toMatchObject({
+        error: "render failed",
+        exportRequestId: "export-request-1",
+        status: "failed",
+      });
       await expect(
         readdir(join(directory, "Hinekora", "Exports")),
       ).resolves.toEqual([]);
@@ -1938,6 +2249,7 @@ describe("EditorService IPC", () => {
       fileName: "source.mp4",
       mode: "overwrite",
       overwriteSource: { id: "clip-1", kind: "clip" },
+      projectId: "project-1",
       resolution: "1080p",
     };
 
@@ -2001,6 +2313,7 @@ describe("EditorService IPC", () => {
       fileName: "target.mp4",
       mode: "overwrite",
       overwriteSource: { id: "clip-2", kind: "clip" },
+      projectId: "project-1",
       resolution: "1080p",
     });
 
@@ -2088,7 +2401,7 @@ describe("EditorService IPC", () => {
       handlers.get(EditorChannel.ExportProject)?.(
         {},
         createExportInput({
-          durationSeconds: 14_401,
+          durationSeconds: 86_401,
         }),
       ),
     ).resolves.toEqual({ ok: false, error: "duration is too large" });

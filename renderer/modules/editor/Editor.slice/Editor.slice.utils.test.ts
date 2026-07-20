@@ -57,6 +57,7 @@ describe("Editor slice utilities", () => {
       ],
       overwriteSource: { id: asset.id, kind: asset.kind },
       muteAudio: true,
+      projectId: project.id,
     });
     expect(createEditorCopyToClipboardInput(project)).toMatchObject({
       clips: expect.any(Array),

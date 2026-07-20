@@ -38,20 +38,26 @@ interface EditorFfmpegRenderInput {
   queueOptions?: MediaRenderQueueOptions;
   resolution: EditorExportResolution;
   segments: EditorExportSegment[];
+  signal?: AbortSignal;
 }
 
 async function renderEditorExportWithFfmpeg(
   input: EditorFfmpegRenderInput,
 ): Promise<void> {
+  const queueOptions = input.signal
+    ? { ...input.queueOptions, signal: input.signal }
+    : (input.queueOptions ?? {});
+
   return mediaRenderQueue.enqueue(
     () => renderEditorExportWithFfmpegQueued(input),
-    input.queueOptions ?? {},
+    queueOptions,
   );
 }
 
 async function renderEditorExportWithFfmpegQueued(
   input: EditorFfmpegRenderInput,
 ): Promise<void> {
+  input.signal?.throwIfAborted();
   const ffmpegPath = resolveEditorFfmpegPath();
   logEditorBinaryResolution("ffmpeg", ffmpegPath);
   /* v8 ignore next -- Depends on packaged binary availability, not business logic. */
@@ -70,7 +76,9 @@ async function renderEditorExportWithFfmpegQueued(
   const renderSegments = await createRenderSegments(
     input.segments,
     input.muteAudio ? null : ffprobePath,
+    input.signal,
   );
+  input.signal?.throwIfAborted();
   const filterScriptPath = await createExportFilterScript(
     input.resolution,
     renderSegments,
@@ -95,11 +103,15 @@ async function renderEditorExportWithFfmpegQueued(
   const ffmpegDependencies: {
     onProgress?: (progress: number) => void;
     progressDurationSeconds: number;
+    signal?: AbortSignal;
   } = {
     progressDurationSeconds: calculateEditorExportDuration(input.segments),
   };
   if (input.onProgress) {
     ffmpegDependencies.onProgress = input.onProgress;
+  }
+  if (input.signal) {
+    ffmpegDependencies.signal = input.signal;
   }
 
   try {
@@ -176,11 +188,17 @@ function runEditorFfmpeg(
   dependencies: {
     onProgress?: (progress: number) => void;
     progressDurationSeconds?: number;
+    signal?: AbortSignal;
     spawnProcess?: typeof spawn;
     timeoutMs?: number;
   } = {},
 ): Promise<void> {
   return new Promise((resolvePromise, reject) => {
+    if (dependencies.signal?.aborted) {
+      reject(resolveAbortReason(dependencies.signal));
+      return;
+    }
+
     const spawnProcess = dependencies.spawnProcess ?? spawn;
     const child = spawnProcess(ffmpegPath, args, {
       windowsHide: true,
@@ -198,6 +216,7 @@ function runEditorFfmpeg(
     }
     const reportProgress = createFfmpegProgressReporter(progressInput);
     let didTimeout = false;
+    let didAbort = false;
     let isSettled = false;
     const timeoutId = setTimeout(() => {
       didTimeout = true;
@@ -212,8 +231,15 @@ function runEditorFfmpeg(
 
       isSettled = true;
       clearTimeout(timeoutId);
+      dependencies.signal?.removeEventListener("abort", handleAbort);
       work();
     };
+
+    const handleAbort = () => {
+      didAbort = true;
+      child.kill("SIGKILL");
+    };
+    dependencies.signal?.addEventListener("abort", handleAbort, { once: true });
 
     /* v8 ignore start -- Electron fork coverage does not attribute EventEmitter data callbacks reliably. */
     child.stderr.on("data", (chunk: Buffer) => {
@@ -222,9 +248,19 @@ function runEditorFfmpeg(
     });
     /* v8 ignore stop */
     child.on("error", (error) => {
-      settle(() => reject(error));
+      settle(() =>
+        reject(
+          didAbort && dependencies.signal
+            ? resolveAbortReason(dependencies.signal)
+            : error,
+        ),
+      );
     });
     child.on("close", (code) => {
+      if (didAbort && dependencies.signal) {
+        settle(() => reject(resolveAbortReason(dependencies.signal!)));
+        return;
+      }
       if (didTimeout) {
         settle(() => reject(new Error("ffmpeg export timed out")));
         return;
@@ -319,12 +355,14 @@ async function createExportFilterScript(
 async function createRenderSegments(
   segments: EditorExportSegment[],
   ffprobePath: string | null,
+  signal?: AbortSignal,
 ): Promise<EditorExportRenderSegment[]> {
   let inputIndex = 0;
   const audioStreamsByPath = ffprobePath
     ? await resolveAudioStreamsByPath({
         ffprobePath,
         paths: collectClipSourcePaths(segments),
+        ...(signal ? { signal } : {}),
       })
     : new Map<string, boolean>();
   const renderSegments: EditorExportRenderSegment[] = [];
@@ -363,6 +401,7 @@ async function resolveAudioStreamsByPath(input: {
   ffprobePath: string;
   paths: string[];
   probe?: typeof probeEditorAudioStream;
+  signal?: AbortSignal;
 }): Promise<Map<string, boolean>> {
   const uniquePaths = Array.from(new Set(input.paths));
   if (uniquePaths.length === 0) {
@@ -384,6 +423,7 @@ async function resolveAudioStreamsByPath(input: {
 
   const probeNextPath = async () => {
     while (nextIndex < uniquePaths.length) {
+      input.signal?.throwIfAborted();
       const path = uniquePaths[nextIndex]!;
       nextIndex += 1;
       results.set(
@@ -391,6 +431,7 @@ async function resolveAudioStreamsByPath(input: {
         await probe({
           ffprobePath: input.ffprobePath,
           path,
+          ...(input.signal ? { signal: input.signal } : {}),
         }),
       );
     }
@@ -410,9 +451,15 @@ function probeEditorAudioStream(input: {
   ffprobePath: string;
   path: string;
   spawnProcess?: typeof spawn;
+  signal?: AbortSignal;
   timeoutMs?: number;
 }): Promise<boolean> {
   return new Promise((resolvePromise) => {
+    if (input.signal?.aborted) {
+      resolvePromise(false);
+      return;
+    }
+
     const spawnProcess = input.spawnProcess ?? spawn;
     const child = spawnProcess(
       input.ffprobePath,
@@ -449,8 +496,14 @@ function probeEditorAudioStream(input: {
 
       isSettled = true;
       clearTimeout(timeoutId);
+      input.signal?.removeEventListener("abort", handleAbort);
       resolvePromise(hasAudio);
     };
+    const handleAbort = () => {
+      child.kill("SIGKILL");
+      settle(false);
+    };
+    input.signal?.addEventListener("abort", handleAbort, { once: true });
 
     /* v8 ignore start -- Electron fork coverage does not attribute EventEmitter data callbacks reliably. */
     child.stdout.on("data", (chunk: Buffer) => {
@@ -499,6 +552,12 @@ function probeEditorAudioStream(input: {
       settle(false);
     });
   });
+}
+
+function resolveAbortReason(signal: AbortSignal): Error {
+  return signal.reason instanceof Error
+    ? signal.reason
+    : new DOMException("Editor export cancelled", "AbortError");
 }
 
 function resolveNoobsBinaryPath(

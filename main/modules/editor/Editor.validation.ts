@@ -19,6 +19,7 @@ import {
 } from "~/types";
 import { EditorChannel } from "./Editor.channels";
 import type {
+  EditorCancelExportInput,
   EditorCopyToClipboardInput,
   EditorCreateProjectInput,
   EditorExportClipInput,
@@ -58,6 +59,23 @@ const editorExportModes: EditorExportMode[] = ["overwrite", "new-file"];
 const editorExportResolutions: EditorExportResolution[] = ["720p", "1080p"];
 const minEditorTimelinePlaybackRate = Math.min(...editorTimelinePlaybackRates);
 const maxEditorTimelinePlaybackRate = Math.max(...editorTimelinePlaybackRates);
+
+function validateEditorCancelExportInput(
+  value: unknown,
+): EditorCancelExportInput {
+  assertObject(value, "editor cancel export input", EditorChannel.CancelExport);
+  assertString(
+    value.exportRequestId,
+    "export request id",
+    EditorChannel.CancelExport,
+    {
+      min: 1,
+      max: 128,
+    },
+  );
+
+  return { exportRequestId: value.exportRequestId };
+}
 
 function validateEditorWorkspaceQuery(value: unknown): EditorWorkspaceQuery {
   if (value === undefined) {
@@ -258,6 +276,10 @@ function validateEditorExportInput(value: unknown): EditorExportInput {
     min: 1,
     max: 180,
   });
+  assertString(value.projectId, "project id", EditorChannel.ExportProject, {
+    min: 1,
+    max: 128,
+  });
   assertString(
     value.exportRequestId,
     "export request id",
@@ -342,6 +364,7 @@ function validateEditorExportInput(value: unknown): EditorExportInput {
     mode,
     ...(value.muteAudio === undefined ? {} : { muteAudio: value.muteAudio }),
     overwriteSource,
+    projectId: value.projectId,
     resolution: value.resolution as EditorExportResolution,
   };
 }
@@ -1130,6 +1153,7 @@ function validateEditorAssetKeys(
 }
 
 export {
+  validateEditorCancelExportInput,
   validateEditorCopyToClipboardInput,
   validateEditorCreateProjectInput,
   validateEditorExportInput,

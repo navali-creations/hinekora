@@ -592,6 +592,37 @@ test("covers copy and export dialog actions", async ({ page }) => {
   await page.getByRole("button", { name: "720p" }).click();
   await page.getByRole("button", { name: "Save video" }).click();
 
+  const exportPreview = page.getByLabel("Edited video preview");
+  const processingView = page.getByTestId("editor-export-processing-view");
+  const exportProgress = processingView.getByRole("progressbar", {
+    name: "Video export progress",
+  });
+  await expect(exportProgress).toBeVisible();
+  await expect(exportPreview).toBeVisible();
+  await expect(exportProgress).toHaveAttribute("aria-valuenow", "2");
+  await expect(exportProgress.locator("..")).not.toContainText("Saving video");
+  expect(
+    await exportPreview.evaluate((video: HTMLVideoElement) => ({
+      autoplay: video.autoplay,
+      controls: video.controls,
+      muted: video.muted,
+    })),
+  ).toEqual({ autoplay: true, controls: false, muted: true });
+  const progressBox = await exportProgress.boundingBox();
+  const previewBox = await exportPreview.boundingBox();
+  const processingViewBox = await processingView.boundingBox();
+  expect(progressBox).not.toBeNull();
+  expect(previewBox).not.toBeNull();
+  expect(processingViewBox).not.toBeNull();
+  expect((progressBox?.x ?? 0) + (progressBox?.width ?? 0)).toBeLessThan(
+    previewBox?.x ?? 0,
+  );
+  expect(
+    (processingViewBox?.x ?? 0) +
+      (processingViewBox?.width ?? 0) -
+      ((previewBox?.x ?? 0) + (previewBox?.width ?? 0)),
+  ).toBeGreaterThanOrEqual(20);
+
   await expect
     .poll(async () => {
       const calls = await getEditorE2ECalls(page);
@@ -605,7 +636,7 @@ test("covers copy and export dialog actions", async ({ page }) => {
     });
 
   await expect(
-    page.getByRole("button", { name: "Keep editing" }),
+    page.getByRole("button", { exact: true, name: "Keep editing" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Copy to clipboard" }).click();
   await expect
@@ -625,6 +656,108 @@ test("covers copy and export dialog actions", async ({ page }) => {
     .toEqual(["export-1"]);
   await page.getByRole("button", { name: "Keep editing" }).click();
   await expect(page.getByRole("heading", { name: "Editor" })).toBeVisible();
+});
+
+test("keeps background export progress visible and confirms cancellation", async ({
+  page,
+}) => {
+  await setupEditorE2E(page, { exportDelayMs: 10_000 });
+
+  await openEditorActionsMenu(page);
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save video" }).click();
+  await expect(page.getByTestId("editor-export-processing-view")).toBeVisible();
+  const processingInformation = page.getByRole("region", {
+    name: "Video processing information",
+  });
+  await expect(processingInformation).toContainText("keep using Hinekora");
+  await expect(processingInformation).toContainText(
+    "unfinished video is removed",
+  );
+  await expect(processingInformation).toContainText(
+    "Changes apply only to your next video",
+  );
+  await processingInformation
+    .getByRole("button", { name: "Dismiss keep editing safely notice" })
+    .click();
+  await expect(processingInformation).not.toContainText("Keep editing safely");
+  await page.getByRole("button", { name: "Keep editing" }).click();
+
+  const backgroundStatus = page.getByRole("region", {
+    name: "Background video processing",
+  });
+  await expect(page.getByRole("heading", { name: "Editor" })).toBeVisible();
+  await expect(backgroundStatus).toBeVisible();
+  await expect(backgroundStatus).toContainText("Saving video");
+  await expect(backgroundStatus).toContainText("2%");
+  const backgroundStatusBox = await backgroundStatus.boundingBox();
+  expect(backgroundStatusBox).not.toBeNull();
+  expect(
+    (backgroundStatusBox?.y ?? 0) + (backgroundStatusBox?.height ?? 0),
+  ).toBeLessThanOrEqual(page.viewportSize()?.height ?? 0);
+  await expect(
+    backgroundStatus.getByRole("progressbar", {
+      name: "Background video export progress",
+    }),
+  ).toHaveAttribute("value", "2");
+  await page.getByLabel("Clip speed: 1x").click();
+  await page
+    .getByRole("menu", { name: "Clip speed options" })
+    .getByRole("menuitemradio", { name: "2x" })
+    .click();
+  await expect(page.getByLabel("Clip speed: 2x")).toBeVisible();
+  await page.keyboard.press("ControlOrMeta+C");
+  await expect
+    .poll(async () => (await getEditorE2ECalls(page)).copyRequests)
+    .toEqual([]);
+  await expect
+    .poll(async () => {
+      const request = (await getEditorE2ECalls(page)).exportRequests.at(-1);
+
+      return request?.clips[0]?.playbackRate;
+    })
+    .toBe(1);
+
+  await page.getByRole("link", { name: "Saved Edits" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Saved Edits" }),
+  ).toBeVisible();
+  await expect(backgroundStatus).toBeVisible();
+
+  await backgroundStatus.getByRole("button", { name: "Cancel" }).click();
+  let confirmation = page.getByRole("dialog", {
+    name: "Cancel video processing?",
+  });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "Keep processing" }).click();
+  await expect(backgroundStatus).toBeVisible();
+
+  await backgroundStatus.getByRole("link", { name: "View" }).click();
+  await expect(page.getByTestId("editor-export-processing-view")).toBeVisible();
+  await page.reload();
+  await expect(
+    page.getByRole("heading", { name: "Saving video" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("editor-export-processing-view")).toBeVisible();
+  await expect(backgroundStatus).toContainText("2%");
+  await expect(processingInformation).not.toContainText("Keep editing safely");
+  await page.getByRole("button", { name: "Keep editing" }).click();
+  await expect(page.getByRole("heading", { name: "Editor" })).toBeVisible();
+  await expect(page.locator("[data-clip-body='true']")).toHaveCount(3);
+  await backgroundStatus.getByRole("link", { name: "View" }).click();
+  await expect(page.getByTestId("editor-export-processing-view")).toBeVisible();
+  await page.getByRole("button", { name: "Cancel processing" }).click();
+  confirmation = page.getByRole("dialog", {
+    name: "Cancel video processing?",
+  });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "Cancel processing" }).click();
+
+  await expect(backgroundStatus).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Editor" })).toBeVisible();
+  await expect
+    .poll(async () => (await getEditorE2ECalls(page)).cancelExportRequestIds)
+    .toEqual([expect.any(String)]);
 });
 
 test("covers destructive confirmation modals", async ({ page }) => {

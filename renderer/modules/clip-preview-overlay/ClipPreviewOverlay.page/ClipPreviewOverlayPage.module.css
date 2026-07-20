@@ -101,80 +101,6 @@
   background: #050505;
 }
 
-.previewDotField,
-.previewDotGlow {
-  position: absolute;
-  inset: -1rem;
-  background-image: radial-gradient(
-    circle,
-    color-mix(in oklch, var(--color-primary) 48%, transparent) 1px,
-    transparent 1.6px
-  );
-  background-size: 12px 12px;
-  pointer-events: none;
-}
-
-.previewDotField {
-  opacity: 0.28;
-}
-
-.previewDotGlow {
-  opacity: 0.9;
-  filter: drop-shadow(0 0 4px color-mix(in oklch, var(--color-primary) 70%, transparent));
-  mask-image: linear-gradient(
-    112deg,
-    transparent 25%,
-    black 44%,
-    black 56%,
-    transparent 75%
-  );
-  mask-position: 130% center;
-  mask-repeat: no-repeat;
-  mask-size: 250% 100%;
-  animation: previewDotGlow 2.4s linear infinite;
-}
-
-.previewPreparingContent {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  display: grid;
-  gap: 0.4rem;
-  width: min(15rem, calc(100% - 3rem));
-  color: color-mix(in oklch, var(--color-base-content) 72%, transparent);
-  text-align: center;
-  transform: translate(-50%, -50%);
-}
-
-.previewPreparingContent span {
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.previewPreparingContent strong {
-  color: var(--color-primary);
-  font-size: 1.25rem;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.previewProgressTrack {
-  overflow: hidden;
-  height: 3px;
-  border-radius: 999px;
-  background: color-mix(in oklch, var(--color-base-content) 13%, transparent);
-}
-
-.previewProgressTrack > span {
-  display: block;
-  width: var(--clip-preview-progress);
-  height: 100%;
-  border-radius: inherit;
-  background: var(--color-primary);
-  box-shadow: 0 0 8px color-mix(in oklch, var(--color-primary) 72%, transparent);
-  transition: width 180ms linear;
-}
-
 .video {
   width: 100%;
   height: 100%;
@@ -333,23 +259,6 @@
 @keyframes processingShimmer {
   to {
     background-position: -120% center;
-  }
-}
-
-@keyframes previewDotGlow {
-  to {
-    mask-position: -130% center;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .previewDotGlow {
-    animation: none;
-    mask-position: center;
-  }
-
-  .previewProgressTrack > span {
-    transition: none;
   }
 }
 

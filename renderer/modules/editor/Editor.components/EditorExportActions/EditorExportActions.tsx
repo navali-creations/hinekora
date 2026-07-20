@@ -1,23 +1,43 @@
-import { FiArrowLeft, FiCheck, FiClipboard, FiFolder } from "react-icons/fi";
+import {
+  FiArrowLeft,
+  FiCheck,
+  FiClipboard,
+  FiFolder,
+  FiXCircle,
+} from "react-icons/fi";
 
 import { useEditorShallow } from "~/renderer/store";
 
 import { useEditorCopyActionState } from "../../Editor.hooks/useEditorCopyActionState/useEditorCopyActionState";
 
 function EditorExportActions() {
-  const { copyExport, keepEditingAfterExport, result, revealExport, status } =
-    useEditorShallow((editor) => ({
-      copyExport: editor.copyExport,
-      keepEditingAfterExport: editor.keepEditingAfterExport,
-      result: editor.exportState.result,
-      revealExport: editor.revealExport,
-      status: editor.exportState.status,
-    }));
+  const {
+    copyExport,
+    isCancellationPending,
+    keepEditingAfterExport,
+    openExportCancellationConfirmation,
+    result,
+    revealExport,
+    status,
+  } = useEditorShallow((editor) => ({
+    copyExport: editor.copyExport,
+    isCancellationPending: editor.exportState.isCancellationPending,
+    keepEditingAfterExport: editor.keepEditingAfterExport,
+    openExportCancellationConfirmation:
+      editor.openExportCancellationConfirmation,
+    result: editor.exportState.result,
+    revealExport: editor.revealExport,
+    status: editor.exportState.status,
+  }));
   const { copyState, isCopied, isCopying, runCopyAction } =
     useEditorCopyActionState();
 
   const handleKeepEditing = () => {
     keepEditingAfterExport();
+  };
+
+  const handleCancelExport = () => {
+    openExportCancellationConfirmation();
   };
 
   const handleRevealExport = () => {
@@ -62,6 +82,17 @@ function EditorExportActions() {
         <FiArrowLeft size={15} />
         Keep editing
       </button>
+      {status === "exporting" && (
+        <button
+          className="btn btn-error btn-sm no-drag"
+          disabled={isCancellationPending}
+          type="button"
+          onClick={handleCancelExport}
+        >
+          <FiXCircle size={15} />
+          {isCancellationPending ? "Cancelling..." : "Cancel processing"}
+        </button>
+      )}
       {status === "ready" && (
         <>
           <button

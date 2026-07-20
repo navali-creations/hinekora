@@ -61,6 +61,37 @@ describe("probeEditorAudioStream", () => {
     child.emit("close", 0);
   });
 
+  it("stops audio probes when their export is cancelled", async () => {
+    const preAbortedController = new AbortController();
+    preAbortedController.abort();
+    const preAbortedSpawn = vi.fn() as unknown as typeof spawnProcess;
+    await expect(
+      probeEditorAudioStream({
+        ffprobePath: "ffprobe",
+        path: "source.mp4",
+        signal: preAbortedController.signal,
+        spawnProcess: preAbortedSpawn,
+      }),
+    ).resolves.toBe(false);
+    expect(preAbortedSpawn).not.toHaveBeenCalled();
+
+    const child = createProbeChild();
+    const spawnProbe = vi.fn(() => child) as unknown as typeof spawnProcess;
+    const controller = new AbortController();
+    const result = probeEditorAudioStream({
+      ffprobePath: "ffprobe",
+      path: "source.mp4",
+      signal: controller.signal,
+      spawnProcess: spawnProbe,
+    });
+
+    controller.abort();
+
+    await expect(result).resolves.toBe(false);
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+    child.emit("close", 0);
+  });
+
   it("covers probe error and non-zero close paths once", async () => {
     const errorChild = createProbeChild();
     const errorProbe = vi.fn(
@@ -163,6 +194,46 @@ describe("probeEditorAudioStream", () => {
     timeoutChild.emit("close", null);
     await expect(timeoutRun).rejects.toThrow("ffmpeg export timed out");
     expect(timeoutChild.kill).toHaveBeenCalledWith("SIGKILL");
+  });
+
+  it("rejects and kills ffmpeg when its export is cancelled", async () => {
+    const preAbortedController = new AbortController();
+    preAbortedController.abort("cancelled");
+    const preAbortedSpawn = vi.fn() as unknown as typeof spawnProcess;
+    await expect(
+      runEditorFfmpeg("ffmpeg", ["-version"], {
+        signal: preAbortedController.signal,
+        spawnProcess: preAbortedSpawn,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(preAbortedSpawn).not.toHaveBeenCalled();
+
+    const child = createProbeChild();
+    const spawn = vi.fn(() => child) as unknown as typeof spawnProcess;
+    const controller = new AbortController();
+    const run = runEditorFfmpeg("ffmpeg", ["-version"], {
+      signal: controller.signal,
+      spawnProcess: spawn,
+    });
+    controller.abort();
+    child.emit("close", null);
+
+    await expect(run).rejects.toMatchObject({ name: "AbortError" });
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+
+    const errorChild = createProbeChild();
+    const errorSpawn = vi.fn(
+      () => errorChild,
+    ) as unknown as typeof spawnProcess;
+    const errorController = new AbortController();
+    const errorRun = runEditorFfmpeg("ffmpeg", ["-version"], {
+      signal: errorController.signal,
+      spawnProcess: errorSpawn,
+    });
+    errorController.abort(new Error("export stopped"));
+    errorChild.emit("error", new Error("process stopped"));
+
+    await expect(errorRun).rejects.toThrow("export stopped");
   });
 
   it("parses and reports ffmpeg progress", async () => {
@@ -338,6 +409,22 @@ describe("probeEditorAudioStream", () => {
     expect(probe).not.toHaveBeenCalled();
   });
 
+  it("does not start queued audio probes after cancellation", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const probe = vi.fn();
+
+    await expect(
+      resolveAudioStreamsByPath({
+        ffprobePath: "ffprobe",
+        paths: ["source.mp4"],
+        probe,
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(probe).not.toHaveBeenCalled();
+  });
+
   it("renders exports with gaps through the bundled ffmpeg and ffprobe paths", async () => {
     vi.resetModules();
     const directory = mkdtempSync(join(tmpdir(), "hinekora-editor-ffmpeg-"));
@@ -384,6 +471,7 @@ describe("probeEditorAudioStream", () => {
         onProgress: progress,
         outputPath: join(directory, "output.mp4"),
         resolution: "1080p",
+        signal: new AbortController().signal,
         segments: [
           {
             durationSeconds: 1,

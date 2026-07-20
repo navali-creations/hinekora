@@ -143,6 +143,7 @@ function createEditorExportInput(
     mode: input.mode,
     muteAudio: project.isAudioMuted === true,
     overwriteSource,
+    projectId: project.id,
     resolution: input.resolution,
   };
 }

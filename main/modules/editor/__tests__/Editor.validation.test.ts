@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  validateEditorCancelExportInput,
   validateEditorCopyToClipboardInput,
   validateEditorCreateProjectInput,
   validateEditorExportInput,
@@ -15,6 +16,20 @@ import {
 } from "./Editor.test-factories";
 
 describe("Editor validation", () => {
+  it("validates editor export cancellation input", () => {
+    expect(
+      validateEditorCancelExportInput({
+        exportRequestId: "export-request-1",
+      }),
+    ).toEqual({ exportRequestId: "export-request-1" });
+    expect(() => validateEditorCancelExportInput(null)).toThrow(
+      "editor cancel export input must be an object",
+    );
+    expect(() =>
+      validateEditorCancelExportInput({ exportRequestId: "" }),
+    ).toThrow("export request id is too short");
+  });
+
   it("accepts empty workspace and project input", () => {
     expect(validateEditorWorkspaceQuery(undefined)).toEqual({});
     expect(validateEditorCreateProjectInput(undefined)).toEqual({});
@@ -121,6 +136,7 @@ describe("Editor validation", () => {
       fileName: "source.mp4",
       mode: "new-file",
       overwriteSource: null,
+      projectId: "project-1",
       exportRequestId: "export-request-1",
       resolution: "1080p",
     });
@@ -143,6 +159,12 @@ describe("Editor validation", () => {
         muteAudio: true,
       }),
     ).toMatchObject({ muteAudio: true });
+    expect(
+      validateEditorExportInput({
+        ...createEditorExportInput(),
+        durationSeconds: 86_400,
+      }),
+    ).toMatchObject({ durationSeconds: 86_400 });
     expect(() =>
       validateEditorExportInput({
         ...createEditorExportInput(),
@@ -155,6 +177,12 @@ describe("Editor validation", () => {
         exportRequestId: "",
       }),
     ).toThrow("export request id is too short");
+    expect(() =>
+      validateEditorExportInput({
+        ...createEditorExportInput(),
+        projectId: "",
+      }),
+    ).toThrow("project id is too short");
     expect(() => validateEditorExportInput(null)).toThrow(
       "editor export input must be an object",
     );

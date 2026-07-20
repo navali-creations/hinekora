@@ -19,6 +19,48 @@ import {
 const { createTestStore, getEditorApi } = setupEditorSliceTest();
 
 describe("Editor workspace slice", () => {
+  it("preserves an active background export during editor hydration", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const asset = createEditorTestAsset();
+    const currentProject = createEditorTestProject(asset);
+    const hydratedProject = createEditorTestProject(asset, {
+      id: "hydrated-project",
+    });
+    editorApi.getWorkspace.mockResolvedValue({
+      assets: [asset],
+      hasMoreProjects: false,
+      project: hydratedProject,
+      projects: [],
+    });
+    loadEditorProject(store, currentProject, [asset], {
+      exportState: {
+        dismissedNoticeIds: [],
+        error: null,
+        fileName: "saving.mp4",
+        isCancelConfirmationOpen: false,
+        isCancellationPending: false,
+        isViewOpen: false,
+        progress: 0.4,
+        projectId: "project-1",
+        requestId: "export-request-1",
+        result: null,
+        status: "exporting",
+      },
+    });
+
+    await store.getState().editor.hydrate();
+
+    expect(store.getState().editor.project?.id).toBe(hydratedProject.id);
+    expect(store.getState().editor.exportState).toMatchObject({
+      fileName: "saving.mp4",
+      isViewOpen: false,
+      progress: 0.4,
+      requestId: "export-request-1",
+      status: "exporting",
+    });
+  });
+
   it("hydrates the default editor with a fresh empty timeline", async () => {
     const store = createTestStore();
     const editorApi = getEditorApi();

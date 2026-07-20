@@ -34,18 +34,18 @@ describe("EditorTimelineSpeedMenu utils", () => {
   });
 
   it("marks only rates that would exceed the export duration unavailable", () => {
-    const asset = createEditorTestAsset({ durationSeconds: 4_000 });
+    const asset = createEditorTestAsset({ durationSeconds: 22_000 });
     const project = createEditorTestProject(asset);
     const clip = createEditorTestTimelineClip(asset, {
-      durationSeconds: 4_000,
-      outSeconds: 4_000,
-      sourceOutSeconds: 4_000,
+      durationSeconds: 22_000,
+      outSeconds: 22_000,
+      sourceOutSeconds: 22_000,
     });
     const unavailableRates = createUnavailablePlaybackRates({
       clipId: clip.id,
       project: {
         ...project,
-        durationSeconds: 4_000,
+        durationSeconds: 22_000,
         tracks: [{ ...project.tracks[0]!, clips: [clip] }],
       },
     });

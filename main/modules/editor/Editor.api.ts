@@ -4,10 +4,13 @@ import { unwrapIpcResult } from "~/main/utils/ipc-api";
 
 import { EditorChannel } from "./Editor.channels";
 import type {
+  EditorCancelExportInput,
+  EditorCancelExportResult,
   EditorCopyToClipboardInput,
   EditorCreateProjectInput,
   EditorExportFileActionResult,
   EditorExportInput,
+  EditorExportLifecycle,
   EditorExportProgress,
   EditorExportResult,
   EditorMediaAssetPage,
@@ -19,6 +22,10 @@ import type {
 } from "./Editor.dto";
 
 const EditorAPI = {
+  cancelExport: (
+    input: EditorCancelExportInput,
+  ): Promise<EditorCancelExportResult> =>
+    ipcRenderer.invoke(EditorChannel.CancelExport, input).then(unwrapIpcResult),
   copyExport: (exportId: string): Promise<EditorExportFileActionResult> =>
     ipcRenderer.invoke(EditorChannel.CopyExport, exportId),
   copyProjectToClipboard: (
@@ -35,10 +42,14 @@ const EditorAPI = {
     ipcRenderer
       .invoke(EditorChannel.DeleteProject, projectId)
       .then(unwrapIpcResult),
+  dismissExport: (): Promise<void> =>
+    ipcRenderer.invoke(EditorChannel.DismissExport).then(unwrapIpcResult),
   exportProject: (input: EditorExportInput): Promise<EditorExportResult> =>
     ipcRenderer
       .invoke(EditorChannel.ExportProject, input)
       .then(unwrapIpcResult),
+  getExportLifecycle: (): Promise<EditorExportLifecycle> =>
+    ipcRenderer.invoke(EditorChannel.GetExportLifecycle).then(unwrapIpcResult),
   getWorkspace: (query?: EditorWorkspaceQuery): Promise<EditorWorkspace> =>
     ipcRenderer.invoke(EditorChannel.GetWorkspace, query).then(unwrapIpcResult),
   listMediaAssets: (
@@ -62,6 +73,24 @@ const EditorAPI = {
 
     return () => {
       ipcRenderer.removeListener(EditorChannel.ExportProgress, listener);
+    };
+  },
+  onExportLifecycleChanged: (
+    callback: (lifecycle: EditorExportLifecycle) => void,
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      lifecycle: EditorExportLifecycle,
+    ) => {
+      callback(lifecycle);
+    };
+    ipcRenderer.on(EditorChannel.ExportLifecycleChanged, listener);
+
+    return () => {
+      ipcRenderer.removeListener(
+        EditorChannel.ExportLifecycleChanged,
+        listener,
+      );
     };
   },
 };

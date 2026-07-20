@@ -7,6 +7,8 @@ import type {
 import type {
   EditorCreateProjectInput,
   EditorExportInput,
+  EditorExportLifecycle,
+  EditorExportResult,
   EditorMediaAsset,
   EditorMediaAssetPageQuery,
   EditorProject,
@@ -54,6 +56,7 @@ interface TimelineClipSnapshot {
 }
 
 interface EditorE2ECalls {
+  cancelExportRequestIds: string[];
   copiedExportIds: string[];
   copyRequests: unknown[];
   createProjectInputs: unknown[];
@@ -102,6 +105,7 @@ interface EditorE2ESavedEditRecord {
 }
 
 interface SetupEditorE2EOptions {
+  exportDelayMs?: number;
   extraAssets?: EditorMediaAsset[];
   extraProjects?: EditorProject[];
   initialRoute?: string;
@@ -460,6 +464,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
   await page.addInitScript(
     (input: {
       bridgeFactorySource: string;
+      exportDelayMs: number;
       fixture: EditorE2EFixture;
       leagueCatalog: ReturnType<typeof createE2EPoeLeagueCatalog>;
       poeProcessSnapshotFactoryScript: string;
@@ -483,6 +488,31 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
       const secondaryProject = fixture.secondaryProject;
       const unsubscribe = () => undefined;
       const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+      const exportLifecycleStorageKey = "hinekora-e2e-editor-export-lifecycle";
+      const idleExportLifecycle: EditorExportLifecycle = {
+        error: null,
+        exportRequestId: null,
+        fileName: null,
+        progress: 0,
+        projectId: null,
+        result: null,
+        status: "idle",
+      };
+      const getExportLifecycle = (): EditorExportLifecycle => {
+        const storedLifecycle = window.sessionStorage.getItem(
+          exportLifecycleStorageKey,
+        );
+
+        return storedLifecycle
+          ? (JSON.parse(storedLifecycle) as EditorExportLifecycle)
+          : idleExportLifecycle;
+      };
+      const setExportLifecycle = (lifecycle: EditorExportLifecycle) => {
+        window.sessionStorage.setItem(
+          exportLifecycleStorageKey,
+          JSON.stringify(lifecycle),
+        );
+      };
       const createBridgeDomainFactory = Function(
         `"use strict"; return (${input.bridgeFactorySource});`,
       )() as E2EBridgeDomainFactory;
@@ -644,6 +674,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
         };
       };
       const state = {
+        cancelExportRequestIds: [] as string[],
         copiedExportIds: [] as string[],
         copyRequests: [] as unknown[],
         createProjectInputs: [] as unknown[],
@@ -849,6 +880,12 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
           {},
         ),
         editor: createBridgeDomain<EditorE2EElectron["editor"]>("editor", {
+          cancelExport: async ({ exportRequestId }) => {
+            state.cancelExportRequestIds.push(exportRequestId);
+            setExportLifecycle(idleExportLifecycle);
+
+            return { cancelled: true };
+          },
           copyExport: async (exportId: string) => {
             state.copiedExportIds.push(exportId);
 
@@ -895,10 +932,29 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
               ),
             );
           },
-          exportProject: async (input: EditorExportInput) => {
-            state.exportRequests.push(clone(input));
+          dismissExport: async () => {
+            if (getExportLifecycle().status !== "exporting") {
+              setExportLifecycle(idleExportLifecycle);
+            }
+          },
+          exportProject: async (exportInput: EditorExportInput) => {
+            state.exportRequests.push(clone(exportInput));
+            setExportLifecycle({
+              error: null,
+              exportRequestId: exportInput.exportRequestId,
+              fileName: exportInput.fileName,
+              progress: 0.02,
+              projectId: exportInput.projectId,
+              result: null,
+              status: "exporting",
+            });
+            if (input.exportDelayMs > 0) {
+              await new Promise((resolve) => {
+                window.setTimeout(resolve, input.exportDelayMs);
+              });
+            }
 
-            return {
+            const result: EditorExportResult = {
               createdAt: now,
               durationSeconds: 5,
               exportId: "export-1",
@@ -908,7 +964,19 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
               resolution: "1080p",
               sizeBytes: 1024,
             };
+            setExportLifecycle({
+              error: null,
+              exportRequestId: exportInput.exportRequestId,
+              fileName: result.fileName,
+              progress: 1,
+              projectId: exportInput.projectId,
+              result,
+              status: "ready",
+            });
+
+            return result;
           },
+          getExportLifecycle: async () => clone(getExportLifecycle()),
           getWorkspace: async (query: EditorWorkspaceQuery = {}) => {
             state.workspaceQueries.push(clone(query));
             const project = query.projectId
@@ -925,6 +993,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
 
             return listEditorMediaAssets(query);
           },
+          onExportLifecycleChanged: () => unsubscribe,
           onExportProgress: () => unsubscribe,
           revealExport: async (exportId: string) => {
             state.revealedExportIds.push(exportId);
@@ -1086,6 +1155,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
     },
     {
       bridgeFactorySource: e2eBridgeDomainFactorySource,
+      exportDelayMs: options.exportDelayMs ?? 0,
       fixture,
       leagueCatalog: createE2EPoeLeagueCatalog(),
       poeProcessSnapshotFactoryScript: e2ePoeProcessSnapshotFactoryScript,

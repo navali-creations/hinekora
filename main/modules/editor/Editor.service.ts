@@ -36,11 +36,14 @@ import {
 } from "~/types";
 import { EditorChannel } from "./Editor.channels";
 import type {
+  EditorCancelExportInput,
+  EditorCancelExportResult,
   EditorCopyToClipboardInput,
   EditorCreateProjectInput,
   EditorExportClipInput,
   EditorExportFileActionResult,
   EditorExportInput,
+  EditorExportLifecycle,
   EditorExportProgress,
   EditorExportResult,
   EditorMediaAsset,
@@ -74,6 +77,7 @@ import {
   normalizeAssetDuration,
 } from "./Editor.mapper";
 import {
+  validateEditorCancelExportInput,
   validateEditorCopyToClipboardInput,
   validateEditorCreateProjectInput,
   validateEditorExportInput,
@@ -89,23 +93,45 @@ const editorAutoPruneProjectLimit = 5;
 const maxEditorExportPathEntries = 20;
 const editorExportMediaScheme = "hinekora-editor-export";
 const editorLogScope = "editor";
+const idleEditorExportLifecycle: EditorExportLifecycle = {
+  error: null,
+  exportRequestId: null,
+  fileName: null,
+  progress: 0,
+  projectId: null,
+  result: null,
+  status: "idle",
+};
 
 type EditorExportRenderer = typeof renderEditorExportWithFfmpeg;
+type EditorExportFileStat = typeof stat;
 
 interface EditorServiceDependencies {
   projectRepository?: EditorProjectRepository;
   renderExportWithFfmpeg?: EditorExportRenderer;
+  statExportFile?: EditorExportFileStat;
 }
 
 interface EditorExportProjectOptions {
+  onLifecycleChanged?: (lifecycle: EditorExportLifecycle) => void;
   onProgress?: (progress: EditorExportProgress) => void;
+}
+
+interface ActiveEditorExport {
+  abortController: AbortController;
+  completion: Promise<void>;
+  phase: "rendering" | "committing";
+  resolveCompletion: () => void;
 }
 
 class EditorService {
   private static instance: EditorService | null = null;
+  private readonly activeExports = new Map<string, ActiveEditorExport>();
   private readonly exportPaths = new Map<string, string>();
   private readonly projectRepository: EditorProjectRepository;
   private readonly renderExportWithFfmpeg: EditorExportRenderer;
+  private readonly statExportFile: EditorExportFileStat;
+  private exportLifecycle: EditorExportLifecycle = idleEditorExportLifecycle;
 
   static getInstance(): EditorService {
     if (!EditorService.instance) {
@@ -125,6 +151,7 @@ class EditorService {
       new EditorProjectRepository(DatabaseService.getInstance());
     this.renderExportWithFfmpeg =
       dependencies.renderExportWithFfmpeg ?? renderEditorExportWithFfmpeg;
+    this.statExportFile = dependencies.statExportFile ?? stat;
     this.setupHandlers();
     this.setupExportMediaProtocol();
   }
@@ -236,10 +263,44 @@ class EditorService {
     return this.getWorkspace();
   }
 
+  dismissExport(): void {
+    if (this.exportLifecycle.status === "exporting") {
+      return;
+    }
+
+    this.exportLifecycle = idleEditorExportLifecycle;
+  }
+
+  getExportLifecycle(): EditorExportLifecycle {
+    return this.exportLifecycle;
+  }
+
+  async cancelExport(
+    input: EditorCancelExportInput,
+  ): Promise<EditorCancelExportResult> {
+    const activeExport = this.activeExports.get(input.exportRequestId);
+    if (activeExport?.phase !== "rendering") {
+      return { cancelled: false };
+    }
+
+    logInfo(editorLogScope, "Editor export cancellation requested", {
+      exportRequestId: input.exportRequestId,
+    });
+    activeExport.abortController.abort(
+      new DOMException("Editor export cancelled", "AbortError"),
+    );
+    await activeExport.completion;
+
+    return { cancelled: true };
+  }
+
   async exportProject(
     input: EditorExportInput,
     options: EditorExportProjectOptions = {},
   ): Promise<EditorExportResult> {
+    if (this.activeExports.size > 0) {
+      throw new Error("Another editor video is already processing");
+    }
     const clips = this.createExportClips(input.clips);
     if (clips.length === 0) {
       logWarn(editorLogScope, "Editor export has no timeline clips", {
@@ -266,6 +327,20 @@ class EditorService {
           videosPath: app.getPath("videos"),
         });
     const tempOutputPath = createEditorExportTempOutputPath(outputPath);
+    const activeExport = this.createActiveExport(input.exportRequestId);
+    const exportFileName = basename(outputPath);
+    this.updateExportLifecycle(
+      {
+        error: null,
+        exportRequestId: input.exportRequestId,
+        fileName: exportFileName,
+        progress: 0.02,
+        projectId: input.projectId,
+        result: null,
+        status: "exporting",
+      },
+      options.onLifecycleChanged,
+    );
 
     try {
       logInfo(editorLogScope, "Editor export started", {
@@ -282,16 +357,34 @@ class EditorService {
       await this.renderExportWithFfmpeg({
         muteAudio: input.muteAudio === true,
         onProgress: (progress) => {
-          options.onProgress?.({
+          const exportProgress = {
             exportRequestId: input.exportRequestId,
             progress: Math.min(Math.max(progress, 0), 1),
-          });
+          };
+          this.updateExportLifecycle(
+            {
+              ...this.exportLifecycle,
+              progress: Math.min(
+                Math.max(
+                  this.exportLifecycle.progress,
+                  exportProgress.progress,
+                ),
+                0.98,
+              ),
+            },
+            options.onLifecycleChanged,
+          );
+          options.onProgress?.(exportProgress);
         },
         outputPath: tempOutputPath,
+        queueOptions: { signal: activeExport.abortController.signal },
         resolution: input.resolution,
         segments,
+        signal: activeExport.abortController.signal,
       });
 
+      activeExport.abortController.signal.throwIfAborted();
+      activeExport.phase = "committing";
       if (overwriteSource) {
         await copyFile(tempOutputPath, outputPath);
         await rm(tempOutputPath, { force: true });
@@ -299,42 +392,100 @@ class EditorService {
         await rename(tempOutputPath, outputPath);
       }
     } catch (error) {
-      logError(editorLogScope, "Editor export failed", {
-        error: safeErrorMessage(error),
+      const exportLogFields = {
         exportRequestId: input.exportRequestId,
         mode: input.mode,
         ...createSafePathLogFields(outputPath, "export"),
         ...createSafePathLogFields(tempOutputPath, "temporaryExport"),
-      });
+      };
+      if (activeExport.abortController.signal.aborted) {
+        logInfo(editorLogScope, "Editor export cancelled", exportLogFields);
+      } else {
+        logError(editorLogScope, "Editor export failed", {
+          error: safeErrorMessage(error),
+          ...exportLogFields,
+        });
+      }
       await rm(tempOutputPath, { force: true });
+      this.updateExportLifecycle(
+        activeExport.abortController.signal.aborted
+          ? idleEditorExportLifecycle
+          : {
+              error: safeErrorMessage(error),
+              exportRequestId: input.exportRequestId,
+              fileName: exportFileName,
+              progress: 0,
+              projectId: input.projectId,
+              result: null,
+              status: "failed",
+            },
+        options.onLifecycleChanged,
+      );
       throw error;
+    } finally {
+      this.activeExports.delete(input.exportRequestId);
+      activeExport.resolveCompletion();
     }
 
-    const stats = await stat(outputPath);
-    const exportId = randomUUID();
-    this.rememberExportPath(exportId, outputPath);
+    try {
+      const stats = await this.statExportFile(outputPath);
+      const exportId = randomUUID();
+      this.rememberExportPath(exportId, outputPath);
 
-    const result: EditorExportResult = {
-      createdAt: new Date().toISOString(),
-      durationSeconds: calculateEditorExportDuration(segments),
-      exportId,
-      fileName: basename(outputPath),
-      mediaUrl: this.createExportMediaUrl(exportId),
-      mode: input.mode,
-      resolution: input.resolution,
-      sizeBytes: stats.size,
-    };
-    logInfo(editorLogScope, "Editor export completed", {
-      durationSeconds: calculateEditorExportDuration(segments),
-      exportId,
-      exportRequestId: input.exportRequestId,
-      mode: input.mode,
-      resolution: input.resolution,
-      sizeBytes: stats.size,
-      ...createSafePathLogFields(outputPath, "export"),
-    });
+      const result: EditorExportResult = {
+        createdAt: new Date().toISOString(),
+        durationSeconds: calculateEditorExportDuration(segments),
+        exportId,
+        fileName: basename(outputPath),
+        mediaUrl: this.createExportMediaUrl(exportId),
+        mode: input.mode,
+        resolution: input.resolution,
+        sizeBytes: stats.size,
+      };
+      this.updateExportLifecycle(
+        {
+          error: null,
+          exportRequestId: input.exportRequestId,
+          fileName: result.fileName,
+          progress: 1,
+          projectId: input.projectId,
+          result,
+          status: "ready",
+        },
+        options.onLifecycleChanged,
+      );
+      logInfo(editorLogScope, "Editor export completed", {
+        durationSeconds: calculateEditorExportDuration(segments),
+        exportId,
+        exportRequestId: input.exportRequestId,
+        mode: input.mode,
+        resolution: input.resolution,
+        sizeBytes: stats.size,
+        ...createSafePathLogFields(outputPath, "export"),
+      });
 
-    return result;
+      return result;
+    } catch (error) {
+      this.updateExportLifecycle(
+        {
+          error: safeErrorMessage(error),
+          exportRequestId: input.exportRequestId,
+          fileName: exportFileName,
+          progress: 0,
+          projectId: input.projectId,
+          result: null,
+          status: "failed",
+        },
+        options.onLifecycleChanged,
+      );
+      logError(editorLogScope, "Editor export finalization failed", {
+        error: safeErrorMessage(error),
+        exportRequestId: input.exportRequestId,
+        mode: input.mode,
+        ...createSafePathLogFields(outputPath, "export"),
+      });
+      throw error;
+    }
   }
 
   revealExport(exportId: string): EditorExportFileActionResult {
@@ -396,6 +547,12 @@ class EditorService {
   async copyProjectToClipboard(
     input: EditorCopyToClipboardInput,
   ): Promise<EditorExportFileActionResult> {
+    if (this.activeExports.size > 0) {
+      return {
+        ok: false,
+        error: "Wait for the current video save to finish",
+      };
+    }
     const clips = this.createExportClips(input.clips);
     if (clips.length === 0) {
       logWarn(editorLogScope, "Editor clipboard copy has no timeline clips");
@@ -834,6 +991,19 @@ class EditorService {
 
   private setupHandlers(): void {
     registerGuardedIpcHandler(
+      EditorChannel.CancelExport,
+      [WindowName.Main],
+      async (_event, input: unknown) => {
+        try {
+          return await this.cancelExport(
+            validateEditorCancelExportInput(input),
+          );
+        } catch (error) {
+          return handleValidationError(error);
+        }
+      },
+    );
+    registerGuardedIpcHandler(
       EditorChannel.CopyExport,
       [WindowName.Main],
       async (_event, exportId: unknown) => {
@@ -919,6 +1089,11 @@ class EditorService {
       () => this.deleteAllProjects(),
     );
     registerGuardedIpcHandler(
+      EditorChannel.DismissExport,
+      [WindowName.Main],
+      () => this.dismissExport(),
+    );
+    registerGuardedIpcHandler(
       EditorChannel.ExportProject,
       [WindowName.Main],
       async (event, input: unknown) => {
@@ -926,6 +1101,9 @@ class EditorService {
           const sender = (event as { sender?: WebContents }).sender;
 
           return await this.exportProject(validateEditorExportInput(input), {
+            onLifecycleChanged: (lifecycle) => {
+              this.sendExportLifecycle(sender, lifecycle);
+            },
             onProgress: (progress) => {
               this.sendExportProgress(sender, progress);
             },
@@ -934,6 +1112,11 @@ class EditorService {
           return handleValidationError(error);
         }
       },
+    );
+    registerGuardedIpcHandler(
+      EditorChannel.GetExportLifecycle,
+      [WindowName.Main],
+      () => this.getExportLifecycle(),
     );
     registerGuardedIpcHandler(
       EditorChannel.RevealExport,
@@ -962,6 +1145,26 @@ class EditorService {
         }
       },
     );
+  }
+
+  private createActiveExport(exportRequestId: string): ActiveEditorExport {
+    if (this.activeExports.has(exportRequestId)) {
+      throw new Error("Editor export request is already active");
+    }
+
+    let resolveCompletion!: () => void;
+    const completion = new Promise<void>((resolve) => {
+      resolveCompletion = resolve;
+    });
+    const activeExport: ActiveEditorExport = {
+      abortController: new AbortController(),
+      completion,
+      phase: "rendering",
+      resolveCompletion,
+    };
+    this.activeExports.set(exportRequestId, activeExport);
+
+    return activeExport;
   }
 
   private setupExportMediaProtocol(): void {
@@ -1055,6 +1258,31 @@ class EditorService {
         error: safeErrorMessage(error),
       });
     }
+  }
+
+  private sendExportLifecycle(
+    sender: WebContents | undefined,
+    lifecycle: EditorExportLifecycle,
+  ): void {
+    try {
+      if (!sender || sender.isDestroyed()) {
+        return;
+      }
+
+      sender.send(EditorChannel.ExportLifecycleChanged, lifecycle);
+    } catch (error) {
+      logWarn(editorLogScope, "Failed to send editor export lifecycle", {
+        error: safeErrorMessage(error),
+      });
+    }
+  }
+
+  private updateExportLifecycle(
+    lifecycle: EditorExportLifecycle,
+    onLifecycleChanged: EditorExportProjectOptions["onLifecycleChanged"],
+  ): void {
+    this.exportLifecycle = lifecycle;
+    onLifecycleChanged?.(lifecycle);
   }
 
   private createExportClips(

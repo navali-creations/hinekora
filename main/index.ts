@@ -260,6 +260,9 @@ if (
     spawnProcess: spawn,
   })
 ) {
+  if (!app.isPackaged) {
+    app.commandLine.appendSwitch("disable-http-cache");
+  }
   registerPrivilegedProtocols();
 
   void bootstrap().catch(async (error) => {

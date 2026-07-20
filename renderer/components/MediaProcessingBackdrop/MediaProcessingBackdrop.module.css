@@ -1,0 +1,53 @@
+.root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dotField,
+.dotGlow {
+  position: absolute;
+  inset: -1rem;
+  background-image: radial-gradient(
+    circle,
+    color-mix(in oklch, var(--color-primary) 48%, transparent) 1px,
+    transparent 1.6px
+  );
+  background-size: 12px 12px;
+}
+
+.dotField {
+  opacity: 0.35;
+}
+
+.dotGlow {
+  opacity: 0.35;
+  filter: drop-shadow(
+    0 0 4px color-mix(in oklch, var(--color-primary) 70%, transparent)
+  );
+  mask-image: linear-gradient(
+    112deg,
+    transparent 25%,
+    black 44%,
+    black 56%,
+    transparent 75%
+  );
+  mask-position: 130% center;
+  mask-repeat: no-repeat;
+  mask-size: 250% 100%;
+  animation: mediaProcessingDotGlow 2.4s linear infinite;
+}
+
+@keyframes mediaProcessingDotGlow {
+  to {
+    mask-position: -130% center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dotGlow {
+    animation: none;
+    mask-position: center;
+  }
+}

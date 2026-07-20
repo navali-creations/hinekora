@@ -13,9 +13,7 @@ interface EditorAssetRailFilterOption<TValue extends string> {
 function EditorAssetRailFilter() {
   const { isProcessing, mediaFilter, setMediaFilter } = useEditorShallow(
     (editor) => ({
-      isProcessing:
-        editor.clipboardState.status === "copying" ||
-        editor.exportState.status === "exporting",
+      isProcessing: editor.clipboardState.status === "copying",
       mediaFilter: editor.mediaFilter,
       setMediaFilter: editor.setMediaFilter,
     }),

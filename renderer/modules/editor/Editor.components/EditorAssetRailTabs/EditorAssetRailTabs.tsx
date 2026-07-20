@@ -6,9 +6,7 @@ import { editorAssetRailTabOptions } from "../EditorAssetRail/EditorAssetRail.ut
 function EditorAssetRailTabs() {
   const { isProcessing, mediaRailTab, setMediaRailTab } = useEditorShallow(
     (editor) => ({
-      isProcessing:
-        editor.clipboardState.status === "copying" ||
-        editor.exportState.status === "exporting",
+      isProcessing: editor.clipboardState.status === "copying",
       mediaRailTab: editor.mediaRailTab,
       setMediaRailTab: editor.setMediaRailTab,
     }),

@@ -22,6 +22,10 @@ import type {
 } from "../Editor.utils/Editor.utils";
 
 type EditorExportStatus = "idle" | "exporting" | "ready" | "failed";
+type EditorExportNoticeId =
+  | "cancel-without-leftovers"
+  | "keep-editing-safely"
+  | "keep-using-hinekora";
 type EditorClipboardStatus = "copied" | "copying" | "failed" | "idle";
 type EditorMediaRailTab = "all" | "in-timeline" | "recently-clipped";
 type EditorSidePanelKind = "bookmarks" | "history" | "shortcuts";
@@ -33,9 +37,14 @@ interface EditorClipboardState {
 }
 
 interface EditorExportState {
+  dismissedNoticeIds: EditorExportNoticeId[];
   error: string | null;
   fileName: string | null;
+  isCancelConfirmationOpen: boolean;
+  isCancellationPending: boolean;
+  isViewOpen: boolean;
   progress: number;
+  projectId: string | null;
   requestId: string | null;
   result: EditorExportResult | null;
   status: EditorExportStatus;
@@ -106,9 +115,12 @@ interface EditorSlice {
     copyExport: (exportId: string) => Promise<EditorExportFileActionResult>;
     copyProjectToClipboard: () => Promise<EditorExportFileActionResult>;
     closeSidePanel: () => void;
+    closeExportCancellationConfirmation: () => void;
+    cancelExport: () => Promise<void>;
     createProject: (input?: EditorCreateProjectInput) => Promise<void>;
     deleteAllProjects: () => Promise<void>;
     deleteProject: (projectId: string) => Promise<void>;
+    dismissExportNotice: (noticeId: EditorExportNoticeId) => void;
     exportProject: (input: {
       fileName: string;
       mode: EditorExportInput["mode"];
@@ -116,6 +128,7 @@ interface EditorSlice {
     }) => Promise<void>;
     fitTimelineToEdit: () => void;
     hydrate: (source?: EditorMediaReference | null) => Promise<boolean>;
+    hydrateExportState: () => Promise<void>;
     hydrateMediaAssets: (
       query: EditorMediaAssetPageQuery,
       options?: HydrateMediaAssetsOptions,
@@ -130,6 +143,7 @@ interface EditorSlice {
     ) => void;
     redoProjectChange: () => void;
     openProject: (projectId: string) => Promise<boolean>;
+    openExportCancellationConfirmation: () => void;
     refreshMedia: () => Promise<void>;
     refreshMediaRecentlyClippedSince: () => string;
     renameProject: (title: string) => void;
@@ -161,6 +175,7 @@ interface EditorSlice {
       options?: SaveProjectOptions,
     ) => Promise<EditorProject>;
     splitTimelineClipAt: (timelineSeconds: number) => void;
+    startExportStateListening: () => () => void;
     toggleProjectAudioMuted: () => void;
     toggleSidePanel: (panel: EditorSidePanelKind) => void;
     trimTimelineClipEdge: (
@@ -169,12 +184,14 @@ interface EditorSlice {
       timelineSeconds: number,
     ) => void;
     undoProjectChange: () => void;
+    viewExport: () => void;
   };
 }
 
 export type {
   EditorClipboardState,
   EditorClipboardStatus,
+  EditorExportNoticeId,
   EditorExportState,
   EditorExportStatus,
   EditorMediaFilter,

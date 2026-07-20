@@ -43,9 +43,7 @@ function EditorTimeline({
     zoom,
   } = useEditorShallow((editor) => ({
     isPreviewPlaying: editor.isPreviewPlaying,
-    isProcessing:
-      editor.clipboardState.status === "copying" ||
-      editor.exportState.status === "exporting",
+    isProcessing: editor.clipboardState.status === "copying",
     isTimelineFitToEdit: editor.isTimelineFitToEdit,
     playbackSeconds: editor.playbackSeconds,
     project: editor.project,

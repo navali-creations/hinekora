@@ -28,7 +28,7 @@ export default defineConfig({
   },
   webServer: shouldStartE2EAppServer
     ? {
-        command: `pnpm exec vite --config vite.renderer.config.mts --host 127.0.0.1 --port ${e2eAppPort} --strictPort`,
+        command: `pnpm exec vite --config vite.renderer.config.mts --mode e2e --host 127.0.0.1 --port ${e2eAppPort} --strictPort`,
         url: e2eAppBaseUrl,
         timeout: 30_000,
         reuseExistingServer: process.env.E2E_REUSE_EXISTING_SERVER === "true",

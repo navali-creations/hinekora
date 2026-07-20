@@ -314,17 +314,17 @@ describe("Editor timeline clip slice", () => {
 
   it("keeps the project exportable when a slower speed exceeds the duration limit", () => {
     const store = createTestStore();
-    const asset = createEditorTestAsset({ durationSeconds: 4_000 });
+    const asset = createEditorTestAsset({ durationSeconds: 22_000 });
     const project = createEditorTestProject(asset);
     const longClip = createEditorTestTimelineClip(asset, {
-      durationSeconds: 4_000,
-      outSeconds: 4_000,
-      sourceOutSeconds: 4_000,
+      durationSeconds: 22_000,
+      outSeconds: 22_000,
+      sourceOutSeconds: 22_000,
     });
     const longProject = {
       ...project,
       activeClipId: longClip.id,
-      durationSeconds: 4_000,
+      durationSeconds: 22_000,
       tracks: [{ ...project.tracks[0]!, clips: [longClip] }],
     };
     loadEditorProject(store, longProject, [asset], {

@@ -124,6 +124,7 @@ function createEditorExportInput(
     fileName: "source.mp4",
     mode: "new-file",
     overwriteSource: null,
+    projectId: "project-1",
     resolution: "1080p",
     ...overrides,
   };

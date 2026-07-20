@@ -506,6 +506,7 @@ function configureEditorState(overrides: Record<string, unknown> = {}) {
     createProject: storeMocks.createProject,
     error: null,
     exportState: {
+      dismissedNoticeIds: [],
       fileName: null,
       result: null,
       status: "idle",
@@ -1272,6 +1273,25 @@ describe("EditorPage shortcuts", () => {
     await renderEditorPage();
 
     expect(storeMocks.hydrate).toHaveBeenCalledWith(null);
+  });
+
+  it("reopens the exported project while recovering after a refresh", async () => {
+    configureEditorState({
+      exportState: {
+        dismissedNoticeIds: [],
+        fileName: "export.mp4",
+        isViewOpen: true,
+        projectId: "project-exporting",
+        result: null,
+        status: "exporting",
+      },
+      project: null,
+    });
+
+    await renderEditorPage();
+
+    expect(storeMocks.openProject).toHaveBeenCalledWith("project-exporting");
+    expect(storeMocks.hydrate).not.toHaveBeenCalled();
   });
 
   it("opens a saved edit from the editor route project id", async () => {

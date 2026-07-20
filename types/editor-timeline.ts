@@ -2,7 +2,7 @@ const editorTimelinePlaybackRates = [
   0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4, 8, 16,
 ] as const;
 const defaultEditorTimelinePlaybackRate = 1;
-const maxEditorExportDurationSeconds = 4 * 60 * 60;
+const maxEditorExportDurationSeconds = 24 * 60 * 60;
 
 type EditorTimelinePlaybackRate = (typeof editorTimelinePlaybackRates)[number];
 

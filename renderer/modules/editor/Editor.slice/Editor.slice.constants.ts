@@ -13,9 +13,14 @@ const editorVisibleHistoryPageSize = 10;
 const editorZoomStep = 0.25;
 const minimumExportDurationMs = 900;
 const initialExportState: EditorExportState = {
+  dismissedNoticeIds: [],
   error: null,
   fileName: null,
+  isCancelConfirmationOpen: false,
+  isCancellationPending: false,
+  isViewOpen: false,
   progress: 0,
+  projectId: null,
   requestId: null,
   result: null,
   status: "idle",

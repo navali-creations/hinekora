@@ -6,10 +6,33 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 const renderer = resolve(__dirname, "renderer");
+const rendererDependencies = [
+  "react-icons/cg",
+  "react-icons/fa",
+  "react-icons/fi",
+  "react-icons/gi",
+  "react-icons/hi",
+  "react-icons/hi2",
+  "react-icons/io",
+  "react-icons/io5",
+  "react-icons/md",
+  "react-icons/pi",
+  "react-icons/ri",
+  "react-icons/tb",
+  "react-icons/ti",
+];
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   root: renderer,
   envDir: __dirname,
+  cacheDir: resolve(
+    __dirname,
+    "node_modules/.vite",
+    `hinekora-renderer-${mode}`,
+  ),
+  optimizeDeps: {
+    include: rendererDependencies,
+  },
   plugins: [
     tanstackRouter({
       target: "react",
@@ -37,4 +60,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));

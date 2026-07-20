@@ -11,6 +11,7 @@ import { useEditorShallow, useSettingsShallow } from "~/renderer/store";
 import { EditorAssetRail } from "../../Editor.components/EditorAssetRail/EditorAssetRail";
 import { EditorDragDropProvider } from "../../Editor.components/EditorDragDropProvider/EditorDragDropProvider";
 import { EditorExportActions } from "../../Editor.components/EditorExportActions/EditorExportActions";
+import { EditorExportNotices } from "../../Editor.components/EditorExportNotices/EditorExportNotices";
 import { EditorExportView } from "../../Editor.components/EditorExportView/EditorExportView";
 import { EditorMediaLeagueControl } from "../../Editor.components/EditorMediaLeagueControl/EditorMediaLeagueControl";
 import { EditorPageHeaderActions } from "../../Editor.components/EditorPageHeaderActions/EditorPageHeaderActions";
@@ -40,10 +41,12 @@ function EditorPage({
     error,
     clipboardStatus,
     exportFileName,
+    exportProjectId,
     exportResult,
     exportStatus,
     hydrate,
     isLoading,
+    isExportViewOpen,
     mediaFilter,
     openProject,
     project,
@@ -53,10 +56,12 @@ function EditorPage({
     clipboardStatus: editor.clipboardState.status,
     error: editor.error,
     exportFileName: editor.exportState.fileName,
+    exportProjectId: editor.exportState.projectId,
     exportResult: editor.exportState.result,
     exportStatus: editor.exportState.status,
     hydrate: editor.hydrate,
     isLoading: editor.isLoading,
+    isExportViewOpen: editor.exportState.isViewOpen,
     mediaFilter: editor.mediaFilter,
     openProject: editor.openProject,
     project: editor.project,
@@ -68,12 +73,13 @@ function EditorPage({
   );
   const isClipboardBusy = clipboardStatus === "copying";
   const isBookmarksVisible = visibleSidePanel === "bookmarks";
+  const routeProjectId = projectId ?? exportProjectId;
 
   const isRouteHydrated = useEditorRouteHydration({
     hydrate,
     openProject,
     project,
-    projectId,
+    projectId: routeProjectId,
     source,
   });
   useEditorRouteTrimDraft({
@@ -96,7 +102,7 @@ function EditorPage({
 
   useEditorKeyboardShortcuts();
 
-  if (exportStatus !== "idle") {
+  if (exportStatus !== "idle" && isExportViewOpen) {
     return (
       <PageContainer className="relative gap-4">
         <PageHeader
@@ -108,6 +114,7 @@ function EditorPage({
           })}
           title={createExportTitle(exportStatus)}
         />
+        {exportStatus === "exporting" && <EditorExportNotices />}
         <PageContent className="grid min-h-0 !overflow-hidden">
           <EditorExportView />
         </PageContent>
