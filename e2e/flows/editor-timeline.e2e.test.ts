@@ -11,6 +11,7 @@ import type {
 } from "../../main/modules/editor";
 import {
   clickTimelineMarkerAtClipOffset,
+  completeEditorE2EExport,
   createEditorE2EAsset,
   createEditorE2EProject,
   dragLocatorBy,
@@ -572,7 +573,7 @@ test("covers saved edits route library interactions", async ({ page }) => {
 });
 
 test("covers copy and export dialog actions", async ({ page }) => {
-  await setupEditorE2E(page);
+  await setupEditorE2E(page, { manualExportCompletion: true });
 
   await openEditorActionsMenu(page);
   await page.getByRole("button", { name: "Copy to clipboard" }).click();
@@ -607,7 +608,7 @@ test("covers copy and export dialog actions", async ({ page }) => {
       controls: video.controls,
       muted: video.muted,
     })),
-  ).toEqual({ autoplay: true, controls: false, muted: true });
+  ).toEqual({ autoplay: false, controls: false, muted: true });
   const progressBox = await exportProgress.boundingBox();
   const previewBox = await exportPreview.boundingBox();
   const processingViewBox = await processingView.boundingBox();
@@ -634,6 +635,7 @@ test("covers copy and export dialog actions", async ({ page }) => {
       mode: "overwrite",
       resolution: "720p",
     });
+  await completeEditorE2EExport(page);
 
   await expect(
     page.getByRole("button", { exact: true, name: "Keep editing" }),
@@ -654,14 +656,14 @@ test("covers copy and export dialog actions", async ({ page }) => {
       return calls.revealedExportIds;
     })
     .toEqual(["export-1"]);
-  await page.getByRole("button", { name: "Keep editing" }).click();
+  await page.getByRole("button", { exact: true, name: "Keep editing" }).click();
   await expect(page.getByRole("heading", { name: "Editor" })).toBeVisible();
 });
 
 test("keeps background export progress visible and confirms cancellation", async ({
   page,
 }) => {
-  await setupEditorE2E(page, { exportDelayMs: 10_000 });
+  await setupEditorE2E(page, { manualExportCompletion: true });
 
   await openEditorActionsMenu(page);
   await page.getByRole("button", { name: "Save" }).click();
@@ -714,7 +716,7 @@ test("keeps background export progress visible and confirms cancellation", async
     .poll(async () => {
       const request = (await getEditorE2ECalls(page)).exportRequests.at(-1);
 
-      return request?.clips[0]?.playbackRate;
+      return request?.project.tracks[0]?.clips[0]?.playbackRate;
     })
     .toBe(1);
 
@@ -758,6 +760,36 @@ test("keeps background export progress visible and confirms cancellation", async
   await expect
     .poll(async () => (await getEditorE2ECalls(page)).cancelExportRequestIds)
     .toEqual([expect.any(String)]);
+});
+
+test("keeps a completed background export available from the sidebar", async ({
+  page,
+}) => {
+  await setupEditorE2E(page, { manualExportCompletion: true });
+
+  await openEditorActionsMenu(page);
+  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save video" }).click();
+  await page.getByRole("button", { exact: true, name: "Keep editing" }).click();
+  await page.getByRole("link", { name: "Saved Edits" }).click();
+
+  const backgroundStatus = page.getByRole("region", {
+    name: "Background video processing",
+  });
+  await expect(backgroundStatus).toBeVisible();
+  await completeEditorE2EExport(page);
+  await expect(backgroundStatus).toContainText("Video saved", {
+    timeout: 5_000,
+  });
+  await expect(backgroundStatus).toContainText("100%");
+
+  await backgroundStatus.getByRole("link", { name: "View" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Your video is ready" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Copy to clipboard" }),
+  ).toBeVisible();
 });
 
 test("covers destructive confirmation modals", async ({ page }) => {

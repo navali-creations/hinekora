@@ -75,6 +75,9 @@ describe("NoticeAlert", () => {
       '[aria-label="Dismiss export information"]',
     );
     expect(dismissButton?.textContent).toBe("Dismiss");
+    expect(dismissButton?.className).toContain("bg-base-300/80");
+    expect(dismissButton?.className).toContain("border-info/20");
+    expect(dismissButton?.className).toContain("text-info");
 
     await act(async () => {
       dismissButton?.click();

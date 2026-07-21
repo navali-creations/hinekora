@@ -2,6 +2,8 @@ import type {
   EditorCreateProjectInput,
   EditorExportFileActionResult,
   EditorExportInput,
+  EditorExportLifecycleStatus,
+  EditorExportPreviewClip,
   EditorExportResolution,
   EditorExportResult,
   EditorMediaAssetPage,
@@ -21,7 +23,7 @@ import type {
   TimelineTrimEdge,
 } from "../Editor.utils/Editor.utils";
 
-type EditorExportStatus = "idle" | "exporting" | "ready" | "failed";
+type EditorExportStatus = EditorExportLifecycleStatus;
 type EditorExportNoticeId =
   | "cancel-without-leftovers"
   | "keep-editing-safely"
@@ -37,16 +39,19 @@ interface EditorClipboardState {
 }
 
 interface EditorExportState {
+  canCancel: boolean;
   dismissedNoticeIds: EditorExportNoticeId[];
   error: string | null;
   fileName: string | null;
   isCancelConfirmationOpen: boolean;
   isCancellationPending: boolean;
   isViewOpen: boolean;
+  previewClips: EditorExportPreviewClip[];
   progress: number;
   projectId: string | null;
   requestId: string | null;
   result: EditorExportResult | null;
+  startedAt: string | null;
   status: EditorExportStatus;
 }
 
@@ -133,7 +138,7 @@ interface EditorSlice {
       query: EditorMediaAssetPageQuery,
       options?: HydrateMediaAssetsOptions,
     ) => Promise<void>;
-    keepEditingAfterExport: () => void;
+    keepEditingAfterExport: () => Promise<void>;
     loadMoreProjects: () => Promise<void>;
     removeAllTimelineGaps: () => void;
     moveTimelineClip: (

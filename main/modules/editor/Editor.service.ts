@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
-import { copyFile, rename, rm, stat } from "node:fs/promises";
-import { basename } from "node:path";
+import type { link, rename, rm } from "node:fs/promises";
 
 import type { WebContents } from "electron";
 import { app, net, protocol, shell } from "electron";
@@ -44,6 +43,7 @@ import type {
   EditorExportFileActionResult,
   EditorExportInput,
   EditorExportLifecycle,
+  EditorExportLifecycleUpdate,
   EditorExportProgress,
   EditorExportResult,
   EditorMediaAsset,
@@ -60,15 +60,14 @@ import type {
 import {
   calculateEditorExportDuration,
   createEditorExportSegments,
-  type EditorExportSegment,
+  createEditorSegmentDiagnostics,
   type EditorResolvedExportClip,
 } from "./Editor.export";
 import { renderEditorExportWithFfmpeg } from "./Editor.ffmpeg";
 import {
+  cleanupAbandonedEditorExportFiles,
   cleanupEditorClipboardOutputDirectory,
   createEditorClipboardOutputPath,
-  createEditorExportOutputPath,
-  createEditorExportTempOutputPath,
 } from "./Editor.files";
 import {
   createEditorAssetFromRecording,
@@ -85,53 +84,61 @@ import {
   validateEditorSaveProjectInput,
   validateEditorWorkspaceQuery,
 } from "./Editor.validation";
+import {
+  createEditorProjectExportClipInputs,
+  type EditorExportProjectOptions,
+  EditorExportService,
+  waitForEditorExportCompletions,
+} from "./EditorExport.service";
 import { EditorProjectRepository } from "./EditorProject.repository";
 
 const defaultEditorMediaAssetPageSize = 5;
 const defaultEditorProjectListLimit = 5;
 const editorAutoPruneProjectLimit = 5;
-const maxEditorExportPathEntries = 20;
 const editorExportMediaScheme = "hinekora-editor-export";
+const editorShutdownTimeoutMs = 15_000;
 const editorLogScope = "editor";
-const idleEditorExportLifecycle: EditorExportLifecycle = {
-  error: null,
-  exportRequestId: null,
-  fileName: null,
-  progress: 0,
-  projectId: null,
-  result: null,
-  status: "idle",
-};
 
 type EditorExportRenderer = typeof renderEditorExportWithFfmpeg;
-type EditorExportFileStat = typeof stat;
 
 interface EditorServiceDependencies {
+  createExportClips?: (
+    clips: EditorExportClipInput[],
+  ) => EditorResolvedExportClip[];
+  linkExportFile?: typeof link;
   projectRepository?: EditorProjectRepository;
+  removeExportFile?: typeof rm;
+  renameExportFile?: typeof rename;
   renderExportWithFfmpeg?: EditorExportRenderer;
-  statExportFile?: EditorExportFileStat;
+  resolveExportSource?: (source: EditorMediaReference) => {
+    mediaUrl?: string | null;
+    path: string;
+    storageRoot?: string;
+  };
+  shutdownTimeoutMs?: number;
+  statExportFile?: (path: string) => Promise<{ size: number }>;
 }
 
-interface EditorExportProjectOptions {
-  onLifecycleChanged?: (lifecycle: EditorExportLifecycle) => void;
-  onProgress?: (progress: EditorExportProgress) => void;
-}
-
-interface ActiveEditorExport {
+interface ActiveEditorRender {
   abortController: AbortController;
   completion: Promise<void>;
-  phase: "rendering" | "committing";
   resolveCompletion: () => void;
 }
 
 class EditorService {
   private static instance: EditorService | null = null;
-  private readonly activeExports = new Map<string, ActiveEditorExport>();
-  private readonly exportPaths = new Map<string, string>();
+  private activeClipboardCopy: ActiveEditorRender | null = null;
+  private readonly createExportClips: (
+    clips: EditorExportClipInput[],
+  ) => EditorResolvedExportClip[];
+  private readonly editorExportService: EditorExportService;
   private readonly projectRepository: EditorProjectRepository;
   private readonly renderExportWithFfmpeg: EditorExportRenderer;
-  private readonly statExportFile: EditorExportFileStat;
-  private exportLifecycle: EditorExportLifecycle = idleEditorExportLifecycle;
+  private readonly resolveEditorExportSource: (
+    source: EditorMediaReference,
+  ) => { mediaUrl?: string | null; path: string; storageRoot?: string };
+  private readonly shutdownTimeoutMs: number;
+  private isShuttingDown = false;
 
   static getInstance(): EditorService {
     if (!EditorService.instance) {
@@ -145,13 +152,74 @@ class EditorService {
     EditorService.instance = null;
   }
 
+  static async shutdownIfInitialized(): Promise<void> {
+    await EditorService.instance?.shutdown();
+  }
+
+  static async cleanupAbandonedExports(): Promise<void> {
+    try {
+      const videosPath = app.getPath("videos");
+      const settings = SettingsStoreService.getInstance().get();
+      const recordingStorageRoot = resolveRecordingStorageRoot(
+        settings.recordingStoragePath,
+        videosPath,
+      );
+      const result = await cleanupAbandonedEditorExportFiles([
+        videosPath,
+        recordingStorageRoot,
+      ]);
+      if (result.removedCount > 0) {
+        logInfo(editorLogScope, "Abandoned editor exports removed", {
+          ...result,
+        });
+      }
+      if (result.failedCount > 0) {
+        logWarn(editorLogScope, "Abandoned editor export cleanup incomplete", {
+          ...result,
+        });
+      }
+    } catch (error) {
+      logWarn(editorLogScope, "Abandoned editor export cleanup failed", {
+        error: safeErrorMessage(error),
+      });
+    }
+  }
+
   constructor(dependencies: EditorServiceDependencies = {}) {
     this.projectRepository =
       dependencies.projectRepository ??
       new EditorProjectRepository(DatabaseService.getInstance());
     this.renderExportWithFfmpeg =
       dependencies.renderExportWithFfmpeg ?? renderEditorExportWithFfmpeg;
-    this.statExportFile = dependencies.statExportFile ?? stat;
+    this.shutdownTimeoutMs =
+      dependencies.shutdownTimeoutMs ?? editorShutdownTimeoutMs;
+    this.resolveEditorExportSource =
+      dependencies.resolveExportSource ??
+      ((source) => this.resolveExportSource(source));
+    this.createExportClips =
+      dependencies.createExportClips ??
+      ((clips) => this.resolveExportClips(clips));
+    this.editorExportService = new EditorExportService({
+      createExportClips: (clips) => this.createExportClips(clips),
+      createMediaUrl: (exportId) => this.createExportMediaUrl(exportId),
+      ...(dependencies.linkExportFile
+        ? { linkExportFile: dependencies.linkExportFile }
+        : {}),
+      persistProjectSnapshot: (project) =>
+        this.persistExportProjectSnapshot(project),
+      renderExportWithFfmpeg: this.renderExportWithFfmpeg,
+      resolveExportSource: this.resolveEditorExportSource,
+      shutdownTimeoutMs: this.shutdownTimeoutMs,
+      ...(dependencies.removeExportFile
+        ? { removeExportFile: dependencies.removeExportFile }
+        : {}),
+      ...(dependencies.renameExportFile
+        ? { renameExportFile: dependencies.renameExportFile }
+        : {}),
+      ...(dependencies.statExportFile
+        ? { statExportFile: dependencies.statExportFile }
+        : {}),
+    });
     this.setupHandlers();
     this.setupExportMediaProtocol();
   }
@@ -264,233 +332,58 @@ class EditorService {
   }
 
   dismissExport(): void {
-    if (this.exportLifecycle.status === "exporting") {
-      return;
-    }
-
-    this.exportLifecycle = idleEditorExportLifecycle;
+    this.editorExportService.dismissExport();
   }
 
   getExportLifecycle(): EditorExportLifecycle {
-    return this.exportLifecycle;
+    return this.editorExportService.getExportLifecycle();
   }
 
-  async cancelExport(
+  async shutdown(): Promise<void> {
+    this.isShuttingDown = true;
+    this.activeClipboardCopy?.abortController.abort(
+      new DOMException("Application is shutting down", "AbortError"),
+    );
+    const clipboardCompletions = this.activeClipboardCopy
+      ? [this.activeClipboardCopy.completion]
+      : [];
+    const [, didClipboardFinish] = await Promise.all([
+      this.editorExportService.shutdown(),
+      waitForEditorExportCompletions(
+        clipboardCompletions,
+        this.shutdownTimeoutMs,
+      ),
+    ]);
+    if (!didClipboardFinish) {
+      logWarn(editorLogScope, "Editor clipboard shutdown timed out");
+    }
+  }
+
+  cancelExport(
     input: EditorCancelExportInput,
   ): Promise<EditorCancelExportResult> {
-    const activeExport = this.activeExports.get(input.exportRequestId);
-    if (activeExport?.phase !== "rendering") {
-      return { cancelled: false };
-    }
-
-    logInfo(editorLogScope, "Editor export cancellation requested", {
-      exportRequestId: input.exportRequestId,
-    });
-    activeExport.abortController.abort(
-      new DOMException("Editor export cancelled", "AbortError"),
-    );
-    await activeExport.completion;
-
-    return { cancelled: true };
+    return this.editorExportService.cancelExport(input);
   }
 
-  async exportProject(
+  exportProject(
     input: EditorExportInput,
     options: EditorExportProjectOptions = {},
   ): Promise<EditorExportResult> {
-    if (this.activeExports.size > 0) {
-      throw new Error("Another editor video is already processing");
+    if (this.isShuttingDown) {
+      return Promise.reject(new Error("Editor is shutting down"));
     }
-    const clips = this.createExportClips(input.clips);
-    if (clips.length === 0) {
-      logWarn(editorLogScope, "Editor export has no timeline clips", {
-        exportRequestId: input.exportRequestId,
-        inputClipCount: input.clips.length,
-        mode: input.mode,
-      });
-      throw new Error("No timeline clips are available to export");
-    }
-    const segments = createEditorExportSegments(clips, input.durationSeconds);
-
-    const overwriteSource =
-      input.mode === "overwrite" && input.overwriteSource
-        ? this.resolveExportSource(input.overwriteSource)
-        : null;
-    if (input.mode === "overwrite" && !overwriteSource) {
-      throw new Error("No overwrite source is available to export");
-    }
-
-    const outputPath = overwriteSource
-      ? overwriteSource.path
-      : await createEditorExportOutputPath({
-          fileName: input.fileName,
-          videosPath: app.getPath("videos"),
-        });
-    const tempOutputPath = createEditorExportTempOutputPath(outputPath);
-    const activeExport = this.createActiveExport(input.exportRequestId);
-    const exportFileName = basename(outputPath);
-    this.updateExportLifecycle(
-      {
-        error: null,
-        exportRequestId: input.exportRequestId,
-        fileName: exportFileName,
-        progress: 0.02,
-        projectId: input.projectId,
-        result: null,
-        status: "exporting",
-      },
-      options.onLifecycleChanged,
-    );
-
-    try {
-      logInfo(editorLogScope, "Editor export started", {
-        exportRequestId: input.exportRequestId,
-        inputClipCount: input.clips.length,
-        mode: input.mode,
-        overwrite: overwriteSource !== null,
-        resolution: input.resolution,
-        timelineDurationSeconds: input.durationSeconds,
-        ...createEditorSegmentDiagnostics(segments),
-        ...createSafePathLogFields(outputPath, "export"),
-        ...createSafePathLogFields(tempOutputPath, "temporaryExport"),
-      });
-      await this.renderExportWithFfmpeg({
-        muteAudio: input.muteAudio === true,
-        onProgress: (progress) => {
-          const exportProgress = {
-            exportRequestId: input.exportRequestId,
-            progress: Math.min(Math.max(progress, 0), 1),
-          };
-          this.updateExportLifecycle(
-            {
-              ...this.exportLifecycle,
-              progress: Math.min(
-                Math.max(
-                  this.exportLifecycle.progress,
-                  exportProgress.progress,
-                ),
-                0.98,
-              ),
-            },
-            options.onLifecycleChanged,
-          );
-          options.onProgress?.(exportProgress);
-        },
-        outputPath: tempOutputPath,
-        queueOptions: { signal: activeExport.abortController.signal },
-        resolution: input.resolution,
-        segments,
-        signal: activeExport.abortController.signal,
-      });
-
-      activeExport.abortController.signal.throwIfAborted();
-      activeExport.phase = "committing";
-      if (overwriteSource) {
-        await copyFile(tempOutputPath, outputPath);
-        await rm(tempOutputPath, { force: true });
-      } else {
-        await rename(tempOutputPath, outputPath);
-      }
-    } catch (error) {
-      const exportLogFields = {
-        exportRequestId: input.exportRequestId,
-        mode: input.mode,
-        ...createSafePathLogFields(outputPath, "export"),
-        ...createSafePathLogFields(tempOutputPath, "temporaryExport"),
-      };
-      if (activeExport.abortController.signal.aborted) {
-        logInfo(editorLogScope, "Editor export cancelled", exportLogFields);
-      } else {
-        logError(editorLogScope, "Editor export failed", {
-          error: safeErrorMessage(error),
-          ...exportLogFields,
-        });
-      }
-      await rm(tempOutputPath, { force: true });
-      this.updateExportLifecycle(
-        activeExport.abortController.signal.aborted
-          ? idleEditorExportLifecycle
-          : {
-              error: safeErrorMessage(error),
-              exportRequestId: input.exportRequestId,
-              fileName: exportFileName,
-              progress: 0,
-              projectId: input.projectId,
-              result: null,
-              status: "failed",
-            },
-        options.onLifecycleChanged,
+    if (this.activeClipboardCopy) {
+      return Promise.reject(
+        new Error("Another editor video is already processing"),
       );
-      throw error;
-    } finally {
-      this.activeExports.delete(input.exportRequestId);
-      activeExport.resolveCompletion();
     }
 
-    try {
-      const stats = await this.statExportFile(outputPath);
-      const exportId = randomUUID();
-      this.rememberExportPath(exportId, outputPath);
-
-      const result: EditorExportResult = {
-        createdAt: new Date().toISOString(),
-        durationSeconds: calculateEditorExportDuration(segments),
-        exportId,
-        fileName: basename(outputPath),
-        mediaUrl: this.createExportMediaUrl(exportId),
-        mode: input.mode,
-        resolution: input.resolution,
-        sizeBytes: stats.size,
-      };
-      this.updateExportLifecycle(
-        {
-          error: null,
-          exportRequestId: input.exportRequestId,
-          fileName: result.fileName,
-          progress: 1,
-          projectId: input.projectId,
-          result,
-          status: "ready",
-        },
-        options.onLifecycleChanged,
-      );
-      logInfo(editorLogScope, "Editor export completed", {
-        durationSeconds: calculateEditorExportDuration(segments),
-        exportId,
-        exportRequestId: input.exportRequestId,
-        mode: input.mode,
-        resolution: input.resolution,
-        sizeBytes: stats.size,
-        ...createSafePathLogFields(outputPath, "export"),
-      });
-
-      return result;
-    } catch (error) {
-      this.updateExportLifecycle(
-        {
-          error: safeErrorMessage(error),
-          exportRequestId: input.exportRequestId,
-          fileName: exportFileName,
-          progress: 0,
-          projectId: input.projectId,
-          result: null,
-          status: "failed",
-        },
-        options.onLifecycleChanged,
-      );
-      logError(editorLogScope, "Editor export finalization failed", {
-        error: safeErrorMessage(error),
-        exportRequestId: input.exportRequestId,
-        mode: input.mode,
-        ...createSafePathLogFields(outputPath, "export"),
-      });
-      throw error;
-    }
+    return this.editorExportService.exportProject(input, options);
   }
 
   revealExport(exportId: string): EditorExportFileActionResult {
     try {
-      const exportPath = this.exportPaths.get(exportId);
+      const exportPath = this.editorExportService.getExportPath(exportId);
       if (!exportPath || !existsSync(exportPath)) {
         return { ok: false, error: "Saved video is not available" };
       }
@@ -505,7 +398,7 @@ class EditorService {
 
   async copyExport(exportId: string): Promise<EditorExportFileActionResult> {
     try {
-      const exportPath = this.exportPaths.get(exportId);
+      const exportPath = this.editorExportService.getExportPath(exportId);
       if (!exportPath || !existsSync(exportPath)) {
         logWarn(editorLogScope, "Export clipboard copy unavailable", {
           exportId,
@@ -547,73 +440,100 @@ class EditorService {
   async copyProjectToClipboard(
     input: EditorCopyToClipboardInput,
   ): Promise<EditorExportFileActionResult> {
-    if (this.activeExports.size > 0) {
+    if (this.isShuttingDown) {
+      return { ok: false, error: "Editor is shutting down" };
+    }
+    if (
+      this.editorExportService.hasActiveExport() ||
+      this.activeClipboardCopy
+    ) {
       return {
         ok: false,
         error: "Wait for the current video save to finish",
       };
     }
-    const clips = this.createExportClips(input.clips);
+    const inputClips = createEditorProjectExportClipInputs(input.project);
+    const clips = this.createExportClips(inputClips);
     if (clips.length === 0) {
       logWarn(editorLogScope, "Editor clipboard copy has no timeline clips");
 
       return { ok: false, error: "No timeline clips are available to copy" };
     }
 
-    const segments = createEditorExportSegments(clips, input.durationSeconds);
+    const segments = createEditorExportSegments(
+      clips,
+      input.project.durationSeconds,
+    );
     const tempPath = app.getPath("temp");
+    const activeClipboardCopy = createActiveEditorRender();
+    this.activeClipboardCopy = activeClipboardCopy;
 
-    return copyRenderedFileToClipboard({
-      cleanup: (outputPath) =>
-        cleanupEditorClipboardOutputDirectory({
-          protectedPath: outputPath,
-          tempPath,
-        }),
-      createOutputPath: () =>
-        createEditorClipboardOutputPath({
-          fileName: input.fileName,
-          tempPath,
-        }),
-      onCleanupError: (error, outputPath) => {
-        logWarn(editorLogScope, "Editor clipboard cleanup failed", {
-          error: safeErrorMessage(error),
-          ...createSafePathLogFields(outputPath, "clipboard"),
-        });
-      },
-      onCopyFailed: (result, outputPath) => {
-        logWarn(editorLogScope, "Editor clipboard copy failed", {
-          error: result.error,
-          ...createSafePathLogFields(outputPath, "clipboard"),
-        });
-      },
-      onCopySucceeded: (outputPath) => {
-        logInfo(editorLogScope, "Editor clipboard video copied", {
-          ...createSafePathLogFields(outputPath, "clipboard"),
-        });
-      },
-      onRenderFailed: (error, outputPath) => {
-        logError(editorLogScope, "Editor clipboard copy crashed", {
-          error: safeErrorMessage(error),
-          ...createSafePathLogFields(outputPath, "clipboard"),
-        });
-      },
-      onRenderReady: (outputPath) => {
-        logInfo(editorLogScope, "Rendering editor clipboard video", {
-          clipCount: clips.length,
-          durationSeconds: calculateEditorExportDuration(segments),
-          resolution: input.resolution,
-          ...createEditorSegmentDiagnostics(segments),
-          ...createSafePathLogFields(outputPath, "clipboard"),
-        });
-      },
-      render: (outputPath) =>
-        this.renderExportWithFfmpeg({
-          muteAudio: input.muteAudio === true,
-          outputPath,
-          resolution: input.resolution,
-          segments,
-        }),
-    });
+    try {
+      return await copyRenderedFileToClipboard({
+        cleanup: (outputPath) =>
+          cleanupEditorClipboardOutputDirectory({
+            protectedPath: outputPath,
+            tempPath,
+          }),
+        createOutputPath: () =>
+          createEditorClipboardOutputPath({
+            fileName: input.fileName,
+            tempPath,
+          }),
+        onCleanupError: (error, outputPath) => {
+          logWarn(editorLogScope, "Editor clipboard cleanup failed", {
+            error: safeErrorMessage(error),
+            ...createSafePathLogFields(outputPath, "clipboard"),
+          });
+        },
+        onCopyFailed: (result, outputPath) => {
+          logWarn(editorLogScope, "Editor clipboard copy failed", {
+            error: result.error,
+            ...createSafePathLogFields(outputPath, "clipboard"),
+          });
+        },
+        onCopySucceeded: (outputPath) => {
+          logInfo(editorLogScope, "Editor clipboard video copied", {
+            ...createSafePathLogFields(outputPath, "clipboard"),
+          });
+        },
+        onRenderFailed: (error, outputPath) => {
+          if (activeClipboardCopy.abortController.signal.aborted) {
+            logInfo(editorLogScope, "Editor clipboard render cancelled", {
+              ...createSafePathLogFields(outputPath, "clipboard"),
+            });
+            return;
+          }
+          logError(editorLogScope, "Editor clipboard copy crashed", {
+            error: safeErrorMessage(error),
+            ...createSafePathLogFields(outputPath, "clipboard"),
+          });
+        },
+        onRenderReady: (outputPath) => {
+          logInfo(editorLogScope, "Rendering editor clipboard video", {
+            clipCount: clips.length,
+            durationSeconds: calculateEditorExportDuration(segments),
+            resolution: input.resolution,
+            ...createEditorSegmentDiagnostics(segments),
+            ...createSafePathLogFields(outputPath, "clipboard"),
+          });
+        },
+        render: (outputPath) =>
+          this.renderExportWithFfmpeg({
+            muteAudio: input.project.isAudioMuted === true,
+            outputPath,
+            queueOptions: {
+              signal: activeClipboardCopy.abortController.signal,
+            },
+            resolution: input.resolution,
+            segments,
+            signal: activeClipboardCopy.abortController.signal,
+          }),
+      });
+    } finally {
+      this.activeClipboardCopy = null;
+      activeClipboardCopy.resolveCompletion();
+    }
   }
 
   private async listEditorMediaAssetPage(
@@ -855,6 +775,7 @@ class EditorService {
     const deletedProjectCount = this.projectRepository.deleteOlderThanLimit({
       limit: editorAutoPruneProjectLimit,
       protectedProjectId,
+      protectedProjectIds: this.editorExportService.getActiveProjectIds(),
     });
     if (deletedProjectCount > 0) {
       logInfo(editorLogScope, "Editor projects pruned", {
@@ -1147,26 +1068,6 @@ class EditorService {
     );
   }
 
-  private createActiveExport(exportRequestId: string): ActiveEditorExport {
-    if (this.activeExports.has(exportRequestId)) {
-      throw new Error("Editor export request is already active");
-    }
-
-    let resolveCompletion!: () => void;
-    const completion = new Promise<void>((resolve) => {
-      resolveCompletion = resolve;
-    });
-    const activeExport: ActiveEditorExport = {
-      abortController: new AbortController(),
-      completion,
-      phase: "rendering",
-      resolveCompletion,
-    };
-    this.activeExports.set(exportRequestId, activeExport);
-
-    return activeExport;
-  }
-
   private setupExportMediaProtocol(): void {
     try {
       if (protocol.isProtocolHandled(editorExportMediaScheme)) {
@@ -1189,7 +1090,7 @@ class EditorService {
       return new Response(null, { status: 404 });
     }
 
-    const exportPath = this.exportPaths.get(exportId);
+    const exportPath = this.editorExportService.getExportPath(exportId);
     if (!exportPath) {
       return new Response(null, { status: 404 });
     }
@@ -1227,22 +1128,6 @@ class EditorService {
     )}`;
   }
 
-  private rememberExportPath(exportId: string, outputPath: string): void {
-    this.exportPaths.set(exportId, outputPath);
-
-    while (this.exportPaths.size > maxEditorExportPathEntries) {
-      const oldestExportId = this.exportPaths.keys().next().value as
-        | string
-        | undefined;
-      /* v8 ignore next -- Map size check guarantees an oldest key exists. */
-      if (!oldestExportId) {
-        return;
-      }
-
-      this.exportPaths.delete(oldestExportId);
-    }
-  }
-
   private sendExportProgress(
     sender: WebContents | undefined,
     progress: EditorExportProgress,
@@ -1262,7 +1147,7 @@ class EditorService {
 
   private sendExportLifecycle(
     sender: WebContents | undefined,
-    lifecycle: EditorExportLifecycle,
+    lifecycle: EditorExportLifecycleUpdate,
   ): void {
     try {
       if (!sender || sender.isDestroyed()) {
@@ -1277,15 +1162,19 @@ class EditorService {
     }
   }
 
-  private updateExportLifecycle(
-    lifecycle: EditorExportLifecycle,
-    onLifecycleChanged: EditorExportProjectOptions["onLifecycleChanged"],
-  ): void {
-    this.exportLifecycle = lifecycle;
-    onLifecycleChanged?.(lifecycle);
+  private persistExportProjectSnapshot(project: EditorProject): EditorProject {
+    const normalizedProject = normalizeTimelineProject(project);
+    const exportProject = this.normalizeEditorProjectSelectionState({
+      ...normalizedProject,
+      updatedAt: new Date().toISOString(),
+    });
+    this.projectRepository.upsert(exportProject);
+    this.pruneStoredProjects(exportProject.id);
+
+    return exportProject;
   }
 
-  private createExportClips(
+  private resolveExportClips(
     clips: EditorExportClipInput[],
   ): EditorResolvedExportClip[] {
     return clips
@@ -1303,7 +1192,7 @@ class EditorService {
         inSeconds: clip.inSeconds,
         outSeconds: clip.outSeconds,
         playbackRate: clip.playbackRate,
-        source: this.resolveExportSource(clip.source),
+        source: this.resolveEditorExportSource(clip.source),
         startSeconds: clip.startSeconds,
       }));
   }
@@ -1311,7 +1200,13 @@ class EditorService {
   private resolveExportSource(source: EditorMediaReference): {
     mediaUrl: string | null;
     path: string;
+    storageRoot: string;
   } {
+    const settings = SettingsStoreService.getInstance().get();
+    const storageRoot = resolveRecordingStorageRoot(
+      settings.recordingStoragePath,
+      app.getPath("videos"),
+    );
     if (source.kind === "recording") {
       const recordingStorage = RecordingStorageService.getInstance();
       const detail = recordingStorage.getRecording(source.id);
@@ -1325,7 +1220,7 @@ class EditorService {
         throw new Error("Recording file is not available");
       }
 
-      return { mediaUrl: detail.mediaUrl, path };
+      return { mediaUrl: detail.mediaUrl, path, storageRoot };
     }
 
     const detail = ReplayClipsService.getInstance().getClip(source.id);
@@ -1337,11 +1232,6 @@ class EditorService {
       throw new Error("Clip file is not available");
     }
 
-    const settings = SettingsStoreService.getInstance().get();
-    const storageRoot = resolveRecordingStorageRoot(
-      settings.recordingStoragePath,
-      app.getPath("videos"),
-    );
     const path = resolveReplayClipFilePath(
       detail.clip.processedClipPath ?? detail.clip.originalObsPath,
       {
@@ -1358,8 +1248,21 @@ class EditorService {
       throw new Error("Clip file is not available");
     }
 
-    return { mediaUrl: detail.mediaUrl, path };
+    return { mediaUrl: detail.mediaUrl, path, storageRoot };
   }
+}
+
+function createActiveEditorRender(): ActiveEditorRender {
+  let resolveCompletion!: () => void;
+  const completion = new Promise<void>((resolve) => {
+    resolveCompletion = resolve;
+  });
+
+  return {
+    abortController: new AbortController(),
+    completion,
+    resolveCompletion,
+  };
 }
 
 function hasPositiveMediaDuration(
@@ -1568,18 +1471,6 @@ function createEditorProjectDiagnostics(project: EditorProject) {
     projectSelectedAssetKeyHash: project.selectedAssetKey
       ? createTextHash(project.selectedAssetKey)
       : null,
-  };
-}
-
-function createEditorSegmentDiagnostics(segments: EditorExportSegment[]) {
-  return {
-    exportClipSegmentCount: segments.filter(
-      (segment) => segment.kind === "clip",
-    ).length,
-    exportDurationSeconds: calculateEditorExportDuration(segments),
-    exportGapSegmentCount: segments.filter((segment) => segment.kind === "gap")
-      .length,
-    exportSegmentCount: segments.length,
   };
 }
 

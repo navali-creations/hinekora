@@ -59,7 +59,11 @@ function NoticeAlert({
           {onDismiss && (
             <button
               aria-label={dismissLabel}
-              className="btn btn-ghost btn-xs text-current"
+              className={clsx("btn btn-xs px-2", {
+                "border-info/20 bg-base-300/80 text-info hover:bg-base-300":
+                  tone === "info",
+                "btn-ghost text-current": tone === "warning",
+              })}
               title={dismissLabel}
               type="button"
               onClick={onDismiss}

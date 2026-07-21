@@ -8,13 +8,14 @@ import { EditorExportBackgroundPreview } from "../EditorExportBackgroundPreview/
 import { useEditorExportRemainingTime } from "./useEditorExportRemainingTime/useEditorExportRemainingTime";
 
 function EditorExportView() {
-  const { error, fileName, progress, project, result, status } =
+  const { error, fileName, progress, project, result, startedAt, status } =
     useEditorShallow((editor) => ({
       error: editor.exportState.error,
       fileName: editor.exportState.fileName,
       progress: editor.exportState.progress,
       project: editor.project,
       result: editor.exportState.result,
+      startedAt: editor.exportState.startedAt,
       status: editor.exportState.status,
     }));
   const selectedAsset =
@@ -29,6 +30,7 @@ function EditorExportView() {
   const remainingTime = useEditorExportRemainingTime({
     isExporting: status === "exporting",
     progress,
+    startedAt,
   });
 
   if (status === "exporting") {

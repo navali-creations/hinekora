@@ -304,6 +304,7 @@ class EditorProjectRepository {
   deleteOlderThanLimit(input: {
     limit: number;
     protectedProjectId?: string | null;
+    protectedProjectIds?: readonly string[];
   }): number {
     const retainedRows = this.database.queryAll(
       this.database.kysely
@@ -314,17 +315,24 @@ class EditorProjectRepository {
         .limit(input.limit),
     );
     const retainedProjectIds = new Set(retainedRows.map((row) => row.id));
-    const protectedProjectId = input.protectedProjectId ?? null;
-    if (
-      protectedProjectId &&
-      !retainedProjectIds.has(protectedProjectId) &&
-      this.projectExists(protectedProjectId)
-    ) {
-      const oldestRetainedProjectId = retainedRows.at(-1)?.id;
-      if (oldestRetainedProjectId) {
-        retainedProjectIds.delete(oldestRetainedProjectId);
+    const protectedProjectIds = new Set(
+      [input.protectedProjectId, ...(input.protectedProjectIds ?? [])].filter(
+        (projectId): projectId is string =>
+          typeof projectId === "string" && this.projectExists(projectId),
+      ),
+    );
+    for (const projectId of protectedProjectIds) {
+      retainedProjectIds.add(projectId);
+    }
+
+    const retainedLimit = Math.max(input.limit, protectedProjectIds.size);
+    for (const row of [...retainedRows].reverse()) {
+      if (retainedProjectIds.size <= retainedLimit) {
+        break;
       }
-      retainedProjectIds.add(protectedProjectId);
+      if (!protectedProjectIds.has(row.id)) {
+        retainedProjectIds.delete(row.id);
+      }
     }
 
     const retainedIds = Array.from(retainedProjectIds);

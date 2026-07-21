@@ -23,17 +23,29 @@ let container: HTMLDivElement;
 let root: Root;
 
 function configureEditorState(overrides: Record<string, unknown> = {}) {
+  const project = createEditorTestProject();
+  const exportStateOverrides =
+    (overrides.exportState as Record<string, unknown> | undefined) ?? {};
+  const { exportState: _exportState, ...stateOverrides } = overrides;
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
       exportState: {
         error: null,
         fileName: null,
+        previewClips: project.tracks
+          .flatMap((track) => track.clips)
+          .filter(
+            (clip): clip is typeof clip & { mediaUrl: string } =>
+              typeof clip.mediaUrl === "string",
+          ),
         progress: 0,
         result: null,
+        startedAt: null,
         status: "idle",
+        ...exportStateOverrides,
       },
-      project: createEditorTestProject(),
-      ...overrides,
+      project,
+      ...stateOverrides,
     }),
   );
 }
@@ -47,6 +59,7 @@ async function renderExportView() {
 describe("EditorExportView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.spyOn(document, "hasFocus").mockReturnValue(true);
     vi.spyOn(HTMLMediaElement.prototype, "play").mockResolvedValue();
     vi.spyOn(HTMLMediaElement.prototype, "pause").mockImplementation(
       () => undefined,
@@ -60,6 +73,7 @@ describe("EditorExportView", () => {
   afterEach(() => {
     root.unmount();
     document.body.replaceChildren();
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -103,8 +117,9 @@ describe("EditorExportView", () => {
       '[aria-label="Edited video preview"]',
     );
     expect(preview?.muted).toBe(true);
-    expect(preview?.autoplay).toBe(true);
+    expect(preview?.autoplay).toBe(false);
     expect(preview?.controls).toBe(false);
+    expect(preview?.preload).toBe("metadata");
     expect(preview?.parentElement?.className).toContain("z-[2]");
     expect(preview?.getAttribute("src")).toBe(
       "hinekora-media://replay-clip/asset-1",
@@ -120,6 +135,45 @@ describe("EditorExportView", () => {
     expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(
       playCallCount + 1,
     );
+
+    window.dispatchEvent(new Event("blur"));
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+    const focusedPlayCallCount = vi.mocked(HTMLMediaElement.prototype.play).mock
+      .calls.length;
+    window.dispatchEvent(new Event("focus"));
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(
+      focusedPlayCallCount + 1,
+    );
+
+    const visibilityState = vi.spyOn(document, "visibilityState", "get");
+    visibilityState.mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(HTMLMediaElement.prototype.pause).toHaveBeenCalled();
+
+    const resumedPlayCallCount = vi.mocked(HTMLMediaElement.prototype.play).mock
+      .calls.length;
+    visibilityState.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(
+      resumedPlayCallCount + 1,
+    );
+  });
+
+  it("keeps the background preview paused when mounted unfocused", async () => {
+    vi.mocked(document.hasFocus).mockReturnValue(false);
+    configureEditorState({
+      exportState: {
+        status: "exporting",
+      },
+    });
+
+    await renderExportView();
+
+    expect(HTMLMediaElement.prototype.play).not.toHaveBeenCalled();
+
+    window.dispatchEvent(new Event("focus"));
+
+    expect(HTMLMediaElement.prototype.play).toHaveBeenCalledTimes(1);
   });
 
   it("plays edited clips in order while rendering", async () => {
@@ -166,6 +220,7 @@ describe("EditorExportView", () => {
       exportState: {
         error: null,
         fileName: "rendering.mp4",
+        previewClips: [firstClip, secondClip],
         progress: 0.42,
         result: null,
         status: "exporting",
@@ -211,6 +266,25 @@ describe("EditorExportView", () => {
         .querySelector<HTMLVideoElement>('[aria-label="Edited video preview"]')
         ?.getAttribute("src"),
     ).toBe(firstAsset.mediaUrl);
+  });
+
+  it("keeps the export estimate anchored to the main lifecycle start", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-20T10:02:00.000Z"));
+    configureEditorState({
+      exportState: {
+        error: null,
+        fileName: "rendering.mp4",
+        progress: 0.5,
+        result: null,
+        startedAt: "2026-07-20T10:00:00.000Z",
+        status: "exporting",
+      },
+    });
+
+    await renderExportView();
+
+    expect(container.textContent).toContain("About 2 minutes left");
   });
 
   it("shows a failed save message", async () => {

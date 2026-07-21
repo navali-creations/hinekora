@@ -4,6 +4,7 @@ import type {
 } from "~/main/modules/editor";
 import type { BoundStoreStateCreator } from "~/renderer/store/store.types";
 
+import { createEditorClipboardActions } from "./Editor.slice.clipboard";
 import { editorHistoryLimit } from "./Editor.slice.constants";
 import { createEditorExportActions } from "./Editor.slice.export";
 import { createEditorHistoryActions } from "./Editor.slice.history";
@@ -154,6 +155,7 @@ const createEditorSlice: BoundStoreStateCreator<EditorSlice> = (set, get) => {
       ...createEditorHistoryActions(context),
       ...createEditorProjectActions(context),
       ...createEditorWorkspaceActions(context),
+      ...createEditorClipboardActions(context),
       ...createEditorExportActions(context),
       ...createEditorTimelineActions(context),
       toggleSidePanel: (panel) => {

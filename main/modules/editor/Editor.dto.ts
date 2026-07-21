@@ -155,14 +155,10 @@ export interface EditorExportClipInput {
 }
 
 export interface EditorExportInput {
-  clips: EditorExportClipInput[];
-  durationSeconds: number;
   exportRequestId: string;
   fileName: string;
   mode: EditorExportMode;
-  muteAudio?: boolean;
-  overwriteSource: EditorMediaReference | null;
-  projectId: string;
+  project: EditorProject;
   resolution: EditorExportResolution;
 }
 
@@ -175,10 +171,8 @@ export interface EditorCancelExportResult {
 }
 
 export interface EditorCopyToClipboardInput {
-  clips: EditorExportClipInput[];
-  durationSeconds: number;
   fileName: string;
-  muteAudio?: boolean;
+  project: EditorProjectHistorySnapshot;
   resolution: EditorExportResolution;
 }
 
@@ -204,14 +198,33 @@ export type EditorExportLifecycleStatus =
   | "idle"
   | "ready";
 
+export interface EditorExportPreviewClip {
+  durationSeconds: number;
+  id: string;
+  inSeconds: number;
+  mediaUrl: string;
+  name: string;
+  outSeconds: number;
+  playbackRate: EditorTimelinePlaybackRate;
+  startSeconds: number;
+}
+
 export interface EditorExportLifecycle {
+  canCancel: boolean;
   error: string | null;
   exportRequestId: string | null;
   fileName: string | null;
+  previewClips: EditorExportPreviewClip[];
   progress: number;
   projectId: string | null;
   result: EditorExportResult | null;
+  startedAt: string | null;
   status: EditorExportLifecycleStatus;
+}
+
+export interface EditorExportLifecycleUpdate
+  extends Omit<EditorExportLifecycle, "previewClips"> {
+  previewClips?: EditorExportPreviewClip[];
 }
 
 export interface EditorExportFileActionResult {

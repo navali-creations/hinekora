@@ -52,9 +52,10 @@ function RootLayout() {
       }
     };
 
+    const stopListeners = startListeners();
     void initialize();
 
-    return startListeners();
+    return stopListeners;
   }, [hydrate, startListeners, navigate, isSetupComplete]);
 
   useEffect(() => {

@@ -21,7 +21,7 @@ import {
 } from "./Editor.slice.utils";
 
 describe("Editor slice utilities", () => {
-  it("creates editor export and clipboard inputs for sorted clips", () => {
+  it("creates project-based export and clipboard requests", () => {
     const asset = createEditorTestAsset();
     const firstClip = createEditorTestTimelineClip(asset, {
       id: "timeline-first",
@@ -34,6 +34,10 @@ describe("Editor slice utilities", () => {
     const project = {
       ...createEditorTestProject(asset),
       activeClipId: firstClip.id,
+      history: {
+        editCount: 1,
+        labels: ["Move clip"],
+      },
       isAudioMuted: true,
       tracks: [
         {
@@ -43,30 +47,37 @@ describe("Editor slice utilities", () => {
       ],
     };
 
-    expect(
-      createEditorExportInput(project, {
-        exportRequestId: "request-1",
-        fileName: "clip.mp4",
-        mode: "overwrite",
-        resolution: "720p",
-      }),
-    ).toMatchObject({
-      clips: [
-        expect.objectContaining({ startSeconds: 0 }),
-        expect.objectContaining({ startSeconds: 5 }),
-      ],
-      overwriteSource: { id: asset.id, kind: asset.kind },
-      muteAudio: true,
-      projectId: project.id,
+    const exportInput = createEditorExportInput(project, {
+      exportRequestId: "request-1",
+      fileName: "clip.mp4",
+      mode: "overwrite",
+      resolution: "720p",
     });
-    expect(createEditorCopyToClipboardInput(project)).toMatchObject({
-      clips: expect.any(Array),
+    expect(exportInput).toMatchObject({
+      exportRequestId: "request-1",
+      fileName: "clip.mp4",
+      mode: "overwrite",
+      project: {
+        activeClipId: firstClip.id,
+        id: project.id,
+        isAudioMuted: true,
+      },
+      resolution: "720p",
+    });
+    expect(exportInput?.project).toBe(project);
+    const clipboardInput = createEditorCopyToClipboardInput(project);
+    expect(clipboardInput).toMatchObject({
       fileName: expect.any(String),
-      muteAudio: true,
+      project: {
+        id: project.id,
+        isAudioMuted: true,
+      },
+      resolution: "1080p",
     });
+    expect(clipboardInput?.project).not.toHaveProperty("history");
   });
 
-  it("rejects export and clipboard inputs with empty or missing media", () => {
+  it("rejects empty timelines and leaves project integrity checks to main", () => {
     const asset = createEditorTestAsset();
     const project = createEditorTestProject(asset);
     const emptyProject = {
@@ -103,7 +114,10 @@ describe("Editor slice utilities", () => {
         mode: "new-file",
         resolution: "1080p",
       }),
-    ).toBeNull();
+    ).not.toBeNull();
+    expect(
+      createEditorCopyToClipboardInput(missingAssetProject),
+    ).not.toBeNull();
     expect(
       createEditorExportInput(missingOverwriteSourceProject, {
         exportRequestId: "request-1",
@@ -111,7 +125,7 @@ describe("Editor slice utilities", () => {
         mode: "overwrite",
         resolution: "1080p",
       }),
-    ).toBeNull();
+    ).not.toBeNull();
   });
 
   it("normalizes timeline tracks into sorted non-overlapping ranges", () => {

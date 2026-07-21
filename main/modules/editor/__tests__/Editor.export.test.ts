@@ -6,6 +6,7 @@ import {
   calculateEditorExportDuration,
   createEditorExportFilterScript,
   createEditorExportSegments,
+  createEditorSegmentDiagnostics,
   type EditorExportRenderSegment,
   type EditorResolvedExportClip,
   validateEditorExportTimeline,
@@ -67,6 +68,12 @@ describe("Editor export helpers", () => {
       { durationSeconds: 1, kind: "gap", startSeconds: 9 },
     ]);
     expect(calculateEditorExportDuration(segments)).toBe(10);
+    expect(createEditorSegmentDiagnostics(segments)).toEqual({
+      exportClipSegmentCount: 2,
+      exportDurationSeconds: 10,
+      exportGapSegmentCount: 3,
+      exportSegmentCount: 5,
+    });
   });
 
   it("skips invalid clip durations and rounds non-finite values safely", () => {

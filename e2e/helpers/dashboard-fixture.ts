@@ -72,6 +72,7 @@ import {
   captureUnexpectedConsoleErrors,
   getUnexpectedConsoleErrors,
 } from "./console-errors";
+import { createIdleEditorExportLifecycle } from "./editor-export-fixture";
 import { createDefaultKeybindRegistrationStatus } from "./keybinds-fixture";
 import {
   type E2EPoeProcessSnapshotFactory,
@@ -476,6 +477,7 @@ async function setupDashboardE2E(
     (input: {
       bridgeFactorySource: string;
       fixture: DashboardE2EFixture;
+      idleExportLifecycle: ReturnType<typeof createIdleEditorExportLifecycle>;
       leagueCatalog: ReturnType<typeof createE2EPoeLeagueCatalog>;
       poeProcessSnapshotFactoryScript: string;
     }) => {
@@ -1139,10 +1141,11 @@ async function setupDashboardE2E(
           "diagLog",
           {},
         ),
-        editor: createBridgeDomain<DashboardE2EElectron["editor"]>(
-          "editor",
-          {},
-        ),
+        editor: createBridgeDomain<DashboardE2EElectron["editor"]>("editor", {
+          getExportLifecycle: async () => clone(input.idleExportLifecycle),
+          onExportLifecycleChanged: () => unsubscribe,
+          onExportProgress: () => unsubscribe,
+        }),
         keybinds: createBridgeDomain<DashboardE2EElectron["keybinds"]>(
           "keybinds",
           {
@@ -1788,6 +1791,7 @@ async function setupDashboardE2E(
     {
       bridgeFactorySource: e2eBridgeDomainFactorySource,
       fixture: createDashboardE2EFixture(options),
+      idleExportLifecycle: createIdleEditorExportLifecycle(),
       leagueCatalog: createE2EPoeLeagueCatalog(),
       poeProcessSnapshotFactoryScript: e2ePoeProcessSnapshotFactoryScript,
     },

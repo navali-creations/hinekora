@@ -41,6 +41,7 @@ function EditorPage({
     error,
     clipboardStatus,
     exportFileName,
+    exportError,
     exportProjectId,
     exportResult,
     exportStatus,
@@ -56,6 +57,7 @@ function EditorPage({
     clipboardStatus: editor.clipboardState.status,
     error: editor.error,
     exportFileName: editor.exportState.fileName,
+    exportError: editor.exportState.error,
     exportProjectId: editor.exportState.projectId,
     exportResult: editor.exportState.result,
     exportStatus: editor.exportState.status,
@@ -73,7 +75,8 @@ function EditorPage({
   );
   const isClipboardBusy = clipboardStatus === "copying";
   const isBookmarksVisible = visibleSidePanel === "bookmarks";
-  const routeProjectId = projectId ?? exportProjectId;
+  const routeProjectId =
+    projectId ?? (source === null && project === null ? exportProjectId : null);
 
   const isRouteHydrated = useEditorRouteHydration({
     hydrate,
@@ -114,6 +117,11 @@ function EditorPage({
           })}
           title={createExportTitle(exportStatus)}
         />
+        {exportError && exportStatus !== "failed" && (
+          <div className="alert alert-error py-2 text-sm" role="alert">
+            {exportError}
+          </div>
+        )}
         {exportStatus === "exporting" && <EditorExportNotices />}
         <PageContent className="grid min-h-0 !overflow-hidden">
           <EditorExportView />

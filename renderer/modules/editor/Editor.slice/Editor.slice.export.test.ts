@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 import type {
   EditorExportInput,
+  EditorExportLifecycle,
   EditorExportResult,
 } from "~/main/modules/editor";
 
 import {
   createDeferred,
   createEditorTestAsset,
+  createEditorTestExportLifecycle,
   createEditorTestExportResult,
   createEditorTestProject,
   loadEditorProject,
@@ -23,15 +25,30 @@ describe("Editor export slice", () => {
     const editorApi = getEditorApi();
     const progressTracker = getProgressTracker();
     const result = createEditorTestExportResult();
-    editorApi.getExportLifecycle.mockResolvedValue({
-      error: null,
-      exportRequestId: "export-request-refresh",
-      fileName: "refresh.mp4",
-      progress: 0.35,
-      projectId: "project-refresh",
-      result: null,
-      status: "exporting",
-    });
+    const previewClip = {
+      durationSeconds: 10,
+      id: "timeline-preview",
+      inSeconds: 0,
+      mediaUrl: "hinekora-media://replay-clip/asset-1",
+      name: "preview.mp4",
+      outSeconds: 10,
+      playbackRate: 1 as const,
+      startSeconds: 0,
+    };
+    editorApi.getExportLifecycle.mockResolvedValue(
+      createEditorTestExportLifecycle({
+        canCancel: true,
+        error: null,
+        exportRequestId: "export-request-refresh",
+        fileName: "refresh.mp4",
+        progress: 0.35,
+        previewClips: [previewClip],
+        projectId: "project-refresh",
+        result: null,
+        startedAt: "2026-07-20T10:00:00.000Z",
+        status: "exporting",
+      }),
+    );
 
     const unsubscribe = store.getState().editor.startExportStateListening();
     await store.getState().editor.hydrateExportState();
@@ -55,33 +72,41 @@ describe("Editor export slice", () => {
       refreshedStore.getState().editor.exportState.dismissedNoticeIds,
     ).toEqual(["keep-editing-safely"]);
 
-    store.getState().editor.keepEditingAfterExport();
-    progressTracker.getExportLifecycleCallback()?.({
-      error: null,
-      exportRequestId: "export-request-refresh",
-      fileName: "refresh.mp4",
-      progress: 0.6,
-      projectId: "project-refresh",
-      result: null,
-      status: "exporting",
-    });
+    void store.getState().editor.keepEditingAfterExport();
+    const { previewClips: _previewClips, ...lifecycleUpdate } =
+      createEditorTestExportLifecycle({
+        canCancel: true,
+        error: null,
+        exportRequestId: "export-request-refresh",
+        fileName: "refresh.mp4",
+        progress: 0.6,
+        projectId: "project-refresh",
+        result: null,
+        startedAt: "2026-07-20T10:00:00.000Z",
+        status: "exporting",
+      });
+    progressTracker.getExportLifecycleCallback()?.(lifecycleUpdate);
     expect(store.getState().editor.exportState).toMatchObject({
       dismissedNoticeIds: ["keep-editing-safely"],
       isViewOpen: false,
       progress: 0.6,
+      previewClips: [previewClip],
       status: "exporting",
     });
     expect(editorApi.dismissExport).not.toHaveBeenCalled();
 
-    progressTracker.getExportLifecycleCallback()?.({
-      error: null,
-      exportRequestId: "export-request-refresh",
-      fileName: result.fileName,
-      progress: 1,
-      projectId: "project-refresh",
-      result,
-      status: "ready",
-    });
+    progressTracker.getExportLifecycleCallback()?.(
+      createEditorTestExportLifecycle({
+        error: null,
+        exportRequestId: "export-request-refresh",
+        fileName: result.fileName,
+        progress: 1,
+        projectId: "project-refresh",
+        result,
+        startedAt: "2026-07-20T10:00:00.000Z",
+        status: "ready",
+      }),
+    );
     expect(store.getState().editor.exportState).toMatchObject({
       isViewOpen: false,
       progress: 1,
@@ -90,34 +115,31 @@ describe("Editor export slice", () => {
     });
 
     store.getState().editor.viewExport();
-    store.getState().editor.keepEditingAfterExport();
+    await store.getState().editor.keepEditingAfterExport();
     expect(store.getState().editor.exportState.status).toBe("idle");
     expect(editorApi.dismissExport).toHaveBeenCalledTimes(1);
 
-    progressTracker.getExportLifecycleCallback()?.({
-      error: "render failed",
-      exportRequestId: "export-request-failed",
-      fileName: "failed.mp4",
-      progress: 0,
-      projectId: "project-failed",
-      result: null,
-      status: "failed",
-    });
+    progressTracker.getExportLifecycleCallback()?.(
+      createEditorTestExportLifecycle({
+        error: "render failed",
+        exportRequestId: "export-request-failed",
+        fileName: "failed.mp4",
+        progress: 0,
+        projectId: "project-failed",
+        result: null,
+        startedAt: "2026-07-20T10:00:00.000Z",
+        status: "failed",
+      }),
+    );
     expect(store.getState().editor.exportState).toMatchObject({
       error: "render failed",
       dismissedNoticeIds: [],
       isViewOpen: true,
       status: "failed",
     });
-    progressTracker.getExportLifecycleCallback()?.({
-      error: null,
-      exportRequestId: null,
-      fileName: null,
-      progress: 0,
-      projectId: null,
-      result: null,
-      status: "idle",
-    });
+    progressTracker.getExportLifecycleCallback()?.(
+      createEditorTestExportLifecycle(),
+    );
     expect(store.getState().editor.exportState.status).toBe("idle");
 
     unsubscribe();
@@ -147,18 +169,200 @@ describe("Editor export slice", () => {
             ...state.editor.exportState,
             error: "failed",
             isViewOpen: true,
+            requestId: "export-request-failed",
             status: "failed",
           },
         },
       }));
       editorApi.dismissExport.mockRejectedValueOnce(new Error("offline"));
-      store.getState().editor.keepEditingAfterExport();
-      await Promise.resolve();
+      await store.getState().editor.keepEditingAfterExport();
       expect(consoleWarn).toHaveBeenCalledWith(
         "[editor] Export state dismissal failed",
         { error: expect.any(Error) },
       );
+      expect(store.getState().editor.exportState).toMatchObject({
+        error: "Could not dismiss export status: offline",
+        status: "failed",
+      });
     } finally {
+      consoleWarn.mockRestore();
+    }
+  });
+
+  it("retries lifecycle hydration while export listeners are active", async () => {
+    vi.useFakeTimers();
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const lifecycle = createEditorTestExportLifecycle({
+      canCancel: true,
+      exportRequestId: "export-request-recovered",
+      progress: 0.4,
+      status: "exporting",
+    });
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    editorApi.getExportLifecycle
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(lifecycle);
+    const stopListening = store.getState().editor.startExportStateListening();
+
+    try {
+      await store.getState().editor.hydrateExportState();
+      expect(store.getState().editor.exportState.status).toBe("idle");
+
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(editorApi.getExportLifecycle).toHaveBeenCalledTimes(2);
+      expect(store.getState().editor.exportState).toMatchObject({
+        progress: 0.4,
+        requestId: "export-request-recovered",
+        status: "exporting",
+      });
+    } finally {
+      stopListening();
+      consoleWarn.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it("recovers an unknown background export from its progress event", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const progressTracker = getProgressTracker();
+    editorApi.getExportLifecycle.mockResolvedValue(
+      createEditorTestExportLifecycle({
+        canCancel: true,
+        exportRequestId: "export-request-background",
+        progress: 0.55,
+        status: "exporting",
+      }),
+    );
+    const stopListening = store.getState().editor.startExportStateListening();
+
+    try {
+      progressTracker.getExportProgressCallback()?.({
+        exportRequestId: "export-request-background",
+        progress: 0.5,
+      });
+
+      await vi.waitFor(() => {
+        expect(store.getState().editor.exportState).toMatchObject({
+          progress: 0.55,
+          requestId: "export-request-background",
+          status: "exporting",
+        });
+      });
+    } finally {
+      stopListening();
+    }
+  });
+
+  it("does not overwrite a lifecycle event with an older hydration result", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const progressTracker = getProgressTracker();
+    const hydration = createDeferred<EditorExportLifecycle>();
+    const result = createEditorTestExportResult();
+    editorApi.getExportLifecycle.mockReturnValueOnce(hydration.promise);
+    const stopListening = store.getState().editor.startExportStateListening();
+
+    const hydrationRequest = store.getState().editor.hydrateExportState();
+    progressTracker.getExportLifecycleCallback()?.(
+      createEditorTestExportLifecycle({
+        exportRequestId: "export-request-refresh",
+        fileName: result.fileName,
+        progress: 1,
+        projectId: "project-refresh",
+        result,
+        startedAt: "2026-07-20T10:00:00.000Z",
+        status: "ready",
+      }),
+    );
+    hydration.resolve(
+      createEditorTestExportLifecycle({
+        canCancel: true,
+        exportRequestId: "export-request-refresh",
+        fileName: result.fileName,
+        progress: 0.5,
+        projectId: "project-refresh",
+        startedAt: "2026-07-20T10:00:00.000Z",
+        status: "exporting",
+      }),
+    );
+    await hydrationRequest;
+
+    expect(store.getState().editor.exportState).toMatchObject({
+      progress: 1,
+      result,
+      status: "ready",
+    });
+    stopListening();
+  });
+
+  it("starts fresh hydration after a listener remount", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const firstHydration = createDeferred<EditorExportLifecycle>();
+    editorApi.getExportLifecycle
+      .mockReturnValueOnce(firstHydration.promise)
+      .mockResolvedValueOnce(
+        createEditorTestExportLifecycle({
+          canCancel: true,
+          exportRequestId: "export-request-remount",
+          progress: 0.3,
+          status: "exporting",
+        }),
+      );
+
+    const stopFirstListener = store
+      .getState()
+      .editor.startExportStateListening();
+    const staleHydration = store.getState().editor.hydrateExportState();
+    stopFirstListener();
+    const stopSecondListener = store
+      .getState()
+      .editor.startExportStateListening();
+
+    try {
+      await store.getState().editor.hydrateExportState();
+      expect(editorApi.getExportLifecycle).toHaveBeenCalledTimes(2);
+      expect(store.getState().editor.exportState).toMatchObject({
+        progress: 0.3,
+        requestId: "export-request-remount",
+        status: "exporting",
+      });
+
+      firstHydration.resolve(createEditorTestExportLifecycle());
+      await staleHydration;
+      expect(store.getState().editor.exportState.status).toBe("exporting");
+    } finally {
+      stopSecondListener();
+    }
+  });
+
+  it("does not report a stale hydration failure after a lifecycle event", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const progressTracker = getProgressTracker();
+    const hydration = createDeferred<EditorExportLifecycle>();
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    editorApi.getExportLifecycle.mockReturnValueOnce(hydration.promise);
+    const stopListening = store.getState().editor.startExportStateListening();
+
+    try {
+      const hydrationRequest = store.getState().editor.hydrateExportState();
+      progressTracker.getExportLifecycleCallback()?.(
+        createEditorTestExportLifecycle({
+          exportRequestId: "export-request-current",
+          status: "failed",
+        }),
+      );
+      hydration.reject(new Error("stale offline response"));
+      await hydrationRequest;
+
+      expect(consoleWarn).not.toHaveBeenCalled();
+      expect(store.getState().editor.exportState.status).toBe("failed");
+    } finally {
+      stopListening();
       consoleWarn.mockRestore();
     }
   });
@@ -172,6 +376,7 @@ describe("Editor export slice", () => {
     let resolveExport: (value: EditorExportResult) => void = () => undefined;
     const unsubscribe = vi.fn();
     progressTracker.setExportProgressUnsubscribe(unsubscribe);
+    const stopListening = store.getState().editor.startExportStateListening();
     editorApi.exportProject.mockImplementation(
       () =>
         new Promise((resolve) => {
@@ -199,14 +404,11 @@ describe("Editor export slice", () => {
       | EditorExportInput
       | undefined;
     expect(exportInput?.exportRequestId).toEqual(expect.any(String));
-    expect(exportInput?.clips[0]).toMatchObject({ playbackRate: 1 });
-    expect(exportInput?.projectId).toBe(project.id);
-    expect(editorApi.saveProject).toHaveBeenCalledWith({
-      project: expect.objectContaining({ id: project.id }),
+    expect(exportInput?.project.tracks[0]?.clips[0]).toMatchObject({
+      playbackRate: 1,
     });
-    expect(editorApi.saveProject.mock.invocationCallOrder[0]).toBeLessThan(
-      editorApi.exportProject.mock.invocationCallOrder[0] ?? 0,
-    );
+    expect(exportInput?.project.id).toBe(project.id);
+    expect(editorApi.saveProject).not.toHaveBeenCalled();
 
     progressTracker.getExportProgressCallback()?.({
       exportRequestId: "stale-export-request",
@@ -239,9 +441,10 @@ describe("Editor export slice", () => {
     });
     expect(store.getState().editor.exportState).toMatchObject({
       progress: 1,
-      requestId: null,
+      requestId: exportInput?.exportRequestId,
       status: "ready",
     });
+    stopListening();
     expect(unsubscribe).toHaveBeenCalledTimes(1);
   });
 
@@ -270,7 +473,7 @@ describe("Editor export slice", () => {
         progress: 1,
         status: "ready",
       });
-      expect(unsubscribe).toHaveBeenCalledTimes(1);
+      expect(unsubscribe).not.toHaveBeenCalled();
     } finally {
       performanceNow.mockRestore();
     }
@@ -333,9 +536,15 @@ describe("Editor export slice", () => {
 
       expect(editorApi.copyProjectToClipboard).toHaveBeenCalledWith(
         expect.objectContaining({
-          durationSeconds: project.durationSeconds,
-          clips: [expect.objectContaining({ playbackRate: 1 })],
-          muteAudio: true,
+          project: expect.objectContaining({
+            durationSeconds: project.durationSeconds,
+            isAudioMuted: true,
+            tracks: [
+              expect.objectContaining({
+                clips: [expect.objectContaining({ playbackRate: 1 })],
+              }),
+            ],
+          }),
           resolution: "1080p",
         }),
       );
@@ -403,7 +612,7 @@ describe("Editor export slice", () => {
       error: "Save failed",
       status: "failed",
     });
-    expect(unsubscribe).toHaveBeenCalled();
+    expect(unsubscribe).not.toHaveBeenCalled();
 
     await store.getState().editor.exportProject({
       fileName: "asset-1.mp4",
@@ -415,7 +624,7 @@ describe("Editor export slice", () => {
       status: "failed",
     });
 
-    store.getState().editor.keepEditingAfterExport();
+    await store.getState().editor.keepEditingAfterExport();
     expect(store.getState().editor.exportState).toMatchObject({
       error: null,
       status: "idle",
@@ -445,7 +654,7 @@ describe("Editor export slice", () => {
     await vi.waitFor(() => {
       expect(editorApi.exportProject).toHaveBeenCalledTimes(1);
     });
-    store.getState().editor.keepEditingAfterExport();
+    void store.getState().editor.keepEditingAfterExport();
     expect(store.getState().editor.exportState).toMatchObject({
       isViewOpen: false,
       status: "exporting",
@@ -480,7 +689,7 @@ describe("Editor export slice", () => {
       mode: "new-file",
       resolution: "1080p",
     });
-    store.getState().editor.keepEditingAfterExport();
+    void store.getState().editor.keepEditingAfterExport();
     expect(store.getState().editor.exportState.isViewOpen).toBe(false);
     await expect(
       store.getState().editor.copyProjectToClipboard(),
@@ -532,7 +741,7 @@ describe("Editor export slice", () => {
       expect(editorApi.exportProject).toHaveBeenCalledTimes(1);
     });
     const requestId = store.getState().editor.exportState.requestId;
-    store.getState().editor.keepEditingAfterExport();
+    void store.getState().editor.keepEditingAfterExport();
     store.getState().editor.viewExport();
     expect(store.getState().editor.exportState.isViewOpen).toBe(true);
 
@@ -565,13 +774,15 @@ describe("Editor export slice", () => {
     });
   });
 
-  it("cancels before rendering when project persistence is still pending", async () => {
+  it("starts the main-owned export without a renderer persistence preflight", async () => {
     const store = createTestStore();
     const editorApi = getEditorApi();
     const asset = createEditorTestAsset();
     const project = createEditorTestProject(asset);
     const saveRequest = createDeferred<typeof project>();
+    const mainExportRequest = createDeferred<EditorExportResult>();
     editorApi.saveProject.mockReturnValue(saveRequest.promise);
+    editorApi.exportProject.mockReturnValue(mainExportRequest.promise);
     loadEditorProject(store, project, [asset]);
 
     const exportRequest = store.getState().editor.exportProject({
@@ -580,20 +791,18 @@ describe("Editor export slice", () => {
       resolution: "1080p",
     });
     expect(store.getState().editor.exportState.status).toBe("exporting");
+    expect(editorApi.exportProject).toHaveBeenCalledTimes(1);
+    expect(editorApi.saveProject).not.toHaveBeenCalled();
 
-    await store.getState().editor.cancelExport();
-    expect(store.getState().editor.exportState.status).toBe("idle");
-    expect(editorApi.cancelExport).not.toHaveBeenCalled();
-    expect(editorApi.exportProject).not.toHaveBeenCalled();
-
-    saveRequest.resolve(project);
+    mainExportRequest.resolve(createEditorTestExportResult());
     await exportRequest;
-    expect(editorApi.exportProject).not.toHaveBeenCalled();
+    expect(store.getState().editor.exportState.status).toBe("ready");
   });
 
-  it("keeps rendering when cancellation arrives after the commit phase", async () => {
+  it("disables cancellation after main enters the commit phase", async () => {
     const store = createTestStore();
     const editorApi = getEditorApi();
+    const progressTracker = getProgressTracker();
     const asset = createEditorTestAsset();
     const project = createEditorTestProject(asset);
     let resolveExport: (value: EditorExportResult) => void = () => undefined;
@@ -603,8 +812,7 @@ describe("Editor export slice", () => {
           resolveExport = resolve;
         }),
     );
-    editorApi.cancelExport.mockResolvedValue({ cancelled: false });
-    editorApi.onExportProgress.mockReturnValue(vi.fn());
+    const stopListening = store.getState().editor.startExportStateListening();
     loadEditorProject(store, project, [asset]);
 
     const exportRequest = store.getState().editor.exportProject({
@@ -615,16 +823,32 @@ describe("Editor export slice", () => {
     await vi.waitFor(() => {
       expect(editorApi.exportProject).toHaveBeenCalledTimes(1);
     });
+    const requestId = store.getState().editor.exportState.requestId;
+    progressTracker.getExportLifecycleCallback()?.(
+      createEditorTestExportLifecycle({
+        canCancel: false,
+        exportRequestId: requestId,
+        fileName: "asset-1.mp4",
+        progress: 0.98,
+        projectId: project.id,
+        startedAt: "2026-07-20T10:00:00.000Z",
+        status: "exporting",
+      }),
+    );
     store.getState().editor.openExportCancellationConfirmation();
     await store.getState().editor.cancelExport();
 
     expect(store.getState().editor.exportState).toMatchObject({
+      canCancel: false,
+      isCancelConfirmationOpen: false,
       isCancellationPending: false,
       status: "exporting",
     });
+    expect(editorApi.cancelExport).not.toHaveBeenCalled();
     resolveExport(createEditorTestExportResult());
     await exportRequest;
     expect(store.getState().editor.exportState.status).toBe("ready");
+    stopListening();
   });
 
   it("reveals exports and stores reveal failures", async () => {

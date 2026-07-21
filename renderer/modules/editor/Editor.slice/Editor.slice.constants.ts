@@ -13,16 +13,19 @@ const editorVisibleHistoryPageSize = 10;
 const editorZoomStep = 0.25;
 const minimumExportDurationMs = 900;
 const initialExportState: EditorExportState = {
+  canCancel: false,
   dismissedNoticeIds: [],
   error: null,
   fileName: null,
   isCancelConfirmationOpen: false,
   isCancellationPending: false,
   isViewOpen: false,
+  previewClips: [],
   progress: 0,
   projectId: null,
   requestId: null,
   result: null,
+  startedAt: null,
   status: "idle",
 };
 const initialClipboardState: EditorClipboardState = {

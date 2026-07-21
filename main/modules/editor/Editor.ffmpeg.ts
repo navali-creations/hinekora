@@ -24,9 +24,13 @@ import {
   type EditorExportRenderSegment,
   type EditorExportSegment,
 } from "./Editor.export";
+import { EditorTemporaryFileCleanupError } from "./Editor.files";
 
-const editorExportFfmpegTimeoutMs = 30 * 60 * 1_000;
+const editorExportFfmpegInactivityTimeoutMs = 30 * 60 * 1_000;
+const editorExportFfmpegMinimumAbsoluteTimeoutMs = 60 * 60 * 1_000;
+const editorExportFfmpegAbsoluteTimeoutMultiplier = 10;
 const editorExportFfprobeTimeoutMs = 15_000;
+const maxEditorFfmpegStderrBytes = 64 * 1024;
 const editorAudioProbeConcurrency = 4;
 const editorLogScope = "editor";
 const currentDir = __dirname;
@@ -114,6 +118,7 @@ async function renderEditorExportWithFfmpegQueued(
     ffmpegDependencies.signal = input.signal;
   }
 
+  let renderFailure: { error: unknown } | null = null;
   try {
     logInfo(editorLogScope, "Editor ffmpeg render started", {
       inputCount: renderSegments.filter((segment) => segment.kind === "clip")
@@ -169,8 +174,27 @@ async function renderEditorExportWithFfmpegQueued(
       resolution: input.resolution,
       ...createSafePathLogFields(input.outputPath, "export"),
     });
-  } finally {
+  } catch (error) {
+    renderFailure = { error };
+  }
+
+  let filterCleanupFailure: unknown = null;
+  try {
     await rm(filterScriptPath, { force: true });
+  } catch (error) {
+    filterCleanupFailure = error;
+    logWarn(editorLogScope, "Temporary FFmpeg cleanup deferred", {
+      error: safeErrorMessage(error),
+      ...createSafePathLogFields(filterScriptPath, "filterScript"),
+    });
+  }
+  if (renderFailure && filterCleanupFailure) {
+    throw new EditorTemporaryFileCleanupError(
+      "Temporary FFmpeg files could not be removed",
+    );
+  }
+  if (renderFailure) {
+    throw renderFailure.error;
   }
 }
 
@@ -190,6 +214,7 @@ function runEditorFfmpeg(
     progressDurationSeconds?: number;
     signal?: AbortSignal;
     spawnProcess?: typeof spawn;
+    absoluteTimeoutMs?: number;
     timeoutMs?: number;
   } = {},
 ): Promise<void> {
@@ -203,7 +228,7 @@ function runEditorFfmpeg(
     const child = spawnProcess(ffmpegPath, args, {
       windowsHide: true,
     });
-    const stderrChunks: Buffer[] = [];
+    let stderrTail: Buffer = Buffer.alloc(0);
     const progressInput: {
       durationSeconds?: number;
       onProgress?: (progress: number) => void;
@@ -218,10 +243,31 @@ function runEditorFfmpeg(
     let didTimeout = false;
     let didAbort = false;
     let isSettled = false;
-    const timeoutId = setTimeout(() => {
+    const inactivityTimeoutMs =
+      dependencies.timeoutMs ?? editorExportFfmpegInactivityTimeoutMs;
+    const absoluteTimeoutMs =
+      dependencies.absoluteTimeoutMs ??
+      Math.max(
+        editorExportFfmpegMinimumAbsoluteTimeoutMs,
+        (dependencies.progressDurationSeconds ?? 0) *
+          1_000 *
+          editorExportFfmpegAbsoluteTimeoutMultiplier,
+      );
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const absoluteTimeoutId = setTimeout(() => {
       didTimeout = true;
       child.kill("SIGKILL");
-    }, dependencies.timeoutMs ?? editorExportFfmpegTimeoutMs);
+    }, absoluteTimeoutMs);
+    const resetInactivityTimeout = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      timeoutId = setTimeout(() => {
+        didTimeout = true;
+        child.kill("SIGKILL");
+      }, inactivityTimeoutMs);
+    };
+    resetInactivityTimeout();
 
     const settle = (work: () => void) => {
       /* v8 ignore next -- Duplicate child-process events after settlement are defensive. */
@@ -231,6 +277,7 @@ function runEditorFfmpeg(
 
       isSettled = true;
       clearTimeout(timeoutId);
+      clearTimeout(absoluteTimeoutId);
       dependencies.signal?.removeEventListener("abort", handleAbort);
       work();
     };
@@ -243,8 +290,10 @@ function runEditorFfmpeg(
 
     /* v8 ignore start -- Electron fork coverage does not attribute EventEmitter data callbacks reliably. */
     child.stderr.on("data", (chunk: Buffer) => {
-      stderrChunks.push(chunk);
-      reportProgress(chunk);
+      stderrTail = appendBoundedStderr(stderrTail, chunk);
+      if (reportProgress(chunk)) {
+        resetInactivityTimeout();
+      }
     });
     /* v8 ignore stop */
     child.on("error", (error) => {
@@ -272,10 +321,7 @@ function runEditorFfmpeg(
         return;
       }
 
-      const stderr = Buffer.concat(stderrChunks)
-        .toString("utf8")
-        .slice(-1_500)
-        .trim();
+      const stderr = stderrTail.toString("utf8").slice(-1_500).trim();
       settle(() =>
         reject(
           new Error(
@@ -289,26 +335,44 @@ function runEditorFfmpeg(
   });
 }
 
+function appendBoundedStderr(current: Buffer, chunk: Buffer): Buffer {
+  if (chunk.length >= maxEditorFfmpegStderrBytes) {
+    return chunk.subarray(chunk.length - maxEditorFfmpegStderrBytes);
+  }
+  const overflowBytes =
+    current.length + chunk.length - maxEditorFfmpegStderrBytes;
+  return Buffer.concat([
+    overflowBytes > 0 ? current.subarray(overflowBytes) : current,
+    chunk,
+  ]);
+}
+
 function createFfmpegProgressReporter(input: {
   durationSeconds?: number;
   onProgress?: (progress: number) => void;
-}): (chunk: Buffer) => void {
+}): (chunk: Buffer) => boolean {
   let progressBuffer = "";
+  let lastProgressSeconds = -1;
   const durationSeconds = input.durationSeconds;
-  if (!input.onProgress || !durationSeconds || durationSeconds <= 0) {
-    return () => undefined;
+  if (!durationSeconds || durationSeconds <= 0) {
+    return () => false;
   }
 
   return (chunk: Buffer) => {
     progressBuffer = `${progressBuffer}${chunk.toString("utf8")}`.slice(-2_000);
     const progressSeconds = parseFfmpegProgressSeconds(progressBuffer);
-    if (progressSeconds === null) {
-      return;
+    if (progressSeconds === null || progressSeconds <= lastProgressSeconds) {
+      return false;
     }
+    lastProgressSeconds = progressSeconds;
 
-    input.onProgress?.(
-      Math.min(Math.max(progressSeconds / durationSeconds, 0), 0.98),
+    const progress = Math.min(
+      Math.max(progressSeconds / durationSeconds, 0),
+      0.98,
     );
+    input.onProgress?.(progress);
+
+    return true;
   };
 }
 

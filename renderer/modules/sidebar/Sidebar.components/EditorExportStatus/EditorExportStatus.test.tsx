@@ -4,6 +4,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const storeMocks = vi.hoisted(() => ({
+  keepEditingAfterExport: vi.fn(),
   openExportCancellationConfirmation: vi.fn(),
   useEditorShallow: vi.fn(),
   viewExport: vi.fn(),
@@ -36,12 +37,15 @@ function configureEditorState(overrides: Record<string, unknown> = {}): void {
   storeMocks.useEditorShallow.mockImplementation((selector) =>
     selector({
       exportState: {
+        canCancel: true,
+        error: null,
         isCancellationPending: false,
         progress: 0.42,
         status: "exporting",
       },
       openExportCancellationConfirmation:
         storeMocks.openExportCancellationConfirmation,
+      keepEditingAfterExport: storeMocks.keepEditingAfterExport,
       viewExport: storeMocks.viewExport,
       ...overrides,
     }),
@@ -112,6 +116,7 @@ describe("EditorExportStatus", () => {
   it("hides when idle and disables cancellation while stopping", async () => {
     configureEditorState({
       exportState: {
+        canCancel: false,
         isCancellationPending: false,
         progress: 0,
         status: "idle",
@@ -122,6 +127,7 @@ describe("EditorExportStatus", () => {
 
     configureEditorState({
       exportState: {
+        canCancel: true,
         isCancellationPending: true,
         progress: 0.5,
         status: "exporting",
@@ -132,5 +138,43 @@ describe("EditorExportStatus", () => {
       (button) => button.textContent === "Stopping",
     );
     expect(cancelButton?.disabled).toBe(true);
+  });
+
+  it("keeps completed and failed background exports accessible", async () => {
+    configureEditorState({
+      exportState: {
+        canCancel: false,
+        error: null,
+        isCancellationPending: false,
+        progress: 1,
+        status: "ready",
+      },
+    });
+    await renderStatus();
+    expect(container.textContent).toContain("Video saved");
+    expect(container.textContent).toContain("100%");
+
+    await act(async () => {
+      Array.from(container.querySelectorAll("button"))
+        .find((button) => button.textContent === "Dismiss")
+        ?.click();
+    });
+    expect(storeMocks.keepEditingAfterExport).toHaveBeenCalledTimes(1);
+
+    configureEditorState({
+      exportState: {
+        canCancel: false,
+        error: "Temporary video files could not be removed",
+        isCancellationPending: false,
+        progress: 0,
+        status: "failed",
+      },
+    });
+    await renderStatus();
+    expect(container.textContent).toContain("Save failed");
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Temporary video files could not be removed",
+    );
+    expect(container.querySelector('a[href="/editor"]')).not.toBeNull();
   });
 });

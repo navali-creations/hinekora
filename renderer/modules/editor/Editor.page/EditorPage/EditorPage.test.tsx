@@ -1294,6 +1294,64 @@ describe("EditorPage shortcuts", () => {
     expect(storeMocks.hydrate).not.toHaveBeenCalled();
   });
 
+  it("shows export control failures while processing continues", async () => {
+    configureEditorState({
+      exportState: {
+        dismissedNoticeIds: [],
+        error: "Cancellation failed",
+        fileName: "export.mp4",
+        isViewOpen: true,
+        projectId: project.id,
+        result: null,
+        status: "exporting",
+      },
+    });
+
+    await renderEditorPage();
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "Cancellation failed",
+    );
+  });
+
+  it("lets an explicit source win over a recovering export project", async () => {
+    const source = { id: "clip-explicit", kind: "clip" as const };
+    configureEditorState({
+      exportState: {
+        fileName: "export.mp4",
+        isViewOpen: false,
+        projectId: "project-exporting",
+        result: null,
+        status: "exporting",
+      },
+      project: null,
+    });
+
+    await act(async () => {
+      root.render(<EditorPage source={source} />);
+    });
+
+    expect(storeMocks.hydrate).toHaveBeenCalledWith(source);
+    expect(storeMocks.openProject).not.toHaveBeenCalled();
+  });
+
+  it("does not replace an open project with the background export project", async () => {
+    configureEditorState({
+      exportState: {
+        fileName: "export.mp4",
+        isViewOpen: false,
+        projectId: "project-exporting",
+        result: null,
+        status: "exporting",
+      },
+    });
+
+    await renderEditorPage();
+
+    expect(storeMocks.hydrate).not.toHaveBeenCalled();
+    expect(storeMocks.openProject).not.toHaveBeenCalled();
+  });
+
   it("opens a saved edit from the editor route project id", async () => {
     await act(async () => {
       root.render(<EditorPage projectId="project-2" />);

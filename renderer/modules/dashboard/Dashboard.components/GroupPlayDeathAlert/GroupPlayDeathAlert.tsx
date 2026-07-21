@@ -47,26 +47,17 @@ function GroupPlayDeathAlert() {
   return (
     <NoticeAlert
       actions={
-        <div className="flex shrink-0 items-center gap-2">
-          <button
-            className="btn btn-warning btn-xs"
-            type="button"
-            onClick={handleOpenGameSettings}
-          >
-            Game Settings
-            <ArrowRight size={14} />
-          </button>
-          <button
-            aria-label="Dismiss group play death clip alert"
-            className="btn btn-ghost btn-xs text-base-content/60 hover:text-base-content"
-            title="Dismiss"
-            type="button"
-            onClick={handleDismiss}
-          >
-            Dismiss
-          </button>
-        </div>
+        <button
+          className="btn btn-warning btn-xs"
+          type="button"
+          onClick={handleOpenGameSettings}
+        >
+          Game Settings
+          <ArrowRight size={14} />
+        </button>
       }
+      dismissLabel="Dismiss group play death clip alert"
+      onDismiss={handleDismiss}
       title="Playing in a group?"
       tone="warning"
     >

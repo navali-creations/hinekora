@@ -8,6 +8,7 @@ import type {
   EditorCreateProjectInput,
   EditorExportInput,
   EditorExportLifecycle,
+  EditorExportLifecycleUpdate,
   EditorExportResult,
   EditorMediaAsset,
   EditorMediaAssetPageQuery,
@@ -43,6 +44,7 @@ import {
   captureUnexpectedConsoleErrors,
   getUnexpectedConsoleErrors,
 } from "./console-errors";
+import { createIdleEditorExportLifecycle } from "./editor-export-fixture";
 import { createDefaultKeybindRegistrationStatus } from "./keybinds-fixture";
 import {
   type E2EPoeProcessSnapshotFactory,
@@ -105,10 +107,10 @@ interface EditorE2ESavedEditRecord {
 }
 
 interface SetupEditorE2EOptions {
-  exportDelayMs?: number;
   extraAssets?: EditorMediaAsset[];
   extraProjects?: EditorProject[];
   initialRoute?: string;
+  manualExportCompletion?: boolean;
   recordingBookmarkPages?: Record<string, RecordingBookmarksPage>;
   settings?: Partial<AppSettings>;
 }
@@ -457,6 +459,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
   fixture.savedEditRecords.push(
     ...fixture.extraProjects.map(createEditorE2ESavedEditRecord),
   );
+  const idleExportLifecycle = createIdleEditorExportLifecycle();
   await page.exposeFunction(
     "__HINEKORA_E2E_CREATE_SAVED_EDIT_RECORD__",
     (project: EditorProject) => createEditorE2ESavedEditRecord(project),
@@ -464,9 +467,10 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
   await page.addInitScript(
     (input: {
       bridgeFactorySource: string;
-      exportDelayMs: number;
       fixture: EditorE2EFixture;
+      idleExportLifecycle: EditorExportLifecycle;
       leagueCatalog: ReturnType<typeof createE2EPoeLeagueCatalog>;
+      manualExportCompletion: boolean;
       poeProcessSnapshotFactoryScript: string;
     }) => {
       const { fixture } = input;
@@ -485,18 +489,28 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
       const settings = { ...fixture.settings };
       let settingsChangedListener: ((settings: AppSettings) => void) | null =
         null;
+      let exportLifecycleChangedListener:
+        | ((lifecycle: EditorExportLifecycleUpdate) => void)
+        | null = null;
+      const cancelledExportRequestIds = new Set<string>();
+      let completePendingExport: (() => void) | null = null;
+      let exportCompletionRequested = false;
       const secondaryProject = fixture.secondaryProject;
       const unsubscribe = () => undefined;
       const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
       const exportLifecycleStorageKey = "hinekora-e2e-editor-export-lifecycle";
-      const idleExportLifecycle: EditorExportLifecycle = {
-        error: null,
-        exportRequestId: null,
-        fileName: null,
-        progress: 0,
-        projectId: null,
-        result: null,
-        status: "idle",
+      const idleExportLifecycle = clone(input.idleExportLifecycle);
+      (
+        window as unknown as {
+          __HINEKORA_E2E_COMPLETE_EDITOR_EXPORT__: () => void;
+        }
+      ).__HINEKORA_E2E_COMPLETE_EDITOR_EXPORT__ = () => {
+        if (completePendingExport) {
+          completePendingExport();
+          completePendingExport = null;
+        } else {
+          exportCompletionRequested = true;
+        }
       };
       const getExportLifecycle = (): EditorExportLifecycle => {
         const storedLifecycle = window.sessionStorage.getItem(
@@ -507,11 +521,15 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
           ? (JSON.parse(storedLifecycle) as EditorExportLifecycle)
           : idleExportLifecycle;
       };
-      const setExportLifecycle = (lifecycle: EditorExportLifecycle) => {
+      const setExportLifecycle = (
+        lifecycle: EditorExportLifecycle,
+        lifecycleUpdate: EditorExportLifecycleUpdate = lifecycle,
+      ) => {
         window.sessionStorage.setItem(
           exportLifecycleStorageKey,
           JSON.stringify(lifecycle),
         );
+        exportLifecycleChangedListener?.(clone(lifecycleUpdate));
       };
       const createBridgeDomainFactory = Function(
         `"use strict"; return (${input.bridgeFactorySource});`,
@@ -882,6 +900,10 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
         editor: createBridgeDomain<EditorE2EElectron["editor"]>("editor", {
           cancelExport: async ({ exportRequestId }) => {
             state.cancelExportRequestIds.push(exportRequestId);
+            cancelledExportRequestIds.add(exportRequestId);
+            completePendingExport?.();
+            completePendingExport = null;
+            exportCompletionRequested = false;
             setExportLifecycle(idleExportLifecycle);
 
             return { cancelled: true };
@@ -939,39 +961,87 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
           },
           exportProject: async (exportInput: EditorExportInput) => {
             state.exportRequests.push(clone(exportInput));
+            const exportProject = clone(exportInput.project);
+            state.savedProjects.push(exportProject);
+            state.currentProjectId = exportProject.id;
+            projectsById.set(exportProject.id, exportProject);
+            savedEditRecordsById.set(
+              exportProject.id,
+              await createSavedEditRecord(exportProject),
+            );
+            const previewClips = exportProject.tracks
+              .flatMap((track) => track.clips)
+              .filter(
+                (clip): clip is typeof clip & { mediaUrl: string } =>
+                  typeof clip.mediaUrl === "string" && clip.mediaUrl.length > 0,
+              )
+              .map((clip) => ({
+                durationSeconds: clip.durationSeconds,
+                id: clip.id,
+                inSeconds: clip.inSeconds,
+                mediaUrl: clip.mediaUrl,
+                name: clip.name,
+                outSeconds: clip.outSeconds,
+                playbackRate: clip.playbackRate,
+                startSeconds: clip.startSeconds,
+              }));
             setExportLifecycle({
+              canCancel: true,
               error: null,
               exportRequestId: exportInput.exportRequestId,
               fileName: exportInput.fileName,
+              previewClips,
               progress: 0.02,
-              projectId: exportInput.projectId,
+              projectId: exportProject.id,
               result: null,
+              startedAt: now,
               status: "exporting",
             });
-            if (input.exportDelayMs > 0) {
-              await new Promise((resolve) => {
-                window.setTimeout(resolve, input.exportDelayMs);
-              });
+            if (input.manualExportCompletion) {
+              if (exportCompletionRequested) {
+                exportCompletionRequested = false;
+              } else {
+                await new Promise<void>((resolve) => {
+                  completePendingExport = resolve;
+                });
+              }
+            }
+            if (cancelledExportRequestIds.delete(exportInput.exportRequestId)) {
+              throw new DOMException("Editor export cancelled", "AbortError");
             }
 
             const result: EditorExportResult = {
               createdAt: now,
-              durationSeconds: 5,
+              durationSeconds: exportProject.durationSeconds,
               exportId: "export-1",
               fileName: "export.mp4",
               mediaUrl: null,
-              mode: "new-file",
-              resolution: "1080p",
+              mode: exportInput.mode,
+              resolution: exportInput.resolution,
               sizeBytes: 1024,
             };
-            setExportLifecycle({
+            const readyLifecycle: EditorExportLifecycle = {
+              canCancel: false,
               error: null,
               exportRequestId: exportInput.exportRequestId,
               fileName: result.fileName,
+              previewClips: [],
               progress: 1,
-              projectId: exportInput.projectId,
+              projectId: exportProject.id,
               result,
+              startedAt: now,
               status: "ready",
+            };
+            setExportLifecycle(readyLifecycle, {
+              canCancel: readyLifecycle.canCancel,
+              error: readyLifecycle.error,
+              exportRequestId: readyLifecycle.exportRequestId,
+              fileName: readyLifecycle.fileName,
+              progress: readyLifecycle.progress,
+              projectId: readyLifecycle.projectId,
+              result: readyLifecycle.result,
+              startedAt: readyLifecycle.startedAt,
+              status: readyLifecycle.status,
             });
 
             return result;
@@ -993,7 +1063,15 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
 
             return listEditorMediaAssets(query);
           },
-          onExportLifecycleChanged: () => unsubscribe,
+          onExportLifecycleChanged: (callback) => {
+            exportLifecycleChangedListener = callback;
+
+            return () => {
+              if (exportLifecycleChangedListener === callback) {
+                exportLifecycleChangedListener = null;
+              }
+            };
+          },
           onExportProgress: () => unsubscribe,
           revealExport: async (exportId: string) => {
             state.revealedExportIds.push(exportId);
@@ -1155,9 +1233,10 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
     },
     {
       bridgeFactorySource: e2eBridgeDomainFactorySource,
-      exportDelayMs: options.exportDelayMs ?? 0,
       fixture,
+      idleExportLifecycle,
       leagueCatalog: createE2EPoeLeagueCatalog(),
+      manualExportCompletion: options.manualExportCompletion === true,
       poeProcessSnapshotFactoryScript: e2ePoeProcessSnapshotFactoryScript,
     },
   );
@@ -1309,8 +1388,19 @@ async function dragLocatorBy(
   await locator.page().mouse.up();
 }
 
+async function completeEditorE2EExport(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    (
+      window as unknown as {
+        __HINEKORA_E2E_COMPLETE_EDITOR_EXPORT__: () => void;
+      }
+    ).__HINEKORA_E2E_COMPLETE_EDITOR_EXPORT__();
+  });
+}
+
 export {
   clickTimelineMarkerAtClipOffset,
+  completeEditorE2EExport,
   createEditorE2EAsset,
   createEditorE2EClip,
   createEditorE2EProject,

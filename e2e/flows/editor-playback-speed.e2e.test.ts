@@ -95,16 +95,15 @@ test.describe("editor playback speed exports", () => {
         expect(
           savedClips.every((clip) => clip.playbackRate === playbackRate),
         ).toBe(true);
-        expect(exportRequest.clips).toHaveLength(timelineCase.clipIds.length);
+        const exportedClips = exportRequest.project.tracks[0]?.clips ?? [];
+        expect(exportedClips).toHaveLength(timelineCase.clipIds.length);
         expect(
-          exportRequest.clips.every(
-            (clip) => clip.playbackRate === playbackRate,
-          ),
+          exportedClips.every((clip) => clip.playbackRate === playbackRate),
         ).toBe(true);
-        expectValidPlaybackRateClips(exportRequest.clips, playbackRate);
-        expect(exportRequest.durationSeconds).toBe(
+        expectValidPlaybackRateClips(exportedClips, playbackRate);
+        expect(exportRequest.project.durationSeconds).toBe(
           Math.max(
-            ...exportRequest.clips.map(
+            ...exportedClips.map(
               (clip) => clip.startSeconds + clip.durationSeconds,
             ),
           ),

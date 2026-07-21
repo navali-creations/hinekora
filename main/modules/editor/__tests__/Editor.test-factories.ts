@@ -114,17 +114,76 @@ function createEditorExportClipInput(
   };
 }
 
+function createEditorExportProject(
+  options: {
+    activeSource?: { id: string; kind: "clip" | "recording" } | null;
+    clips?: EditorExportClipInput[];
+    durationSeconds?: number;
+    muteAudio?: boolean;
+    projectId?: string;
+  } = {},
+): EditorProject {
+  const clips = options.clips ?? [createEditorExportClipInput()];
+  const durationSeconds = options.durationSeconds ?? 5;
+  const assets = clips.map((clip) =>
+    createEditorMediaAsset({
+      assetKey: `${clip.source.kind}:${clip.source.id}`,
+      durationSeconds: Math.max(clip.outSeconds, clip.durationSeconds),
+      id: clip.source.id,
+      kind: clip.source.kind,
+      mediaUrl: `hinekora-media://${clip.source.kind}/${clip.source.id}`,
+      name: `${clip.source.id}.mp4`,
+    }),
+  );
+  const timelineClips = clips.map((clip, index) =>
+    createEditorTimelineClip(assets[index], {
+      durationSeconds: clip.durationSeconds,
+      id: `timeline-${index + 1}`,
+      inSeconds: clip.inSeconds,
+      outSeconds: clip.outSeconds,
+      playbackRate: clip.playbackRate,
+      startSeconds: clip.startSeconds,
+    }),
+  );
+  const activeClipIndex = options.activeSource
+    ? clips.findIndex(
+        (clip) =>
+          clip.source.id === options.activeSource?.id &&
+          clip.source.kind === options.activeSource?.kind,
+      )
+    : -1;
+
+  return createEditorProject({
+    activeClipId:
+      options.activeSource === null
+        ? null
+        : (timelineClips[Math.max(activeClipIndex, 0)]?.id ?? null),
+    assets,
+    durationSeconds,
+    id: options.projectId ?? "project-1",
+    ...(options.muteAudio === undefined
+      ? {}
+      : { isAudioMuted: options.muteAudio }),
+    selectedAssetKey: assets[Math.max(activeClipIndex, 0)]?.assetKey ?? null,
+    tracks: [
+      {
+        clips: timelineClips,
+        id: "video-track",
+        kind: "video",
+        label: "Video",
+      },
+    ],
+  });
+}
+
 function createEditorExportInput(
   overrides: Partial<EditorExportInput> = {},
 ): EditorExportInput {
   return {
-    clips: [createEditorExportClipInput()],
-    durationSeconds: 5,
     exportRequestId: "export-request-1",
     fileName: "source.mp4",
     mode: "new-file",
-    overwriteSource: null,
-    projectId: "project-1",
+    project: createEditorExportProject(),
     resolution: "1080p",
     ...overrides,
   };
@@ -133,6 +192,7 @@ function createEditorExportInput(
 export {
   createEditorExportClipInput,
   createEditorExportInput,
+  createEditorExportProject,
   createEditorMediaAsset,
   createEditorProject,
   createEditorTimelineClip,

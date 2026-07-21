@@ -61,7 +61,11 @@
   overflow: hidden;
   height: 3px;
   border-radius: 999px;
-  background: var(--color-base-300);
+  background: color-mix(
+    in oklch,
+    var(--color-base-content) 22%,
+    var(--color-base-300)
+  );
 }
 
 .track > span {

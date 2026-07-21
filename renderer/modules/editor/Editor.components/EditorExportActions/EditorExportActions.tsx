@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import {
   FiArrowLeft,
   FiCheck,
@@ -12,6 +13,7 @@ import { useEditorCopyActionState } from "../../Editor.hooks/useEditorCopyAction
 
 function EditorExportActions() {
   const {
+    canCancel,
     copyExport,
     isCancellationPending,
     keepEditingAfterExport,
@@ -20,6 +22,7 @@ function EditorExportActions() {
     revealExport,
     status,
   } = useEditorShallow((editor) => ({
+    canCancel: editor.exportState.canCancel,
     copyExport: editor.copyExport,
     isCancellationPending: editor.exportState.isCancellationPending,
     keepEditingAfterExport: editor.keepEditingAfterExport,
@@ -33,7 +36,7 @@ function EditorExportActions() {
     useEditorCopyActionState();
 
   const handleKeepEditing = () => {
-    keepEditingAfterExport();
+    void keepEditingAfterExport();
   };
 
   const handleCancelExport = () => {
@@ -71,6 +74,12 @@ function EditorExportActions() {
   } else if (copyState === "failed") {
     copyLabel = "Copy failed";
   }
+  let cancellationLabel = "Finishing...";
+  if (canCancel) {
+    cancellationLabel = isCancellationPending
+      ? "Cancelling..."
+      : "Cancel processing";
+  }
 
   return (
     <>
@@ -84,13 +93,16 @@ function EditorExportActions() {
       </button>
       {status === "exporting" && (
         <button
-          className="btn btn-error btn-sm no-drag"
-          disabled={isCancellationPending}
+          className={clsx("btn btn-sm no-drag", {
+            "btn-error": canCancel,
+            "btn-ghost": !canCancel,
+          })}
+          disabled={!canCancel || isCancellationPending}
           type="button"
           onClick={handleCancelExport}
         >
           <FiXCircle size={15} />
-          {isCancellationPending ? "Cancelling..." : "Cancel processing"}
+          {cancellationLabel}
         </button>
       )}
       {status === "ready" && (

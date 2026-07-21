@@ -236,6 +236,71 @@ describe("probeEditorAudioStream", () => {
     await expect(errorRun).rejects.toThrow("export stopped");
   });
 
+  it("times out only after ffmpeg progress stops advancing", async () => {
+    vi.useFakeTimers();
+    const child = createProbeChild();
+    const spawn = vi.fn(() => child) as unknown as typeof spawnProcess;
+    const run = runEditorFfmpeg("ffmpeg", ["-hang"], {
+      progressDurationSeconds: 10,
+      spawnProcess: spawn,
+      timeoutMs: 25,
+    });
+
+    await vi.advanceTimersByTimeAsync(20);
+    child.stderr.emit("data", Buffer.from("frame=1 time=00:00:01.00"));
+    await vi.advanceTimersByTimeAsync(20);
+    expect(child.kill).not.toHaveBeenCalled();
+    child.stderr.emit("data", Buffer.from("frame=2 time=00:00:01.00"));
+    await vi.advanceTimersByTimeAsync(5);
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+    child.emit("close", null);
+
+    await expect(run).rejects.toThrow("ffmpeg export timed out");
+  });
+
+  it("enforces an absolute timeout while ffmpeg keeps advancing", async () => {
+    vi.useFakeTimers();
+    const child = createProbeChild();
+    const spawn = vi.fn(() => child) as unknown as typeof spawnProcess;
+    const run = runEditorFfmpeg("ffmpeg", ["-hang"], {
+      absoluteTimeoutMs: 60,
+      progressDurationSeconds: 10,
+      spawnProcess: spawn,
+      timeoutMs: 25,
+    });
+
+    await vi.advanceTimersByTimeAsync(20);
+    child.stderr.emit("data", Buffer.from("time=00:00:01.00"));
+    await vi.advanceTimersByTimeAsync(20);
+    child.stderr.emit("data", Buffer.from("time=00:00:02.00"));
+    await vi.advanceTimersByTimeAsync(19);
+    expect(child.kill).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+    child.emit("close", null);
+
+    await expect(run).rejects.toThrow("ffmpeg export timed out");
+  });
+
+  it("keeps only a bounded stderr tail for failed long-running exports", async () => {
+    const child = createProbeChild();
+    const spawn = vi.fn(() => child) as unknown as typeof spawnProcess;
+    const run = runEditorFfmpeg("ffmpeg", ["-bad"], {
+      spawnProcess: spawn,
+      timeoutMs: 1_000,
+    });
+
+    child.stderr.emit("data", Buffer.from(`discard-me-${"x".repeat(80_000)}`));
+    child.stderr.emit("data", Buffer.from("diagnostic-tail"));
+    child.emit("close", 2);
+
+    const error = await run.catch((reason: unknown) => reason);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("diagnostic-tail");
+    expect((error as Error).message).not.toContain("discard-me");
+    expect((error as Error).message.length).toBeLessThan(1_600);
+  });
+
   it("parses and reports ffmpeg progress", async () => {
     expect(parseFfmpegProgressSeconds("frame=1")).toBeNull();
     expect(
@@ -249,22 +314,27 @@ describe("probeEditorAudioStream", () => {
       durationSeconds: 10,
       onProgress: progress,
     });
-    reporter(Buffer.from("frame=1"));
-    reporter(Buffer.from(" time=00:00:03.00"));
-    reporter(Buffer.from(" time=00:00:11.00"));
+    expect(reporter(Buffer.from("frame=1"))).toBe(false);
+    expect(reporter(Buffer.from(" time=00:00:03.00"))).toBe(true);
+    expect(reporter(Buffer.from(" time=00:00:11.00"))).toBe(true);
+    expect(reporter(Buffer.from(" frame=3"))).toBe(false);
 
     expect(progress).toHaveBeenCalledTimes(2);
     expect(progress).toHaveBeenNthCalledWith(1, 0.3);
     expect(progress).toHaveBeenNthCalledWith(2, 0.98);
 
     const disabledProgress = vi.fn();
-    createFfmpegProgressReporter({
-      durationSeconds: 0,
-      onProgress: disabledProgress,
-    })(Buffer.from("time=00:00:03.00"));
-    createFfmpegProgressReporter({ durationSeconds: 10 })(
-      Buffer.from("time=00:00:03.00"),
-    );
+    expect(
+      createFfmpegProgressReporter({
+        durationSeconds: 0,
+        onProgress: disabledProgress,
+      })(Buffer.from("time=00:00:03.00")),
+    ).toBe(false);
+    expect(
+      createFfmpegProgressReporter({ durationSeconds: 10 })(
+        Buffer.from("time=00:00:03.00"),
+      ),
+    ).toBe(true);
 
     expect(disabledProgress).not.toHaveBeenCalled();
   });
@@ -544,6 +614,95 @@ describe("probeEditorAudioStream", () => {
       }
       vi.doUnmock("node:child_process");
       vi.doUnmock("node:fs");
+      vi.resetModules();
+      rmSync(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("preserves render failures without discarding successful renders when filter cleanup is deferred", async () => {
+    vi.resetModules();
+    const directory = mkdtempSync(join(tmpdir(), "hinekora-editor-ffmpeg-"));
+    const ffmpegPath = join(directory, "ffmpeg.exe");
+    const previousFfmpegPath = process.env.HINEKORA_FFMPEG_PATH;
+    let exitCode = 1;
+    let failCleanup = false;
+    const spawn = vi.fn(() => {
+      const child = createProbeChild();
+      queueMicrotask(() => child.emit("close", exitCode));
+
+      return child;
+    }) as unknown as Mock<typeof spawnProcess>;
+    vi.doMock("node:child_process", async (importOriginal) => {
+      const actual =
+        await importOriginal<typeof import("node:child_process")>();
+
+      return { ...actual, spawn };
+    });
+    vi.doMock("node:fs", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs")>();
+
+      return {
+        ...actual,
+        existsSync: (path: string) => path === ffmpegPath,
+      };
+    });
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
+
+      return {
+        ...actual,
+        rm: async (...args: Parameters<typeof actual.rm>) => {
+          if (
+            failCleanup &&
+            String(args[0]).includes(".hinekora-export-filter-")
+          ) {
+            throw new Error("filter is locked");
+          }
+
+          return actual.rm(...args);
+        },
+      };
+    });
+
+    try {
+      writeFileSync(ffmpegPath, "");
+      process.env.HINEKORA_FFMPEG_PATH = ffmpegPath;
+      const { renderEditorExportWithFfmpeg } = await import("../Editor.ffmpeg");
+      const input = {
+        muteAudio: true,
+        outputPath: join(directory, "output.mp4"),
+        resolution: "720p" as const,
+        segments: [
+          {
+            durationSeconds: 1,
+            kind: "gap" as const,
+            startSeconds: 0,
+          },
+        ],
+      };
+
+      await expect(renderEditorExportWithFfmpeg(input)).rejects.toThrow(
+        "ffmpeg export failed",
+      );
+
+      failCleanup = true;
+      await expect(renderEditorExportWithFfmpeg(input)).rejects.toThrow(
+        "Temporary FFmpeg files could not be removed",
+      );
+
+      exitCode = 0;
+      await expect(
+        renderEditorExportWithFfmpeg(input),
+      ).resolves.toBeUndefined();
+    } finally {
+      if (previousFfmpegPath === undefined) {
+        delete process.env.HINEKORA_FFMPEG_PATH;
+      } else {
+        process.env.HINEKORA_FFMPEG_PATH = previousFfmpegPath;
+      }
+      vi.doUnmock("node:child_process");
+      vi.doUnmock("node:fs");
+      vi.doUnmock("node:fs/promises");
       vi.resetModules();
       rmSync(directory, { force: true, recursive: true });
     }

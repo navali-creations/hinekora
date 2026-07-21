@@ -8,6 +8,7 @@ import {
 
 import { ClientLogService } from "~/main/modules/client-log";
 import { DatabaseService } from "~/main/modules/database";
+import { EditorService } from "~/main/modules/editor";
 import { KeybindsService } from "~/main/modules/keybinds";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
@@ -186,6 +187,10 @@ class AppService {
     await this.runShutdownStep("Closing overlay windows", () => {
       OverlayWindowsService.getInstance().destroyAll();
     });
+
+    await this.runShutdownStep("Stopping editor exports", () =>
+      EditorService.shutdownIfInitialized(),
+    );
 
     await this.runShutdownStep("Closing database", () => {
       DatabaseService.getInstance().close();

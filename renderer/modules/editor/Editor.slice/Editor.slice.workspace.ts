@@ -15,7 +15,6 @@ import {
   editorMaxZoom,
   editorMinZoom,
   editorProjectPageSize,
-  initialExportState,
 } from "./Editor.slice.constants";
 import type { EditorSliceActionContext } from "./Editor.slice.context";
 import type { EditorSlice } from "./Editor.slice.types";
@@ -152,7 +151,6 @@ function createEditorWorkspaceActions({
       const requestId = createRouteRequestId();
       set((state) => {
         state.editor.error = null;
-        resetInactiveEditorExportState(state.editor);
         state.editor.isLoading = true;
       });
 
@@ -182,7 +180,6 @@ function createEditorWorkspaceActions({
       const requestId = createRouteRequestId();
       set((state) => {
         state.editor.error = null;
-        resetInactiveEditorExportState(state.editor);
         state.editor.isLoading = true;
       });
 
@@ -225,7 +222,6 @@ function createEditorWorkspaceActions({
       const requestId = createRouteRequestId();
       set((state) => {
         state.editor.error = null;
-        resetInactiveEditorExportState(state.editor);
         state.editor.isLoading = true;
       });
 
@@ -356,7 +352,6 @@ function createEditorWorkspaceActions({
       const requestId = createRouteRequestId();
       set((state) => {
         state.editor.error = null;
-        resetInactiveEditorExportState(state.editor);
         state.editor.isLoading = true;
       });
 
@@ -544,7 +539,6 @@ function createEditorWorkspaceActions({
       const requestId = createRouteRequestId();
       set((state) => {
         state.editor.error = null;
-        resetInactiveEditorExportState(state.editor);
         state.editor.isLoading = true;
       });
 
@@ -857,7 +851,6 @@ function resetEditorLoadedProjectState(
   project: EditorProject,
 ): void {
   editor.error = null;
-  resetInactiveEditorExportState(editor);
   editor.historyFuture = [];
   editor.historyFutureLabels = [];
   editor.historyFutureSubtitles = [];
@@ -871,12 +864,6 @@ function resetEditorLoadedProjectState(
   editor.isLoading = false;
   editor.isPreviewPlaying = false;
   editor.isTimelineFitToEdit = false;
-}
-
-function resetInactiveEditorExportState(editor: EditorSlice["editor"]): void {
-  if (editor.exportState.status !== "exporting") {
-    editor.exportState = initialExportState;
-  }
 }
 
 function resolveEditorProjectSelection(project: EditorProject): EditorProject {

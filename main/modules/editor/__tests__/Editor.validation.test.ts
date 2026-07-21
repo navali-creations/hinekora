@@ -12,7 +12,10 @@ import {
 import {
   createEditorExportClipInput,
   createEditorExportInput,
+  createEditorExportProject,
+  createEditorMediaAsset,
   createEditorProject,
+  createEditorTimelineClip,
 } from "./Editor.test-factories";
 
 describe("Editor validation", () => {
@@ -135,42 +138,49 @@ describe("Editor validation", () => {
     expect(validateEditorExportInput(createEditorExportInput())).toMatchObject({
       fileName: "source.mp4",
       mode: "new-file",
-      overwriteSource: null,
-      projectId: "project-1",
+      project: { id: "project-1" },
       exportRequestId: "export-request-1",
       resolution: "1080p",
     });
     expect(
-      validateEditorExportInput({
-        ...createEditorExportInput(),
-        clips: [
-          createEditorExportClipInput({
+      validateEditorExportInput(
+        createEditorExportInput({
+          project: createEditorExportProject({
+            clips: [
+              createEditorExportClipInput({
+                durationSeconds: 0.3125,
+                outSeconds: 5,
+                playbackRate: 16,
+              }),
+            ],
             durationSeconds: 0.3125,
-            outSeconds: 5,
-            playbackRate: 16,
           }),
-        ],
-        durationSeconds: 0.3125,
-      }).clips[0],
+        }),
+      ).project.tracks[0]?.clips[0],
     ).toMatchObject({ durationSeconds: 0.3125, playbackRate: 16 });
     expect(
-      validateEditorExportInput({
-        ...createEditorExportInput(),
-        muteAudio: true,
-      }),
-    ).toMatchObject({ muteAudio: true });
+      validateEditorExportInput(
+        createEditorExportInput({
+          project: createEditorExportProject({ muteAudio: true }),
+        }),
+      ),
+    ).toMatchObject({ project: { isAudioMuted: true } });
     expect(
-      validateEditorExportInput({
-        ...createEditorExportInput(),
-        durationSeconds: 86_400,
-      }),
-    ).toMatchObject({ durationSeconds: 86_400 });
+      validateEditorExportInput(
+        createEditorExportInput({
+          project: createEditorExportProject({ durationSeconds: 86_400 }),
+        }),
+      ),
+    ).toMatchObject({ project: { durationSeconds: 86_400 } });
     expect(() =>
       validateEditorExportInput({
         ...createEditorExportInput(),
-        muteAudio: "yes",
+        project: {
+          ...createEditorExportInput().project,
+          isAudioMuted: "yes",
+        },
       }),
-    ).toThrow("mute audio must be a boolean");
+    ).toThrow("audio muted must be a boolean");
     expect(() =>
       validateEditorExportInput({
         ...createEditorExportInput(),
@@ -180,7 +190,7 @@ describe("Editor validation", () => {
     expect(() =>
       validateEditorExportInput({
         ...createEditorExportInput(),
-        projectId: "",
+        project: { ...createEditorExportInput().project, id: "" },
       }),
     ).toThrow("project id is too short");
     expect(() => validateEditorExportInput(null)).toThrow(
@@ -201,97 +211,190 @@ describe("Editor validation", () => {
     expect(() =>
       validateEditorExportInput({
         ...createEditorExportInput(),
-        clips: "bad",
+        project: {
+          ...createEditorExportInput().project,
+          tracks: "bad",
+        },
       }),
-    ).toThrow("clips must be an array");
+    ).toThrow("tracks must be an array");
     expect(() =>
-      validateEditorExportInput({
-        ...createEditorExportInput(),
-        clips: [],
-      }),
+      validateEditorExportInput(
+        createEditorExportInput({
+          project: createEditorExportProject({ clips: [] }),
+        }),
+      ),
     ).toThrow("clips is too short");
     expect(() =>
-      validateEditorExportInput({
-        ...createEditorExportInput(),
-        clips: Array.from({ length: 201 }, () => createEditorExportClipInput()),
-      }),
-    ).toThrow("clips is too large");
+      validateEditorExportInput(
+        createEditorExportInput({
+          project: createEditorExportProject({
+            clips: Array.from({ length: 201 }, () =>
+              createEditorExportClipInput(),
+            ),
+          }),
+        }),
+      ),
+    ).toThrow("assets is too large");
     expect(() =>
-      validateEditorExportInput({
-        ...createEditorExportInput(),
-        clips: [{ ...createEditorExportClipInput(), outSeconds: 0 }],
-      }),
+      validateEditorExportInput(
+        createEditorExportInput({
+          project: createEditorExportProject({
+            clips: [{ ...createEditorExportClipInput(), outSeconds: 0 }],
+          }),
+        }),
+      ),
     ).toThrow("clip out point must be after clip in point");
     expect(() =>
-      validateEditorExportInput({
-        ...createEditorExportInput(),
-        clips: [
-          {
-            ...createEditorExportClipInput(),
-            playbackRate: 1.1,
-          },
-        ],
-      }),
+      validateEditorExportInput(
+        createEditorExportInput({
+          project: createEditorExportProject({
+            clips: [
+              {
+                ...createEditorExportClipInput(),
+                playbackRate: 1.1 as 1,
+              },
+            ],
+          }),
+        }),
+      ),
     ).toThrow("clip speed is invalid");
     expect(() =>
-      validateEditorExportInput({
-        ...createEditorExportInput(),
-        clips: [
-          createEditorExportClipInput({
-            durationSeconds: 3,
-            outSeconds: 5,
-            playbackRate: 2,
+      validateEditorExportInput(
+        createEditorExportInput({
+          project: createEditorExportProject({
+            clips: [
+              createEditorExportClipInput({
+                durationSeconds: 3,
+                outSeconds: 5,
+                playbackRate: 2,
+              }),
+            ],
           }),
-        ],
-      }),
+        }),
+      ),
     ).toThrow("clip duration must fit source range");
+
+    const firstAsset = createEditorMediaAsset();
+    const secondAsset = createEditorMediaAsset({
+      assetKey: "clip:clip-2",
+      id: "clip-2",
+      name: "second.mp4",
+    });
+    const firstClip = createEditorTimelineClip(firstAsset);
+    const secondClip = createEditorTimelineClip(secondAsset, {
+      assetKey: secondAsset.assetKey,
+      id: "timeline-2",
+      trackId: "video-track-2",
+    });
     expect(() =>
-      validateEditorExportInput({
-        ...createEditorExportInput(),
-        mode: "overwrite",
-        overwriteSource: { id: "clip-1", kind: "recording" },
-      }),
+      validateEditorExportInput(
+        createEditorExportInput({
+          mode: "overwrite",
+          project: createEditorProject({
+            activeClipId: secondClip.id,
+            assets: [firstAsset, secondAsset],
+            tracks: [
+              {
+                clips: [firstClip],
+                id: "video-track",
+                kind: "video",
+                label: "Video",
+              },
+              {
+                clips: [secondClip],
+                id: "video-track-2",
+                kind: "video",
+                label: "Secondary video",
+              },
+            ],
+          }),
+        }),
+      ),
     ).toThrow("overwrite source must be included in clips");
   });
 
   it("rejects invalid clipboard input values", () => {
+    const project = createEditorProject({ isAudioMuted: true });
     expect(
       validateEditorCopyToClipboardInput({
-        clips: [createEditorExportClipInput()],
-        durationSeconds: 5,
         fileName: "clip.mp4",
-        muteAudio: true,
+        project,
         resolution: "1080p",
       }),
-    ).toMatchObject({ muteAudio: true });
+    ).toMatchObject({ project: { isAudioMuted: true } });
     expect(
       validateEditorCopyToClipboardInput({
-        clips: [createEditorExportClipInput()],
-        durationSeconds: 5,
         fileName: "clip.mp4",
+        project: { ...createEditorProject(), history: project.history },
         resolution: "1080p",
       }),
-    ).not.toHaveProperty("muteAudio");
+    ).not.toHaveProperty("project.history");
     expect(() => validateEditorCopyToClipboardInput(null)).toThrow(
       "editor clipboard input must be an object",
     );
     expect(() =>
       validateEditorCopyToClipboardInput({
-        clips: [createEditorExportClipInput()],
-        durationSeconds: 5,
         fileName: "clip.mp4",
-        muteAudio: "yes",
+        project: { ...project, isAudioMuted: "yes" },
         resolution: "1080p",
       }),
-    ).toThrow("mute audio must be a boolean");
+    ).toThrow("audio muted must be a boolean");
     expect(() =>
       validateEditorCopyToClipboardInput({
-        clips: [createEditorExportClipInput()],
-        durationSeconds: 1,
         fileName: "clip.mp4",
+        project,
         resolution: "4k",
       }),
     ).toThrow("export resolution is invalid");
+    expect(() =>
+      validateEditorCopyToClipboardInput({
+        fileName: "clip.mp4",
+        project: "bad",
+        resolution: "1080p",
+      }),
+    ).toThrow("editor project must be an object");
+    expect(() =>
+      validateEditorCopyToClipboardInput({
+        fileName: "clip.mp4",
+        project: createEditorExportProject({
+          clips: Array.from({ length: 201 }, () =>
+            createEditorExportClipInput(),
+          ),
+        }),
+        resolution: "1080p",
+      }),
+    ).toThrow("assets is too large");
+    expect(
+      validateEditorCopyToClipboardInput({
+        fileName: "clip.mp4",
+        project: createEditorExportProject({ clips: [] }),
+        resolution: "1080p",
+      }),
+    ).toMatchObject({ project: { tracks: [{ clips: [] }] } });
+    expect(() =>
+      validateEditorCopyToClipboardInput({
+        fileName: "clip.mp4",
+        project: createEditorExportProject({
+          clips: [createEditorExportClipInput({ outSeconds: 0 })],
+        }),
+        resolution: "1080p",
+      }),
+    ).toThrow("clip out point must be after clip in point");
+    expect(() =>
+      validateEditorCopyToClipboardInput({
+        fileName: "clip.mp4",
+        project: createEditorExportProject({
+          clips: [
+            createEditorExportClipInput({
+              durationSeconds: 3,
+              outSeconds: 5,
+              playbackRate: 2,
+            }),
+          ],
+        }),
+        resolution: "1080p",
+      }),
+    ).toThrow("clip duration must fit source range");
   });
 
   it("validates full editor projects before saving", () => {

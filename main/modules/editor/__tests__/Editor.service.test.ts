@@ -1,9 +1,11 @@
 import { existsSync } from "node:fs";
 import {
+  type link,
   mkdir,
   mkdtemp,
   readdir,
   readFile,
+  type rename,
   rm,
   stat,
   writeFile,
@@ -35,6 +37,7 @@ import {
   createEditorTimelineClip,
   createEditorExportClipInput as createExportClip,
   createEditorExportInput as createExportInput,
+  createEditorExportProject as createExportProject,
 } from "./Editor.test-factories";
 
 const electronMocks = vi.hoisted(() => ({
@@ -63,11 +66,13 @@ vi.mock("electron", () => ({
 
 import { EditorChannel } from "../Editor.channels";
 import type {
+  EditorCopyToClipboardInput,
   EditorExportClipInput,
   EditorExportInput,
   EditorProject,
   EditorWorkspace,
 } from "../Editor.dto";
+import type { EditorResolvedExportClip } from "../Editor.export";
 import {
   renderEditorExportWithFfmpeg,
   resolveEditorFfmpegPath,
@@ -94,6 +99,35 @@ const emptyWorkspace: EditorWorkspace = {
   project: emptyProject,
   projects: [],
 };
+
+function createResolvedExportClip(
+  path: string,
+  overrides: Partial<EditorResolvedExportClip> = {},
+): EditorResolvedExportClip {
+  return {
+    durationSeconds: 1,
+    inSeconds: 0,
+    outSeconds: 1,
+    playbackRate: 1,
+    source: { path },
+    startSeconds: 0,
+    ...overrides,
+  };
+}
+
+function createCopyToClipboardInput(
+  overrides: {
+    fileName?: string;
+    project?: EditorCopyToClipboardInput["project"];
+    resolution?: EditorCopyToClipboardInput["resolution"];
+  } = {},
+): EditorCopyToClipboardInput {
+  return {
+    fileName: overrides.fileName ?? "copy.mp4",
+    project: overrides.project ?? createExportProject(),
+    resolution: overrides.resolution ?? "720p",
+  };
+}
 
 function createReplayClipDetail(
   overrides: Partial<ReplayClipSourceDetail["clip"]> = {},
@@ -270,6 +304,31 @@ describe("EditorService IPC", () => {
 
     expect(second).toBe(first);
     expect(EditorService.getInstance()).not.toBe(first);
+  });
+
+  it("cleans abandoned export artifacts without blocking startup", async () => {
+    const recordingStoragePath = join(process.cwd(), "custom-recordings");
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({ recordingStoragePath }),
+    } as unknown as SettingsStoreService);
+    const cleanup = vi
+      .spyOn(EditorFiles, "cleanupAbandonedEditorExportFiles")
+      .mockResolvedValueOnce({ failedCount: 1, removedCount: 2 })
+      .mockResolvedValueOnce({ failedCount: 0, removedCount: 0 })
+      .mockRejectedValueOnce(new Error("cleanup unavailable"));
+
+    await expect(
+      EditorService.cleanupAbandonedExports(),
+    ).resolves.toBeUndefined();
+    await expect(
+      EditorService.cleanupAbandonedExports(),
+    ).resolves.toBeUndefined();
+    await expect(
+      EditorService.cleanupAbandonedExports(),
+    ).resolves.toBeUndefined();
+
+    expect(cleanup).toHaveBeenCalledTimes(3);
+    expect(cleanup).toHaveBeenCalledWith([process.cwd(), recordingStoragePath]);
   });
 
   it("does not register an export media protocol twice and logs registration failures", async () => {
@@ -1232,6 +1291,7 @@ describe("EditorService IPC", () => {
         deleteOlderThanLimit: (input: {
           limit: number;
           protectedProjectId: string | null;
+          protectedProjectIds: string[];
         }) => number;
       };
       pruneStoredProjects: (protectedProjectId: string | null) => void;
@@ -1245,7 +1305,97 @@ describe("EditorService IPC", () => {
     expect(deleteOlderThanLimit).toHaveBeenCalledWith({
       limit: 5,
       protectedProjectId: null,
+      protectedProjectIds: [],
     });
+  });
+
+  it("protects active export snapshots while pruning saved projects", () => {
+    mockEditorLibraries({ editorAutoPruneProjects: true });
+    const service = new EditorService();
+    const internals = service as unknown as {
+      editorExportService: {
+        activeExports: Map<string, unknown>;
+        createActiveExport: (
+          exportRequestId: string,
+          projectId: string,
+        ) => unknown;
+      };
+      projectRepository: {
+        deleteOlderThanLimit: (input: unknown) => number;
+      };
+      pruneStoredProjects: (protectedProjectId: string | null) => void;
+    };
+    const deleteOlderThanLimit = vi
+      .spyOn(internals.projectRepository, "deleteOlderThanLimit")
+      .mockReturnValue(0);
+    internals.editorExportService.createActiveExport(
+      "export-request-active",
+      "project-active",
+    );
+
+    internals.pruneStoredProjects("project-current");
+
+    expect(deleteOlderThanLimit).toHaveBeenCalledWith({
+      limit: 5,
+      protectedProjectId: "project-current",
+      protectedProjectIds: ["project-active"],
+    });
+    internals.editorExportService.activeExports.clear();
+  });
+
+  it("orders export preview clips by normalized timeline position", async () => {
+    const asset = createEditorMediaAsset();
+    const project = createEditorProject({
+      assets: [asset],
+      tracks: [
+        {
+          clips: [
+            createEditorTimelineClip(asset, {
+              id: "timeline-late",
+              inSeconds: 0,
+              startSeconds: 2,
+            }),
+            createEditorTimelineClip(asset, {
+              id: "timeline-c",
+              inSeconds: 1,
+              startSeconds: 0,
+            }),
+            createEditorTimelineClip(asset, {
+              id: "timeline-b",
+              inSeconds: 1,
+              startSeconds: 0,
+            }),
+            createEditorTimelineClip(asset, {
+              id: "timeline-source-first",
+              inSeconds: 0,
+              startSeconds: 0,
+            }),
+          ],
+          id: "video-track",
+          kind: "video",
+          label: "Video",
+        },
+      ],
+    });
+    const service = new EditorService();
+    const internals = service as unknown as {
+      createExportClips: () => [];
+    };
+    vi.spyOn(internals, "createExportClips").mockReturnValue([]);
+    const lifecycleUpdates: Array<{ previewClips?: Array<{ id: string }> }> =
+      [];
+
+    await expect(
+      service.exportProject(createExportInput({ project }), {
+        onLifecycleChanged: (lifecycle) => lifecycleUpdates.push(lifecycle),
+      }),
+    ).rejects.toThrow("No timeline clips are available to export");
+    expect(lifecycleUpdates[0]?.previewClips?.map((clip) => clip.id)).toEqual([
+      "timeline-b",
+      "timeline-c",
+      "timeline-source-first",
+      "timeline-late",
+    ]);
   });
 
   it("exports new files and exposes export actions", async () => {
@@ -1270,7 +1420,7 @@ describe("EditorService IPC", () => {
         source: { path: string };
         startSeconds: number;
       }>;
-      exportPaths: Map<string, string>;
+      editorExportService: { exportPaths: Map<string, string> };
       handleExportMediaRequest: (request: Request) => Promise<Response>;
     };
     vi.spyOn(internals, "createExportClips").mockReturnValue([
@@ -1291,9 +1441,13 @@ describe("EditorService IPC", () => {
 
     try {
       const result = await service.exportProject(
-        createExportInput({ muteAudio: true }),
+        createExportInput({
+          project: createExportProject({ muteAudio: true }),
+        }),
       );
-      const outputPath = internals.exportPaths.get(result.exportId);
+      const outputPath = internals.editorExportService.exportPaths.get(
+        result.exportId,
+      );
 
       expect(result).toMatchObject({
         durationSeconds: 5,
@@ -1329,6 +1483,72 @@ describe("EditorService IPC", () => {
     }
   });
 
+  it("does not overwrite a destination created while an export renders", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hinekora-editor-export-"));
+    const videosPath = join(directory, "videos");
+    const sourcePath = join(directory, "source.mp4");
+    const occupiedOutputPath = join(
+      videosPath,
+      "Hinekora",
+      "Exports",
+      "source.mp4",
+    );
+    await writeFile(sourcePath, "source");
+    vi.spyOn(app, "getPath").mockImplementation((name) =>
+      name === "videos" ? videosPath : directory,
+    );
+    const renderExportWithFfmpeg = vi.fn(
+      async (input: { outputPath: string }) => {
+        await writeFile(input.outputPath, "rendered");
+        await writeFile(occupiedOutputPath, "external");
+      },
+    );
+    const service = new EditorService({
+      createExportClips: () => [createResolvedExportClip(sourcePath)],
+      renderExportWithFfmpeg,
+    });
+
+    try {
+      const result = await service.exportProject(createExportInput());
+      const outputPath = join(
+        videosPath,
+        "Hinekora",
+        "Exports",
+        result.fileName,
+      );
+
+      expect(result.fileName).toBe("source (2).mp4");
+      await expect(readFile(occupiedOutputPath, "utf8")).resolves.toBe(
+        "external",
+      );
+      await expect(readFile(outputPath, "utf8")).resolves.toBe("rendered");
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("fails exports before rendering when their project snapshot cannot persist", async () => {
+    const renderExportWithFfmpeg = vi.fn();
+    const service = new EditorService({ renderExportWithFfmpeg });
+    const internals = service as unknown as {
+      projectRepository: { upsert: (project: EditorProject) => void };
+    };
+    vi.spyOn(internals.projectRepository, "upsert").mockImplementationOnce(
+      () => {
+        throw new Error("project persistence failed");
+      },
+    );
+
+    await expect(service.exportProject(createExportInput())).rejects.toThrow(
+      "project persistence failed",
+    );
+    expect(renderExportWithFfmpeg).not.toHaveBeenCalled();
+    expect(service.getExportLifecycle()).toMatchObject({
+      error: "project persistence failed",
+      status: "failed",
+    });
+  });
+
   it("sends export progress to the invoking window", async () => {
     const { handlers } = mockIpcMainHandlers();
     const directory = await mkdtemp(
@@ -1346,6 +1566,8 @@ describe("EditorService IPC", () => {
         outputPath: string;
       }) => {
         input.onProgress?.(0.5);
+        input.onProgress?.(0.5);
+        input.onProgress?.(0.51);
         input.onProgress?.(1);
         await writeFile(input.outputPath, "rendered");
       },
@@ -1419,15 +1641,20 @@ describe("EditorService IPC", () => {
         exportRequestId: "export-request-1",
         progress: 0.5,
       });
-      expect(sender.send).toHaveBeenCalledWith(
-        EditorChannel.ExportLifecycleChanged,
-        expect.objectContaining({
-          exportRequestId: "export-request-1",
-          progress: 0.5,
-          projectId: "project-1",
-          status: "exporting",
-        }),
-      );
+      expect(
+        sender.send.mock.calls.filter(
+          ([channel, payload]) =>
+            channel === EditorChannel.ExportProgress &&
+            (payload as { progress?: number }).progress !== 1,
+        ),
+      ).toHaveLength(1);
+      expect(
+        sender.send.mock.calls.filter(
+          ([channel, payload]) =>
+            channel === EditorChannel.ExportLifecycleChanged &&
+            (payload as { progress?: number }).progress === 0.5,
+        ),
+      ).toEqual([]);
       expect(sender.send).toHaveBeenCalledWith(
         EditorChannel.ExportLifecycleChanged,
         expect.objectContaining({
@@ -1435,6 +1662,13 @@ describe("EditorService IPC", () => {
           progress: 0.98,
           status: "exporting",
         }),
+      );
+      const lifecyclePayloads = sender.send.mock.calls
+        .filter(([channel]) => channel === EditorChannel.ExportLifecycleChanged)
+        .map(([, payload]) => payload as Record<string, unknown>);
+      expect(lifecyclePayloads[0]).toHaveProperty("previewClips");
+      expect(lifecyclePayloads.slice(1)).not.toContainEqual(
+        expect.objectContaining({ previewClips: expect.anything() }),
       );
       expect(
         await handlers.get(EditorChannel.GetExportLifecycle)?.({ sender }),
@@ -1450,12 +1684,15 @@ describe("EditorService IPC", () => {
       expect(
         await handlers.get(EditorChannel.GetExportLifecycle)?.({ sender }),
       ).toEqual({
+        canCancel: false,
         error: null,
         exportRequestId: null,
         fileName: null,
+        previewClips: [],
         progress: 0,
         projectId: null,
         result: null,
+        startedAt: null,
         status: "idle",
       });
 
@@ -1468,12 +1705,15 @@ describe("EditorService IPC", () => {
         { exportRequestId: "export-request-1", progress: 0.25 },
       );
       const idleLifecycle = {
+        canCancel: false,
         error: null,
         exportRequestId: null,
         fileName: null,
+        previewClips: [],
         progress: 0,
         projectId: null,
         result: null,
+        startedAt: null,
         status: "idle" as const,
       };
       internals.sendExportLifecycle(undefined, idleLifecycle);
@@ -1540,26 +1780,10 @@ describe("EditorService IPC", () => {
         });
       },
     );
-    const service = new EditorService({ renderExportWithFfmpeg });
-    const internals = service as unknown as {
-      activeExports: Map<string, unknown>;
-      createExportClips: () => Array<{
-        durationSeconds: number;
-        inSeconds: number;
-        outSeconds: number;
-        source: { path: string };
-        startSeconds: number;
-      }>;
-    };
-    vi.spyOn(internals, "createExportClips").mockReturnValue([
-      {
-        durationSeconds: 1,
-        inSeconds: 0,
-        outSeconds: 1,
-        source: { path: sourcePath },
-        startSeconds: 0,
-      },
-    ]);
+    const service = new EditorService({
+      createExportClips: () => [createResolvedExportClip(sourcePath)],
+      renderExportWithFfmpeg,
+    });
 
     try {
       const exportResult = service.exportProject(createExportInput()).then(
@@ -1579,12 +1803,11 @@ describe("EditorService IPC", () => {
         ),
       ).rejects.toThrow("Another editor video is already processing");
       await expect(
-        service.copyProjectToClipboard({
-          clips: [createExportClip()],
-          durationSeconds: 1,
-          fileName: "copy.mp4",
-          resolution: "720p",
-        }),
+        service.copyProjectToClipboard(
+          createCopyToClipboardInput({
+            project: createExportProject({ durationSeconds: 1 }),
+          }),
+        ),
       ).resolves.toEqual({
         error: "Wait for the current video save to finish",
         ok: false,
@@ -1610,7 +1833,6 @@ describe("EditorService IPC", () => {
       await expect(
         readdir(join(videosPath, "Hinekora", "Exports")),
       ).resolves.toEqual([]);
-      expect(internals.activeExports.size).toBe(0);
       expect(service.getExportLifecycle().status).toBe("idle");
       await expect(
         service.cancelExport({ exportRequestId: "export-request-1" }),
@@ -1620,24 +1842,88 @@ describe("EditorService IPC", () => {
     }
   });
 
+  it("reports cancellation cleanup failures and keeps the failed status visible", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hinekora-editor-cancel-"));
+    const videosPath = join(directory, "videos");
+    vi.spyOn(app, "getPath").mockImplementation((name) =>
+      name === "videos" ? videosPath : directory,
+    );
+    let resolveRenderStarted: () => void = () => undefined;
+    const renderStarted = new Promise<void>((resolve) => {
+      resolveRenderStarted = resolve;
+    });
+    const renderExportWithFfmpeg = vi.fn(
+      async (input: { outputPath: string; signal?: AbortSignal }) => {
+        await writeFile(input.outputPath, "partial");
+        resolveRenderStarted();
+        await new Promise<void>((_resolve, reject) => {
+          input.signal?.addEventListener(
+            "abort",
+            () => reject(input.signal?.reason),
+            { once: true },
+          );
+        });
+      },
+    );
+    const removeExportFile = vi
+      .fn<typeof rm>()
+      .mockRejectedValue(new Error("file is locked"));
+    const service = new EditorService({
+      createExportClips: () => [
+        createResolvedExportClip(join(directory, "source.mp4")),
+      ],
+      removeExportFile,
+      renderExportWithFfmpeg,
+    });
+
+    try {
+      const exportRequest = service
+        .exportProject(createExportInput())
+        .catch((error: unknown) => error);
+      await renderStarted;
+
+      await expect(
+        service.cancelExport({ exportRequestId: "export-request-1" }),
+      ).rejects.toThrow("Temporary video files could not be removed");
+      await expect(exportRequest).resolves.toMatchObject({
+        message: "Temporary video files could not be removed",
+      });
+      expect(removeExportFile).toHaveBeenCalledTimes(1);
+      expect(service.getExportLifecycle()).toMatchObject({
+        error:
+          "Video processing stopped, but temporary files could not be removed",
+        exportRequestId: "export-request-1",
+        status: "failed",
+      });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
   it("does not cancel an export while its completed file is being committed", async () => {
     const service = new EditorService();
     const abortController = new AbortController();
     const internals = service as unknown as {
-      activeExports: Map<
-        string,
-        {
-          abortController: AbortController;
-          completion: Promise<void>;
-          phase: "committing";
-          resolveCompletion: () => void;
-        }
-      >;
+      editorExportService: {
+        activeExports: Map<
+          string,
+          {
+            abortController: AbortController;
+            cleanupError: null;
+            completion: Promise<void>;
+            phase: "committing";
+            projectId: null;
+            resolveCompletion: () => void;
+          }
+        >;
+      };
     };
-    internals.activeExports.set("export-request-1", {
+    internals.editorExportService.activeExports.set("export-request-1", {
       abortController,
+      cleanupError: null,
       completion: Promise.resolve(),
       phase: "committing",
+      projectId: null,
       resolveCompletion: () => undefined,
     });
 
@@ -1647,22 +1933,165 @@ describe("EditorService IPC", () => {
     expect(abortController.signal.aborted).toBe(false);
   });
 
+  it("waits for committing exports during shutdown without aborting them", async () => {
+    const service = new EditorService();
+    const abortController = new AbortController();
+    let resolveCompletion: () => void = () => undefined;
+    const completion = new Promise<void>((resolve) => {
+      resolveCompletion = resolve;
+    });
+    const internals = service as unknown as {
+      editorExportService: {
+        activeExports: Map<
+          string,
+          {
+            abortController: AbortController;
+            cleanupError: null;
+            completion: Promise<void>;
+            phase: "committing";
+            projectId: null;
+            resolveCompletion: () => void;
+          }
+        >;
+      };
+    };
+    internals.editorExportService.activeExports.set("export-request-1", {
+      abortController,
+      cleanupError: null,
+      completion,
+      phase: "committing",
+      projectId: null,
+      resolveCompletion,
+    });
+    let shutdownFinished = false;
+
+    const shutdown = service.shutdown().then(() => {
+      shutdownFinished = true;
+    });
+    await Promise.resolve();
+
+    expect(abortController.signal.aborted).toBe(false);
+    expect(shutdownFinished).toBe(false);
+
+    resolveCompletion();
+    await shutdown;
+
+    expect(shutdownFinished).toBe(true);
+  });
+
+  it("bounds shutdown waiting when an export commit does not settle", async () => {
+    vi.useFakeTimers();
+    const service = new EditorService({ shutdownTimeoutMs: 25 });
+    const abortController = new AbortController();
+    const clipboardAbortController = new AbortController();
+    const internals = service as unknown as {
+      activeClipboardCopy: {
+        abortController: AbortController;
+        completion: Promise<void>;
+        resolveCompletion: () => void;
+      } | null;
+      editorExportService: {
+        activeExports: Map<string, unknown>;
+        exportProject: (input: EditorExportInput) => Promise<unknown>;
+      };
+    };
+    internals.editorExportService.activeExports.set("export-request-1", {
+      abortController,
+      cleanupError: null,
+      completion: new Promise<void>(() => undefined),
+      phase: "committing",
+      projectId: "project-1",
+      resolveCompletion: () => undefined,
+    });
+    internals.activeClipboardCopy = {
+      abortController: clipboardAbortController,
+      completion: new Promise<void>(() => undefined),
+      resolveCompletion: () => undefined,
+    };
+
+    try {
+      const shutdown = service.shutdown();
+      await vi.advanceTimersByTimeAsync(25);
+      await expect(shutdown).resolves.toBeUndefined();
+      expect(abortController.signal.aborted).toBe(false);
+      expect(clipboardAbortController.signal.aborted).toBe(true);
+      await expect(
+        internals.editorExportService.exportProject(createExportInput()),
+      ).rejects.toThrow("Editor is shutting down");
+    } finally {
+      vi.useRealTimers();
+      internals.editorExportService.activeExports.clear();
+      internals.activeClipboardCopy = null;
+    }
+  });
+
+  it("aborts active renders and waits for cleanup during shutdown", async () => {
+    const directory = await mkdtemp(
+      join(tmpdir(), "hinekora-editor-shutdown-"),
+    );
+    const videosPath = join(directory, "videos");
+    vi.spyOn(app, "getPath").mockImplementation((name) =>
+      name === "videos" ? videosPath : directory,
+    );
+    let resolveRenderStarted: () => void = () => undefined;
+    const renderStarted = new Promise<void>((resolve) => {
+      resolveRenderStarted = resolve;
+    });
+    const renderExportWithFfmpeg = vi.fn(
+      async (input: { outputPath: string; signal?: AbortSignal }) => {
+        await writeFile(input.outputPath, "partial");
+        resolveRenderStarted();
+        await new Promise<void>((_resolve, reject) => {
+          input.signal?.addEventListener(
+            "abort",
+            () => reject(input.signal?.reason),
+            { once: true },
+          );
+        });
+      },
+    );
+    const service = new EditorService({
+      createExportClips: () => [
+        createResolvedExportClip(join(directory, "source.mp4")),
+      ],
+      renderExportWithFfmpeg,
+    });
+
+    try {
+      const exportResult = service
+        .exportProject(createExportInput())
+        .catch((error: unknown) => error);
+      await renderStarted;
+      await service.shutdown();
+
+      await expect(exportResult).resolves.toMatchObject({ name: "AbortError" });
+      await expect(
+        readdir(join(videosPath, "Hinekora", "Exports")),
+      ).resolves.toEqual([]);
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
   it("rejects duplicate active export request ids", () => {
     const service = new EditorService();
     const internals = service as unknown as {
-      activeExports: Map<string, unknown>;
-      createActiveExport: (exportRequestId: string) => {
-        resolveCompletion: () => void;
+      editorExportService: {
+        activeExports: Map<string, unknown>;
+        createActiveExport: (exportRequestId: string) => {
+          resolveCompletion: () => void;
+        };
       };
     };
-    const activeExport = internals.createActiveExport("export-request-1");
+    const activeExport =
+      internals.editorExportService.createActiveExport("export-request-1");
 
-    expect(() => internals.createActiveExport("export-request-1")).toThrow(
-      "Editor export request is already active",
-    );
+    expect(() =>
+      internals.editorExportService.createActiveExport("export-request-1"),
+    ).toThrow("Editor export request is already active");
 
     activeExport.resolveCompletion();
-    internals.activeExports.clear();
+    internals.editorExportService.activeExports.clear();
   });
 
   it("reports export finalization failures through the lifecycle", async () => {
@@ -1678,30 +2107,15 @@ describe("EditorService IPC", () => {
       },
     );
     const statExportFile = vi
-      .fn()
-      .mockRejectedValue(new Error("stat failed")) as unknown as typeof stat;
+      .fn<(path: string) => Promise<{ size: number }>>()
+      .mockRejectedValue(new Error("stat failed"));
     const service = new EditorService({
+      createExportClips: () => [
+        createResolvedExportClip(join(directory, "source.mp4")),
+      ],
       renderExportWithFfmpeg,
       statExportFile,
     });
-    const internals = service as unknown as {
-      createExportClips: () => Array<{
-        durationSeconds: number;
-        inSeconds: number;
-        outSeconds: number;
-        source: { path: string };
-        startSeconds: number;
-      }>;
-    };
-    vi.spyOn(internals, "createExportClips").mockReturnValue([
-      {
-        durationSeconds: 1,
-        inSeconds: 0,
-        outSeconds: 1,
-        source: { path: join(directory, "source.mp4") },
-        startSeconds: 0,
-      },
-    ]);
 
     try {
       await expect(service.exportProject(createExportInput())).rejects.toThrow(
@@ -1712,6 +2126,49 @@ describe("EditorService IPC", () => {
         exportRequestId: "export-request-1",
         status: "failed",
       });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps the export active until validation and commit finish", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hinekora-editor-commit-"));
+    vi.spyOn(app, "getPath").mockImplementation((name) =>
+      name === "videos" ? directory : tmpdir(),
+    );
+    let resolveStat: (value: { size: number }) => void = () => undefined;
+    const statExportFile = vi.fn(
+      () =>
+        new Promise<{ size: number }>((resolve) => {
+          resolveStat = resolve;
+        }),
+    );
+    const renderExportWithFfmpeg = vi.fn(
+      async (input: { outputPath: string }) => {
+        await writeFile(input.outputPath, "rendered");
+      },
+    );
+    const service = new EditorService({
+      createExportClips: () => [
+        createResolvedExportClip(join(directory, "source.mp4")),
+      ],
+      renderExportWithFfmpeg,
+      statExportFile,
+    });
+
+    try {
+      const exportResult = service.exportProject(createExportInput());
+      await vi.waitFor(() => {
+        expect(statExportFile).toHaveBeenCalledTimes(1);
+      });
+      await expect(
+        service.exportProject(
+          createExportInput({ exportRequestId: "export-request-2" }),
+        ),
+      ).rejects.toThrow("Another editor video is already processing");
+
+      resolveStat({ size: 8 });
+      await expect(exportResult).resolves.toMatchObject({ sizeBytes: 8 });
     } finally {
       await rm(directory, { force: true, recursive: true });
     }
@@ -1728,39 +2185,37 @@ describe("EditorService IPC", () => {
         throw new Error("render failed");
       },
     );
-    const service = new EditorService({ renderExportWithFfmpeg });
+    const removeExportFile: typeof rm = vi.fn(
+      async (...args: Parameters<typeof rm>) => {
+        await rm(...args);
+        throw new Error("cleanup warning");
+      },
+    );
+    const service = new EditorService({
+      createExportClips: () => [
+        createResolvedExportClip(join(directory, "source.mp4")),
+      ],
+      removeExportFile,
+      renderExportWithFfmpeg,
+    });
     const internals = service as unknown as {
-      createExportClips: () => Array<{
-        durationSeconds: number;
-        inSeconds: number;
-        outSeconds: number;
-        source: { path: string };
-        startSeconds: number;
-      }>;
-      exportPaths: Map<string, string>;
+      editorExportService: {
+        exportPaths: Map<string, string>;
+        rememberExportPath: (exportId: string, outputPath: string) => void;
+      };
       handleExportMediaRequest: (request: Request) => Promise<Response>;
-      rememberExportPath: (exportId: string, outputPath: string) => void;
       resolveExportMediaRequestId: (url: string) => string | null;
     };
-    vi.spyOn(internals, "createExportClips").mockReturnValue([
-      {
-        durationSeconds: 1,
-        inSeconds: 0,
-        outSeconds: 1,
-        source: { path: join(directory, "source.mp4") },
-        startSeconds: 0,
-      },
-    ]);
     vi.spyOn(shell, "showItemInFolder").mockImplementation(() => {
       throw new Error("shell failed");
     });
 
     try {
       await expect(service.exportProject(createExportInput())).rejects.toThrow(
-        "render failed",
+        "Temporary video files could not be removed",
       );
       expect(service.getExportLifecycle()).toMatchObject({
-        error: "render failed",
+        error: "Video saving failed, and temporary files could not be removed",
         exportRequestId: "export-request-1",
         status: "failed",
       });
@@ -1768,30 +2223,50 @@ describe("EditorService IPC", () => {
         readdir(join(directory, "Hinekora", "Exports")),
       ).resolves.toEqual([]);
       await expect(
+        new EditorService({ renderExportWithFfmpeg }).exportProject(
+          createExportInput({ project: createExportProject({ clips: [] }) }),
+        ),
+      ).rejects.toThrow("No timeline clips are available to export");
+      const noTrackInput = createExportInput();
+      await expect(
         new EditorService({ renderExportWithFfmpeg }).exportProject({
-          ...createExportInput(),
-          clips: [],
+          ...noTrackInput,
+          project: { ...noTrackInput.project, tracks: [] },
+        }),
+      ).rejects.toThrow("No timeline clips are available to export");
+      const missingAssetInput = createExportInput();
+      await expect(
+        new EditorService({ renderExportWithFfmpeg }).exportProject({
+          ...missingAssetInput,
+          project: { ...missingAssetInput.project, assets: [] },
         }),
       ).rejects.toThrow("No timeline clips are available to export");
       await expect(
-        service.exportProject({
-          ...createExportInput(),
-          mode: "overwrite",
-          overwriteSource: null,
-        }),
+        service.exportProject(
+          createExportInput({
+            mode: "overwrite",
+            project: createExportProject({ activeSource: null }),
+          }),
+        ),
       ).rejects.toThrow("No overwrite source is available to export");
       expect(service.revealExport("missing")).toEqual({
         ok: false,
         error: "Saved video is not available",
       });
-      internals.rememberExportPath("export-1", join(directory, "missing.mp4"));
+      internals.editorExportService.rememberExportPath(
+        "export-1",
+        join(directory, "missing.mp4"),
+      );
       expect(service.revealExport("export-1")).toEqual({
         ok: false,
         error: "Saved video is not available",
       });
       const existingExportPath = join(directory, "existing.mp4");
       await writeFile(existingExportPath, "video");
-      internals.rememberExportPath("export-2", existingExportPath);
+      internals.editorExportService.rememberExportPath(
+        "export-2",
+        existingExportPath,
+      );
       expect(service.revealExport("export-2")).toEqual({
         ok: false,
         error: "shell failed",
@@ -1845,6 +2320,88 @@ describe("EditorService IPC", () => {
     }
   });
 
+  it("prevents competing renders and cancels clipboard work at shutdown", async () => {
+    const tempPath = await mkdtemp(
+      join(tmpdir(), "hinekora-editor-copy-shutdown-"),
+    );
+    vi.spyOn(app, "getPath").mockImplementation((name) =>
+      name === "temp" ? tempPath : tmpdir(),
+    );
+    let resolveRenderStarted: () => void = () => undefined;
+    const renderStarted = new Promise<void>((resolve) => {
+      resolveRenderStarted = resolve;
+    });
+    let renderedPath: string | null = null;
+    const renderExportWithFfmpeg = vi.fn(
+      async (input: { outputPath: string; signal?: AbortSignal }) => {
+        renderedPath = input.outputPath;
+        await writeFile(input.outputPath, "partial");
+        resolveRenderStarted();
+        await new Promise<void>((_resolve, reject) => {
+          input.signal?.addEventListener(
+            "abort",
+            () => reject(input.signal?.reason),
+            { once: true },
+          );
+        });
+      },
+    );
+    const service = new EditorService({ renderExportWithFfmpeg });
+    const internals = service as unknown as {
+      activeClipboardCopy: unknown;
+      createExportClips: () => Array<{
+        durationSeconds: number;
+        inSeconds: number;
+        outSeconds: number;
+        source: { path: string };
+        startSeconds: number;
+      }>;
+    };
+    vi.spyOn(internals, "createExportClips").mockReturnValue([
+      {
+        durationSeconds: 1,
+        inSeconds: 0,
+        outSeconds: 1,
+        source: { path: join(tempPath, "source.mp4") },
+        startSeconds: 0,
+      },
+    ]);
+    const copyInput = createCopyToClipboardInput({
+      project: createExportProject({ durationSeconds: 1 }),
+    });
+
+    try {
+      const copyRequest = service.copyProjectToClipboard(copyInput);
+      await renderStarted;
+
+      await expect(service.copyProjectToClipboard(copyInput)).resolves.toEqual({
+        error: "Wait for the current video save to finish",
+        ok: false,
+      });
+      await expect(service.exportProject(createExportInput())).rejects.toThrow(
+        "Another editor video is already processing",
+      );
+
+      await service.shutdown();
+
+      await expect(copyRequest).resolves.toEqual({
+        error: "Application is shutting down",
+        ok: false,
+      });
+      expect(internals.activeClipboardCopy).toBeNull();
+      await expect(stat(renderedPath ?? "")).rejects.toThrow();
+      await expect(service.exportProject(createExportInput())).rejects.toThrow(
+        "Editor is shutting down",
+      );
+      await expect(service.copyProjectToClipboard(copyInput)).resolves.toEqual({
+        error: "Editor is shutting down",
+        ok: false,
+      });
+    } finally {
+      await rm(tempPath, { force: true, recursive: true });
+    }
+  });
+
   it("copies current projects to the clipboard and cleans up failures", async () => {
     const tempPath = await mkdtemp(join(tmpdir(), "hinekora-editor-copy-"));
     const sourcePath = join(tempPath, "source.mp4");
@@ -1883,13 +2440,14 @@ describe("EditorService IPC", () => {
 
     try {
       await expect(
-        service.copyProjectToClipboard({
-          clips: [createExportClip()],
-          durationSeconds: 1,
-          fileName: "copy.mp4",
-          muteAudio: true,
-          resolution: "720p",
-        }),
+        service.copyProjectToClipboard(
+          createCopyToClipboardInput({
+            project: createExportProject({
+              durationSeconds: 1,
+              muteAudio: true,
+            }),
+          }),
+        ),
       ).resolves.toEqual({ ok: true, error: null });
       const copiedPath = copyFileToClipboard.mock.calls[0]?.[0];
       expect(copiedPath).toBeTruthy();
@@ -1901,24 +2459,22 @@ describe("EditorService IPC", () => {
       );
 
       await expect(
-        service.copyProjectToClipboard({
-          clips: [createExportClip()],
-          durationSeconds: 1,
-          fileName: "copy.mp4",
-          resolution: "720p",
-        }),
+        service.copyProjectToClipboard(
+          createCopyToClipboardInput({
+            project: createExportProject({ durationSeconds: 1 }),
+          }),
+        ),
       ).resolves.toEqual({ ok: false, error: "copy failed" });
       const failedPath = copyFileToClipboard.mock.calls[1]?.[0];
       await expect(readFile(failedPath ?? "", "utf8")).rejects.toThrow();
 
       vi.spyOn(internals, "createExportClips").mockReturnValueOnce([]);
       await expect(
-        service.copyProjectToClipboard({
-          clips: [],
-          durationSeconds: 0,
-          fileName: "copy.mp4",
-          resolution: "720p",
-        }),
+        service.copyProjectToClipboard(
+          createCopyToClipboardInput({
+            project: createExportProject({ clips: [], durationSeconds: 0 }),
+          }),
+        ),
       ).resolves.toEqual({
         ok: false,
         error: "No timeline clips are available to copy",
@@ -1969,12 +2525,11 @@ describe("EditorService IPC", () => {
 
     try {
       await expect(
-        service.copyProjectToClipboard({
-          clips: [createExportClip()],
-          durationSeconds: 1,
-          fileName: "copy.mp4",
-          resolution: "720p",
-        }),
+        service.copyProjectToClipboard(
+          createCopyToClipboardInput({
+            project: createExportProject({ durationSeconds: 1 }),
+          }),
+        ),
       ).resolves.toEqual({ ok: true, error: null });
     } finally {
       await rm(tempPath, { force: true, recursive: true });
@@ -2021,12 +2576,11 @@ describe("EditorService IPC", () => {
 
     try {
       await expect(
-        service.copyProjectToClipboard({
-          clips: [createExportClip()],
-          durationSeconds: 1,
-          fileName: "copy.mp4",
-          resolution: "720p",
-        }),
+        service.copyProjectToClipboard(
+          createCopyToClipboardInput({
+            project: createExportProject({ durationSeconds: 1 }),
+          }),
+        ),
       ).resolves.toEqual({ ok: true, error: null });
       expect(cleanupEditorClipboardOutputDirectory).toHaveBeenCalledTimes(1);
     } finally {
@@ -2068,12 +2622,12 @@ describe("EditorService IPC", () => {
 
     try {
       await expect(
-        service.copyProjectToClipboard({
-          clips: [createExportClip()],
-          durationSeconds: 1,
-          fileName: "copy.mp4",
-          resolution: "1080p",
-        }),
+        service.copyProjectToClipboard(
+          createCopyToClipboardInput({
+            project: createExportProject({ durationSeconds: 1 }),
+            resolution: "1080p",
+          }),
+        ),
       ).resolves.toEqual({ ok: false, error: "render crashed" });
       const clipboardDirectory = join(tempPath, "Hinekora", "Editor Clipboard");
       expect(
@@ -2129,10 +2683,10 @@ describe("EditorService IPC", () => {
     try {
       expect(
         internals.resolveExportSource({ id: "recording-1", kind: "recording" }),
-      ).toMatchObject({ path: recordingPath });
+      ).toMatchObject({ path: recordingPath, storageRoot: directory });
       expect(
         internals.resolveExportSource({ id: "clip-1", kind: "clip" }),
-      ).toMatchObject({ path: clipPath });
+      ).toMatchObject({ path: clipPath, storageRoot: directory });
       expect(
         internals.createExportClips([
           createExportClip({
@@ -2218,50 +2772,134 @@ describe("EditorService IPC", () => {
         await writeFile(input.outputPath, "rendered");
       },
     );
-    const service = new EditorService({ renderExportWithFfmpeg });
-    const internals = service as unknown as {
-      createExportClips: () => Array<{
-        durationSeconds: number;
-        inSeconds: number;
-        outSeconds: number;
-        source: { path: string };
-        startSeconds: number;
-      }>;
-      resolveExportSource: () => { path: string };
-    };
-    vi.spyOn(internals, "createExportClips").mockReturnValue([
-      {
-        durationSeconds: 1,
-        inSeconds: 0,
-        outSeconds: 1,
-        source: { path: outputPath },
-        startSeconds: 0,
+    const removeExportFile: typeof rm = vi.fn(
+      async (...args: Parameters<typeof rm>) => {
+        await rm(...args);
+        throw new Error("cleanup warning");
       },
-    ]);
-    vi.spyOn(internals, "resolveExportSource").mockReturnValue({
-      path: outputPath,
+    );
+    const service = new EditorService({
+      createExportClips: () => [createResolvedExportClip(outputPath)],
+      removeExportFile,
+      renderExportWithFfmpeg,
+      resolveExportSource: () => ({ path: outputPath }),
     });
 
-    const input: EditorExportInput = {
-      clips: [],
-      durationSeconds: 1,
-      exportRequestId: "export-request-1",
-      fileName: "source.mp4",
+    const input: EditorExportInput = createExportInput({
       mode: "overwrite",
-      overwriteSource: { id: "clip-1", kind: "clip" },
-      projectId: "project-1",
-      resolution: "1080p",
-    };
+    });
 
     await expect(service.exportProject(input)).resolves.toMatchObject({
       fileName: "source.mp4",
       mode: "overwrite",
     });
     await expect(readFile(outputPath, "utf8")).resolves.toBe("rendered");
-    expect(await readdir(directory)).toEqual(["source.mp4"]);
+    expect((await readdir(directory)).sort()).toEqual([
+      ".hinekora-editor-exports",
+      "source.mp4",
+    ]);
+    await expect(
+      readdir(join(directory, ".hinekora-editor-exports")),
+    ).resolves.toEqual([]);
     expect(renderExportWithFfmpeg).toHaveBeenCalledTimes(1);
 
     await rm(directory, { force: true, recursive: true });
+  });
+
+  it("keeps the original overwrite file when the atomic commit fails", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hinekora-editor-commit-"));
+    const outputPath = join(directory, "source.mp4");
+    await writeFile(outputPath, "original");
+    const renderExportWithFfmpeg = vi.fn(
+      async (input: { outputPath: string }) => {
+        await writeFile(input.outputPath, "rendered");
+      },
+    );
+    const renameExportFile: typeof rename = vi.fn(async () => {
+      throw new Error("commit failed");
+    });
+    const service = new EditorService({
+      createExportClips: () => [createResolvedExportClip(outputPath)],
+      renameExportFile,
+      renderExportWithFfmpeg,
+      resolveExportSource: () => ({ path: outputPath }),
+    });
+
+    try {
+      await expect(
+        service.exportProject(
+          createExportInput({
+            mode: "overwrite",
+          }),
+        ),
+      ).rejects.toThrow("commit failed");
+      await expect(readFile(outputPath, "utf8")).resolves.toBe("original");
+      expect((await readdir(directory)).sort()).toEqual([
+        ".hinekora-editor-exports",
+        "source.mp4",
+      ]);
+      await expect(
+        readdir(join(directory, ".hinekora-editor-exports")),
+      ).resolves.toEqual([]);
+      expect(service.getExportLifecycle()).toMatchObject({
+        error: "commit failed",
+        status: "failed",
+      });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
+  });
+
+  it("removes a temporary new-file render when its atomic commit fails", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "hinekora-editor-commit-"));
+    vi.spyOn(app, "getPath").mockImplementation((name) =>
+      name === "videos" ? directory : tmpdir(),
+    );
+    const renderExportWithFfmpeg = vi.fn(
+      async (input: { outputPath: string }) => {
+        await writeFile(input.outputPath, "rendered");
+      },
+    );
+    const linkExportFile: typeof link = vi.fn(async () => {
+      throw new Error("commit failed");
+    });
+    const createService = (removeExportFile?: typeof rm) => {
+      const service = new EditorService({
+        createExportClips: () => [
+          createResolvedExportClip(join(directory, "source.mp4")),
+        ],
+        ...(removeExportFile ? { removeExportFile } : {}),
+        linkExportFile,
+        renderExportWithFfmpeg,
+      });
+      return service;
+    };
+
+    try {
+      const service = createService();
+      await expect(service.exportProject(createExportInput())).rejects.toThrow(
+        "commit failed",
+      );
+      await expect(
+        readdir(join(directory, "Hinekora", "Exports")),
+      ).resolves.toEqual([]);
+
+      const removeExportFile = vi
+        .fn<typeof rm>()
+        .mockRejectedValue(new Error("file is locked"));
+      const cleanupFailureService = createService(removeExportFile);
+      await expect(
+        cleanupFailureService.exportProject(
+          createExportInput({ exportRequestId: "export-request-2" }),
+        ),
+      ).rejects.toThrow("Temporary video files could not be removed");
+      expect(cleanupFailureService.getExportLifecycle()).toMatchObject({
+        error: "Video saving failed, and temporary files could not be removed",
+        status: "failed",
+      });
+    } finally {
+      await rm(directory, { force: true, recursive: true });
+    }
   });
 
   it("overwrites the explicit source instead of the first timeline clip", async () => {
@@ -2275,47 +2913,32 @@ describe("EditorService IPC", () => {
         await writeFile(input.outputPath, "rendered");
       },
     );
-    const service = new EditorService({ renderExportWithFfmpeg });
-    const internals = service as unknown as {
-      createExportClips: () => Array<{
-        durationSeconds: number;
-        inSeconds: number;
-        outSeconds: number;
-        source: { path: string };
-        startSeconds: number;
-      }>;
-      resolveExportSource: () => { path: string };
-    };
-    vi.spyOn(internals, "createExportClips").mockReturnValue([
-      {
-        durationSeconds: 1,
-        inSeconds: 0,
-        outSeconds: 1,
-        source: { path: firstPath },
-        startSeconds: 0,
-      },
-      {
-        durationSeconds: 1,
-        inSeconds: 0,
-        outSeconds: 1,
-        source: { path: targetPath },
-        startSeconds: 1,
-      },
-    ]);
-    vi.spyOn(internals, "resolveExportSource").mockReturnValue({
-      path: targetPath,
+    const service = new EditorService({
+      createExportClips: () => [
+        createResolvedExportClip(firstPath),
+        createResolvedExportClip(targetPath, { startSeconds: 1 }),
+      ],
+      renderExportWithFfmpeg,
+      resolveExportSource: () => ({ path: targetPath }),
     });
 
-    await service.exportProject({
-      clips: [],
-      durationSeconds: 2,
-      exportRequestId: "export-request-1",
-      fileName: "target.mp4",
-      mode: "overwrite",
-      overwriteSource: { id: "clip-2", kind: "clip" },
-      projectId: "project-1",
-      resolution: "1080p",
-    });
+    await service.exportProject(
+      createExportInput({
+        fileName: "target.mp4",
+        mode: "overwrite",
+        project: createExportProject({
+          activeSource: { id: "clip-2", kind: "clip" },
+          clips: [
+            createExportClip({ source: { id: "clip-1", kind: "clip" } }),
+            createExportClip({
+              source: { id: "clip-2", kind: "clip" },
+              startSeconds: 1,
+            }),
+          ],
+          durationSeconds: 2,
+        }),
+      }),
+    );
 
     await expect(readFile(firstPath, "utf8")).resolves.toBe("first");
     await expect(readFile(targetPath, "utf8")).resolves.toBe("rendered");
@@ -2326,17 +2949,26 @@ describe("EditorService IPC", () => {
   it("caps remembered export media paths", () => {
     const service = new EditorService();
     const internals = service as unknown as {
-      exportPaths: Map<string, string>;
-      rememberExportPath: (exportId: string, outputPath: string) => void;
+      editorExportService: {
+        exportPaths: Map<string, string>;
+        rememberExportPath: (exportId: string, outputPath: string) => void;
+      };
     };
 
     for (let index = 0; index < 25; index += 1) {
-      internals.rememberExportPath(`export-${index}`, `output-${index}.mp4`);
+      internals.editorExportService.rememberExportPath(
+        `export-${index}`,
+        `output-${index}.mp4`,
+      );
     }
 
-    expect(internals.exportPaths.size).toBe(20);
-    expect(Array.from(internals.exportPaths.keys()).at(0)).toBe("export-5");
-    expect(Array.from(internals.exportPaths.keys()).at(-1)).toBe("export-24");
+    expect(internals.editorExportService.exportPaths.size).toBe(20);
+    expect(
+      Array.from(internals.editorExportService.exportPaths.keys()).at(0),
+    ).toBe("export-5");
+    expect(
+      Array.from(internals.editorExportService.exportPaths.keys()).at(-1),
+    ).toBe("export-24");
   });
 
   it("rejects invalid export timeline payloads before rendering", async () => {
@@ -2348,20 +2980,7 @@ describe("EditorService IPC", () => {
         {},
         createExportInput({
           mode: "overwrite",
-          overwriteSource: null,
-        }),
-      ),
-    ).resolves.toEqual({
-      ok: false,
-      error: "media reference must be an object",
-    });
-
-    await expect(
-      handlers.get(EditorChannel.ExportProject)?.(
-        {},
-        createExportInput({
-          mode: "overwrite",
-          overwriteSource: { id: "clip-2", kind: "clip" },
+          project: createExportProject({ activeSource: null }),
         }),
       ),
     ).resolves.toEqual({
@@ -2373,38 +2992,50 @@ describe("EditorService IPC", () => {
       handlers.get(EditorChannel.ExportProject)?.(
         {},
         createExportInput({
-          clips: [
-            createExportClip({ durationSeconds: 5, outSeconds: 5 }),
-            createExportClip({
-              durationSeconds: 3,
-              outSeconds: 3,
-              source: { id: "clip-2", kind: "clip" },
-              startSeconds: 4,
-            }),
-          ],
-          durationSeconds: 10,
+          project: createExportProject({
+            clips: [
+              createExportClip({ durationSeconds: 5, outSeconds: 5 }),
+              createExportClip({
+                durationSeconds: 3,
+                outSeconds: 3,
+                source: { id: "clip-2", kind: "clip" },
+                startSeconds: 4,
+              }),
+            ],
+            durationSeconds: 10,
+          }),
         }),
       ),
-    ).resolves.toEqual({ ok: false, error: "clips must not overlap" });
+    ).resolves.toEqual({
+      ok: false,
+      error: "timeline clips must not overlap",
+    });
 
     await expect(
       handlers.get(EditorChannel.CopyProjectToClipboard)?.(
         {},
-        createExportInput({
-          clips: [createExportClip({ durationSeconds: 5, outSeconds: 5 })],
-          durationSeconds: 4,
-        }),
+        {
+          fileName: "source.mp4",
+          project: createExportProject({
+            clips: [createExportClip({ durationSeconds: 5, outSeconds: 5 })],
+            durationSeconds: 4,
+          }),
+          resolution: "1080p",
+        },
       ),
-    ).resolves.toEqual({ ok: false, error: "clip extends past duration" });
+    ).resolves.toEqual({
+      ok: false,
+      error: "clip range must fit project duration",
+    });
 
     await expect(
       handlers.get(EditorChannel.ExportProject)?.(
         {},
         createExportInput({
-          durationSeconds: 86_401,
+          project: createExportProject({ durationSeconds: 86_401 }),
         }),
       ),
-    ).resolves.toEqual({ ok: false, error: "duration is too large" });
+    ).resolves.toEqual({ ok: false, error: "project duration is too large" });
   });
 
   it("renders a gap and audio-less clip with the ffmpeg export graph", async () => {

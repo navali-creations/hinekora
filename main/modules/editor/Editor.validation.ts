@@ -22,7 +22,6 @@ import type {
   EditorCancelExportInput,
   EditorCopyToClipboardInput,
   EditorCreateProjectInput,
-  EditorExportClipInput,
   EditorExportInput,
   EditorExportMode,
   EditorExportResolution,
@@ -38,7 +37,6 @@ import type {
   EditorTimelineTrack,
   EditorWorkspaceQuery,
 } from "./Editor.dto";
-import { validateEditorExportTimeline } from "./Editor.export";
 
 const maxEditorAssetKeys = 100;
 const maxEditorAssets = 100;
@@ -253,17 +251,11 @@ function validateEditorSaveProjectInput(
   value: unknown,
 ): EditorSaveProjectInput {
   assertObject(value, "editor project save input", EditorChannel.SaveProject);
-  const serializedProject = JSON.stringify(value.project);
-  if (
-    typeof serializedProject === "string" &&
-    Buffer.byteLength(serializedProject, "utf8") >
-      maxEditorSaveProjectPayloadBytes
-  ) {
-    throw new IpcValidationError(
-      EditorChannel.SaveProject,
-      "editor project save input is too large",
-    );
-  }
+  validateEditorProjectPayloadSize(
+    value.project,
+    EditorChannel.SaveProject,
+    "editor project save input",
+  );
 
   return {
     project: validateEditorProject(value.project, EditorChannel.SaveProject),
@@ -275,10 +267,6 @@ function validateEditorExportInput(value: unknown): EditorExportInput {
   assertString(value.fileName, "file name", EditorChannel.ExportProject, {
     min: 1,
     max: 180,
-  });
-  assertString(value.projectId, "project id", EditorChannel.ExportProject, {
-    min: 1,
-    max: 128,
   });
   assertString(
     value.exportRequestId,
@@ -318,37 +306,26 @@ function validateEditorExportInput(value: unknown): EditorExportInput {
       "export resolution is invalid",
     );
   }
-  assertNumber(value.durationSeconds, "duration", EditorChannel.ExportProject, {
-    min: 0,
-    max: 86_400,
-  });
-  const clips = validateEditorExportClips(
-    value.clips,
+  validateEditorProjectPayloadSize(
+    value.project,
     EditorChannel.ExportProject,
+    "editor export input",
   );
-  validateTimelinePayload({
-    channel: EditorChannel.ExportProject,
-    clips,
-    timelineDurationSeconds: value.durationSeconds,
-  });
   const mode = value.mode as EditorExportMode;
-  assertOptionalBoolean(
-    value.muteAudio,
-    "mute audio",
+  const project = validateEditorProject(
+    value.project,
     EditorChannel.ExportProject,
   );
-  const overwriteSource =
-    mode === "overwrite"
-      ? validateEditorMediaReference(
-          value.overwriteSource,
-          EditorChannel.ExportProject,
-        )
-      : null;
+  const videoTrack = project.tracks.find((track) => track.kind === "video");
+  if (!videoTrack || videoTrack.clips.length === 0) {
+    throw new IpcValidationError(
+      EditorChannel.ExportProject,
+      "clips is too short",
+    );
+  }
   if (
-    overwriteSource &&
-    !clips.some((clip) =>
-      isEditorMediaReferenceEqual(clip.source, overwriteSource),
-    )
+    mode === "overwrite" &&
+    !videoTrack.clips.some((clip) => clip.id === project.activeClipId)
   ) {
     throw new IpcValidationError(
       EditorChannel.ExportProject,
@@ -357,16 +334,27 @@ function validateEditorExportInput(value: unknown): EditorExportInput {
   }
 
   return {
-    clips,
-    durationSeconds: value.durationSeconds,
     exportRequestId: value.exportRequestId,
     fileName: value.fileName,
     mode,
-    ...(value.muteAudio === undefined ? {} : { muteAudio: value.muteAudio }),
-    overwriteSource,
-    projectId: value.projectId,
+    project,
     resolution: value.resolution as EditorExportResolution,
   };
+}
+
+function validateEditorProjectPayloadSize(
+  project: unknown,
+  channel: EditorChannel,
+  label: string,
+): void {
+  const serializedProject = JSON.stringify(project);
+  if (
+    typeof serializedProject === "string" &&
+    Buffer.byteLength(serializedProject, "utf8") >
+      maxEditorSaveProjectPayloadBytes
+  ) {
+    throw new IpcValidationError(channel, `${label} is too large`);
+  }
 }
 
 function validateEditorCopyToClipboardInput(
@@ -405,35 +393,19 @@ function validateEditorCopyToClipboardInput(
       "export resolution is invalid",
     );
   }
-  assertNumber(
-    value.durationSeconds,
-    "duration",
+  validateEditorProjectPayloadSize(
+    value.project,
     EditorChannel.CopyProjectToClipboard,
-    {
-      min: 0,
-      max: 86_400,
-    },
+    "editor clipboard input",
   );
-  const clips = validateEditorExportClips(
-    value.clips,
-    EditorChannel.CopyProjectToClipboard,
-  );
-  validateTimelinePayload({
-    channel: EditorChannel.CopyProjectToClipboard,
-    clips,
-    timelineDurationSeconds: value.durationSeconds,
-  });
-  assertOptionalBoolean(
-    value.muteAudio,
-    "mute audio",
+  const project = validateEditorProjectSnapshot(
+    value.project,
     EditorChannel.CopyProjectToClipboard,
   );
 
   return {
-    clips,
-    durationSeconds: value.durationSeconds,
     fileName: value.fileName,
-    ...(value.muteAudio === undefined ? {} : { muteAudio: value.muteAudio }),
+    project,
     resolution: value.resolution as EditorExportResolution,
   };
 }
@@ -469,7 +441,7 @@ function validateEditorProjectSnapshot(
   });
   assertNumber(value.durationSeconds, "project duration", channel, {
     min: 0,
-    max: 86_400,
+    max: maxEditorExportDurationSeconds,
   });
   const assets = validateEditorProjectAssets(value.assets, channel);
   const tracks = validateEditorProjectTracks(value.tracks, channel);
@@ -922,19 +894,19 @@ function validateEditorProjectClip(
   assertString(value.trackId, "clip track id", channel, { min: 1, max: 128 });
   assertNumber(value.durationSeconds, "clip duration", channel, {
     min: 0.001,
-    max: 86_400,
+    max: maxEditorExportDurationSeconds,
   });
   assertNumber(value.inSeconds, "clip in point", channel, {
     min: 0,
-    max: 86_400,
+    max: maxEditorExportDurationSeconds,
   });
   assertNumber(value.outSeconds, "clip out point", channel, {
     min: 0,
-    max: 86_400,
+    max: maxEditorExportDurationSeconds,
   });
   assertNumber(value.startSeconds, "clip start", channel, {
     min: 0,
-    max: 86_400,
+    max: maxEditorExportDurationSeconds,
   });
   const playbackRate = validateEditorPlaybackRate(value.playbackRate, channel);
   if (value.outSeconds <= value.inSeconds) {
@@ -999,76 +971,12 @@ function validateProjectNumber(
   label: string,
   channel: EditorChannel,
 ): number {
-  assertNumber(value, label, channel, { min: 0, max: 86_400 });
+  assertNumber(value, label, channel, {
+    min: 0,
+    max: maxEditorExportDurationSeconds,
+  });
 
   return value;
-}
-
-function validateEditorExportClips(
-  value: unknown,
-  channel: EditorChannel,
-): EditorExportClipInput[] {
-  if (!Array.isArray(value)) {
-    throw new IpcValidationError(channel, "clips must be an array");
-  }
-  if (value.length > maxEditorExportClips) {
-    throw new IpcValidationError(channel, "clips is too large");
-  }
-  const clips = value.map((clip) => validateEditorExportClip(clip, channel));
-  if (clips.length === 0) {
-    throw new IpcValidationError(channel, "clips is too short");
-  }
-
-  return clips;
-}
-
-function validateEditorExportClip(
-  value: unknown,
-  channel: EditorChannel,
-): EditorExportClipInput {
-  assertObject(value, "clip", channel);
-  assertNumber(value.startSeconds, "clip start", channel, {
-    min: 0,
-    max: 86_400,
-  });
-  assertNumber(value.inSeconds, "clip in point", channel, {
-    min: 0,
-    max: 86_400,
-  });
-  assertNumber(value.outSeconds, "clip out point", channel, {
-    min: 0,
-    max: 86_400,
-  });
-  assertNumber(value.durationSeconds, "clip duration", channel, {
-    min: 0.001,
-    max: 86_400,
-  });
-  if (value.outSeconds <= value.inSeconds) {
-    throw new IpcValidationError(
-      channel,
-      "clip out point must be after clip in point",
-    );
-  }
-  const playbackRate = validateEditorPlaybackRate(value.playbackRate, channel);
-  if (
-    value.durationSeconds >
-    (value.outSeconds - value.inSeconds) / playbackRate +
-      editorTimelineEpsilonSeconds
-  ) {
-    throw new IpcValidationError(
-      channel,
-      "clip duration must fit source range",
-    );
-  }
-
-  return {
-    durationSeconds: value.durationSeconds,
-    inSeconds: value.inSeconds,
-    outSeconds: value.outSeconds,
-    playbackRate,
-    source: validateEditorMediaReference(value.source, channel),
-    startSeconds: value.startSeconds,
-  };
 }
 
 function validateEditorPlaybackRate(
@@ -1105,28 +1013,6 @@ function validateEditorMediaReference(
     id: value.id,
     kind: value.kind as EditorMediaKind,
   };
-}
-
-function isEditorMediaReferenceEqual(
-  first: EditorMediaReference,
-  second: EditorMediaReference,
-): boolean {
-  return first.id === second.id && first.kind === second.kind;
-}
-
-function validateTimelinePayload(input: {
-  channel: EditorChannel;
-  clips: EditorExportClipInput[];
-  timelineDurationSeconds: number;
-}): void {
-  const error = validateEditorExportTimeline({
-    clips: input.clips,
-    maxDurationSeconds: maxEditorExportDurationSeconds,
-    timelineDurationSeconds: input.timelineDurationSeconds,
-  });
-  if (error) {
-    throw new IpcValidationError(input.channel, error);
-  }
 }
 
 function validateEditorAssetKeys(

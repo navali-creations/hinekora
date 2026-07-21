@@ -1,6 +1,5 @@
 import type {
   EditorCopyToClipboardInput,
-  EditorExportClipInput,
   EditorExportInput,
   EditorExportResolution,
   EditorMediaAsset,
@@ -125,25 +124,16 @@ function createEditorExportInput(
     return null;
   }
 
-  const clips = createEditorExportClips(project);
-  if (clips.length === 0) {
-    return null;
-  }
-  const overwriteSource =
-    input.mode === "overwrite" ? resolveEditorOverwriteSource(project) : null;
-  if (input.mode === "overwrite" && !overwriteSource) {
+  const videoTrack = project.tracks.find((track) => track.kind === "video");
+  if (!videoTrack || videoTrack.clips.length === 0) {
     return null;
   }
 
   return {
-    clips,
-    durationSeconds: project.durationSeconds,
     exportRequestId: input.exportRequestId,
     fileName: input.fileName,
     mode: input.mode,
-    muteAudio: project.isAudioMuted === true,
-    overwriteSource,
-    projectId: project.id,
+    project,
     resolution: input.resolution,
   };
 }
@@ -155,70 +145,15 @@ function createEditorCopyToClipboardInput(
     return null;
   }
 
-  const clips = createEditorExportClips(project);
-  if (clips.length === 0) {
-    return null;
-  }
-
-  return {
-    clips,
-    durationSeconds: project.durationSeconds,
-    fileName: createEditorDefaultFileName(project),
-    muteAudio: project.isAudioMuted === true,
-    resolution: "1080p",
-  };
-}
-
-function createEditorExportClips(
-  project: EditorProject,
-): EditorExportClipInput[] {
-  const assetByKey = new Map(
-    project.assets.map((asset) => [asset.assetKey, asset] as const),
-  );
   const videoTrack = project.tracks.find((track) => track.kind === "video");
-  if (!videoTrack) {
-    return [];
-  }
-
-  const clips: EditorExportClipInput[] = [];
-  for (const clip of [...videoTrack.clips].sort(
-    (first, second) => first.startSeconds - second.startSeconds,
-  )) {
-    const asset = assetByKey.get(clip.assetKey);
-    if (!asset) {
-      return [];
-    }
-
-    clips.push({
-      durationSeconds: clip.durationSeconds,
-      inSeconds: clip.inSeconds,
-      outSeconds: clip.outSeconds,
-      playbackRate: clip.playbackRate,
-      source: {
-        id: asset.id,
-        kind: asset.kind,
-      },
-      startSeconds: clip.startSeconds,
-    });
-  }
-
-  return clips;
-}
-
-function resolveEditorOverwriteSource(
-  project: EditorProject,
-): EditorExportInput["overwriteSource"] {
-  const activeClip = findTimelineClip(project, project.activeClipId);
-  const activeAsset = project.assets.find(
-    (asset) => asset.assetKey === activeClip?.assetKey,
-  );
-  if (!activeAsset) {
+  if (!videoTrack || videoTrack.clips.length === 0) {
     return null;
   }
 
   return {
-    id: activeAsset.id,
-    kind: activeAsset.kind,
+    fileName: createEditorDefaultFileName(project),
+    project: createEditorProjectHistorySnapshot(project),
+    resolution: "1080p",
   };
 }
 

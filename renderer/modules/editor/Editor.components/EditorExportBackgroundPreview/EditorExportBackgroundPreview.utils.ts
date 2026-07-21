@@ -1,30 +1,10 @@
-import type { EditorProject, EditorTimelineClip } from "~/main/modules/editor";
-
-type EditorExportPreviewClip = EditorTimelineClip & { mediaUrl: string };
-
-function createEditorExportPreviewClips(
-  project: EditorProject | null,
-): EditorExportPreviewClip[] {
-  if (!project) {
-    return [];
-  }
-
-  return project.tracks
-    .flatMap((track) => track.clips)
-    .filter(
-      (clip): clip is EditorExportPreviewClip =>
-        typeof clip.mediaUrl === "string" && clip.mediaUrl.length > 0,
-    )
-    .sort(
-      (first, second) =>
-        first.startSeconds - second.startSeconds ||
-        first.inSeconds - second.inSeconds ||
-        first.id.localeCompare(second.id),
-    );
-}
+import type { EditorExportPreviewClip } from "~/main/modules/editor";
 
 function resolveEditorExportPreviewClipEndSeconds(
-  clip: EditorTimelineClip,
+  clip: Pick<
+    EditorExportPreviewClip,
+    "durationSeconds" | "inSeconds" | "outSeconds" | "playbackRate"
+  >,
 ): number {
   return Math.min(
     clip.outSeconds,
@@ -32,8 +12,4 @@ function resolveEditorExportPreviewClipEndSeconds(
   );
 }
 
-export {
-  createEditorExportPreviewClips,
-  type EditorExportPreviewClip,
-  resolveEditorExportPreviewClipEndSeconds,
-};
+export { resolveEditorExportPreviewClipEndSeconds };

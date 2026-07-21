@@ -162,6 +162,18 @@ function calculateEditorExportDuration(
   );
 }
 
+function createEditorSegmentDiagnostics(segments: EditorExportSegment[]) {
+  return {
+    exportClipSegmentCount: segments.filter(
+      (segment) => segment.kind === "clip",
+    ).length,
+    exportDurationSeconds: calculateEditorExportDuration(segments),
+    exportGapSegmentCount: segments.filter((segment) => segment.kind === "gap")
+      .length,
+    exportSegmentCount: segments.length,
+  };
+}
+
 function validateEditorExportTimeline(input: {
   clips: EditorExportClipInput[];
   maxDurationSeconds: number;
@@ -296,6 +308,7 @@ export {
   calculateEditorExportDuration,
   createEditorExportFilterScript,
   createEditorExportSegments,
+  createEditorSegmentDiagnostics,
   type EditorExportRenderSegment,
   type EditorExportSegment,
   type EditorResolvedExportClip,

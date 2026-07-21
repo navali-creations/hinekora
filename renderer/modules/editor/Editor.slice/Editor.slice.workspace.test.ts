@@ -10,6 +10,7 @@ import type { BoundStore } from "~/renderer/store/store.types";
 import {
   createDeferred,
   createEditorTestAsset,
+  createEditorTestExportResult,
   createEditorTestProject,
   createEditorTestTimelineClip,
   loadEditorProject,
@@ -35,16 +36,19 @@ describe("Editor workspace slice", () => {
     });
     loadEditorProject(store, currentProject, [asset], {
       exportState: {
+        canCancel: true,
         dismissedNoticeIds: [],
         error: null,
         fileName: "saving.mp4",
         isCancelConfirmationOpen: false,
         isCancellationPending: false,
         isViewOpen: false,
+        previewClips: [],
         progress: 0.4,
         projectId: "project-1",
         requestId: "export-request-1",
         result: null,
+        startedAt: "2026-07-20T10:00:00.000Z",
         status: "exporting",
       },
     });
@@ -96,6 +100,50 @@ describe("Editor workspace slice", () => {
     expect(store.getState().editor.playbackSeconds).toBe(0);
     expect(store.getState().editor.mediaRailTab).toBe("all");
     expect(store.getState().editor.mediaPageIndex).toBe(0);
+  });
+
+  it("preserves a completed background export while changing projects", async () => {
+    const store = createTestStore();
+    const editorApi = getEditorApi();
+    const asset = createEditorTestAsset();
+    const currentProject = createEditorTestProject(asset);
+    const hydratedProject = createEditorTestProject(asset, {
+      id: "hydrated-project",
+    });
+    const result = createEditorTestExportResult();
+    editorApi.getWorkspace.mockResolvedValue({
+      assets: [asset],
+      hasMoreProjects: false,
+      project: hydratedProject,
+      projects: [],
+    });
+    loadEditorProject(store, currentProject, [asset], {
+      exportState: {
+        canCancel: false,
+        dismissedNoticeIds: [],
+        error: null,
+        fileName: result.fileName,
+        isCancelConfirmationOpen: false,
+        isCancellationPending: false,
+        isViewOpen: false,
+        previewClips: [],
+        progress: 1,
+        projectId: currentProject.id,
+        requestId: "export-request-1",
+        result,
+        startedAt: "2026-07-20T10:00:00.000Z",
+        status: "ready",
+      },
+    });
+
+    await store.getState().editor.hydrate();
+
+    expect(store.getState().editor.project?.id).toBe(hydratedProject.id);
+    expect(store.getState().editor.exportState).toMatchObject({
+      isViewOpen: false,
+      result,
+      status: "ready",
+    });
   });
 
   it("creates projects and surfaces create failures", async () => {

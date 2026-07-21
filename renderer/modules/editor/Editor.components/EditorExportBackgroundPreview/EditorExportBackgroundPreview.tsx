@@ -1,16 +1,10 @@
-import { useMemo } from "react";
-
 import { useEditorShallow } from "~/renderer/store";
 
-import { createEditorExportPreviewClips } from "./EditorExportBackgroundPreview.utils";
 import { useEditorExportBackgroundPreview } from "./useEditorExportBackgroundPreview/useEditorExportBackgroundPreview";
 
 function EditorExportBackgroundPreview() {
-  const project = useEditorShallow((editor) => editor.project);
-  const clips = useMemo(
-    () => createEditorExportPreviewClips(project),
-    [project],
-  );
+  const clips =
+    useEditorShallow((editor) => editor.exportState.previewClips) ?? [];
   const {
     activeClip,
     advanceClip,
@@ -27,12 +21,11 @@ function EditorExportBackgroundPreview() {
       {activeClip ? (
         <video
           aria-label="Edited video preview"
-          autoPlay
           className="block h-full min-h-0 w-full object-contain"
           key={activeClip.id}
           muted
           playsInline
-          preload="auto"
+          preload="metadata"
           ref={videoRef}
           src={activeClip.mediaUrl}
           title={activeClip.name}

@@ -11,6 +11,7 @@ import type {
   EditorExportFileActionResult,
   EditorExportInput,
   EditorExportLifecycle,
+  EditorExportLifecycleUpdate,
   EditorExportProgress,
   EditorExportResult,
   EditorMediaAssetPage,
@@ -76,11 +77,11 @@ const EditorAPI = {
     };
   },
   onExportLifecycleChanged: (
-    callback: (lifecycle: EditorExportLifecycle) => void,
+    callback: (lifecycle: EditorExportLifecycleUpdate) => void,
   ) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
-      lifecycle: EditorExportLifecycle,
+      lifecycle: EditorExportLifecycleUpdate,
     ) => {
       callback(lifecycle);
     };

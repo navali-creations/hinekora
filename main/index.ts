@@ -224,6 +224,7 @@ async function bootstrap(): Promise<void> {
 
   await MainWindowService.getInstance().createMainWindow();
   logInfo("startup", "Main window created");
+  void EditorService.cleanupAbandonedExports();
 
   scheduleRecordingStorageInitialization(recordingStorage);
 

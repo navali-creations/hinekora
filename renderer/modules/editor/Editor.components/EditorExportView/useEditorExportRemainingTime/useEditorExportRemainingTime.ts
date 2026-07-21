@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { resolveEditorExportRemainingTime } from "../EditorExportView.utils";
 
@@ -7,19 +7,16 @@ const exportEstimateRefreshMs = 1_000;
 function useEditorExportRemainingTime(input: {
   isExporting: boolean;
   progress: number;
+  startedAt: string | null;
 }): string | null {
-  const startedAtMsRef = useRef<number | null>(null);
   const [currentTimeMs, setCurrentTimeMs] = useState(() => Date.now());
 
   useEffect(() => {
     if (!input.isExporting) {
-      startedAtMsRef.current = null;
       return;
     }
 
-    const startedAtMs = Date.now();
-    startedAtMsRef.current = startedAtMs;
-    setCurrentTimeMs(startedAtMs);
+    setCurrentTimeMs(Date.now());
     const intervalId = window.setInterval(() => {
       setCurrentTimeMs(Date.now());
     }, exportEstimateRefreshMs);
@@ -33,11 +30,15 @@ function useEditorExportRemainingTime(input: {
     return null;
   }
 
+  const parsedStartedAtMs = input.startedAt
+    ? Date.parse(input.startedAt)
+    : Number.NaN;
+  const startedAtMs = Number.isFinite(parsedStartedAtMs)
+    ? parsedStartedAtMs
+    : currentTimeMs;
+
   return resolveEditorExportRemainingTime({
-    elapsedMs: Math.max(
-      0,
-      currentTimeMs - (startedAtMsRef.current ?? currentTimeMs),
-    ),
+    elapsedMs: Math.max(0, currentTimeMs - startedAtMs),
     progress: input.progress,
   });
 }

@@ -1128,6 +1128,35 @@ describe("EditorProjectRepository", () => {
     ).toEqual(["project-1"]);
   });
 
+  it("preserves every active project while pruning to the configured limit", () => {
+    const repository = createRepository();
+
+    for (let index = 0; index < 8; index += 1) {
+      repository.upsert(
+        createEditorProject({
+          id: `project-${index}`,
+          updatedAt: `2026-06-18T00:0${index}:00.000Z`,
+        }),
+      );
+    }
+
+    expect(
+      repository.deleteOlderThanLimit({
+        limit: 5,
+        protectedProjectIds: ["project-0", "project-3", "missing"],
+      }),
+    ).toBe(3);
+    expect(
+      repository.list({ limit: 10 }).projects.map((project) => project.id),
+    ).toEqual([
+      "project-7",
+      "project-6",
+      "project-5",
+      "project-3",
+      "project-0",
+    ]);
+  });
+
   it("rejects corrupted stored project JSON", () => {
     const repository = createRepository();
     database?.db

@@ -2,6 +2,7 @@ import {
   mkdir,
   mkdtemp,
   readdir,
+  readFile,
   rm,
   utimes,
   writeFile,
@@ -12,11 +13,16 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
+  cleanupAbandonedEditorExportFiles,
   cleanupEditorClipboardOutputDirectory,
+  commitEditorExportOutputPath,
   createEditorClipboardOutputPath,
   createEditorExportOutputPath,
+  createEditorExportStagingOutputPath,
   createEditorExportTempOutputPath,
   resolveEditorClipboardOutputDirectory,
+  resolveEditorExportOutputDirectory,
+  resolveEditorExportStagingRoot,
 } from "../Editor.files";
 
 describe("editor clipboard files", () => {
@@ -42,6 +48,10 @@ describe("editor clipboard files", () => {
         tempPath,
       });
       const tempOutput = createEditorExportTempOutputPath(firstOutput);
+      const stagingOutput = await createEditorExportStagingOutputPath({
+        outputPath: firstOutput,
+        storageRoot: tempPath,
+      });
 
       expect(firstOutput).toContain(join("Hinekora", "Exports"));
       expect(firstOutput).toMatch(/bad name\.mp4$/);
@@ -50,8 +60,175 @@ describe("editor clipboard files", () => {
       expect(clipboardPath).toMatch(/Hinekora edit-[\w-]+\.mp4$/);
       expect(extensionOnlyClipboardPath).toMatch(/\.mp4-[\w-]+\.mp4$/);
       expect(tempOutput).toContain(".bad name.hinekora-");
+      expect(stagingOutput.directoryPath).toMatch(
+        /\.hinekora-editor-exports[\\/]hinekora-export-[\w-]+$/,
+      );
+      expect(stagingOutput.outputPath).toBe(
+        join(stagingOutput.directoryPath, "bad name.mp4"),
+      );
     } finally {
       await rm(tempPath, { force: true, recursive: true });
+    }
+  });
+
+  it("atomically commits a collision-free export destination", async () => {
+    const videosPath = await mkdtemp(join(tmpdir(), "hinekora-editor-files-"));
+
+    try {
+      const outputDirectory = resolveEditorExportOutputDirectory(videosPath);
+      await mkdir(outputDirectory, { recursive: true });
+      const firstTemporaryPath = join(outputDirectory, ".first.mp4");
+      const secondTemporaryPath = join(outputDirectory, ".second.mp4");
+      await writeFile(firstTemporaryPath, "first render");
+      await writeFile(secondTemporaryPath, "second render");
+      const firstOutput = await commitEditorExportOutputPath({
+        fileName: "render.mp4",
+        temporaryPath: firstTemporaryPath,
+        videosPath,
+      });
+      const secondOutput = await commitEditorExportOutputPath({
+        fileName: "render.mp4",
+        temporaryPath: secondTemporaryPath,
+        videosPath,
+      });
+
+      expect(firstOutput).toMatch(/render\.mp4$/);
+      expect(secondOutput).toMatch(/render \(2\)\.mp4$/);
+      await expect(readFile(firstOutput, "utf8")).resolves.toBe("first render");
+      await expect(readFile(secondOutput, "utf8")).resolves.toBe(
+        "second render",
+      );
+    } finally {
+      await rm(videosPath, { force: true, recursive: true });
+    }
+  });
+
+  it("surfaces export destination commit failures", async () => {
+    const videosPath = await mkdtemp(join(tmpdir(), "hinekora-editor-files-"));
+    const linkFile = (async () => {
+      const error = new Error("access denied") as NodeJS.ErrnoException;
+      error.code = "EACCES";
+      throw error;
+    }) as typeof import("node:fs/promises").link;
+
+    try {
+      await expect(
+        commitEditorExportOutputPath(
+          {
+            fileName: "render.mp4",
+            temporaryPath: join(videosPath, ".render.mp4"),
+            videosPath,
+          },
+          linkFile,
+        ),
+      ).rejects.toThrow("access denied");
+    } finally {
+      await rm(videosPath, { force: true, recursive: true });
+    }
+  });
+
+  it("removes abandoned export jobs from each storage root in bounded batches", async () => {
+    const videosPath = await mkdtemp(join(tmpdir(), "hinekora-editor-files-"));
+    const recordingStoragePath = await mkdtemp(
+      join(tmpdir(), "hinekora-editor-recordings-"),
+    );
+    const outputDirectory = resolveEditorExportOutputDirectory(videosPath);
+    await mkdir(outputDirectory, { recursive: true });
+    const stagingRoot = resolveEditorExportStagingRoot(videosPath);
+    const recordingStagingRoot =
+      resolveEditorExportStagingRoot(recordingStoragePath);
+    await mkdir(stagingRoot, { recursive: true });
+    await mkdir(recordingStagingRoot, { recursive: true });
+    const temporaryNames = Array.from(
+      { length: 17 },
+      (_, index) =>
+        `hinekora-export-00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
+    );
+    const failedName = temporaryNames.at(-1)!;
+    const unrelatedNames = ["notes", "hinekora-export-not-a-uuid"];
+    for (const name of [...temporaryNames, ...unrelatedNames]) {
+      await mkdir(join(stagingRoot, name));
+      await writeFile(join(stagingRoot, name, "artifact"), name);
+    }
+    const recordingTemporaryName =
+      "hinekora-export-00000000-0000-4000-8000-000000000099";
+    await mkdir(join(recordingStagingRoot, recordingTemporaryName));
+    await writeFile(
+      join(recordingStagingRoot, recordingTemporaryName, "render.mp4"),
+      "temporary",
+    );
+    const currentStagingOutput = await createEditorExportStagingOutputPath({
+      outputPath: join(outputDirectory, "active.mp4"),
+      storageRoot: videosPath,
+    });
+    await writeFile(currentStagingOutput.outputPath, "active");
+    await writeFile(join(outputDirectory, "saved.mp4"), "saved");
+    const removeFile = (async (path, options) => {
+      if (String(path).endsWith(failedName)) {
+        throw new Error("locked");
+      }
+      await rm(path, options);
+    }) as typeof rm;
+
+    try {
+      await expect(
+        cleanupAbandonedEditorExportFiles(
+          [videosPath, recordingStoragePath],
+          removeFile,
+        ),
+      ).resolves.toEqual({ failedCount: 1, removedCount: 17 });
+      expect((await readdir(stagingRoot)).sort()).toEqual(
+        [
+          ...unrelatedNames,
+          failedName,
+          currentStagingOutput.directoryPath.split(/[\\/]/).at(-1)!,
+        ].sort(),
+      );
+      await expect(readdir(recordingStagingRoot)).resolves.toEqual([]);
+      await expect(readdir(outputDirectory)).resolves.toEqual(["saved.mp4"]);
+    } finally {
+      await rm(videosPath, { force: true, recursive: true });
+      await rm(recordingStoragePath, { force: true, recursive: true });
+    }
+  });
+
+  it("ignores a missing abandoned-export directory", async () => {
+    const videosPath = await mkdtemp(join(tmpdir(), "hinekora-editor-files-"));
+
+    try {
+      await expect(
+        cleanupAbandonedEditorExportFiles([videosPath, videosPath]),
+      ).resolves.toEqual({ failedCount: 0, removedCount: 0 });
+    } finally {
+      await rm(videosPath, { force: true, recursive: true });
+    }
+  });
+
+  it("caps abandoned-export cleanup work per run", async () => {
+    const videosPath = await mkdtemp(join(tmpdir(), "hinekora-editor-files-"));
+    const stagingRoot = resolveEditorExportStagingRoot(videosPath);
+    await mkdir(stagingRoot, { recursive: true });
+    for (let index = 0; index < 70; index += 1) {
+      const uuidTail = String(index).padStart(12, "0");
+      const stagingDirectory = join(
+        stagingRoot,
+        `hinekora-export-00000000-0000-4000-8000-${uuidTail}`,
+      );
+      await mkdir(stagingDirectory);
+      await writeFile(join(stagingDirectory, "render.mp4"), "temporary");
+    }
+
+    try {
+      await expect(
+        cleanupAbandonedEditorExportFiles([videosPath]),
+      ).resolves.toEqual({ failedCount: 0, removedCount: 64 });
+      await expect(readdir(stagingRoot)).resolves.toHaveLength(6);
+      await expect(
+        cleanupAbandonedEditorExportFiles([videosPath]),
+      ).resolves.toEqual({ failedCount: 0, removedCount: 6 });
+      await expect(readdir(stagingRoot)).resolves.toEqual([]);
+    } finally {
+      await rm(videosPath, { force: true, recursive: true });
     }
   });
 

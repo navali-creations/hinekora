@@ -3,6 +3,7 @@ import { beforeEach, vi } from "vitest";
 import type { RecordingBookmark } from "~/main/modules/bookmarks";
 import type {
   EditorExportLifecycle,
+  EditorExportLifecycleUpdate,
   EditorExportProgress,
   EditorExportResult,
   EditorMediaAsset,
@@ -80,7 +81,7 @@ function installEditorApiMock(
   editorApi: ReturnType<typeof createEditorApiMock>,
 ) {
   let exportLifecycleCallback:
-    | ((lifecycle: EditorExportLifecycle) => void)
+    | ((lifecycle: EditorExportLifecycleUpdate) => void)
     | null = null;
   let exportProgressCallback:
     | ((progress: EditorExportProgress) => void)
@@ -89,15 +90,9 @@ function installEditorApiMock(
   const unsubscribeExportLifecycle = vi.fn();
 
   editorApi.dismissExport.mockResolvedValue(undefined);
-  editorApi.getExportLifecycle.mockResolvedValue({
-    error: null,
-    exportRequestId: null,
-    fileName: null,
-    progress: 0,
-    projectId: null,
-    result: null,
-    status: "idle",
-  });
+  editorApi.getExportLifecycle.mockResolvedValue(
+    createEditorTestExportLifecycle(),
+  );
   editorApi.onExportLifecycleChanged.mockImplementation((callback) => {
     exportLifecycleCallback = callback;
 
@@ -225,6 +220,24 @@ function createEditorTestExportResult(
   };
 }
 
+function createEditorTestExportLifecycle(
+  overrides: Partial<EditorExportLifecycle> = {},
+): EditorExportLifecycle {
+  return {
+    canCancel: false,
+    error: null,
+    exportRequestId: null,
+    fileName: null,
+    previewClips: [],
+    progress: 0,
+    projectId: null,
+    result: null,
+    startedAt: null,
+    status: "idle",
+    ...overrides,
+  };
+}
+
 function createEditorTestTimelineClip(
   asset: EditorMediaAsset = createEditorTestAsset(),
   overrides: Partial<EditorTimelineClip> = {},
@@ -272,6 +285,7 @@ function createEditorTestRecordingBookmark(
 export {
   createDeferred,
   createEditorTestAsset,
+  createEditorTestExportLifecycle,
   createEditorTestExportResult,
   createEditorTestProject,
   createEditorTestRecordingBookmark,

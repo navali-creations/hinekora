@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ClientLogService } from "~/main/modules/client-log";
 import { DatabaseService } from "~/main/modules/database";
+import { EditorService } from "~/main/modules/editor";
 import { KeybindsService } from "~/main/modules/keybinds";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
@@ -197,6 +198,9 @@ describe("AppService", () => {
   });
 
   it("runs shutdown cleanup once before resuming quit", async () => {
+    const shutdownEditor = vi
+      .spyOn(EditorService, "shutdownIfInitialized")
+      .mockResolvedValue();
     let beforeQuit: ((event?: { preventDefault?(): void }) => void) | undefined;
     const services = {
       clientLog: { stopWatchFile: vi.fn() },
@@ -258,6 +262,7 @@ describe("AppService", () => {
     expect(services.updater.destroy).toHaveBeenCalledTimes(1);
     expect(services.keybinds.destroy).toHaveBeenCalledTimes(1);
     expect(services.overlayWindows.destroyAll).toHaveBeenCalledTimes(1);
+    expect(shutdownEditor).toHaveBeenCalledTimes(1);
     expect(services.database.close).toHaveBeenCalledTimes(1);
   });
 
