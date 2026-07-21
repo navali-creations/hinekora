@@ -578,6 +578,25 @@ describe("probeEditorAudioStream", () => {
       expect(progress).toHaveBeenCalledWith(1);
 
       await renderEditorExportWithFfmpeg({
+        outputPath: join(directory, "no-signal-output.mp4"),
+        resolution: "1080p",
+        segments: [
+          {
+            durationSeconds: 1,
+            inSeconds: 0,
+            kind: "clip",
+            outSeconds: 1,
+            playbackRate: 1,
+            source: {
+              path: sourcePath,
+            },
+            sourceDurationSeconds: 1,
+            startSeconds: 0,
+          },
+        ],
+      });
+
+      await renderEditorExportWithFfmpeg({
         muteAudio: true,
         outputPath: join(directory, "muted-output.mp4"),
         resolution: "720p",
@@ -599,13 +618,13 @@ describe("probeEditorAudioStream", () => {
       const updatedFfmpegCalls = spawn.mock.calls.filter(
         ([executablePath]) => executablePath === ffmpegPath,
       );
-      expect(updatedFfmpegCalls).toHaveLength(2);
-      expect(updatedFfmpegCalls[1]?.[1]).toContain("23");
+      expect(updatedFfmpegCalls).toHaveLength(3);
+      expect(updatedFfmpegCalls[2]?.[1]).toContain("23");
       expect(
         spawn.mock.calls.filter(
           ([executablePath]) => executablePath === ffprobePath,
         ),
-      ).toHaveLength(1);
+      ).toHaveLength(2);
     } finally {
       if (previousFfmpegPath === undefined) {
         delete process.env.HINEKORA_FFMPEG_PATH;
