@@ -18,6 +18,7 @@ import { ProfilesAPI } from "~/main/modules/profiles/Profiles.api";
 import { RecordingStorageAPI } from "~/main/modules/recording-storage/RecordingStorage.api";
 import { ReplayClipsAPI } from "~/main/modules/replay-clips/ReplayClips.api";
 import { SavedEditsAPI } from "~/main/modules/saved-edits/SavedEdits.api";
+import { SavedVideosAPI } from "~/main/modules/saved-videos/SavedVideos.api";
 import { SettingsStoreAPI } from "~/main/modules/settings-store/SettingsStore.api";
 import { StateTransferAPI } from "~/main/modules/state-transfer/StateTransfer.api";
 import { StorageAPI } from "~/main/modules/storage/Storage.api";
@@ -42,6 +43,7 @@ const fullApi = {
   recordingStorage: RecordingStorageAPI,
   replayClips: ReplayClipsAPI,
   savedEdits: SavedEditsAPI,
+  savedVideos: SavedVideosAPI,
   settings: SettingsStoreAPI,
   storage: StorageAPI,
   stateTransfer: StateTransferAPI,

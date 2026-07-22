@@ -67,6 +67,7 @@ describe("SidebarNav", () => {
       "Bookmarks",
       "Aura Manager",
       "Editor",
+      "Draft Edits",
       "Saved Edits",
     ]);
   });

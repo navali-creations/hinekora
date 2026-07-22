@@ -48,7 +48,7 @@ function SavedEditTableActions({ edit }: SavedEditTableActionsProps) {
     <>
       <div className="join no-drag">
         <button
-          aria-label={`Open saved edit ${edit.title}`}
+          aria-label={`Open draft edit ${edit.title}`}
           className="btn btn-ghost btn-xs join-item"
           title="Open in editor"
           type="button"
@@ -66,7 +66,7 @@ function SavedEditTableActions({ edit }: SavedEditTableActionsProps) {
           <FiFolder size={14} />
         </button>
         <button
-          aria-label={`Delete saved edit ${edit.title}`}
+          aria-label={`Delete draft edit ${edit.title}`}
           className="btn btn-ghost btn-xs join-item text-error disabled:text-base-content/35"
           title="Delete edit"
           type="button"
@@ -77,7 +77,7 @@ function SavedEditTableActions({ edit }: SavedEditTableActionsProps) {
       </div>
       <EditorDeleteConfirmationModal
         confirmLabel="Delete edit"
-        description={`This will remove "${edit.title}" from saved editor edits. Source recordings and clips will not be deleted.`}
+        description={`This will remove "${edit.title}" from draft edits. Source recordings and clips will not be deleted.`}
         isOpen={isDeleteConfirmOpen}
         title="Delete edit?"
         onClose={handleCloseDeleteConfirm}

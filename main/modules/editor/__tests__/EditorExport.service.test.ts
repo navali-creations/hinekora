@@ -2,15 +2,7 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const electronMocks = vi.hoisted(() => ({
-  getPath: vi.fn<(name: string) => string>(() => process.cwd()),
-}));
-
-vi.mock("electron", () => ({
-  app: { getPath: electronMocks.getPath },
-}));
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { EditorExportClipInput, EditorProject } from "../Editor.dto";
 import { EditorTemporaryFileCleanupError } from "../Editor.files";
@@ -26,8 +18,10 @@ import {
 function createService(
   input: {
     persistProjectSnapshot?: (project: EditorProject) => EditorProject;
+    onSavedEditCommitted?: (sizeBytes: number) => void;
     removeExportFile?: typeof rm;
     renderExportWithFfmpeg?: (input: { outputPath: string }) => Promise<void>;
+    storageRoot?: string;
   } = {},
 ) {
   return new EditorExportService({
@@ -39,6 +33,7 @@ function createService(
     createMediaUrl: (exportId) => `hinekora-editor-export://${exportId}`,
     persistProjectSnapshot:
       input.persistProjectSnapshot ?? ((project) => project),
+    onSavedEditCommitted: input.onSavedEditCommitted ?? (() => undefined),
     ...(input.removeExportFile
       ? { removeExportFile: input.removeExportFile }
       : {}),
@@ -46,16 +41,13 @@ function createService(
       input.renderExportWithFfmpeg ??
       (async ({ outputPath }) => writeFile(outputPath, "rendered")),
     resolveExportSource: (source) => ({ path: `${source.id}.mp4` }),
+    resolveStorageRoot: () => input.storageRoot ?? process.cwd(),
     shutdownTimeoutMs: 100,
   });
 }
 
 afterEach(() => {
   vi.restoreAllMocks();
-});
-
-beforeEach(() => {
-  electronMocks.getPath.mockImplementation(() => process.cwd());
 });
 
 describe("EditorExportService", () => {
@@ -101,46 +93,43 @@ describe("EditorExportService", () => {
   });
 
   it("publishes only a complete new-file render", async () => {
-    const videosPath = await mkdtemp(
+    const storageRoot = await mkdtemp(
       join(tmpdir(), "hinekora-export-service-"),
     );
-    electronMocks.getPath.mockImplementation((name) =>
-      name === "videos" ? videosPath : tmpdir(),
-    );
-    const service = createService();
+    const onSavedEditCommitted = vi.fn();
+    const service = createService({ onSavedEditCommitted, storageRoot });
 
     try {
       const result = await service.exportProject(createEditorExportInput());
-      const outputDirectory = join(videosPath, "Hinekora", "Exports");
+      const outputDirectory = storageRoot;
 
       await expect(
         readFile(join(outputDirectory, result.fileName), "utf8"),
       ).resolves.toBe("rendered");
       await expect(readdir(outputDirectory)).resolves.toEqual([
+        ".hinekora-editor-exports",
         result.fileName,
       ]);
+      expect(onSavedEditCommitted).toHaveBeenCalledWith(result.sizeBytes);
     } finally {
-      await rm(videosPath, { force: true, recursive: true });
+      await rm(storageRoot, { force: true, recursive: true });
     }
   });
 
   it("keeps a valid committed video when temporary cleanup is deferred", async () => {
-    const videosPath = await mkdtemp(
+    const storageRoot = await mkdtemp(
       join(tmpdir(), "hinekora-export-service-"),
-    );
-    electronMocks.getPath.mockImplementation((name) =>
-      name === "videos" ? videosPath : tmpdir(),
     );
     const removeExportFile = vi.fn(async () => {
       throw new Error("file is locked");
     });
-    const service = createService({ removeExportFile });
+    const service = createService({ removeExportFile, storageRoot });
 
     try {
       const result = await service.exportProject(
         createEditorExportInput({ project: createEditorExportProject() }),
       );
-      const outputDirectory = join(videosPath, "Hinekora", "Exports");
+      const outputDirectory = storageRoot;
 
       await expect(
         readFile(join(outputDirectory, result.fileName), "utf8"),
@@ -148,16 +137,13 @@ describe("EditorExportService", () => {
       expect(removeExportFile).toHaveBeenCalledTimes(1);
       expect(service.getExportLifecycle().status).toBe("ready");
     } finally {
-      await rm(videosPath, { force: true, recursive: true });
+      await rm(storageRoot, { force: true, recursive: true });
     }
   });
 
   it("preserves render cleanup failures in the export lifecycle", async () => {
-    const videosPath = await mkdtemp(
+    const storageRoot = await mkdtemp(
       join(tmpdir(), "hinekora-export-service-"),
-    );
-    electronMocks.getPath.mockImplementation((name) =>
-      name === "videos" ? videosPath : tmpdir(),
     );
     const service = createService({
       renderExportWithFfmpeg: async ({ outputPath }) => {
@@ -166,6 +152,7 @@ describe("EditorExportService", () => {
           "Temporary filter files could not be removed",
         );
       },
+      storageRoot,
     });
 
     try {
@@ -177,7 +164,7 @@ describe("EditorExportService", () => {
         status: "failed",
       });
     } finally {
-      await rm(videosPath, { force: true, recursive: true });
+      await rm(storageRoot, { force: true, recursive: true });
     }
   });
 });

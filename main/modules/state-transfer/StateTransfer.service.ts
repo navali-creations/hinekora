@@ -44,6 +44,7 @@ function sanitizeImportedSettings(
 ): AppSettings {
   const sanitizedSettings = {
     ...settings,
+    editorExportStoragePath: null,
     recordingStoragePath: null,
     poe1ClientTxtPath: null,
     poe2ClientTxtPath: null,

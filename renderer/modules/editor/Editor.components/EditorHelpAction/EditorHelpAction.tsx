@@ -193,12 +193,11 @@ function EditorHelpAction() {
                     edit.
                   </li>
                   <li>
-                    <strong>Delete all edits:</strong> Removes all saved editor
-                    edits.
+                    <strong>Delete all edits:</strong> Removes all draft edits.
                   </li>
                   <li>
                     <strong>Auto-prune all but last 5:</strong> Automatically
-                    keeps only the newest saved edits.
+                    keeps only the newest draft edits.
                   </li>
                 </ul>
               </section>

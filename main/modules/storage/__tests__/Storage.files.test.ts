@@ -178,6 +178,15 @@ describe("Storage.files", () => {
           if (path.includes("readdir-throws")) {
             throw new Error("readdir failed");
           }
+          if (path.includes("export-stat-throws")) {
+            return [
+              {
+                isDirectory: () => false,
+                isFile: () => true,
+                name: "stat-throws.mp4",
+              },
+            ];
+          }
 
           return [nonFileEntry];
         },
@@ -204,6 +213,7 @@ describe("Storage.files", () => {
 
     const {
       calculatePathSize: mockedCalculatePathSize,
+      collectSavedEditFiles: mockedCollectSavedEditFiles,
       collectTemporaryFiles: mockedCollectTemporaryFiles,
       resolveManagedMediaPath: mockedResolveManagedMediaPath,
     } = await import("../Storage.files");
@@ -217,6 +227,7 @@ describe("Storage.files", () => {
     expect(mockedCalculatePathSize("not-file-or-dir")).toBe(0);
     expect(mockedCalculatePathSize("readdir-throws")).toBe(0);
     expect(mockedCalculatePathSize("directory-with-non-file")).toBe(0);
+    expect(mockedCollectSavedEditFiles(["export-stat-throws"])).toEqual([]);
     expect(mockedCollectTemporaryFiles(storageRoot, new Set())).toEqual([]);
   });
 });

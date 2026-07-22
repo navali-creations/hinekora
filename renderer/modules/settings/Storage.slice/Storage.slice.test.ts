@@ -12,6 +12,9 @@ import { createStorageSlice } from "./Storage.slice";
 function createStorageInfo(): StorageInfo {
   return {
     storagePath: "C:\\Videos\\Hinekora Recordings",
+    exportsPath: "C:\\Videos\\Hinekora Exports",
+    recordingsSizeBytes: 0,
+    exportVideosSizeBytes: 0,
     mediaSizeBytes: 0,
     appInstallationSizeBytes: 0,
     temporarySizeBytes: 0,
@@ -20,6 +23,8 @@ function createStorageInfo(): StorageInfo {
     totalTrackedSizeBytes: 0,
     diskTotalBytes: 100,
     diskFreeBytes: 50,
+    exportDiskTotalBytes: 100,
+    exportDiskFreeBytes: 50,
     appInstallationDiskTotalBytes: 100,
     appInstallationDiskFreeBytes: 50,
     databaseDiskTotalBytes: 100,

@@ -1,9 +1,11 @@
-import { resolve } from "node:path";
+import { opendir, stat } from "node:fs/promises";
+import { join, resolve } from "node:path";
 
 import type { ReplayClipsRepository } from "~/main/modules/replay-clips/ReplayClips.repository";
 import { isPathInsideOrEqual } from "~/main/utils/storage-files";
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
+import { SAVED_EDITS_DIRECTORY_NAME } from "./RecordingStorage.constants";
 import {
   getManagedStoragePaths,
   hydrateStoragePathSizes,
@@ -13,10 +15,12 @@ import {
 import type { RecordingStorageRepository } from "./RecordingStorage.repository";
 
 const storageUsagePageSize = 500;
+const savedEditUsageBatchSize = 64;
 
 interface RecordingStorageUsageTotals {
   clipsSizeBytes: number;
   recordingsSizeBytes: number;
+  savedEditsSizeBytes: number;
   usageBytes: number;
 }
 
@@ -27,10 +31,15 @@ interface ReplayClipUsageEntry {
 }
 
 interface RecordingStorageUsageCalculationInput {
+  exportRoots?: readonly string[];
   recordingRepository: RecordingStorageRepository;
   replayClipsRepository: ReplayClipsRepository;
   root: string;
   shouldAbort?: () => boolean;
+  statFile?: (path: string) => Promise<{
+    isFile: () => boolean;
+    size: number;
+  }>;
 }
 
 async function calculateRecordingStorageUsage(
@@ -110,11 +119,98 @@ async function calculateRecordingStorageUsage(
     };
   }
 
+  const savedEditsSizeBytes = await calculateExportVideosUsage(
+    input.exportRoots ?? [join(root, SAVED_EDITS_DIRECTORY_NAME)],
+    shouldAbort,
+    input.statFile ?? stat,
+  );
+  if (savedEditsSizeBytes === null) {
+    return null;
+  }
+
   return {
     clipsSizeBytes,
     recordingsSizeBytes,
-    usageBytes: clipsSizeBytes + recordingsSizeBytes,
+    savedEditsSizeBytes,
+    usageBytes: clipsSizeBytes + recordingsSizeBytes + savedEditsSizeBytes,
   };
+}
+
+async function calculateExportVideosUsage(
+  roots: readonly string[],
+  shouldAbort: () => boolean,
+  statFile: NonNullable<RecordingStorageUsageCalculationInput["statFile"]>,
+): Promise<number | null> {
+  if (shouldAbort()) {
+    return null;
+  }
+
+  let total = 0;
+  const uniqueRoots = Array.from(
+    new Map(
+      roots.map((root) => {
+        const resolvedRoot = resolve(root);
+        return [createStoragePathKey(resolvedRoot), resolvedRoot] as const;
+      }),
+    ).values(),
+  );
+  for (const root of uniqueRoots) {
+    let directory: Awaited<ReturnType<typeof opendir>>;
+    try {
+      directory = await opendir(root);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        continue;
+      }
+      throw error;
+    }
+
+    let pendingPaths: string[] = [];
+    for await (const entry of directory) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".mp4")) {
+        continue;
+      }
+      pendingPaths.push(join(directory.path, entry.name));
+      if (pendingPaths.length < savedEditUsageBatchSize) {
+        continue;
+      }
+      if (shouldAbort()) {
+        return null;
+      }
+      total += await sumFileSizes(pendingPaths, statFile);
+      pendingPaths = [];
+    }
+
+    if (shouldAbort()) {
+      return null;
+    }
+    total += await sumFileSizes(pendingPaths, statFile);
+  }
+
+  if (shouldAbort()) {
+    return null;
+  }
+  return total;
+}
+
+async function sumFileSizes(
+  paths: string[],
+  statFile: NonNullable<RecordingStorageUsageCalculationInput["statFile"]>,
+): Promise<number> {
+  const sizes = await Promise.all(
+    paths.map(async (path) => {
+      try {
+        const stats = await statFile(path);
+        return stats.isFile() ? Math.max(0, stats.size) : 0;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+          return 0;
+        }
+        throw error;
+      }
+    }),
+  );
+  return sumPositiveValues(sizes, (size) => size);
 }
 
 async function calculateReplayClipUsage(

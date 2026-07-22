@@ -107,16 +107,19 @@ async function createRecordingStorageInventory(input: {
 function selectRecordingStorageCleanupCandidates(input: {
   inventory: RecordingStorageInventory;
   limitBytes: number;
+  nonDeletableSizeBytes?: number;
   options?: RecordingStorageRetentionOptions;
 }): RecordingStorageCleanupSelection {
   const { inventory, limitBytes } = input;
+  const usageBytes =
+    inventory.usageBytes + Math.max(0, input.nonDeletableSizeBytes ?? 0);
   const targetUsageBytes = limitBytes > 0 ? Math.floor(limitBytes * 0.95) : 0;
-  if (limitBytes <= 0 || inventory.usageBytes <= limitBytes) {
+  if (limitBytes <= 0 || usageBytes <= limitBytes) {
     return {
       files: [],
       hasMoreCandidates: false,
       targetUsageBytes,
-      usageBytes: inventory.usageBytes,
+      usageBytes,
     };
   }
 
@@ -181,7 +184,7 @@ function selectRecordingStorageCleanupCandidates(input: {
     files,
     hasMoreCandidates,
     targetUsageBytes,
-    usageBytes: inventory.usageBytes,
+    usageBytes,
   };
 }
 

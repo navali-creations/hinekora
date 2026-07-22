@@ -15,7 +15,7 @@ import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 interface CreateEditorExportOutputPathInput {
   fileName: string;
-  videosPath: string;
+  storageRoot: string;
 }
 
 interface CreateEditorClipboardOutputPathInput {
@@ -33,7 +33,7 @@ interface CleanupEditorClipboardOutputDirectoryInput {
 interface CommitEditorExportOutputPathInput {
   fileName: string;
   temporaryPath: string;
-  videosPath: string;
+  storageRoot: string;
 }
 
 interface CreateEditorExportStagingOutputPathInput {
@@ -57,7 +57,7 @@ const editorClipboardMaxFiles = 4;
 const editorExportCleanupBatchSize = 16;
 const editorExportCleanupMaxEntries = 256;
 const editorExportCleanupMaxFiles = 64;
-const editorExportCleanupMaxStorageRoots = 2;
+const editorExportCleanupMaxStorageRoots = 3;
 const editorExportStagingDirectoryName = ".hinekora-editor-exports";
 const editorExportSessionId = randomUUID();
 const editorTemporaryFileUuidPattern =
@@ -247,8 +247,8 @@ function resolveEditorClipboardOutputDirectory(tempPath: string): string {
   return join(tempPath, ...editorClipboardDirectoryParts);
 }
 
-function resolveEditorExportOutputDirectory(videosPath: string): string {
-  return join(videosPath, "Hinekora", "Exports");
+function resolveEditorExportOutputDirectory(storageRoot: string): string {
+  return storageRoot;
 }
 
 function resolveEditorExportStagingRoot(storageRoot: string): string {
@@ -299,9 +299,9 @@ async function fileExists(path: string): Promise<boolean> {
 
 async function createEditorExportOutputPathCandidates(input: {
   fileName: string;
-  videosPath: string;
+  storageRoot: string;
 }): Promise<{ next: () => string }> {
-  const outputDirectory = resolveEditorExportOutputDirectory(input.videosPath);
+  const outputDirectory = resolveEditorExportOutputDirectory(input.storageRoot);
   await mkdir(outputDirectory, { recursive: true });
   const normalizedFileName = normalizeEditorExportFileName(input.fileName);
   const parsed = parse(normalizedFileName);

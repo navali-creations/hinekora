@@ -164,7 +164,7 @@ function SavedEditsPanel({ isScopeReady = true, scope }: SavedEditsPanelProps) {
   return (
     <section className="col-span-12 flex min-h-0 flex-col overflow-hidden rounded-lg bg-base-200">
       <MediaLibraryTable
-        emptyMessage="No saved edits yet."
+        emptyMessage="No draft edits yet."
         getCellClassName={getCellClassName}
         getHeaderClassName={getHeaderClassName}
         onRowClick={handleRowClick}

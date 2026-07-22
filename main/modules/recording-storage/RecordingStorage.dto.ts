@@ -7,6 +7,7 @@ const RecordingStorageUsageSchema = z.object({
   diskFreeBytes: z.number().finite().nonnegative().nullable(),
   lowDiskSpace: z.boolean(),
   recordingsSizeBytes: z.number().finite().nonnegative(),
+  savedEditsSizeBytes: z.number().finite().nonnegative(),
 });
 const RecordingStorageUsageSnapshotSchema =
   RecordingStorageUsageSchema.nullable();

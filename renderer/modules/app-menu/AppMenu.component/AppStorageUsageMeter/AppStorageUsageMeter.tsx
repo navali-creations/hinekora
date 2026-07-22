@@ -72,7 +72,9 @@ function AppStorageUsageMeter() {
   }, [isAppHydrated, isUsageLoading, refreshUsage, usage, usageError]);
 
   const usedBytes = usage
-    ? usage.clipsSizeBytes + usage.recordingsSizeBytes
+    ? usage.clipsSizeBytes +
+      usage.recordingsSizeBytes +
+      usage.savedEditsSizeBytes
     : null;
   const diskFreeBytes = usage?.diskFreeBytes ?? null;
   const hasConfiguredStorageLimit = recordingMaxStorageGb > 0;

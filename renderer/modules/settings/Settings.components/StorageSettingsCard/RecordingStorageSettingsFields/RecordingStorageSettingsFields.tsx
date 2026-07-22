@@ -10,6 +10,7 @@ import {
 } from "~/renderer/store";
 
 import { defaultRecordingMaxStorageGb } from "~/types";
+import { ExportStoragePathField } from "../ExportStoragePathField/ExportStoragePathField";
 import { getRecordingStorageSettingsError } from "./RecordingStorageSettingsFields.utils";
 
 function RecordingStorageSettingsFields() {
@@ -151,6 +152,10 @@ function RecordingStorageSettingsFields() {
               <FolderOpen size={16} />
             </button>
           </div>
+          <span className="text-base-content/55 text-xs">
+            Full recordings, death clips, and manual replays created by
+            Hinekora.
+          </span>
         </label>
         <label className="grid gap-1.5 text-primary text-[0.8125rem]">
           <span className="inline-flex items-center gap-1">
@@ -177,6 +182,7 @@ function RecordingStorageSettingsFields() {
           />
         </label>
       </div>
+      <ExportStoragePathField />
     </div>
   );
 }

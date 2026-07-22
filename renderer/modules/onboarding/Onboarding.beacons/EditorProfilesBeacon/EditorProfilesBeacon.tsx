@@ -7,19 +7,19 @@ function EditorProfilesBeacon(props: PopoverComponentProps) {
   return (
     <Popover
       title="Editor profiles"
-      subtitle="Switch between saved edits without losing your timeline work."
+      subtitle="Switch between draft edits without losing your timeline work."
       {...props}
     >
       <div className="space-y-3">
         <div className="space-y-2">
           <p className="flex items-center font-semibold text-primary">
-            Saved Edits
+            Draft Edits
           </p>
           <ul className="space-y-2 text-base-content/80 text-sm">
             <li className="flex items-start gap-2">
               <span className="mt-0.5 text-accent">•</span>
               <span>
-                Pick a saved edit to reopen its clips, trims, gaps, and history.
+                Pick a draft edit to reopen its clips, trims, gaps, and history.
               </span>
             </li>
             <li className="flex items-start gap-2">

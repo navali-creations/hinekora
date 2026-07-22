@@ -289,7 +289,7 @@ test("restores the last selected My Media filter after leaving the editor", asyn
     .poll(async () => (await getEditorE2ECalls(page)).settingsUpdates)
     .toContainEqual({ editorMediaFilter: "manual-replay" });
 
-  await page.getByRole("link", { name: "Saved Edits", exact: true }).click();
+  await page.getByRole("link", { name: "Draft Edits", exact: true }).click();
   await expect(page.getByLabel("Library league")).toHaveValue("Standard");
   await page.getByRole("link", { name: "Editor", exact: true }).click();
 
@@ -484,7 +484,7 @@ test("covers saved edits route library interactions", async ({ page }) => {
   await setupEditorE2E(page);
   await page.goto("/#/saved-edits");
   await expect(
-    page.getByRole("heading", { name: "Saved Edits" }),
+    page.getByRole("heading", { name: "Draft Edits" }),
   ).toBeVisible();
 
   await page.getByLabel("Library league").selectOption("Standard");
@@ -539,7 +539,7 @@ test("covers saved edits route library interactions", async ({ page }) => {
 
   await page.goto("/#/saved-edits");
   await page.getByLabel("Library league").selectOption("Standard");
-  await page.getByLabel("Delete saved edit asset-1.mp4 edit").click();
+  await page.getByLabel("Delete draft edit asset-1.mp4 edit").click();
   await expect(
     page.getByRole("heading", { name: "Delete edit?" }),
   ).toBeVisible();
@@ -570,6 +570,21 @@ test("covers saved edits route library interactions", async ({ page }) => {
       return calls.savedEditDeleteAllCount;
     })
     .toBe(1);
+});
+
+test("opens the completed Saved Edits library from the sidebar", async ({
+  page,
+}) => {
+  await setupEditorE2E(page);
+  await page.goto("/#/editor");
+
+  await page.getByRole("link", { name: "Saved Edits", exact: true }).click();
+
+  await expect(page).toHaveURL(/#\/saved-videos/);
+  await expect(
+    page.getByRole("heading", { name: "Saved Edits", exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("No saved edit videos yet.")).toBeVisible();
 });
 
 test("covers copy and export dialog actions", async ({ page }) => {
@@ -720,9 +735,9 @@ test("keeps background export progress visible and confirms cancellation", async
     })
     .toBe(1);
 
-  await page.getByRole("link", { name: "Saved Edits" }).click();
+  await page.getByRole("link", { name: "Draft Edits" }).click();
   await expect(
-    page.getByRole("heading", { name: "Saved Edits" }),
+    page.getByRole("heading", { name: "Draft Edits" }),
   ).toBeVisible();
   await expect(backgroundStatus).toBeVisible();
 
@@ -771,7 +786,7 @@ test("keeps a completed background export available from the sidebar", async ({
   await page.getByRole("button", { name: "Save" }).click();
   await page.getByRole("button", { name: "Save video" }).click();
   await page.getByRole("button", { exact: true, name: "Keep editing" }).click();
-  await page.getByRole("link", { name: "Saved Edits" }).click();
+  await page.getByRole("link", { name: "Draft Edits" }).click();
 
   const backgroundStatus = page.getByRole("region", {
     name: "Background video processing",

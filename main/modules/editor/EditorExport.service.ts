@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto";
 import { link, rename, rm, stat } from "node:fs/promises";
 import { basename, dirname } from "node:path";
 
-import { app } from "electron";
-
 import {
   createSafePathLogFields,
   logError,
@@ -66,6 +64,7 @@ interface EditorExportServiceDependencies {
   createMediaUrl: (exportId: string) => string;
   linkExportFile?: typeof link;
   persistProjectSnapshot: (project: EditorProject) => EditorProject;
+  onSavedEditCommitted: (sizeBytes: number) => void;
   removeExportFile?: typeof rm;
   renameExportFile?: typeof rename;
   renderExportWithFfmpeg: EditorExportRenderer;
@@ -73,6 +72,7 @@ interface EditorExportServiceDependencies {
     path: string;
     storageRoot?: string;
   };
+  resolveStorageRoot: () => string;
   shutdownTimeoutMs: number;
   statExportFile?: (path: string) => Promise<{ size: number }>;
 }
@@ -178,7 +178,7 @@ class EditorExportService {
     let tempOutputPath: string | null = null;
     let project = input.project;
     let previewClips: EditorExportPreviewClip[] = [];
-    const videosPath = app.getPath("videos");
+    const storageRoot = this.dependencies.resolveStorageRoot();
 
     try {
       project = this.dependencies.persistProjectSnapshot(project);
@@ -230,14 +230,14 @@ class EditorExportService {
         ? overwriteSource.path
         : await createEditorExportOutputPath({
             fileName: input.fileName,
-            videosPath,
+            storageRoot,
           });
       activeExport.abortController.signal.throwIfAborted();
       const stagingOutput = await createEditorExportStagingOutputPath({
         outputPath,
         storageRoot:
           overwriteSource?.storageRoot ??
-          (overwriteSource ? dirname(outputPath) : videosPath),
+          (overwriteSource ? dirname(outputPath) : storageRoot),
       });
       stagingDirectoryPath = stagingOutput.directoryPath;
       tempOutputPath = stagingOutput.outputPath;
@@ -318,13 +318,16 @@ class EditorExportService {
         outputPath = await commitEditorExportOutputPath(
           {
             fileName: input.fileName,
+            storageRoot,
             temporaryPath: tempOutputPath,
-            videosPath,
           },
           this.dependencies.linkExportFile ?? link,
         );
       }
       tempOutputPath = null;
+      if (!overwriteSource) {
+        this.dependencies.onSavedEditCommitted(stats.size);
+      }
       const completedStagingDirectory = stagingDirectoryPath;
       stagingDirectoryPath = null;
       try {

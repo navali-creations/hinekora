@@ -45,6 +45,7 @@ import type { CropEditorSlice } from "~/renderer/modules/crop-editor/CropEditor.
 import type { EditorSlice } from "~/renderer/modules/editor/Editor.slice/Editor.slice.types";
 import type { OnboardingSlice } from "~/renderer/modules/onboarding";
 import type { SavedEditsSlice } from "~/renderer/modules/saved-edits";
+import type { SavedVideosSlice } from "~/renderer/modules/saved-videos";
 import type { StorageSlice } from "~/renderer/modules/settings/Storage.slice/Storage.slice";
 import type { UpdaterSlice } from "~/renderer/modules/updater/Updater.slice/Updater.slice";
 
@@ -413,6 +414,7 @@ export type BoundStore = AppMenuSlice &
   UpdaterSlice &
   ChangelogSlice &
   SavedEditsSlice &
+  SavedVideosSlice &
   StateTransferSlice & {
     hydrate: () => Promise<void>;
     isHydrated: boolean;

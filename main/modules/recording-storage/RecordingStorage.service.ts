@@ -7,6 +7,10 @@ import { app, BrowserWindow, shell } from "electron";
 
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
+import {
+  resolveEditorExportLibraryRoots,
+  resolveEditorExportStorageRoot,
+} from "~/main/modules/editor/EditorExport.paths";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { normalizeMediaLibraryPageQuery } from "~/main/modules/media-library/MediaLibrary.utils";
 import { createRunRecordingMediaUrl } from "~/main/modules/media-protocol";
@@ -166,6 +170,7 @@ class RecordingStorageService {
   private readonly cleanupScheduler: RecordingStorageCleanupScheduler;
   private settingsUnsubscribe: (() => void) | null = null;
   private previousStorageSettings: {
+    exportRoot: string;
     limitGigabytes: number;
     root: string;
   } | null = null;
@@ -231,6 +236,9 @@ class RecordingStorageService {
     const settingsStore = SettingsStoreService.getInstance();
     const settings = settingsStore.get();
     this.previousStorageSettings = {
+      exportRoot: this.resolveExportStorageRoot(
+        settings.editorExportStoragePath,
+      ),
       limitGigabytes: settings.recordingMaxStorageGb,
       root: this.resolveStorageRoot(settings.recordingStoragePath),
     };
@@ -281,6 +289,7 @@ class RecordingStorageService {
           activityGeneration !==
             RecordingStorageService.performanceSensitiveActivityGeneration;
         totals = await calculateRecordingStorageUsage({
+          exportRoots: this.resolveExportLibraryRoots(root, settings),
           recordingRepository: this.repository,
           replayClipsRepository: this.replayClipsRepository,
           root,
@@ -297,6 +306,7 @@ class RecordingStorageService {
         root,
         totals.clipsSizeBytes,
         totals.recordingsSizeBytes,
+        totals.savedEditsSizeBytes,
       );
       this.usageCache = { calculatedAtMs: Date.now(), root, usage };
       this.cleanupScheduler.resetEstimatedUsageGrowth();
@@ -357,7 +367,10 @@ class RecordingStorageService {
     );
   }
 
-  noteUsageDelta(category: "clips" | "recordings", deltaBytes: number): void {
+  noteUsageDelta(
+    category: "clips" | "recordings" | "saved-edits",
+    deltaBytes: number,
+  ): void {
     if (!Number.isFinite(deltaBytes) || deltaBytes === 0) {
       return;
     }
@@ -378,6 +391,9 @@ class RecordingStorageService {
       category === "recordings"
         ? Math.max(0, usage.recordingsSizeBytes + deltaBytes)
         : usage.recordingsSizeBytes,
+      category === "saved-edits"
+        ? Math.max(0, usage.savedEditsSizeBytes + deltaBytes)
+        : usage.savedEditsSizeBytes,
     );
     this.publishUsageChanged(nextUsage, root);
   }
@@ -830,8 +846,11 @@ class RecordingStorageService {
     const usageTotals = {
       clipsSizeBytes: usageSnapshot.clipsSizeBytes,
       recordingsSizeBytes: usageSnapshot.recordingsSizeBytes,
+      savedEditsSizeBytes: usageSnapshot.savedEditsSizeBytes,
       usageBytes:
-        usageSnapshot.clipsSizeBytes + usageSnapshot.recordingsSizeBytes,
+        usageSnapshot.clipsSizeBytes +
+        usageSnapshot.recordingsSizeBytes +
+        usageSnapshot.savedEditsSizeBytes,
     };
     if (limitBytes <= 0 || usageTotals.usageBytes <= limitBytes) {
       logInfo(RECORDING_STORAGE_LOG_SCOPE, "Storage cleanup skipped", {
@@ -843,6 +862,7 @@ class RecordingStorageService {
           root,
           usageTotals.clipsSizeBytes,
           usageTotals.recordingsSizeBytes,
+          usageTotals.savedEditsSizeBytes,
         ),
         root,
       );
@@ -858,6 +878,7 @@ class RecordingStorageService {
     const selection = selectRecordingStorageCleanupCandidates({
       inventory,
       limitBytes,
+      nonDeletableSizeBytes: usageTotals.savedEditsSizeBytes,
       options,
     });
 
@@ -874,7 +895,11 @@ class RecordingStorageService {
         usageBytes: selection.usageBytes,
       };
       this.publishUsageChanged(
-        this.createUsageFromInventory(inventory, root),
+        this.createUsageFromInventory(
+          inventory,
+          root,
+          usageTotals.savedEditsSizeBytes,
+        ),
         root,
       );
 
@@ -945,6 +970,7 @@ class RecordingStorageService {
       root,
       Math.max(0, inventory.clipsSizeBytes - freedClipBytes),
       Math.max(0, inventory.recordingsSizeBytes - recordingUsageReductionBytes),
+      usageTotals.savedEditsSizeBytes,
     );
     this.publishUsageChanged(usage, root);
     this.publishRecordingsChanged(changedRecordingIds);
@@ -1206,6 +1232,24 @@ class RecordingStorageService {
     return resolveRecordingStorageRoot(configuredPath, app.getPath("videos"));
   }
 
+  private resolveExportStorageRoot(configuredPath: string | null): string {
+    return resolveEditorExportStorageRoot(
+      configuredPath,
+      app.getPath("videos"),
+    );
+  }
+
+  private resolveExportLibraryRoots(
+    recordingStorageRoot: string,
+    settings: ReturnType<SettingsStoreService["get"]>,
+  ): string[] {
+    return resolveEditorExportLibraryRoots({
+      configuredExportPath: settings.editorExportStoragePath,
+      recordingStorageRoot,
+      videosPath: app.getPath("videos"),
+    });
+  }
+
   private async createStorageInventory(
     root: string,
   ): Promise<RecordingStorageInventory> {
@@ -1374,11 +1418,13 @@ class RecordingStorageService {
   private createUsageFromInventory(
     inventory: RecordingStorageInventory,
     root: string,
+    savedEditsSizeBytes: number,
   ): RecordingStorageUsage {
     return this.createUsage(
       root,
       inventory.clipsSizeBytes,
       inventory.recordingsSizeBytes,
+      savedEditsSizeBytes,
     );
   }
 
@@ -1386,6 +1432,7 @@ class RecordingStorageService {
     root: string,
     clipsSizeBytes: number,
     recordingsSizeBytes: number,
+    savedEditsSizeBytes: number,
   ): RecordingStorageUsage {
     const disk = calculateDiskUsage(root);
     const diskSpaceAvailable = disk.totalBytes > 0;
@@ -1397,6 +1444,7 @@ class RecordingStorageService {
         diskSpaceAvailable &&
         disk.freeBytes < lowDiskSpaceWarningThresholdBytes,
       recordingsSizeBytes,
+      savedEditsSizeBytes,
     };
   }
 
@@ -1404,6 +1452,9 @@ class RecordingStorageService {
     settings: ReturnType<SettingsStoreService["get"]>,
   ): void {
     const next = {
+      exportRoot: this.resolveExportStorageRoot(
+        settings.editorExportStoragePath,
+      ),
       limitGigabytes: settings.recordingMaxStorageGb,
       root: this.resolveStorageRoot(settings.recordingStoragePath),
     };
@@ -1415,6 +1466,7 @@ class RecordingStorageService {
     }
 
     const rootChanged = previous.root !== next.root;
+    const exportRootChanged = previous.exportRoot !== next.exportRoot;
     const limitReduced =
       next.limitGigabytes > 0 &&
       (previous.limitGigabytes === 0 ||
@@ -1423,7 +1475,10 @@ class RecordingStorageService {
       this.invalidateRecordingLibrarySyncCache();
       this.scheduleStagedDeletionRecovery(previous.root);
     }
-    if (rootChanged || limitReduced) {
+    if (exportRootChanged) {
+      this.invalidateUsageCache();
+    }
+    if (rootChanged || exportRootChanged || limitReduced) {
       this.scheduleCleanup({ force: true });
       this.scheduleStagedDeletionRecovery(next.root);
     }
@@ -1495,7 +1550,9 @@ class RecordingStorageService {
 
     return {
       cachedUsageBytes: cachedUsage
-        ? cachedUsage.clipsSizeBytes + cachedUsage.recordingsSizeBytes
+        ? cachedUsage.clipsSizeBytes +
+          cachedUsage.recordingsSizeBytes +
+          cachedUsage.savedEditsSizeBytes
         : null,
       limitBytes: settings.recordingMaxStorageGb * bytesPerGigabyte,
     };

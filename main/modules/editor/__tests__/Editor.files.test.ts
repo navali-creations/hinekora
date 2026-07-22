@@ -32,12 +32,12 @@ describe("editor clipboard files", () => {
     try {
       const firstOutput = await createEditorExportOutputPath({
         fileName: 'bad<>:"|?*\u0000 name.mov',
-        videosPath: tempPath,
+        storageRoot: tempPath,
       });
       await writeFile(firstOutput, "existing");
       const secondOutput = await createEditorExportOutputPath({
         fileName: 'bad<>:"|?*\u0000 name.mov',
-        videosPath: tempPath,
+        storageRoot: tempPath,
       });
       const clipboardPath = await createEditorClipboardOutputPath({
         fileName: "   ",
@@ -53,7 +53,7 @@ describe("editor clipboard files", () => {
         storageRoot: tempPath,
       });
 
-      expect(firstOutput).toContain(join("Hinekora", "Exports"));
+      expect(resolveEditorExportOutputDirectory(tempPath)).toBe(tempPath);
       expect(firstOutput).toMatch(/bad name\.mp4$/);
       expect(secondOutput).toMatch(/bad name \(2\)\.mp4$/);
       expect(clipboardPath).toContain(join("Hinekora", "Editor Clipboard"));
@@ -72,10 +72,10 @@ describe("editor clipboard files", () => {
   });
 
   it("atomically commits a collision-free export destination", async () => {
-    const videosPath = await mkdtemp(join(tmpdir(), "hinekora-editor-files-"));
+    const storageRoot = await mkdtemp(join(tmpdir(), "hinekora-editor-files-"));
 
     try {
-      const outputDirectory = resolveEditorExportOutputDirectory(videosPath);
+      const outputDirectory = resolveEditorExportOutputDirectory(storageRoot);
       await mkdir(outputDirectory, { recursive: true });
       const firstTemporaryPath = join(outputDirectory, ".first.mp4");
       const secondTemporaryPath = join(outputDirectory, ".second.mp4");
@@ -84,12 +84,12 @@ describe("editor clipboard files", () => {
       const firstOutput = await commitEditorExportOutputPath({
         fileName: "render.mp4",
         temporaryPath: firstTemporaryPath,
-        videosPath,
+        storageRoot,
       });
       const secondOutput = await commitEditorExportOutputPath({
         fileName: "render.mp4",
         temporaryPath: secondTemporaryPath,
-        videosPath,
+        storageRoot,
       });
 
       expect(firstOutput).toMatch(/render\.mp4$/);
@@ -99,12 +99,12 @@ describe("editor clipboard files", () => {
         "second render",
       );
     } finally {
-      await rm(videosPath, { force: true, recursive: true });
+      await rm(storageRoot, { force: true, recursive: true });
     }
   });
 
   it("surfaces export destination commit failures", async () => {
-    const videosPath = await mkdtemp(join(tmpdir(), "hinekora-editor-files-"));
+    const storageRoot = await mkdtemp(join(tmpdir(), "hinekora-editor-files-"));
     const linkFile = (async () => {
       const error = new Error("access denied") as NodeJS.ErrnoException;
       error.code = "EACCES";
@@ -116,14 +116,14 @@ describe("editor clipboard files", () => {
         commitEditorExportOutputPath(
           {
             fileName: "render.mp4",
-            temporaryPath: join(videosPath, ".render.mp4"),
-            videosPath,
+            temporaryPath: join(storageRoot, ".render.mp4"),
+            storageRoot,
           },
           linkFile,
         ),
       ).rejects.toThrow("access denied");
     } finally {
-      await rm(videosPath, { force: true, recursive: true });
+      await rm(storageRoot, { force: true, recursive: true });
     }
   });
 
@@ -185,7 +185,10 @@ describe("editor clipboard files", () => {
         ].sort(),
       );
       await expect(readdir(recordingStagingRoot)).resolves.toEqual([]);
-      await expect(readdir(outputDirectory)).resolves.toEqual(["saved.mp4"]);
+      await expect(readdir(outputDirectory)).resolves.toEqual([
+        ".hinekora-editor-exports",
+        "saved.mp4",
+      ]);
     } finally {
       await rm(videosPath, { force: true, recursive: true });
       await rm(recordingStoragePath, { force: true, recursive: true });

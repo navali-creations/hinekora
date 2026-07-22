@@ -3,6 +3,8 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const storeMocks = vi.hoisted(() => ({
+  editorExportStatus: "idle",
+  editorExportStoragePath: "C:\\Exports",
   recorderStatus: null as {
     isStartingRecording?: boolean;
     isStoppingRecording?: boolean;
@@ -19,6 +21,9 @@ const storeMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("~/renderer/store", () => ({
+  useEditorSelector: (
+    selector: (editor: { exportState: { status: string } }) => unknown,
+  ) => selector({ exportState: { status: storeMocks.editorExportStatus } }),
   useManagedRecorderSelector: (
     selector: (managedRecorder: {
       status: typeof storeMocks.recorderStatus;
@@ -36,6 +41,7 @@ vi.mock("~/renderer/store", () => ({
     selector: (settings: {
       update: typeof storeMocks.updateSettings;
       value: {
+        editorExportStoragePath: string;
         recordingMaxStorageGb: number;
         recordingStoragePath: string;
       };
@@ -44,6 +50,7 @@ vi.mock("~/renderer/store", () => ({
     selector({
       update: storeMocks.updateSettings,
       value: {
+        editorExportStoragePath: storeMocks.editorExportStoragePath,
         recordingMaxStorageGb: storeMocks.recordingMaxStorageGb,
         recordingStoragePath: storeMocks.recordingStoragePath,
       },
@@ -70,6 +77,8 @@ beforeEach(() => {
   document.body.append(container);
   root = createRoot(container);
   storeMocks.recorderStatus = null;
+  storeMocks.editorExportStatus = "idle";
+  storeMocks.editorExportStoragePath = "C:\\Exports";
   storeMocks.recordingMaxStorageGb = 48;
   storeMocks.recordingStoragePath = "C:\\Recordings";
   storeMocks.setError.mockReset();
@@ -210,13 +219,13 @@ describe("RecordingStorageSettingsFields", () => {
       root.render(<RecordingStorageSettingsFields />);
     });
 
-    expect(
-      [
-        ...container.querySelectorAll<HTMLInputElement | HTMLButtonElement>(
-          "input, button",
-        ),
-      ].every((control) => control.disabled),
-    ).toBe(true);
+    const inputs = [...container.querySelectorAll("input")];
+    const buttons = [...container.querySelectorAll("button")];
+    expect(inputs[0]?.disabled).toBe(true);
+    expect(inputs[1]?.disabled).toBe(true);
+    expect(buttons[0]?.disabled).toBe(true);
+    expect(inputs[2]?.disabled).toBe(false);
+    expect(buttons[1]?.disabled).toBe(false);
   });
 });
 

@@ -112,7 +112,7 @@ class SavedEditsService {
     try {
       const project = this.projectRepository.get(projectId);
       if (!project) {
-        return { status: "unavailable", error: "Saved edit is not available" };
+        return { status: "unavailable", error: "Draft edit is not available" };
       }
 
       const timelineAssets = resolveEditorProjectTimelineAssets(project);
@@ -123,7 +123,7 @@ class SavedEditsService {
       if (!asset) {
         return {
           status: "unavailable",
-          error: "Saved edit has no source media",
+          error: "Draft edit has no source media",
         };
       }
 
@@ -190,7 +190,7 @@ class SavedEditsService {
       if (!sourcePath) {
         return {
           status: "unavailable",
-          error: "Saved edit source media is not available",
+          error: "Draft edit source media is not available",
         };
       }
 
@@ -203,7 +203,7 @@ class SavedEditsService {
     if (!result.ok) {
       return {
         status: "unavailable",
-        error: result.error ?? "Saved edit source media is not available",
+        error: result.error ?? "Draft edit source media is not available",
       };
     }
 

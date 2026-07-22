@@ -79,12 +79,13 @@ test("updates deferred storage usage without blocking app startup", async ({
     diskFreeBytes: 89 * GIGABYTE,
     lowDiskSpace: false,
     recordingsSizeBytes: 10 * GIGABYTE,
+    savedEditsSizeBytes: 2 * GIGABYTE,
   });
 
   const storageMeter = page.getByRole("button", {
-    name: "11 GB used of 50 GB. Open data and storage settings",
+    name: "13 GB used of 50 GB. Open data and storage settings",
   });
-  await expect(storageMeter).toHaveText("11 GB / 50 GB");
+  await expect(storageMeter).toHaveText("13 GB / 50 GB");
   await expect(storageMeter).toHaveAttribute("aria-busy", "false");
 });
 
@@ -389,5 +390,17 @@ async function expectDataStorageSettings(page: Page): Promise<void> {
   ).toHaveAttribute("aria-selected", "true");
   await expect(
     page.getByText("Recording Storage", { exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: /^Recording folder/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("textbox", { name: /^Exports folder/ }),
+  ).toBeVisible();
+  await expect(
+    page.getByText(
+      "Finished videos saved from the editor. These are separate from your recordings and clips.",
+      { exact: true },
+    ),
   ).toBeVisible();
 }

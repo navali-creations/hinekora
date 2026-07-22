@@ -210,6 +210,7 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 5,
       lowDiskSpace: false,
       recordingsSizeBytes: 6,
+      savedEditsSizeBytes: 0,
     };
     RecordingStorageService.setPerformanceSensitiveActivityActive(true);
 
@@ -271,6 +272,7 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 1,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 0,
     });
     await deferredUsage;
   });
@@ -352,6 +354,7 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 2,
       lowDiskSpace: false,
       recordingsSizeBytes: 3,
+      savedEditsSizeBytes: 0,
     };
 
     expect(service.getUsageSnapshot()).toBeNull();
@@ -380,6 +383,7 @@ describe("RecordingStorageService", () => {
         diskFreeBytes: 2,
         lowDiskSpace: false,
         recordingsSizeBytes: 3,
+        savedEditsSizeBytes: 0,
       },
       root,
     );
@@ -423,6 +427,7 @@ describe("RecordingStorageService", () => {
     const usage = service.getUsage();
     await vi.runAllTimersAsync();
     await usage;
+    await vi.runAllTimersAsync();
     vi.useRealTimers();
     await vi.waitFor(() => expect(existsSync(recordingPath)).toBe(true));
 
@@ -658,6 +663,43 @@ describe("RecordingStorageService", () => {
     expect(scheduleCleanup).not.toHaveBeenCalled();
   });
 
+  it("invalidates usage and schedules cleanup when the exports folder changes", () => {
+    let handleSettingsChange:
+      | ((next: ReturnType<SettingsStoreService["get"]>) => void)
+      | null = null;
+    const settings = {
+      ...createDefaultSettings(),
+      recordingStoragePath: root,
+      recordingMaxStorageGb: 1,
+    };
+    vi.mocked(SettingsStoreService.getInstance).mockReturnValue({
+      get: () => settings,
+      onDidChange: (
+        listener: (next: ReturnType<SettingsStoreService["get"]>) => void,
+      ) => {
+        handleSettingsChange = listener;
+        return vi.fn();
+      },
+    } as unknown as SettingsStoreService);
+    service = new RecordingStorageService();
+    const scheduleCleanup = vi.spyOn(service, "scheduleCleanup");
+    const internals = service as unknown as {
+      usageCache: unknown;
+      usageGeneration: number;
+    };
+    internals.usageCache = { cached: true };
+    const previousGeneration = internals.usageGeneration;
+
+    handleSettingsChange!({
+      ...settings,
+      editorExportStoragePath: join(root, "exports"),
+    });
+
+    expect(internals.usageCache).toBeNull();
+    expect(internals.usageGeneration).toBe(previousGeneration + 1);
+    expect(scheduleCleanup).toHaveBeenCalledWith({ force: true });
+  });
+
   it("coalesces scheduled cleanup requests and their protected paths", async () => {
     vi.useFakeTimers();
     const cleanup = vi.spyOn(service, "cleanup").mockResolvedValue({
@@ -797,6 +839,7 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 3,
       lowDiskSpace: false,
       recordingsSizeBytes: 4,
+      savedEditsSizeBytes: 0,
     };
     service.publishUsageChanged(knownUsage, root);
     service.publishRecordingsChanged(["recording-1"]);
@@ -827,6 +870,7 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 0,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 0,
     };
     const getUsage = vi
       .spyOn(service, "getUsage")
@@ -862,6 +906,7 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 0,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 0,
     };
 
     service.publishUsageChanged(usage, root);
@@ -888,14 +933,16 @@ describe("RecordingStorageService", () => {
 
     service.noteUsageDelta("clips", 12);
     service.noteUsageDelta("recordings", 7);
+    service.noteUsageDelta("saved-edits", 5);
 
     await expect(service.getUsage()).resolves.toMatchObject({
       clipsSizeBytes: 12,
       diskFreeBytes: 321,
       recordingsSizeBytes: 7,
+      savedEditsSizeBytes: 5,
     });
     expect(calculateUsage).not.toHaveBeenCalled();
-    expect(calculateDiskUsage).toHaveBeenCalledTimes(2);
+    expect(calculateDiskUsage).toHaveBeenCalledTimes(3);
   });
 
   it("distinguishes an unavailable disk probe from zero free space", async () => {
@@ -1007,11 +1054,13 @@ describe("RecordingStorageService", () => {
     let resolveFirstCalculation!: (value: {
       clipsSizeBytes: number;
       recordingsSizeBytes: number;
+      savedEditsSizeBytes: number;
       usageBytes: number;
     }) => void;
     const firstCalculation = new Promise<{
       clipsSizeBytes: number;
       recordingsSizeBytes: number;
+      savedEditsSizeBytes: number;
       usageBytes: number;
     }>((resolvePromise) => {
       resolveFirstCalculation = resolvePromise;
@@ -1044,6 +1093,7 @@ describe("RecordingStorageService", () => {
     resolveFirstCalculation({
       clipsSizeBytes: 0,
       recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 0,
       usageBytes: 0,
     });
 
@@ -2342,6 +2392,7 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 0,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 0,
     });
     const internals = service as unknown as {
       createStorageInventory: (
@@ -2736,6 +2787,7 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 0,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 0,
     });
     vi.spyOn(ipcService, "listRecordingLibrary").mockReturnValue({
       availableLeagues: ["Standard"],
@@ -2792,6 +2844,7 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 0,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 0,
     });
     getUsage.mockReturnValueOnce(null);
     expect(

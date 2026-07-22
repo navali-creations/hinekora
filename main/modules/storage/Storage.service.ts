@@ -5,6 +5,10 @@ import { app } from "electron";
 
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
+import {
+  resolveEditorExportLibraryRoots,
+  resolveEditorExportStorageRoot,
+} from "~/main/modules/editor/EditorExport.paths";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { recordingQualityBaseBitrates } from "~/main/modules/managed-recorder/ManagedRecorder.utils";
@@ -43,6 +47,7 @@ import {
   calculateDiskUsage,
   calculatePathSize,
   collectRecordingFiles,
+  collectSavedEditFiles,
   collectTemporaryFiles,
   getExistingFileSize,
   parseResolution,
@@ -54,7 +59,11 @@ import {
 import { StorageFileDeletionService } from "./StorageFileDeletion.service";
 
 const STORAGE_LOG_SCOPE = "storage";
-const STORAGE_PATH_ANCHORS = ["Hinekora Recordings", "Hinekora"];
+const STORAGE_PATH_ANCHORS = [
+  "Hinekora Recordings",
+  "Hinekora Exports",
+  "Hinekora",
+];
 const FALLBACK_REWIND_BUFFER_RESOLUTION = { width: 1920, height: 1080 };
 
 interface UsageBucket {
@@ -100,10 +109,14 @@ class StorageService {
   getInfo(): StorageInfo {
     const storageRoot = this.resolveStorageRoot();
     this.ensureStorageRoot(storageRoot);
+    const exportStorageRoot = this.resolveExportStorageRoot();
+    this.ensureDirectory(exportStorageRoot);
+    const exportLibraryRoots = this.resolveExportLibraryRoots(storageRoot);
 
     const clipFiles = this.collectClipFiles(storageRoot);
     const clipPathSet = new Set(clipFiles.map((file) => file.path));
     const mediaFiles = collectRecordingFiles(storageRoot);
+    const savedEditFiles = collectSavedEditFiles(exportLibraryRoots);
     const manualReplayFiles = mediaFiles.filter((file) =>
       this.isMediaFileInDirectory(file.path, storageRoot, "manualReplays"),
     );
@@ -123,7 +136,9 @@ class StorageService {
       (file) => !clipMediaPathSet.has(file.path),
     );
     const databasePath = this.database.path;
-    const mediaPathSet = new Set(mediaFiles.map((file) => file.path));
+    const mediaPathSet = new Set(
+      [...mediaFiles, ...savedEditFiles].map((file) => file.path),
+    );
     const temporaryFiles = collectTemporaryFiles(
       storageRoot,
       new Set([...mediaPathSet, ...resolveDatabaseFilePaths(databasePath)]),
@@ -133,6 +148,7 @@ class StorageService {
       this.calculateAppInstallationSize(appInstallationPath);
     const databaseSizeBytes = calculateDatabaseSize(databasePath);
     const storageDisk = calculateDiskUsage(storageRoot);
+    const exportDisk = calculateDiskUsage(exportStorageRoot);
     const appInstallationDisk =
       appInstallationPath === null
         ? { totalBytes: 0, freeBytes: 0 }
@@ -141,7 +157,9 @@ class StorageService {
       databasePath === ":memory:"
         ? { totalBytes: 0, freeBytes: 0 }
         : calculateDiskUsage(dirname(databasePath));
-    const mediaSizeBytes = sumFileSizes(mediaFiles);
+    const recordingsSizeBytes = sumFileSizes(mediaFiles);
+    const exportVideosSizeBytes = sumFileSizes(savedEditFiles);
+    const mediaSizeBytes = recordingsSizeBytes + exportVideosSizeBytes;
     const temporarySizeBytes = sumFileSizes(temporaryFiles);
     const rewindBufferEstimateBytes = this.estimateRewindBufferSizeBytes();
     const breakdown = this.createBreakdown({
@@ -151,11 +169,15 @@ class StorageService {
       fullRecordings: fullRecordingFiles,
       manualReplays: manualReplayFiles,
       rewindBufferEstimateBytes,
+      savedEdits: savedEditFiles,
       temporaryFiles,
     });
 
     return {
       storagePath: maskPath(storageRoot, STORAGE_PATH_ANCHORS),
+      exportsPath: maskPath(exportStorageRoot, STORAGE_PATH_ANCHORS),
+      recordingsSizeBytes,
+      exportVideosSizeBytes,
       mediaSizeBytes,
       appInstallationSizeBytes,
       temporarySizeBytes,
@@ -168,6 +190,8 @@ class StorageService {
         databaseSizeBytes,
       diskTotalBytes: storageDisk.totalBytes,
       diskFreeBytes: storageDisk.freeBytes,
+      exportDiskTotalBytes: exportDisk.totalBytes,
+      exportDiskFreeBytes: exportDisk.freeBytes,
       appInstallationDiskTotalBytes: appInstallationDisk.totalBytes,
       appInstallationDiskFreeBytes: appInstallationDisk.freeBytes,
       databaseDiskTotalBytes: databaseDisk.totalBytes,
@@ -308,6 +332,7 @@ class StorageService {
   revealPaths(): StorageRevealPathsResult {
     return {
       storagePath: this.resolveStorageRoot(),
+      exportsPath: this.resolveExportStorageRoot(),
       databasePath: this.database.path,
     };
   }
@@ -373,6 +398,7 @@ class StorageService {
     fullRecordings: StorageFile[];
     manualReplays: StorageFile[];
     rewindBufferEstimateBytes: number;
+    savedEdits: StorageFile[];
     temporaryFiles: StorageFile[];
   }): StorageBreakdownItem[] {
     const items: StorageBreakdownItem[] = [
@@ -393,6 +419,12 @@ class StorageService {
         label: "Manual replays",
         fileCount: input.manualReplays.length,
         sizeBytes: sumFileSizes(input.manualReplays),
+      },
+      {
+        category: "export-videos",
+        label: "Hinekora export videos",
+        fileCount: input.savedEdits.length,
+        sizeBytes: sumFileSizes(input.savedEdits),
       },
       {
         category: "app-installation",
@@ -511,12 +543,35 @@ class StorageService {
     RecordingStorageService.getInstance().migrateLegacyMediaDirectories(root);
   }
 
+  private ensureDirectory(path: string): void {
+    try {
+      mkdirSync(path, { recursive: true });
+    } catch {}
+  }
+
   private resolveStorageRoot(): string {
     const settings = SettingsStoreService.getInstance().get();
     return resolveRecordingStorageRoot(
       settings.recordingStoragePath,
       app.getPath("videos"),
     );
+  }
+
+  private resolveExportStorageRoot(): string {
+    const settings = SettingsStoreService.getInstance().get();
+    return resolveEditorExportStorageRoot(
+      settings.editorExportStoragePath,
+      app.getPath("videos"),
+    );
+  }
+
+  private resolveExportLibraryRoots(recordingStorageRoot: string): string[] {
+    const settings = SettingsStoreService.getInstance().get();
+    return resolveEditorExportLibraryRoots({
+      configuredExportPath: settings.editorExportStoragePath,
+      recordingStorageRoot,
+      videosPath: app.getPath("videos"),
+    });
   }
 
   private resolveAppInstallationPath(): string | null {

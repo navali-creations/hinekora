@@ -29,7 +29,7 @@ function EditorDeleteEditAction({
 
   return (
     <EditorDeleteAction
-      confirmDescription={`This will remove "${project?.title ?? "this edit"}" from saved editor edits. Source recordings and clips will not be deleted.`}
+      confirmDescription={`This will remove "${project?.title ?? "this edit"}" from draft edits. Source recordings and clips will not be deleted.`}
       confirmLabel="Delete edit"
       confirmTitle="Delete edit?"
       disabled={disabled || !isSavedProject}

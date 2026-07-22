@@ -59,6 +59,13 @@ const navItems = [
   },
   {
     to: "/saved-edits",
+    label: "Draft Edits",
+    icon: MdVideoLibrary,
+    match: undefined,
+    dividerAfter: false,
+  },
+  {
+    to: "/saved-videos",
     label: "Saved Edits",
     icon: MdVideoLibrary,
     match: undefined,

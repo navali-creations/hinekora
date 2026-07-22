@@ -468,15 +468,15 @@ describe("SavedEditsService", () => {
 
     expect(service.revealInExplorer("empty-project")).toEqual({
       status: "unavailable",
-      error: "Saved edit has no source media",
+      error: "Draft edit has no source media",
     });
     expect(service.revealInExplorer("recording-project")).toEqual({
       status: "unavailable",
-      error: "Saved edit source media is not available",
+      error: "Draft edit source media is not available",
     });
     expect(service.revealInExplorer("clip-project")).toEqual({
       status: "unavailable",
-      error: "Saved edit source media is not available",
+      error: "Draft edit source media is not available",
     });
     expect(replayReveal).toHaveBeenCalledWith("clip-source");
   });
@@ -499,7 +499,7 @@ describe("SavedEditsService", () => {
 
     expect(service.revealInExplorer("missing-project")).toEqual({
       status: "unavailable",
-      error: "Saved edit is not available",
+      error: "Draft edit is not available",
     });
   });
 

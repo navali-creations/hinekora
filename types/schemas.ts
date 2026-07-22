@@ -614,6 +614,7 @@ export const AppSettingsSchema = z.object({
   gridLinesOverlayIgnoreGameFocus: z.boolean().default(false),
   installedGames: z.array(GameIdSchema).min(1).max(2).default(["poe1"]),
   recordingStoragePath: z.string().max(2_048).nullable().default(null),
+  editorExportStoragePath: z.string().max(2_048).nullable().default(null),
   keybindManualBookmark: OptionalKeybindAcceleratorSchema.default(
     keybindActionConfigs.manualBookmark.defaultAccelerator,
   ),

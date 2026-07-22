@@ -95,7 +95,7 @@ const createSavedEditsSlice: BoundStoreStateCreator<SavedEditsSlice> = (
 
         state.savedEdits.libraryPendingQuery = null;
         state.savedEdits.error =
-          error instanceof Error ? error.message : "Saved edits failed";
+          error instanceof Error ? error.message : "Draft edits failed";
       });
     }
   };
@@ -113,7 +113,7 @@ const createSavedEditsSlice: BoundStoreStateCreator<SavedEditsSlice> = (
         } catch (error) {
           set((state) => {
             state.savedEdits.error =
-              error instanceof Error ? error.message : "Saved edits failed";
+              error instanceof Error ? error.message : "Draft edits failed";
           });
         }
       },
@@ -128,7 +128,7 @@ const createSavedEditsSlice: BoundStoreStateCreator<SavedEditsSlice> = (
         } catch (error) {
           set((state) => {
             state.savedEdits.error =
-              error instanceof Error ? error.message : "Saved edits failed";
+              error instanceof Error ? error.message : "Draft edits failed";
           });
         }
       },
@@ -147,12 +147,12 @@ const createSavedEditsSlice: BoundStoreStateCreator<SavedEditsSlice> = (
           const result =
             await window.electron.savedEdits.revealInExplorer(projectId);
           if (result.status !== "success") {
-            throw new Error(result.error ?? "Saved edit source is unavailable");
+            throw new Error(result.error ?? "Draft edit source is unavailable");
           }
         } catch (error) {
           set((state) => {
             state.savedEdits.error =
-              error instanceof Error ? error.message : "Saved edits failed";
+              error instanceof Error ? error.message : "Draft edits failed";
           });
         }
       },

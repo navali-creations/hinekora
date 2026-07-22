@@ -85,7 +85,7 @@ function SavedEditsPage() {
             </button>
             <EditorDeleteConfirmationModal
               confirmLabel="Delete all edits"
-              description="This will remove every saved editor edit. Source recordings and clips will not be deleted."
+              description="This will remove every draft edit. Source recordings and clips will not be deleted."
               isOpen={isDeleteAllConfirmOpen}
               title="Delete all edits?"
               onClose={handleCloseDeleteAllConfirm}
@@ -106,8 +106,8 @@ function SavedEditsPage() {
     <PageContainer className="gap-4">
       <PageHeader
         actions={pageActions}
-        subtitle="Saved editor timelines. Open an edit to continue working from its latest saved state."
-        title="Saved Edits"
+        subtitle="Editor timelines saved while you work. Open a draft to continue from its latest state."
+        title="Draft Edits"
       />
       <PageContent className="grid min-h-0 grid-cols-12">
         <SavedEditsPanel isScopeReady={isMediaScopeReady} scope={scope} />

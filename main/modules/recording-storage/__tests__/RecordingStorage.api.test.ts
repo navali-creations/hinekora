@@ -24,6 +24,7 @@ describe("RecordingStorageAPI", () => {
       diskFreeBytes: 4_096,
       lowDiskSpace: false,
       recordingsSizeBytes: 2_048,
+      savedEditsSizeBytes: 512,
     };
     electronMocks.invoke.mockResolvedValue(usage);
 

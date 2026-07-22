@@ -328,7 +328,7 @@ describe("SavedEdits slice", () => {
 
     deleteEdit.mockRejectedValueOnce("delete failed");
     await store.getState().savedEdits.deleteEdit("project-1");
-    expect(store.getState().savedEdits.error).toBe("Saved edits failed");
+    expect(store.getState().savedEdits.error).toBe("Draft edits failed");
 
     deleteEdit.mockRejectedValueOnce(new Error("delete failed"));
     await store.getState().savedEdits.deleteEdit("project-1");
@@ -340,7 +340,7 @@ describe("SavedEdits slice", () => {
 
     deleteAll.mockRejectedValueOnce("delete all failed");
     await store.getState().savedEdits.deleteAllEdits();
-    expect(store.getState().savedEdits.error).toBe("Saved edits failed");
+    expect(store.getState().savedEdits.error).toBe("Draft edits failed");
   });
 
   it("reveals saved edit sources and stores reveal errors", async () => {
@@ -352,12 +352,12 @@ describe("SavedEdits slice", () => {
 
     revealInExplorer.mockResolvedValueOnce({
       status: "unavailable",
-      error: "Saved edit source media is not available",
+      error: "Draft edit source media is not available",
     });
     await store.getState().savedEdits.revealEditInExplorer("project-2");
 
     expect(store.getState().savedEdits.error).toBe(
-      "Saved edit source media is not available",
+      "Draft edit source media is not available",
     );
 
     revealInExplorer.mockResolvedValueOnce({
@@ -366,12 +366,12 @@ describe("SavedEdits slice", () => {
     });
     await store.getState().savedEdits.revealEditInExplorer("project-3");
     expect(store.getState().savedEdits.error).toBe(
-      "Saved edit source is unavailable",
+      "Draft edit source is unavailable",
     );
 
     revealInExplorer.mockRejectedValueOnce("reveal failed");
     await store.getState().savedEdits.revealEditInExplorer("project-4");
-    expect(store.getState().savedEdits.error).toBe("Saved edits failed");
+    expect(store.getState().savedEdits.error).toBe("Draft edits failed");
   });
 
   it("stores fallback errors", async () => {
@@ -379,7 +379,7 @@ describe("SavedEdits slice", () => {
 
     listLibrary.mockRejectedValueOnce("failed");
     await store.getState().savedEdits.hydrateLibrary({});
-    expect(store.getState().savedEdits.error).toBe("Saved edits failed");
+    expect(store.getState().savedEdits.error).toBe("Draft edits failed");
 
     listLibrary.mockResolvedValueOnce(createLibraryPage());
     await store.getState().savedEdits.hydrateLibrary({});

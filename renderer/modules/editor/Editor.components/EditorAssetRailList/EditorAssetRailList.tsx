@@ -56,7 +56,7 @@ function EditorAssetRailList({
 
       {isSavedEditsFilter && currentSavedEditItems.length === 0 && (
         <div className="rounded-lg border border-base-content/10 border-dashed p-4 text-center text-base-content/55 text-sm">
-          No saved edits available.
+          No draft edits available.
         </div>
       )}
 

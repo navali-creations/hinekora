@@ -32,6 +32,7 @@ import { ProfilesService } from "./modules/profiles";
 import { RecordingStorageService } from "./modules/recording-storage";
 import { ReplayClipsService } from "./modules/replay-clips";
 import { SavedEditsService } from "./modules/saved-edits";
+import { SavedVideosService } from "./modules/saved-videos";
 import { SentryService } from "./modules/sentry";
 import { shouldReportFatalStartupError } from "./modules/sentry/Sentry.bootstrap-preference";
 import { captureSentryException } from "./modules/sentry/Sentry.reporter";
@@ -199,7 +200,10 @@ async function bootstrap(): Promise<void> {
   logInfo("startup", "Editor initialized");
 
   SavedEditsService.getInstance();
-  logInfo("startup", "Saved edits initialized");
+  logInfo("startup", "Draft edits initialized");
+
+  SavedVideosService.getInstance();
+  logInfo("startup", "Saved edit videos initialized");
 
   const bookmarks = BookmarksService.getInstance();
   logInfo("startup", "Bookmarks initialized");

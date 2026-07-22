@@ -12,6 +12,7 @@ import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { resolveRecordingStorageRoot } from "~/main/modules/recording-storage/RecordingStorage.utils";
 import { ReplayClipsService } from "~/main/modules/replay-clips";
 import { resolveReplayClipFilePath } from "~/main/modules/replay-clips/ReplayClips.files";
+import { SavedVideosService } from "~/main/modules/saved-videos";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import {
   createSafePathLogFields,
@@ -84,6 +85,7 @@ import {
   validateEditorSaveProjectInput,
   validateEditorWorkspaceQuery,
 } from "./Editor.validation";
+import { resolveEditorExportStorageRoot } from "./EditorExport.paths";
 import {
   createEditorProjectExportClipInputs,
   type EditorExportProjectOptions,
@@ -106,6 +108,7 @@ interface EditorServiceDependencies {
     clips: EditorExportClipInput[],
   ) => EditorResolvedExportClip[];
   linkExportFile?: typeof link;
+  onSavedEditCommitted?: (sizeBytes: number) => void;
   projectRepository?: EditorProjectRepository;
   removeExportFile?: typeof rm;
   renameExportFile?: typeof rename;
@@ -164,10 +167,15 @@ class EditorService {
         settings.recordingStoragePath,
         videosPath,
       );
-      const result = await cleanupAbandonedEditorExportFiles([
+      const exportStorageRoot = resolveEditorExportStorageRoot(
+        settings.editorExportStoragePath,
         videosPath,
-        recordingStorageRoot,
-      ]);
+      );
+      const result = await cleanupAbandonedEditorExportFiles(
+        Array.from(
+          new Set([videosPath, recordingStorageRoot, exportStorageRoot]),
+        ),
+      );
       if (result.removedCount > 0) {
         logInfo(editorLogScope, "Abandoned editor exports removed", {
           ...result,
@@ -207,8 +215,12 @@ class EditorService {
         : {}),
       persistProjectSnapshot: (project) =>
         this.persistExportProjectSnapshot(project),
+      onSavedEditCommitted:
+        dependencies.onSavedEditCommitted ??
+        ((sizeBytes) => this.noteSavedEditUsage(sizeBytes)),
       renderExportWithFfmpeg: this.renderExportWithFfmpeg,
       resolveExportSource: this.resolveEditorExportSource,
+      resolveStorageRoot: () => this.resolveExportStorageRoot(),
       shutdownTimeoutMs: this.shutdownTimeoutMs,
       ...(dependencies.removeExportFile
         ? { removeExportFile: dependencies.removeExportFile }
@@ -1202,11 +1214,7 @@ class EditorService {
     path: string;
     storageRoot: string;
   } {
-    const settings = SettingsStoreService.getInstance().get();
-    const storageRoot = resolveRecordingStorageRoot(
-      settings.recordingStoragePath,
-      app.getPath("videos"),
-    );
+    const storageRoot = this.resolveRecordingStorageRoot();
     if (source.kind === "recording") {
       const recordingStorage = RecordingStorageService.getInstance();
       const detail = recordingStorage.getRecording(source.id);
@@ -1249,6 +1257,32 @@ class EditorService {
     }
 
     return { mediaUrl: detail.mediaUrl, path, storageRoot };
+  }
+
+  private resolveRecordingStorageRoot(): string {
+    const settings = SettingsStoreService.getInstance().get();
+    return resolveRecordingStorageRoot(
+      settings.recordingStoragePath,
+      app.getPath("videos"),
+    );
+  }
+
+  private resolveExportStorageRoot(): string {
+    const settings = SettingsStoreService.getInstance().get();
+    return resolveEditorExportStorageRoot(
+      settings.editorExportStoragePath,
+      app.getPath("videos"),
+    );
+  }
+
+  private noteSavedEditUsage(sizeBytes: number): void {
+    SavedVideosService.notifyLibraryChanged();
+    const recordingStorage = RecordingStorageService.getInstance();
+    recordingStorage.noteUsageDelta("saved-edits", sizeBytes);
+    recordingStorage.scheduleCleanup({
+      estimatedAddedBytes: sizeBytes,
+      usageAlreadyAccounted: true,
+    });
   }
 }
 

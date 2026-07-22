@@ -11,6 +11,7 @@ import {
   removeEmptyParentDirectories,
   resolveDatabaseFilePaths,
 } from "~/main/utils/storage-files";
+import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 import type { ReplayClip } from "~/types";
 
@@ -110,6 +111,41 @@ function collectRecordingFiles(storageRoot: string): StorageFile[] {
       size: file.size,
     }),
   );
+}
+
+function collectSavedEditFiles(exportRoots: readonly string[]): StorageFile[] {
+  const files = new Map<string, StorageFile>();
+  const uniqueRoots = Array.from(
+    new Map(
+      exportRoots.map((root) => [createStoragePathKey(root), root] as const),
+    ).values(),
+  );
+  for (const exportRoot of uniqueRoots) {
+    let entries: Dirent<string>[];
+    try {
+      entries = readdirSync(exportRoot, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".mp4")) {
+        continue;
+      }
+
+      const file = getExistingStorageFile(resolve(exportRoot, entry.name));
+      if (!file) {
+        continue;
+      }
+
+      files.set(createStoragePathKey(file.path), {
+        path: file.path,
+        size: file.size,
+      });
+    }
+  }
+
+  return [...files.values()];
 }
 
 function collectTemporaryFiles(
@@ -230,6 +266,7 @@ export {
   calculatePathSize,
   collectDeleteFiles,
   collectRecordingFiles,
+  collectSavedEditFiles,
   collectTemporaryFiles,
   getExistingFileSize,
   parseResolution,

@@ -127,7 +127,7 @@ describe("EditorHistoryRail", () => {
     expect(content.indexOf("Mute audio")).toBeLessThan(
       content.indexOf("Split"),
     );
-    expect(content).toContain("Saved edit history");
+    expect(content).toContain("Draft edit history");
     expect(content).not.toContain("0:07");
     expect(content).not.toContain("1 clips");
   });

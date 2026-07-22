@@ -127,17 +127,27 @@ describe("StorageService", () => {
     const deathClipDirectory = join(storageRoot, "Death Clips");
     const fullRecordingDirectory = join(storageRoot, "Full Recordings");
     const manualReplayDirectory = join(storageRoot, "Manual Replays");
+    const savedEditsDirectory = join(storageRoot, "Saved Edits");
+    const exportDirectory = join(root, "videos", "Hinekora Exports");
     mkdirSync(deathClipDirectory);
     mkdirSync(fullRecordingDirectory);
     mkdirSync(manualReplayDirectory);
+    mkdirSync(savedEditsDirectory);
+    mkdirSync(exportDirectory, { recursive: true });
     const clipPath = join(deathClipDirectory, "death.mp4");
     const recordingPath = join(fullRecordingDirectory, "recording.mp4");
     const manualReplayPath = join(manualReplayDirectory, "manual.mp4");
     const temporaryPath = join(storageRoot, "recording.tmp");
+    const savedEditPath = join(savedEditsDirectory, "saved-edit.mp4");
+    const nestedExportDirectory = join(exportDirectory, "nested");
+    mkdirSync(nestedExportDirectory);
     writeFileSync(clipPath, "clip");
     writeFileSync(recordingPath, "recording");
     writeFileSync(manualReplayPath, "manual");
     writeFileSync(temporaryPath, "temporary");
+    writeFileSync(savedEditPath, "saved");
+    writeFileSync(join(exportDirectory, "notes.txt"), "not a video");
+    writeFileSync(join(nestedExportDirectory, "nested.mp4"), "not managed");
     replayClipsRepository.upsert(
       createReplayClip({
         processedClipPath: clipPath,
@@ -167,7 +177,7 @@ describe("StorageService", () => {
     expect(service.getInfo()).toEqual(
       expect.objectContaining({
         appInstallationSizeBytes: 7,
-        mediaSizeBytes: 19,
+        mediaSizeBytes: 24,
         rewindBufferEstimateBytes: 90_000_000,
         temporarySizeBytes: 9,
         diskTotalBytes: expect.any(Number),
@@ -199,6 +209,12 @@ describe("StorageService", () => {
             label: "Manual replays",
             fileCount: 1,
             sizeBytes: 6,
+          }),
+          expect.objectContaining({
+            category: "export-videos",
+            label: "Hinekora export videos",
+            fileCount: 1,
+            sizeBytes: 5,
           }),
           expect.objectContaining({
             category: "temporary-files",
@@ -776,6 +792,7 @@ describe("StorageService", () => {
 
     expect(service.revealPaths()).toEqual({
       storagePath: resolve(storageRoot),
+      exportsPath: resolve(root, "videos", "Hinekora Exports"),
       databasePath: database.path,
     });
   });
@@ -813,7 +830,10 @@ describe("StorageService", () => {
     const service = new StorageService();
     vi.spyOn(service, "getInfo").mockReturnValue({
       storagePath: "C:\\**\\Hinekora Recordings",
+      exportsPath: "C:\\**\\Hinekora Exports",
       appInstallationSizeBytes: 7,
+      recordingsSizeBytes: 0,
+      exportVideosSizeBytes: 0,
       mediaSizeBytes: 0,
       rewindBufferEstimateBytes: 60_000_000,
       temporarySizeBytes: 0,
@@ -821,6 +841,8 @@ describe("StorageService", () => {
       totalTrackedSizeBytes: 0,
       diskTotalBytes: 0,
       diskFreeBytes: 0,
+      exportDiskTotalBytes: 0,
+      exportDiskFreeBytes: 0,
       appInstallationDiskTotalBytes: 0,
       appInstallationDiskFreeBytes: 0,
       databaseDiskTotalBytes: 0,
@@ -831,6 +853,7 @@ describe("StorageService", () => {
     vi.spyOn(service, "getGameLeagueUsage").mockReturnValue([]);
     vi.spyOn(service, "revealPaths").mockReturnValue({
       storagePath: resolve(storageRoot),
+      exportsPath: resolve(storageRoot, "exports"),
       databasePath: database.path,
     });
     vi.spyOn(service, "deleteGameLeagueData").mockResolvedValue({
@@ -848,6 +871,7 @@ describe("StorageService", () => {
     ).toEqual([]);
     expect(await ipcHandlers.get(StorageChannel.RevealPaths)?.({})).toEqual({
       storagePath: resolve(storageRoot),
+      exportsPath: resolve(storageRoot, "exports"),
       databasePath: database.path,
     });
     expect(

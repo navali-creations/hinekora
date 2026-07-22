@@ -840,7 +840,7 @@ test("restores clips view and media league across library routes", async ({
   await page.getByRole("tab", { name: "Manual Replays" }).click();
   await page.getByLabel("Library league").selectOption("Standard");
 
-  for (const route of ["Recordings", "Rewinds", "Bookmarks", "Saved Edits"]) {
+  for (const route of ["Recordings", "Rewinds", "Bookmarks", "Draft Edits"]) {
     await page.getByRole("link", { name: route, exact: true }).click();
     await expect(page.getByLabel("Library league")).toHaveValue("Standard");
   }

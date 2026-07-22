@@ -16,6 +16,7 @@ function createUsage(): RecordingStorageUsage {
     diskFreeBytes: 50,
     lowDiskSpace: false,
     recordingsSizeBytes: 0,
+    savedEditsSizeBytes: 0,
   };
 }
 

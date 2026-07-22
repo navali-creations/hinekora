@@ -7,6 +7,7 @@ import {
   FiFile,
   FiHardDrive,
   FiPackage,
+  FiPlay,
   FiTrash2,
 } from "react-icons/fi";
 
@@ -25,6 +26,7 @@ const CATEGORY_ICON_MAP: Record<StorageBreakdownItem["category"], ReactNode> = {
   "full-recordings": <FiHardDrive className="h-3.5 w-3.5" />,
   "manual-replays": <FiFile className="h-3.5 w-3.5" />,
   "rewind-buffer": <FiClock className="h-3.5 w-3.5" />,
+  "export-videos": <FiPlay className="h-3.5 w-3.5" />,
   "temporary-files": <FiTrash2 className="h-3.5 w-3.5" />,
   database: <FiDatabase className="h-3.5 w-3.5" />,
 };
@@ -57,6 +59,11 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
 
   const displayPath =
     isRevealed && revealedPaths ? revealedPaths.storagePath : info.storagePath;
+  const displayExportsPath =
+    isRevealed && revealedPaths ? revealedPaths.exportsPath : info.exportsPath;
+  const exportsOnStorageDrive =
+    info.diskTotalBytes === info.exportDiskTotalBytes &&
+    info.diskFreeBytes === info.exportDiskFreeBytes;
   const databaseOnStorageDrive =
     info.diskTotalBytes === info.databaseDiskTotalBytes &&
     info.diskFreeBytes === info.databaseDiskFreeBytes;
@@ -64,7 +71,8 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
     info.diskTotalBytes === info.appInstallationDiskTotalBytes &&
     info.diskFreeBytes === info.appInstallationDiskFreeBytes;
   const trackedBytesOnStorageDrive =
-    info.mediaSizeBytes +
+    info.recordingsSizeBytes +
+    (exportsOnStorageDrive ? info.exportVideosSizeBytes : 0) +
     info.temporarySizeBytes +
     (appInstallationOnStorageDrive ? info.appInstallationSizeBytes : 0) +
     (databaseOnStorageDrive ? info.databaseSizeBytes : 0);
@@ -89,10 +97,19 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
               colorClass: "bg-base-content/20",
             },
             {
-              label: "Hinekora media",
-              bytes: info.mediaSizeBytes,
+              label: "Hinekora Recordings",
+              bytes: info.recordingsSizeBytes,
               colorClass: "bg-primary",
             },
+            ...(exportsOnStorageDrive
+              ? [
+                  {
+                    label: "Hinekora Exports",
+                    bytes: info.exportVideosSizeBytes,
+                    colorClass: "bg-secondary",
+                  },
+                ]
+              : []),
             {
               label: "Temporary files",
               bytes: info.temporarySizeBytes,
@@ -120,6 +137,31 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
           totalBytes={info.diskTotalBytes}
           onRevealToggle={handleRevealToggle}
         />
+        {!exportsOnStorageDrive && (
+          <DiskUsageBar
+            isRevealed={isRevealed}
+            path={displayExportsPath}
+            segments={[
+              {
+                label: "Other disk usage",
+                bytes: Math.max(
+                  0,
+                  info.exportDiskTotalBytes -
+                    info.exportDiskFreeBytes -
+                    info.exportVideosSizeBytes,
+                ),
+                colorClass: "bg-base-content/20",
+              },
+              {
+                label: "Hinekora Exports",
+                bytes: info.exportVideosSizeBytes,
+                colorClass: "bg-secondary",
+              },
+            ]}
+            totalBytes={info.exportDiskTotalBytes}
+            onRevealToggle={handleRevealToggle}
+          />
+        )}
       </div>
 
       {!databaseOnStorageDrive && info.databaseSizeBytes > 0 && (

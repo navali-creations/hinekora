@@ -35,7 +35,7 @@ function EditorProjectRetentionToggle({
         "flex h-8 w-full cursor-pointer items-center justify-between gap-3 rounded-md px-3 text-sm transition-colors hover:bg-base-300",
         { "cursor-not-allowed opacity-50": disabled },
       )}
-      title="Automatically delete saved edits older than the latest five."
+      title="Automatically delete draft edits older than the latest five."
     >
       <span className="min-w-0 truncate">
         Auto-prune all but last 5

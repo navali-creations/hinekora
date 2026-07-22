@@ -4,6 +4,7 @@ export interface StorageBreakdownItem {
   category:
     | "death-clips"
     | "manual-replays"
+    | "export-videos"
     | "full-recordings"
     | "app-installation"
     | "rewind-buffer"
@@ -17,6 +18,9 @@ export interface StorageBreakdownItem {
 
 export interface StorageInfo {
   storagePath: string;
+  exportsPath: string;
+  recordingsSizeBytes: number;
+  exportVideosSizeBytes: number;
   mediaSizeBytes: number;
   appInstallationSizeBytes: number;
   temporarySizeBytes: number;
@@ -25,6 +29,8 @@ export interface StorageInfo {
   totalTrackedSizeBytes: number;
   diskTotalBytes: number;
   diskFreeBytes: number;
+  exportDiskTotalBytes: number;
+  exportDiskFreeBytes: number;
   appInstallationDiskTotalBytes: number;
   appInstallationDiskFreeBytes: number;
   databaseDiskTotalBytes: number;
@@ -60,5 +66,6 @@ export interface DeleteGameLeagueDataResult {
 
 export interface StorageRevealPathsResult {
   storagePath: string;
+  exportsPath: string;
   databasePath: string;
 }

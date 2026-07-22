@@ -50,6 +50,7 @@ describe("shared schemas", () => {
       gridLinesOverlayIgnoreGameFocus: false,
       installedGames: ["poe1"],
       recordingStoragePath: null,
+      editorExportStoragePath: null,
       keybindManualBookmark: "Alt+B",
       keybindManualReplay: "Alt+C",
       replayClipPreviewResolution: "720p",

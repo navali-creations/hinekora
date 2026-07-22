@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SavedVideosRouteImport } from './routes/saved-videos'
 import { Route as SavedEditsRouteImport } from './routes/saved-edits'
 import { Route as RewindsRouteImport } from './routes/rewinds'
 import { Route as RecordingsRouteImport } from './routes/recordings'
@@ -34,6 +35,11 @@ const SetupRoute = SetupRouteImport.update({
 const SettingsRoute = SettingsRouteImport.update({
   id: '/settings',
   path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SavedVideosRoute = SavedVideosRouteImport.update({
+  id: '/saved-videos',
+  path: '/saved-videos',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SavedEditsRoute = SavedEditsRouteImport.update({
@@ -119,6 +125,7 @@ export interface FileRoutesByFullPath {
   '/recordings': typeof RecordingsRoute
   '/rewinds': typeof RewindsRoute
   '/saved-edits': typeof SavedEditsRoute
+  '/saved-videos': typeof SavedVideosRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/clip/$clipId': typeof ClipClipIdRoute
@@ -137,6 +144,7 @@ export interface FileRoutesByTo {
   '/recordings': typeof RecordingsRoute
   '/rewinds': typeof RewindsRoute
   '/saved-edits': typeof SavedEditsRoute
+  '/saved-videos': typeof SavedVideosRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/clip/$clipId': typeof ClipClipIdRoute
@@ -156,6 +164,7 @@ export interface FileRoutesById {
   '/recordings': typeof RecordingsRoute
   '/rewinds': typeof RewindsRoute
   '/saved-edits': typeof SavedEditsRoute
+  '/saved-videos': typeof SavedVideosRoute
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/clip/$clipId': typeof ClipClipIdRoute
@@ -176,6 +185,7 @@ export interface FileRouteTypes {
     | '/recordings'
     | '/rewinds'
     | '/saved-edits'
+    | '/saved-videos'
     | '/settings'
     | '/setup'
     | '/clip/$clipId'
@@ -194,6 +204,7 @@ export interface FileRouteTypes {
     | '/recordings'
     | '/rewinds'
     | '/saved-edits'
+    | '/saved-videos'
     | '/settings'
     | '/setup'
     | '/clip/$clipId'
@@ -212,6 +223,7 @@ export interface FileRouteTypes {
     | '/recordings'
     | '/rewinds'
     | '/saved-edits'
+    | '/saved-videos'
     | '/settings'
     | '/setup'
     | '/clip/$clipId'
@@ -231,6 +243,7 @@ export interface RootRouteChildren {
   RecordingsRoute: typeof RecordingsRoute
   RewindsRoute: typeof RewindsRoute
   SavedEditsRoute: typeof SavedEditsRoute
+  SavedVideosRoute: typeof SavedVideosRoute
   SettingsRoute: typeof SettingsRoute
   SetupRoute: typeof SetupRoute
   ClipClipIdRoute: typeof ClipClipIdRoute
@@ -252,6 +265,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings'
       preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/saved-videos': {
+      id: '/saved-videos'
+      path: '/saved-videos'
+      fullPath: '/saved-videos'
+      preLoaderRoute: typeof SavedVideosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/saved-edits': {
@@ -367,6 +387,7 @@ const rootRouteChildren: RootRouteChildren = {
   RecordingsRoute: RecordingsRoute,
   RewindsRoute: RewindsRoute,
   SavedEditsRoute: SavedEditsRoute,
+  SavedVideosRoute: SavedVideosRoute,
   SettingsRoute: SettingsRoute,
   SetupRoute: SetupRoute,
   ClipClipIdRoute: ClipClipIdRoute,

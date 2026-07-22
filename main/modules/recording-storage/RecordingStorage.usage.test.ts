@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -126,6 +126,7 @@ describe("calculateRecordingStorageUsage", () => {
     ).resolves.toEqual({
       clipsSizeBytes: 501,
       recordingsSizeBytes: 1_002,
+      savedEditsSizeBytes: 0,
       usageBytes: 1_503,
     });
   });
@@ -154,6 +155,7 @@ describe("calculateRecordingStorageUsage", () => {
     ).resolves.toEqual({
       clipsSizeBytes: 42,
       recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 0,
       usageBytes: 42,
     });
   });
@@ -208,6 +210,7 @@ describe("calculateRecordingStorageUsage", () => {
     ).resolves.toEqual({
       clipsSizeBytes: 8,
       recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 0,
       usageBytes: 8,
     });
   });
@@ -243,6 +246,7 @@ describe("calculateRecordingStorageUsage", () => {
     ).resolves.toEqual({
       clipsSizeBytes: 0,
       recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 0,
       usageBytes: 0,
     });
   });
@@ -288,7 +292,145 @@ describe("calculateRecordingStorageUsage", () => {
     ).resolves.toEqual({
       clipsSizeBytes: 8,
       recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 0,
       usageBytes: 8,
     });
+  });
+
+  it("counts saved edits in bounded batches without scanning nested folders", async () => {
+    const replayClipsRepository = new ReplayClipsRepository(database);
+    const recordingRepository = new RecordingStorageRepository(database);
+    const savedEditsDirectory = join(root, "Saved Edits");
+    await mkdir(join(savedEditsDirectory, "nested"), { recursive: true });
+    await Promise.all(
+      Array.from({ length: 65 }, (_, index) =>
+        writeFile(join(savedEditsDirectory, `${index}.mp4`), "x"),
+      ),
+    );
+    await writeFile(join(savedEditsDirectory, "nested", "ignored.mp4"), "xx");
+
+    await expect(
+      calculateRecordingStorageUsage({
+        recordingRepository,
+        replayClipsRepository,
+        root,
+      }),
+    ).resolves.toEqual({
+      clipsSizeBytes: 0,
+      recordingsSizeBytes: 0,
+      savedEditsSizeBytes: 65,
+      usageBytes: 65,
+    });
+  });
+
+  it("surfaces an invalid saved edits directory", async () => {
+    const replayClipsRepository = new ReplayClipsRepository(database);
+    const recordingRepository = new RecordingStorageRepository(database);
+    await writeFile(join(root, "Saved Edits"), "not a directory");
+
+    await expect(
+      calculateRecordingStorageUsage({
+        recordingRepository,
+        replayClipsRepository,
+        root,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it.each([
+    ["before scanning saved edits", 3, 1],
+    ["at a full stat batch", 4, 64],
+    ["before the final stat batch", 4, 1],
+  ])("cancels %s", async (_stage, abortOnCall, fileCount) => {
+    const replayClipsRepository = new ReplayClipsRepository(database);
+    const recordingRepository = new RecordingStorageRepository(database);
+    const savedEditsDirectory = join(root, "Saved Edits");
+    await mkdir(savedEditsDirectory);
+    await Promise.all(
+      Array.from({ length: fileCount }, (_, index) =>
+        writeFile(join(savedEditsDirectory, `${index}.mp4`), "x"),
+      ),
+    );
+    let abortCheckCount = 0;
+
+    await expect(
+      calculateRecordingStorageUsage({
+        recordingRepository,
+        replayClipsRepository,
+        root,
+        shouldAbort: () => {
+          abortCheckCount += 1;
+          return abortCheckCount === abortOnCall;
+        },
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("tolerates saved edit stat races and ignores non-files", async () => {
+    const replayClipsRepository = new ReplayClipsRepository(database);
+    const recordingRepository = new RecordingStorageRepository(database);
+    const savedEditsDirectory = join(root, "Saved Edits");
+    await mkdir(savedEditsDirectory);
+    await writeFile(join(savedEditsDirectory, "race.mp4"), "x");
+    const missingError = Object.assign(new Error("missing"), {
+      code: "ENOENT",
+    });
+
+    await expect(
+      calculateRecordingStorageUsage({
+        recordingRepository,
+        replayClipsRepository,
+        root,
+        statFile: async () => {
+          throw missingError;
+        },
+      }),
+    ).resolves.toMatchObject({ savedEditsSizeBytes: 0 });
+    await expect(
+      calculateRecordingStorageUsage({
+        recordingRepository,
+        replayClipsRepository,
+        root,
+        statFile: async () => ({ isFile: () => false, size: 1 }),
+      }),
+    ).resolves.toMatchObject({ savedEditsSizeBytes: 0 });
+  });
+
+  it("surfaces saved edit stat failures", async () => {
+    const replayClipsRepository = new ReplayClipsRepository(database);
+    const recordingRepository = new RecordingStorageRepository(database);
+    const savedEditsDirectory = join(root, "Saved Edits");
+    await mkdir(savedEditsDirectory);
+    await writeFile(join(savedEditsDirectory, "locked.mp4"), "x");
+
+    await expect(
+      calculateRecordingStorageUsage({
+        recordingRepository,
+        replayClipsRepository,
+        root,
+        statFile: async () => {
+          throw Object.assign(new Error("locked"), { code: "EACCES" });
+        },
+      }),
+    ).rejects.toThrow("locked");
+  });
+
+  it("can cancel after checking an empty export-root list", async () => {
+    const replayClipsRepository = new ReplayClipsRepository(database);
+    const recordingRepository = new RecordingStorageRepository(database);
+    let abortChecks = 0;
+
+    await expect(
+      calculateRecordingStorageUsage({
+        exportRoots: [],
+        recordingRepository,
+        replayClipsRepository,
+        root,
+        shouldAbort: () => {
+          abortChecks += 1;
+          return abortChecks === 4;
+        },
+      }),
+    ).resolves.toBeNull();
   });
 });

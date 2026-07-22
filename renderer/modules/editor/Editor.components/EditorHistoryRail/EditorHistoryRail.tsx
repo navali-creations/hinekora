@@ -103,7 +103,7 @@ function EditorHistoryRail() {
             <p className="relative z-10 m-0 mt-1 text-[11px] text-base-content/45">
               {entry.actionSubtitle ??
                 (entry.durationSeconds === null
-                  ? "Saved edit history"
+                  ? "Draft edit history"
                   : `${entry.clipCount} clips`)}
             </p>
           </div>

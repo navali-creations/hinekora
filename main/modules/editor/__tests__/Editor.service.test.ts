@@ -238,6 +238,8 @@ function mockEditorLibraries(
     getRecording: (id: string) => input.recordings?.[id] ?? null,
     getRecordingMediaPath: (id: string) =>
       input.recordings?.[id]?.recording.path ?? null,
+    noteUsageDelta: vi.fn(),
+    scheduleCleanup: vi.fn(),
     listEditorRecordingDetailPage: (query: {
       createdAfter?: string;
       excludeIds?: string[];
@@ -328,7 +330,11 @@ describe("EditorService IPC", () => {
     ).resolves.toBeUndefined();
 
     expect(cleanup).toHaveBeenCalledTimes(3);
-    expect(cleanup).toHaveBeenCalledWith([process.cwd(), recordingStoragePath]);
+    expect(cleanup).toHaveBeenCalledWith([
+      process.cwd(),
+      recordingStoragePath,
+      join(process.cwd(), "Hinekora Exports"),
+    ]);
   });
 
   it("does not register an export media protocol twice and logs registration failures", async () => {
@@ -1411,7 +1417,11 @@ describe("EditorService IPC", () => {
         await writeFile(input.outputPath, "rendered");
       },
     );
-    const service = new EditorService({ renderExportWithFfmpeg });
+    const onSavedEditCommitted = vi.fn();
+    const service = new EditorService({
+      onSavedEditCommitted,
+      renderExportWithFfmpeg,
+    });
     const internals = service as unknown as {
       createExportClips: () => Array<{
         durationSeconds: number;
@@ -1471,6 +1481,7 @@ describe("EditorService IPC", () => {
       expect(renderExportWithFfmpeg).toHaveBeenCalledWith(
         expect.objectContaining({ muteAudio: true }),
       );
+      expect(onSavedEditCommitted).toHaveBeenCalledWith(result.sizeBytes);
       expect(
         (
           await internals.handleExportMediaRequest(
@@ -1489,8 +1500,7 @@ describe("EditorService IPC", () => {
     const sourcePath = join(directory, "source.mp4");
     const occupiedOutputPath = join(
       videosPath,
-      "Hinekora",
-      "Exports",
+      "Hinekora Exports",
       "source.mp4",
     );
     await writeFile(sourcePath, "source");
@@ -1510,12 +1520,7 @@ describe("EditorService IPC", () => {
 
     try {
       const result = await service.exportProject(createExportInput());
-      const outputPath = join(
-        videosPath,
-        "Hinekora",
-        "Exports",
-        result.fileName,
-      );
+      const outputPath = join(videosPath, "Hinekora Exports", result.fileName);
 
       expect(result.fileName).toBe("source (2).mp4");
       await expect(readFile(occupiedOutputPath, "utf8")).resolves.toBe(
@@ -1831,8 +1836,8 @@ describe("EditorService IPC", () => {
         }),
       );
       await expect(
-        readdir(join(videosPath, "Hinekora", "Exports")),
-      ).resolves.toEqual([]);
+        readdir(join(videosPath, "Hinekora Exports")),
+      ).resolves.toEqual([".hinekora-editor-exports"]);
       expect(service.getExportLifecycle().status).toBe("idle");
       await expect(
         service.cancelExport({ exportRequestId: "export-request-1" }),
@@ -2066,8 +2071,8 @@ describe("EditorService IPC", () => {
 
       await expect(exportResult).resolves.toMatchObject({ name: "AbortError" });
       await expect(
-        readdir(join(videosPath, "Hinekora", "Exports")),
-      ).resolves.toEqual([]);
+        readdir(join(videosPath, "Hinekora Exports")),
+      ).resolves.toEqual([".hinekora-editor-exports"]);
     } finally {
       await rm(directory, { force: true, recursive: true });
     }
@@ -2220,8 +2225,8 @@ describe("EditorService IPC", () => {
         status: "failed",
       });
       await expect(
-        readdir(join(directory, "Hinekora", "Exports")),
-      ).resolves.toEqual([]);
+        readdir(join(directory, "Hinekora Exports")),
+      ).resolves.toEqual([".hinekora-editor-exports"]);
       await expect(
         new EditorService({ renderExportWithFfmpeg }).exportProject(
           createExportInput({ project: createExportProject({ clips: [] }) }),
@@ -2881,8 +2886,8 @@ describe("EditorService IPC", () => {
         "commit failed",
       );
       await expect(
-        readdir(join(directory, "Hinekora", "Exports")),
-      ).resolves.toEqual([]);
+        readdir(join(directory, "Hinekora Exports")),
+      ).resolves.toEqual([".hinekora-editor-exports"]);
 
       const removeExportFile = vi
         .fn<typeof rm>()

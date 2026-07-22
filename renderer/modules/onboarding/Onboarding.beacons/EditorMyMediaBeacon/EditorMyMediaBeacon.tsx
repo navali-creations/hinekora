@@ -20,7 +20,7 @@ function EditorMyMediaBeacon(props: PopoverComponentProps) {
               <span className="mt-0.5 text-accent">•</span>
               <span>
                 Switch between recordings, death clips, manual replays, and
-                saved edits.
+                draft edits.
               </span>
             </li>
             <li className="flex items-start gap-2">

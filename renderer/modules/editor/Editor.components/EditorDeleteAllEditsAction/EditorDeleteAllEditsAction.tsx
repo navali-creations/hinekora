@@ -19,7 +19,7 @@ function EditorDeleteAllEditsAction() {
 
   return (
     <EditorDeleteAction
-      confirmDescription="This will remove every saved editor edit. Source recordings and clips will not be deleted."
+      confirmDescription="This will remove every draft edit. Source recordings and clips will not be deleted."
       confirmLabel="Delete all edits"
       confirmTitle="Delete all edits?"
       disabled={!hasSavedProjects}

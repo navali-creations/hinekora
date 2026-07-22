@@ -175,7 +175,7 @@ describe("SavedEditsPage", () => {
       root.render(<SavedEditsPage />);
     });
 
-    expect(container.textContent).toContain("Saved Edits");
+    expect(container.textContent).toContain("Draft Edits");
     expect(container.querySelector<HTMLSelectElement>("select")?.value).toBe(
       "Runes of Aldur",
     );

@@ -61,6 +61,7 @@ function createUsage(): RecordingStorageUsage {
     diskFreeBytes: 100 * GIGABYTE,
     lowDiskSpace: false,
     recordingsSizeBytes: 0.2 * GIGABYTE,
+    savedEditsSizeBytes: 0,
   };
 }
 
@@ -98,18 +99,25 @@ describe("AppStorageUsageMeter", () => {
     vi.clearAllMocks();
   });
 
-  it("shows clip and recording usage against the configured limit", async () => {
+  it("shows recording, clip, and saved edit usage against the configured limit", async () => {
+    storeMocks.usage = {
+      ...createUsage(),
+      savedEditsSizeBytes: 0.1 * GIGABYTE,
+    };
     const button = await renderMeter();
     const progress = container.querySelector('[role="progressbar"]');
 
-    expect(button.textContent).toContain("0.3 GB / 48 GB");
+    expect(button.textContent).toContain("0.4 GB / 48 GB");
     expect(button.getAttribute("aria-label")).toBe(
-      "0.3 GB used of 48 GB. Open data and storage settings",
+      "0.4 GB used of 48 GB. Open data and storage settings",
     );
     expect(button.querySelector(".font-mono")?.className).toContain(
       "tabular-nums",
     );
-    expect(Number(progress?.getAttribute("aria-valuenow"))).toBeCloseTo(0.625);
+    expect(Number(progress?.getAttribute("aria-valuenow"))).toBeCloseTo(
+      0.833,
+      2,
+    );
     expect(storeMocks.refreshUsage).not.toHaveBeenCalled();
   });
 

@@ -26,7 +26,7 @@ const editorAssetRailFilterOptions: Array<
   { label: "Recordings", value: "recording" },
   { label: "Death Clips", value: "death-clip" },
   { label: "Manual Replays", value: "manual-replay" },
-  { label: "Saved Edits", value: "saved-edits" },
+  { label: "Draft Edits", value: "saved-edits" },
 ];
 
 const editorAssetRailTabOptions: Array<{

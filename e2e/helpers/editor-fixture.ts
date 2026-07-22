@@ -1154,6 +1154,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
             diskFreeBytes: 900_000_000_000,
             lowDiskSpace: false,
             recordingsSizeBytes: 0,
+            savedEditsSizeBytes: 0,
           }),
           onUsageChanged: () => unsubscribe,
           onUsageRefreshFailed: () => unsubscribe,
@@ -1191,6 +1192,24 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
 
               return { error: null, status: "success" };
             },
+          },
+        ),
+        savedVideos: createBridgeDomain<EditorE2EElectron["savedVideos"]>(
+          "savedVideos",
+          {
+            delete: async () => ({ error: null, ok: true }),
+            listLibrary: async () => ({
+              isTruncated: false,
+              items: [],
+              pageCount: 1,
+              pageIndex: 0,
+              pageSize: 20,
+              sortBy: "savedAt",
+              sortDirection: "desc",
+              totalCount: 0,
+            }),
+            open: async () => ({ error: null, ok: true }),
+            reveal: async () => ({ error: null, ok: true }),
           },
         ),
         settings: createBridgeDomain<EditorE2EElectron["settings"]>(

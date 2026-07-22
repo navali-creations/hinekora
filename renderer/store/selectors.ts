@@ -149,6 +149,10 @@ export const useSavedEditsShallow = <T>(
   selector: (savedEdits: BoundStore["savedEdits"]) => T,
 ) => useBoundStore(useShallow((state) => selector(state.savedEdits)));
 
+export const useSavedVideosShallow = <T>(
+  selector: (savedVideos: BoundStore["savedVideos"]) => T,
+) => useBoundStore(useShallow((state) => selector(state.savedVideos)));
+
 export const useStateTransferShallow = <T>(
   selector: (stateTransfer: BoundStore["stateTransfer"]) => T,
 ) => useBoundStore(useShallow((state) => selector(state.stateTransfer)));

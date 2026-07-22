@@ -24,6 +24,7 @@ import { createRecordingStorageSlice } from "~/renderer/modules/recording-storag
 import { createReplayClipsSlice } from "~/renderer/modules/replay-clips/ReplayClips.slice/ReplayClips.slice";
 import { createRewindsSlice } from "~/renderer/modules/rewinds/Rewinds.slice/Rewinds.slice";
 import { createSavedEditsSlice } from "~/renderer/modules/saved-edits";
+import { createSavedVideosSlice } from "~/renderer/modules/saved-videos";
 import { createSettingsSlice } from "~/renderer/modules/settings/Settings.slice/Settings.slice";
 import { createStorageSlice } from "~/renderer/modules/settings/Storage.slice/Storage.slice";
 import { createStateTransferSlice } from "~/renderer/modules/state-transfer/StateTransfer.slice/StateTransfer.slice";
@@ -70,6 +71,7 @@ export const useBoundStore = create<BoundStore>()(
       const updaterSlice = createUpdaterSlice(...args);
       const changelogSlice = createChangelogSlice(...args);
       const savedEditsSlice = createSavedEditsSlice(...args);
+      const savedVideosSlice = createSavedVideosSlice(...args);
 
       return {
         ...appMenuSlice,
@@ -97,6 +99,7 @@ export const useBoundStore = create<BoundStore>()(
         ...updaterSlice,
         ...changelogSlice,
         ...savedEditsSlice,
+        ...savedVideosSlice,
         isHydrated: false,
         hydrate: async () => {
           await Promise.all([

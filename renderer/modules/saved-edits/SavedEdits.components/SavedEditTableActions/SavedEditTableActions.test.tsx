@@ -103,7 +103,7 @@ describe("SavedEditTableActions", () => {
     await act(async () => {
       container
         .querySelector<HTMLButtonElement>(
-          '[aria-label="Delete saved edit Saved boss edit"]',
+          '[aria-label="Delete draft edit Saved boss edit"]',
         )
         ?.click();
     });
