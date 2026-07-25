@@ -6,5 +6,7 @@
 
 Reopenable editor timelines are now called **Draft Edits**, while completed videos have their own **Saved Edits** library in the sidebar.
 
-- **Separate folders:** Recordings default to `Hinekora Recordings`, exports default to `Hinekora Exports`, and both locations can be changed independently in Data & Storage settings.
-- **Storage totals:** Export videos are shown separately in disk usage and included in the app-bar total. Videos in earlier Hinekora export folders are included automatically.
+- **Separate folders:** Recordings and exports have independent locations and storage limits in Data & Storage settings.
+- **Safer storage limits:** Lowering either storage limit below current usage now asks for confirmation and clearly explains automatic cleanup before it runs.
+- **Clear storage totals:** The sidebar and disk usage view show recording and export usage separately, including videos in earlier Hinekora export folders.
+- **Automatic export cleanup:** Hinekora removes the oldest Saved Edits when export storage reaches its limit, without deleting recordings or clips.

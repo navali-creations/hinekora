@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   rmSync,
   statSync,
+  symlinkSync,
   utimesSync,
   writeFileSync,
 } from "node:fs";
@@ -28,6 +29,7 @@ import {
   clearIpcWindowRolesForTests,
   registerIpcWindowRole,
 } from "~/main/utils/ipc-window-roles";
+import { isWindowsOS } from "~/main/utils/platform";
 import {
   markStagedFileDeletionsCommitted,
   resetStagedFileDeletionStateForTests,
@@ -183,6 +185,8 @@ describe("RecordingStorageService", () => {
     RecordingStorageService.setPerformanceSensitiveActivityActive(true);
 
     const firstWait = internals.waitForPerformanceSensitiveActivityToEnd();
+    const staticWait =
+      RecordingStorageService.waitForPerformanceSensitiveActivityToEnd();
     expect(internals.waitForPerformanceSensitiveActivityToEnd()).toBe(
       firstWait,
     );
@@ -193,6 +197,7 @@ describe("RecordingStorageService", () => {
 
     RecordingStorageService.setPerformanceSensitiveActivityActive(false);
 
+    await expect(staticWait).resolves.toBeUndefined();
     await expect(usage).resolves.toMatchObject({
       clipsSizeBytes: 0,
       recordingsSizeBytes: 0,
@@ -210,7 +215,8 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 5,
       lowDiskSpace: false,
       recordingsSizeBytes: 6,
-      savedEditsSizeBytes: 0,
+      exportVideosSizeBytes: 0,
+      exportVideosUsageTruncated: false,
     };
     RecordingStorageService.setPerformanceSensitiveActivityActive(true);
 
@@ -272,7 +278,8 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 1,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
-      savedEditsSizeBytes: 0,
+      exportVideosSizeBytes: 0,
+      exportVideosUsageTruncated: false,
     });
     await deferredUsage;
   });
@@ -354,7 +361,8 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 2,
       lowDiskSpace: false,
       recordingsSizeBytes: 3,
-      savedEditsSizeBytes: 0,
+      exportVideosSizeBytes: 0,
+      exportVideosUsageTruncated: false,
     };
 
     expect(service.getUsageSnapshot()).toBeNull();
@@ -383,7 +391,8 @@ describe("RecordingStorageService", () => {
         diskFreeBytes: 2,
         lowDiskSpace: false,
         recordingsSizeBytes: 3,
-        savedEditsSizeBytes: 0,
+        exportVideosSizeBytes: 0,
+        exportVideosUsageTruncated: false,
       },
       root,
     );
@@ -663,7 +672,7 @@ describe("RecordingStorageService", () => {
     expect(scheduleCleanup).not.toHaveBeenCalled();
   });
 
-  it("invalidates usage and schedules cleanup when the exports folder changes", () => {
+  it("invalidates usage without scheduling recording cleanup when the exports folder changes", () => {
     let handleSettingsChange:
       | ((next: ReturnType<SettingsStoreService["get"]>) => void)
       | null = null;
@@ -697,7 +706,7 @@ describe("RecordingStorageService", () => {
 
     expect(internals.usageCache).toBeNull();
     expect(internals.usageGeneration).toBe(previousGeneration + 1);
-    expect(scheduleCleanup).toHaveBeenCalledWith({ force: true });
+    expect(scheduleCleanup).not.toHaveBeenCalled();
   });
 
   it("coalesces scheduled cleanup requests and their protected paths", async () => {
@@ -839,7 +848,8 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 3,
       lowDiskSpace: false,
       recordingsSizeBytes: 4,
-      savedEditsSizeBytes: 0,
+      exportVideosSizeBytes: 0,
+      exportVideosUsageTruncated: false,
     };
     service.publishUsageChanged(knownUsage, root);
     service.publishRecordingsChanged(["recording-1"]);
@@ -870,7 +880,8 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 0,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
-      savedEditsSizeBytes: 0,
+      exportVideosSizeBytes: 0,
+      exportVideosUsageTruncated: false,
     };
     const getUsage = vi
       .spyOn(service, "getUsage")
@@ -906,7 +917,8 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 0,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
-      savedEditsSizeBytes: 0,
+      exportVideosSizeBytes: 0,
+      exportVideosUsageTruncated: false,
     };
 
     service.publishUsageChanged(usage, root);
@@ -933,16 +945,57 @@ describe("RecordingStorageService", () => {
 
     service.noteUsageDelta("clips", 12);
     service.noteUsageDelta("recordings", 7);
-    service.noteUsageDelta("saved-edits", 5);
+    service.noteUsageDelta("export-videos", 5);
 
     await expect(service.getUsage()).resolves.toMatchObject({
       clipsSizeBytes: 12,
       diskFreeBytes: 321,
       recordingsSizeBytes: 7,
-      savedEditsSizeBytes: 5,
+      exportVideosSizeBytes: 5,
+      exportVideosUsageTruncated: false,
     });
     expect(calculateUsage).not.toHaveBeenCalled();
     expect(calculateDiskUsage).toHaveBeenCalledTimes(3);
+  });
+
+  it("updates recording metadata after an editor overwrite", () => {
+    const path = join(root, "overwrite.mp4");
+    repository.upsertRunRecording({
+      id: "overwrite-recording",
+      mtimeMs: 1,
+      path,
+      sizeBytes: 5,
+      sourceGame: "poe1",
+      sourceLeague: "Standard",
+      startedAt: "2026-07-23T00:00:00.000Z",
+      stoppedAt: "2026-07-23T00:01:00.000Z",
+    });
+    const noteUsageDelta = vi.spyOn(service, "noteUsageDelta");
+    const publishUsageChanged = vi.spyOn(service, "publishUsageChanged");
+
+    service.noteEditorOverwrite("overwrite-recording", 12, 2);
+    expect(
+      repository.listRunRecordingSyncItems().find((item) => item.path === path),
+    ).toMatchObject({
+      mtimeMs: 2,
+      sizeBytes: 12,
+    });
+    expect(noteUsageDelta).toHaveBeenCalledWith("recordings", 7);
+
+    service.noteEditorOverwrite("missing", 12, 2);
+    expect(publishUsageChanged).toHaveBeenCalled();
+
+    RecordingStorageService.noteEditorOverwriteIfInitialized(
+      "overwrite-recording",
+      -1,
+      3,
+    );
+    expect(
+      repository.listRunRecordingSyncItems().find((item) => item.path === path),
+    ).toMatchObject({
+      mtimeMs: 3,
+      sizeBytes: 0,
+    });
   });
 
   it("distinguishes an unavailable disk probe from zero free space", async () => {
@@ -1054,13 +1107,15 @@ describe("RecordingStorageService", () => {
     let resolveFirstCalculation!: (value: {
       clipsSizeBytes: number;
       recordingsSizeBytes: number;
-      savedEditsSizeBytes: number;
+      exportVideosSizeBytes: number;
+      exportVideosUsageTruncated: boolean;
       usageBytes: number;
     }) => void;
     const firstCalculation = new Promise<{
       clipsSizeBytes: number;
       recordingsSizeBytes: number;
-      savedEditsSizeBytes: number;
+      exportVideosSizeBytes: number;
+      exportVideosUsageTruncated: boolean;
       usageBytes: number;
     }>((resolvePromise) => {
       resolveFirstCalculation = resolvePromise;
@@ -1093,7 +1148,8 @@ describe("RecordingStorageService", () => {
     resolveFirstCalculation({
       clipsSizeBytes: 0,
       recordingsSizeBytes: 0,
-      savedEditsSizeBytes: 0,
+      exportVideosSizeBytes: 0,
+      exportVideosUsageTruncated: false,
       usageBytes: 0,
     });
 
@@ -2285,6 +2341,30 @@ describe("RecordingStorageService", () => {
     expect(existsSync(protectedPath)).toBe(true);
   });
 
+  it("protects an export directory configured through a directory link", async () => {
+    const exportTarget = join(root, "Full Recordings");
+    const exportAlias = join(root, "Hinekora Exports");
+    const exportPath = join(exportTarget, "saved.mp4");
+    mkdirSync(exportTarget, { recursive: true });
+    writeFileSync(exportPath, "exported");
+    symlinkSync(exportTarget, exportAlias, isWindowsOS() ? "junction" : "dir");
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        editorExportStoragePath: exportAlias,
+        recordingMaxStorageGb: 1 / 1024 ** 3,
+        recordingStoragePath: root,
+      }),
+    } as unknown as SettingsStoreService);
+    service.refreshLibrary({ publishUsage: false });
+
+    await expect(service.cleanup()).resolves.toMatchObject({
+      deletedCount: 0,
+      usageBytes: 8,
+    });
+    expect(existsSync(exportPath)).toBe(true);
+  });
+
   it("coalesces equivalent cleanup requests while one is pending", async () => {
     const first = service.cleanup({ protectedPaths: ["b", "a"] });
     const second = service.cleanup({ protectedPaths: ["a", "b"] });
@@ -2392,7 +2472,8 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 0,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
-      savedEditsSizeBytes: 0,
+      exportVideosSizeBytes: 0,
+      exportVideosUsageTruncated: false,
     });
     const internals = service as unknown as {
       createStorageInventory: (
@@ -2787,7 +2868,8 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 0,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
-      savedEditsSizeBytes: 0,
+      exportVideosSizeBytes: 0,
+      exportVideosUsageTruncated: false,
     });
     vi.spyOn(ipcService, "listRecordingLibrary").mockReturnValue({
       availableLeagues: ["Standard"],
@@ -2844,7 +2926,8 @@ describe("RecordingStorageService", () => {
       diskFreeBytes: 0,
       lowDiskSpace: false,
       recordingsSizeBytes: 0,
-      savedEditsSizeBytes: 0,
+      exportVideosSizeBytes: 0,
+      exportVideosUsageTruncated: false,
     });
     getUsage.mockReturnValueOnce(null);
     expect(

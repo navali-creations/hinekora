@@ -281,6 +281,38 @@ function mockEditorLibraries(
 }
 
 describe("EditorService IPC", () => {
+  it("routes overwrite accounting to the source storage category", () => {
+    const recordingOverwrite = vi
+      .spyOn(RecordingStorageService, "noteEditorOverwriteIfInitialized")
+      .mockImplementation(() => {});
+    const clipOverwrite = vi
+      .spyOn(ReplayClipsService, "noteEditorOverwriteIfInitialized")
+      .mockImplementation(() => {});
+    const service = Object.create(EditorService.prototype) as EditorService;
+    const noteOverwriteUsage = (
+      service as unknown as {
+        noteOverwriteUsage: (commit: {
+          modifiedAtMs: number;
+          sizeBytes: number;
+          source: { id: string; kind: "clip" | "recording" };
+        }) => void;
+      }
+    ).noteOverwriteUsage.bind(service);
+
+    noteOverwriteUsage({
+      modifiedAtMs: 1,
+      sizeBytes: 2,
+      source: { id: "recording-1", kind: "recording" },
+    });
+    noteOverwriteUsage({
+      modifiedAtMs: 3,
+      sizeBytes: 4,
+      source: { id: "clip-1", kind: "clip" },
+    });
+
+    expect(recordingOverwrite).toHaveBeenCalledWith("recording-1", 2, 1);
+    expect(clipOverwrite).toHaveBeenCalledWith("clip-1", 4);
+  });
   beforeEach(() => {
     DatabaseService.resetForTests();
     clearIpcWindowRolesForTests();
@@ -1417,9 +1449,9 @@ describe("EditorService IPC", () => {
         await writeFile(input.outputPath, "rendered");
       },
     );
-    const onSavedEditCommitted = vi.fn();
+    const onExportVideoCommitted = vi.fn();
     const service = new EditorService({
-      onSavedEditCommitted,
+      onExportVideoCommitted,
       renderExportWithFfmpeg,
     });
     const internals = service as unknown as {
@@ -1481,7 +1513,13 @@ describe("EditorService IPC", () => {
       expect(renderExportWithFfmpeg).toHaveBeenCalledWith(
         expect.objectContaining({ muteAudio: true }),
       );
-      expect(onSavedEditCommitted).toHaveBeenCalledWith(result.sizeBytes);
+      expect(onExportVideoCommitted).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: outputPath,
+          sizeBytes: result.sizeBytes,
+          sizeDeltaBytes: result.sizeBytes,
+        }),
+      );
       expect(
         (
           await internals.handleExportMediaRequest(
@@ -2783,11 +2821,16 @@ describe("EditorService IPC", () => {
         throw new Error("cleanup warning");
       },
     );
+    const onExportVideoCommitted = vi.fn();
+    const onOverwriteCommitted = vi.fn();
     const service = new EditorService({
       createExportClips: () => [createResolvedExportClip(outputPath)],
+      onExportVideoCommitted,
+      onOverwriteCommitted,
       removeExportFile,
       renderExportWithFfmpeg,
       resolveExportSource: () => ({ path: outputPath }),
+      statExportFile: async (path) => ({ size: (await stat(path)).size }),
     });
 
     const input: EditorExportInput = createExportInput({
@@ -2807,6 +2850,12 @@ describe("EditorService IPC", () => {
       readdir(join(directory, ".hinekora-editor-exports")),
     ).resolves.toEqual([]);
     expect(renderExportWithFfmpeg).toHaveBeenCalledTimes(1);
+    expect(onExportVideoCommitted).not.toHaveBeenCalled();
+    expect(onOverwriteCommitted).toHaveBeenCalledWith({
+      modifiedAtMs: expect.any(Number),
+      sizeBytes: 8,
+      source: { id: "clip-1", kind: "clip" },
+    });
 
     await rm(directory, { force: true, recursive: true });
   });

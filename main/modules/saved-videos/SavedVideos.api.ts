@@ -18,6 +18,12 @@ const SavedVideosAPI = {
     ipcRenderer
       .invoke(SavedVideosChannel.ListLibrary, query)
       .then(unwrapIpcResult),
+  onLibraryChanged: (callback: () => void): (() => void) => {
+    const listener = () => callback();
+    ipcRenderer.on(SavedVideosChannel.LibraryChanged, listener);
+    return () =>
+      ipcRenderer.removeListener(SavedVideosChannel.LibraryChanged, listener);
+  },
   open: (id: string): Promise<SavedVideoFileActionResult> =>
     ipcRenderer.invoke(SavedVideosChannel.Open, id).then(unwrapIpcResult),
   reveal: (id: string): Promise<SavedVideoFileActionResult> =>

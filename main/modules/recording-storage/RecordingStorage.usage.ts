@@ -1,11 +1,15 @@
-import { opendir, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 
+import {
+  defaultEditorExportInventoryMaxEntries,
+  defaultEditorExportInventoryMaxFiles,
+  type EditorExportFile,
+  scanEditorExportFiles,
+} from "~/main/modules/editor/EditorExport.inventory";
 import type { ReplayClipsRepository } from "~/main/modules/replay-clips/ReplayClips.repository";
 import { isPathInsideOrEqual } from "~/main/utils/storage-files";
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
-import { SAVED_EDITS_DIRECTORY_NAME } from "./RecordingStorage.constants";
 import {
   getManagedStoragePaths,
   hydrateStoragePathSizes,
@@ -15,12 +19,12 @@ import {
 import type { RecordingStorageRepository } from "./RecordingStorage.repository";
 
 const storageUsagePageSize = 500;
-const savedEditUsageBatchSize = 64;
 
 interface RecordingStorageUsageTotals {
   clipsSizeBytes: number;
   recordingsSizeBytes: number;
-  savedEditsSizeBytes: number;
+  exportVideosSizeBytes: number;
+  exportVideosUsageTruncated: boolean;
   usageBytes: number;
 }
 
@@ -31,7 +35,7 @@ interface ReplayClipUsageEntry {
 }
 
 interface RecordingStorageUsageCalculationInput {
-  exportRoots?: readonly string[];
+  exportRoots: readonly string[];
   recordingRepository: RecordingStorageRepository;
   replayClipsRepository: ReplayClipsRepository;
   root: string;
@@ -40,6 +44,10 @@ interface RecordingStorageUsageCalculationInput {
     isFile: () => boolean;
     size: number;
   }>;
+  maxExportEntries?: number;
+  maxExportFiles?: number;
+  isExportVideoOwned?: (file: EditorExportFile) => boolean;
+  scanExportFiles?: typeof scanEditorExportFiles;
 }
 
 async function calculateRecordingStorageUsage(
@@ -90,6 +98,7 @@ async function calculateRecordingStorageUsage(
   }
 
   let recordingsSizeBytes = 0;
+  const managedPathKeys = new Set(clipPathKeys);
   let recordingCursor: { mtimeMs: number; path: string } | null = null;
   for (;;) {
     await yieldToEventLoop();
@@ -107,6 +116,7 @@ async function calculateRecordingStorageUsage(
         !clipPathKeys.has(createStoragePathKey(path))
       ) {
         recordingsSizeBytes += Math.max(0, recording.size);
+        managedPathKeys.add(createStoragePathKey(path));
       }
     }
     if (recordings.length < storageUsagePageSize) {
@@ -119,98 +129,62 @@ async function calculateRecordingStorageUsage(
     };
   }
 
-  const savedEditsSizeBytes = await calculateExportVideosUsage(
-    input.exportRoots ?? [join(root, SAVED_EDITS_DIRECTORY_NAME)],
+  const exportVideosUsage = await calculateExportVideosUsage(
+    input.exportRoots,
+    managedPathKeys,
     shouldAbort,
-    input.statFile ?? stat,
+    input.statFile,
+    input.maxExportEntries ?? defaultEditorExportInventoryMaxEntries,
+    input.maxExportFiles ?? defaultEditorExportInventoryMaxFiles,
+    input.isExportVideoOwned ?? (() => true),
+    input.scanExportFiles ?? scanEditorExportFiles,
   );
-  if (savedEditsSizeBytes === null) {
+  if (exportVideosUsage === null) {
     return null;
   }
 
   return {
     clipsSizeBytes,
     recordingsSizeBytes,
-    savedEditsSizeBytes,
-    usageBytes: clipsSizeBytes + recordingsSizeBytes + savedEditsSizeBytes,
+    exportVideosSizeBytes: exportVideosUsage.sizeBytes,
+    exportVideosUsageTruncated: exportVideosUsage.isTruncated,
+    usageBytes: clipsSizeBytes + recordingsSizeBytes,
   };
 }
 
 async function calculateExportVideosUsage(
   roots: readonly string[],
+  excludedPathKeys: ReadonlySet<string>,
   shouldAbort: () => boolean,
-  statFile: NonNullable<RecordingStorageUsageCalculationInput["statFile"]>,
-): Promise<number | null> {
+  statFile: RecordingStorageUsageCalculationInput["statFile"],
+  maxEntries: number,
+  maxFiles: number,
+  isExportVideoOwned: (file: EditorExportFile) => boolean,
+  scanExportFiles: typeof scanEditorExportFiles,
+): Promise<{ isTruncated: boolean; sizeBytes: number } | null> {
   if (shouldAbort()) {
     return null;
   }
 
   let total = 0;
-  const uniqueRoots = Array.from(
-    new Map(
-      roots.map((root) => {
-        const resolvedRoot = resolve(root);
-        return [createStoragePathKey(resolvedRoot), resolvedRoot] as const;
-      }),
-    ).values(),
-  );
-  for (const root of uniqueRoots) {
-    let directory: Awaited<ReturnType<typeof opendir>>;
-    try {
-      directory = await opendir(root);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        continue;
-      }
-      throw error;
-    }
-
-    let pendingPaths: string[] = [];
-    for await (const entry of directory) {
-      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".mp4")) {
-        continue;
-      }
-      pendingPaths.push(join(directory.path, entry.name));
-      if (pendingPaths.length < savedEditUsageBatchSize) {
-        continue;
-      }
-      if (shouldAbort()) {
-        return null;
-      }
-      total += await sumFileSizes(pendingPaths, statFile);
-      pendingPaths = [];
-    }
-
-    if (shouldAbort()) {
-      return null;
-    }
-    total += await sumFileSizes(pendingPaths, statFile);
-  }
-
-  if (shouldAbort()) {
-    return null;
-  }
-  return total;
-}
-
-async function sumFileSizes(
-  paths: string[],
-  statFile: NonNullable<RecordingStorageUsageCalculationInput["statFile"]>,
-): Promise<number> {
-  const sizes = await Promise.all(
-    paths.map(async (path) => {
-      try {
-        const stats = await statFile(path);
-        return stats.isFile() ? Math.max(0, stats.size) : 0;
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-          return 0;
-        }
-        throw error;
-      }
-    }),
-  );
-  return sumPositiveValues(sizes, (size) => size);
+  const result = await scanExportFiles({
+    maxEntries,
+    maxFiles,
+    onFiles: (files) => {
+      total += sumPositiveValues(
+        files.filter(
+          (file) =>
+            isExportVideoOwned(file) &&
+            !excludedPathKeys.has(createStoragePathKey(file.path)),
+        ),
+        (file) => file.sizeBytes,
+      );
+    },
+    roots,
+    shouldAbort,
+    ...(statFile === undefined ? {} : { statFile }),
+  });
+  return result ? { isTruncated: result.isTruncated, sizeBytes: total } : null;
 }
 
 async function calculateReplayClipUsage(

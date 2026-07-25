@@ -12,10 +12,10 @@ import { createStorageSlice } from "./Storage.slice";
 function createStorageInfo(): StorageInfo {
   return {
     storagePath: "C:\\Videos\\Hinekora Recordings",
-    exportsPath: "C:\\Videos\\Hinekora Exports",
     recordingsSizeBytes: 0,
-    exportVideosSizeBytes: 0,
-    mediaSizeBytes: 0,
+    recordingUsageTruncated: false,
+    exportStorageVolumes: [],
+    exportVideosUsageTruncated: false,
     appInstallationSizeBytes: 0,
     temporarySizeBytes: 0,
     rewindBufferEstimateBytes: 0,
@@ -23,12 +23,8 @@ function createStorageInfo(): StorageInfo {
     totalTrackedSizeBytes: 0,
     diskTotalBytes: 100,
     diskFreeBytes: 50,
-    exportDiskTotalBytes: 100,
-    exportDiskFreeBytes: 50,
-    appInstallationDiskTotalBytes: 100,
-    appInstallationDiskFreeBytes: 50,
-    databaseDiskTotalBytes: 100,
-    databaseDiskFreeBytes: 50,
+    appInstallationOnStorageDrive: true,
+    databaseOnStorageDrive: true,
     breakdown: [],
     calculatedAt: "2026-06-18T00:00:00.000Z",
   };
@@ -73,6 +69,8 @@ describe("Storage slice", () => {
     });
     revealPaths.mockResolvedValue({
       storagePath: "C:\\Videos\\Hinekora Recordings",
+      exportStoragePath: "C:\\Videos\\Hinekora Exports",
+      exportStorageVolumes: [],
       databasePath: "C:\\Data\\hinekora.sqlite",
     });
 
@@ -135,6 +133,35 @@ describe("Storage slice", () => {
       info: createStorageInfo(),
       isLoading: false,
     });
+  });
+
+  it("stays loading until every concurrent storage request finishes", async () => {
+    let resolveInfo!: (info: StorageInfo) => void;
+    let resolveUsage!: (usage: StorageGameLeagueUsage[]) => void;
+    getInfo.mockReturnValueOnce(
+      new Promise<StorageInfo>((resolvePromise) => {
+        resolveInfo = resolvePromise;
+      }),
+    );
+    getGameLeagueUsage.mockReturnValueOnce(
+      new Promise<StorageGameLeagueUsage[]>((resolvePromise) => {
+        resolveUsage = resolvePromise;
+      }),
+    );
+    const store = createTestStore();
+
+    const refresh = store.getState().storage.refresh();
+    expect(store.getState().storage.isLoading).toBe(true);
+
+    resolveUsage([createGameLeagueUsage()]);
+    await vi.waitFor(() => {
+      expect(store.getState().storage.gameLeagueUsage).toHaveLength(1);
+    });
+    expect(store.getState().storage.isLoading).toBe(true);
+
+    resolveInfo(createStorageInfo());
+    await refresh;
+    expect(store.getState().storage.isLoading).toBe(false);
   });
 
   it("stores refresh fallback errors", async () => {

@@ -292,26 +292,6 @@ describe("recording storage retention", () => {
     });
   });
 
-  it("includes non-deletable saved edits when deciding whether cleanup is required", async () => {
-    const recordingPath = join(root, "recording.mkv");
-    const inventory = await createRecordingStorageInventory({
-      clips: [],
-      recordings: [{ mtimeMs: 1, path: recordingPath, size: 10 }],
-      root,
-    });
-
-    const selection = selectRecordingStorageCleanupCandidates({
-      inventory,
-      limitBytes: 15,
-      nonDeletableSizeBytes: 10,
-    });
-
-    expect(selection.usageBytes).toBe(20);
-    expect(selection.files).toEqual([
-      expect.objectContaining({ kind: "recording", path: recordingPath }),
-    ]);
-  });
-
   it("protects every recording and clip beneath an active directory", async () => {
     const activeDirectory = join(root, "active-session");
     const inventory = await createRecordingStorageInventory({

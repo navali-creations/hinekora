@@ -69,6 +69,39 @@ describe("ReplayClipsService file actions", () => {
     ReplayClipsService.resetForTests();
   });
 
+  it("updates clip metadata after an editor overwrite", () => {
+    const clip = createReplayClip({
+      id: "overwritten-clip",
+      processedClipPath: join(root, "overwritten.mp4"),
+      sizeBytes: 5,
+    });
+    repository.upsert(clip);
+    const recordingStorage = RecordingStorageService.getInstance();
+    const noteReplayClipUsageChange = vi.spyOn(
+      recordingStorage,
+      "noteReplayClipUsageChange",
+    );
+    const publishUsageChanged = vi.spyOn(
+      recordingStorage,
+      "publishUsageChanged",
+    );
+
+    service.noteEditorOverwrite(clip.id, 12);
+    expect(repository.get(clip.id)?.sizeBytes).toBe(12);
+    expect(noteReplayClipUsageChange).toHaveBeenCalledWith(
+      clip,
+      expect.objectContaining({ sizeBytes: 12 }),
+    );
+
+    service.noteEditorOverwrite("missing", 12);
+    expect(publishUsageChanged).toHaveBeenCalled();
+
+    ReplayClipsService.resetForTests();
+    ReplayClipsService.getInstance();
+    ReplayClipsService.noteEditorOverwriteIfInitialized(clip.id, -1);
+    expect(repository.get(clip.id)?.sizeBytes).toBe(0);
+  });
+
   it("bridges retention cleanup results back to recording storage", async () => {
     const deletedIds = Array.from(
       { length: 1_001 },

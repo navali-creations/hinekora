@@ -11,9 +11,11 @@ const storeMocks = vi.hoisted(() => ({
   deleteVideo: vi.fn(),
   error: null as string | null,
   hydrateLibrary: vi.fn(),
+  isLoading: false,
   items: [] as SavedVideoItem[],
   libraryPage: null as SavedVideosLibraryPage | null,
   openVideo: vi.fn(),
+  refreshLibrary: vi.fn(),
   revealVideo: vi.fn(),
 }));
 
@@ -36,6 +38,7 @@ let root: Root;
 beforeEach(() => {
   vi.clearAllMocks();
   storeMocks.error = null;
+  storeMocks.isLoading = false;
   storeMocks.items = [video];
   storeMocks.libraryPage = {
     isTruncated: false,
@@ -91,5 +94,21 @@ describe("SavedVideosPanel", () => {
 
     expect(container.textContent).toContain("Only part of this very large");
     expect(container.textContent).toContain("Exports unavailable");
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>("button.btn-error")?.click();
+    });
+    expect(storeMocks.refreshLibrary).toHaveBeenCalledOnce();
+  });
+
+  it("shows a loading state before the first page arrives", async () => {
+    storeMocks.isLoading = true;
+    storeMocks.items = [];
+    storeMocks.libraryPage = null;
+
+    await act(async () => {
+      root.render(<SavedVideosPanel />);
+    });
+
+    expect(container.textContent).toContain("Loading saved videos...");
   });
 });

@@ -90,6 +90,8 @@ import {
   createEditorProjectExportClipInputs,
   type EditorExportProjectOptions,
   EditorExportService,
+  type EditorExportVideoCommit,
+  type EditorOverwriteCommit,
   waitForEditorExportCompletions,
 } from "./EditorExport.service";
 import { EditorProjectRepository } from "./EditorProject.repository";
@@ -108,7 +110,8 @@ interface EditorServiceDependencies {
     clips: EditorExportClipInput[],
   ) => EditorResolvedExportClip[];
   linkExportFile?: typeof link;
-  onSavedEditCommitted?: (sizeBytes: number) => void;
+  onExportVideoCommitted?: (commit: EditorExportVideoCommit) => void;
+  onOverwriteCommitted?: (commit: EditorOverwriteCommit) => void;
   projectRepository?: EditorProjectRepository;
   removeExportFile?: typeof rm;
   renameExportFile?: typeof rename;
@@ -119,7 +122,12 @@ interface EditorServiceDependencies {
     storageRoot?: string;
   };
   shutdownTimeoutMs?: number;
-  statExportFile?: (path: string) => Promise<{ size: number }>;
+  statExportFile?: (path: string) => Promise<{
+    dev?: number;
+    ino?: number;
+    mtimeMs?: number;
+    size: number;
+  }>;
 }
 
 interface ActiveEditorRender {
@@ -215,9 +223,12 @@ class EditorService {
         : {}),
       persistProjectSnapshot: (project) =>
         this.persistExportProjectSnapshot(project),
-      onSavedEditCommitted:
-        dependencies.onSavedEditCommitted ??
-        ((sizeBytes) => this.noteSavedEditUsage(sizeBytes)),
+      onExportVideoCommitted:
+        dependencies.onExportVideoCommitted ??
+        ((commit) => this.noteExportVideoUsage(commit)),
+      onOverwriteCommitted:
+        dependencies.onOverwriteCommitted ??
+        ((commit) => this.noteOverwriteUsage(commit)),
       renderExportWithFfmpeg: this.renderExportWithFfmpeg,
       resolveExportSource: this.resolveEditorExportSource,
       resolveStorageRoot: () => this.resolveExportStorageRoot(),
@@ -1275,14 +1286,24 @@ class EditorService {
     );
   }
 
-  private noteSavedEditUsage(sizeBytes: number): void {
-    SavedVideosService.notifyLibraryChanged();
-    const recordingStorage = RecordingStorageService.getInstance();
-    recordingStorage.noteUsageDelta("saved-edits", sizeBytes);
-    recordingStorage.scheduleCleanup({
-      estimatedAddedBytes: sizeBytes,
-      usageAlreadyAccounted: true,
-    });
+  private noteExportVideoUsage(commit: EditorExportVideoCommit): void {
+    SavedVideosService.noteExportCommitted(commit);
+  }
+
+  private noteOverwriteUsage(commit: EditorOverwriteCommit): void {
+    if (commit.source.kind === "recording") {
+      RecordingStorageService.noteEditorOverwriteIfInitialized(
+        commit.source.id,
+        commit.sizeBytes,
+        commit.modifiedAtMs,
+      );
+      return;
+    }
+
+    ReplayClipsService.noteEditorOverwriteIfInitialized(
+      commit.source.id,
+      commit.sizeBytes,
+    );
   }
 }
 

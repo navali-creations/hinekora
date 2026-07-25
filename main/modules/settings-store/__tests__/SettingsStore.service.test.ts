@@ -20,12 +20,14 @@ import { SettingsStoreService } from "../SettingsStore.service";
 
 const electronMocks = vi.hoisted(() => ({
   getAllWindows: vi.fn<() => unknown[]>(() => []),
+  getPath: vi.fn(() => "C:\\Videos"),
   ipcMainHandle: vi.fn(),
   setLoginItemSettings: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
   app: {
+    getPath: electronMocks.getPath,
     setLoginItemSettings: electronMocks.setLoginItemSettings,
   },
   BrowserWindow: {
@@ -41,6 +43,8 @@ describe("SettingsStoreService", () => {
     clearIpcWindowRolesForTests();
     electronMocks.getAllWindows.mockReset();
     electronMocks.getAllWindows.mockReturnValue([]);
+    electronMocks.getPath.mockReset();
+    electronMocks.getPath.mockReturnValue("C:\\Videos");
     electronMocks.ipcMainHandle.mockReset();
     electronMocks.setLoginItemSettings.mockReset();
     vi.restoreAllMocks();
@@ -82,6 +86,20 @@ describe("SettingsStoreService", () => {
     } finally {
       database.close();
     }
+  });
+
+  it("rejects overlapping recording and export roots", () => {
+    const service = new SettingsStoreService();
+
+    expect(() =>
+      service.update({ recordingStoragePath: "C:\\Videos" }),
+    ).toThrow("Recording and export folders must not contain each other");
+    expect(() =>
+      service.update({ editorExportStoragePath: "C:\\Videos" }),
+    ).toThrow("Recording and export folders must not contain each other");
+    expect(
+      service.update({ editorExportStoragePath: "D:\\Hinekora Exports" }),
+    ).toMatchObject({ editorExportStoragePath: "D:\\Hinekora Exports" });
   });
 
   it("persists only the validated settings delta", () => {

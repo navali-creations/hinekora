@@ -57,6 +57,21 @@ const idleEditorExportLifecycle: EditorExportLifecycle = {
 
 type EditorExportRenderer = typeof renderEditorExportWithFfmpeg;
 
+interface EditorExportVideoCommit {
+  deviceId: number;
+  inode: number;
+  modifiedAtMs: number;
+  path: string;
+  sizeDeltaBytes: number;
+  sizeBytes: number;
+}
+
+interface EditorOverwriteCommit {
+  modifiedAtMs: number;
+  sizeBytes: number;
+  source: EditorMediaReference;
+}
+
 interface EditorExportServiceDependencies {
   createExportClips: (
     clips: EditorExportClipInput[],
@@ -64,7 +79,8 @@ interface EditorExportServiceDependencies {
   createMediaUrl: (exportId: string) => string;
   linkExportFile?: typeof link;
   persistProjectSnapshot: (project: EditorProject) => EditorProject;
-  onSavedEditCommitted: (sizeBytes: number) => void;
+  onExportVideoCommitted: (commit: EditorExportVideoCommit) => void;
+  onOverwriteCommitted?: (commit: EditorOverwriteCommit) => void;
   removeExportFile?: typeof rm;
   renameExportFile?: typeof rename;
   renderExportWithFfmpeg: EditorExportRenderer;
@@ -74,7 +90,12 @@ interface EditorExportServiceDependencies {
   };
   resolveStorageRoot: () => string;
   shutdownTimeoutMs: number;
-  statExportFile?: (path: string) => Promise<{ size: number }>;
+  statExportFile?: (path: string) => Promise<{
+    dev?: number;
+    ino?: number;
+    mtimeMs?: number;
+    size: number;
+  }>;
 }
 
 interface EditorExportProjectOptions {
@@ -298,6 +319,16 @@ class EditorExportService {
       const stats = await (this.dependencies.statExportFile ?? stat)(
         tempOutputPath,
       );
+      const previousOutputSizeBytes = overwriteSource
+        ? Math.max(
+            0,
+            (
+              await (this.dependencies.statExportFile ?? stat)(
+                overwriteSource.path,
+              )
+            ).size,
+          )
+        : 0;
       activeExport.abortController.signal.throwIfAborted();
       activeExport.phase = "committing";
       this.updateExportLifecycle(
@@ -325,8 +356,50 @@ class EditorExportService {
         );
       }
       tempOutputPath = null;
-      if (!overwriteSource) {
-        this.dependencies.onSavedEditCommitted(stats.size);
+      if (overwriteReference) {
+        try {
+          this.dependencies.onOverwriteCommitted?.({
+            modifiedAtMs: stats.mtimeMs ?? Date.now(),
+            sizeBytes: stats.size,
+            source: overwriteReference,
+          });
+        } catch (error) {
+          logWarn(editorLogScope, "Editor overwrite accounting deferred", {
+            error: safeErrorMessage(error),
+            sourceKind: overwriteReference.kind,
+          });
+        }
+      } else {
+        try {
+          this.dependencies.onExportVideoCommitted({
+            deviceId: stats.dev ?? 0,
+            inode: stats.ino ?? 0,
+            modifiedAtMs: stats.mtimeMs ?? Date.now(),
+            path: outputPath,
+            sizeBytes: stats.size,
+            sizeDeltaBytes: stats.size - previousOutputSizeBytes,
+          });
+        } catch (error) {
+          try {
+            await (this.dependencies.removeExportFile ?? rm)(outputPath, {
+              force: true,
+            });
+          } catch (rollbackError) {
+            logError(
+              editorLogScope,
+              "Committed editor export rollback failed",
+              {
+                error: safeErrorMessage(rollbackError),
+                registrationError: safeErrorMessage(error),
+                ...createSafePathLogFields(outputPath, "export"),
+              },
+            );
+            throw new Error(
+              "Video registration failed, and the saved file could not be removed",
+            );
+          }
+          throw error;
+        }
       }
       const completedStagingDirectory = stagingDirectoryPath;
       stagingDirectoryPath = null;
@@ -609,7 +682,11 @@ async function waitForEditorExportCompletions(
   return didFinish;
 }
 
-export type { EditorExportProjectOptions };
+export type {
+  EditorExportProjectOptions,
+  EditorExportVideoCommit,
+  EditorOverwriteCommit,
+};
 export {
   createEditorProjectExportClipInputs,
   EditorExportService,

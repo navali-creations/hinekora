@@ -1,6 +1,8 @@
+import { type PathLike, type Stats, symlinkSync } from "node:fs";
 import {
   mkdir,
   opendir,
+  readFile,
   rm as removePath,
   stat,
   utimes,
@@ -12,6 +14,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const electronMocks = vi.hoisted(() => ({
+  getAllWindows: vi.fn<() => unknown[]>(() => []),
   getPath: vi.fn(),
   ipcMainHandle: vi.fn(),
   openPath: vi.fn(),
@@ -23,6 +26,7 @@ const fsMocks = vi.hoisted(() => ({
 
 vi.mock("electron", () => ({
   app: { getPath: electronMocks.getPath },
+  BrowserWindow: { getAllWindows: electronMocks.getAllWindows },
   ipcMain: { handle: electronMocks.ipcMainHandle },
   shell: {
     openPath: electronMocks.openPath,
@@ -40,7 +44,11 @@ import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
-import { registerIpcWindowRole } from "~/main/utils/ipc-window-roles";
+import * as appLog from "~/main/utils/app-log";
+import {
+  clearIpcWindowRolesForTests,
+  registerIpcWindowRole,
+} from "~/main/utils/ipc-window-roles";
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 import { type AppSettings, createDefaultSettings } from "~/types";
@@ -58,13 +66,15 @@ let exportRoot: string;
 let settings: AppSettings;
 let settingsListener: ((settings: AppSettings) => void) | null;
 const noteUsageDelta = vi.fn();
+const getUsage = vi.fn();
 const settingsUnsubscribe = vi.fn();
+const GIGABYTE = 1024 ** 3;
 
 beforeEach(async () => {
   root = join(tmpdir(), `hinekora-saved-videos-${crypto.randomUUID()}`);
   videosPath = join(root, "videos");
   recordingStorageRoot = join(root, "recordings");
-  exportRoot = join(root, "exports");
+  exportRoot = join(videosPath, "Hinekora Exports");
   await Promise.all([
     mkdir(exportRoot, { recursive: true }),
     mkdir(join(videosPath, "Hinekora", "Exports"), { recursive: true }),
@@ -78,8 +88,19 @@ beforeEach(async () => {
   settingsListener = null;
   settingsUnsubscribe.mockReset();
   noteUsageDelta.mockReset();
+  getUsage.mockReset();
+  getUsage.mockResolvedValue({
+    clipsSizeBytes: 0,
+    diskFreeBytes: 100 * GIGABYTE,
+    exportVideosSizeBytes: 0,
+    exportVideosUsageTruncated: false,
+    lowDiskSpace: false,
+    recordingsSizeBytes: 0,
+  });
   electronMocks.getPath.mockReset();
   electronMocks.getPath.mockReturnValue(videosPath);
+  electronMocks.getAllWindows.mockReset();
+  electronMocks.getAllWindows.mockReturnValue([]);
   electronMocks.openPath.mockReset();
   electronMocks.openPath.mockResolvedValue("");
   electronMocks.showItemInFolder.mockReset();
@@ -93,12 +114,14 @@ beforeEach(async () => {
     },
   } as unknown as SettingsStoreService);
   vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+    getUsage,
     noteUsageDelta,
   } as unknown as RecordingStorageService);
 });
 
 afterEach(async () => {
   SavedVideosService.resetForTests();
+  clearIpcWindowRolesForTests();
   vi.restoreAllMocks();
   await removePath(root, { force: true, recursive: true });
 });
@@ -173,7 +196,9 @@ describe("SavedVideosService", () => {
     await expect(service.listLibrary()).resolves.toMatchObject({
       totalCount: 3,
     });
-    SavedVideosService.notifyLibraryChanged();
+    (
+      service as unknown as { invalidateLibrary: () => void }
+    ).invalidateLibrary();
     await expect(service.listLibrary()).resolves.toMatchObject({
       totalCount: 4,
     });
@@ -190,8 +215,69 @@ describe("SavedVideosService", () => {
     settings = { ...settings, editorExportStoragePath: nextExportRoot };
     settingsListener?.(settings);
     await expect(service.listLibrary()).resolves.toMatchObject({
-      totalCount: 3,
+      totalCount: 2,
     });
+  });
+
+  it("keeps custom-root exports created before ownership tracking visible", async () => {
+    const customRoot = join(root, "custom-exports");
+    const existingPath = join(customRoot, "Existing.mp4");
+    const unregisteredNewPath = join(customRoot, "Unregistered.mp4");
+    await mkdir(customRoot);
+    await Promise.all([
+      writeFile(existingPath, "existing"),
+      writeFile(unregisteredNewPath, "new"),
+    ]);
+    await Promise.all([
+      utimes(existingPath, new Date(1_000), new Date(1_000)),
+      utimes(
+        unregisteredNewPath,
+        new Date(Date.now() + 60_000),
+        new Date(Date.now() + 60_000),
+      ),
+    ]);
+    settings = { ...settings, editorExportStoragePath: customRoot };
+    const service = SavedVideosService.getInstance();
+
+    await expect(service.listLibrary()).resolves.toMatchObject({
+      items: [{ fileName: "Existing.mp4" }],
+      totalCount: 1,
+    });
+
+    const newStats = await stat(unregisteredNewPath);
+    SavedVideosService.noteExportCommitted({
+      deviceId: newStats.dev,
+      inode: newStats.ino,
+      modifiedAtMs: newStats.mtimeMs,
+      path: unregisteredNewPath,
+      sizeDeltaBytes: newStats.size,
+      sizeBytes: newStats.size,
+    });
+    await expect(service.listLibrary()).resolves.toMatchObject({
+      totalCount: 2,
+    });
+  });
+
+  it("deduplicates physical root aliases and permits actions on canonical files", async () => {
+    const legacyRoot = join(videosPath, "Hinekora", "Exports");
+    const path = join(legacyRoot, "Aliased.mp4");
+    await writeFile(path, "video");
+    await removePath(exportRoot, { recursive: true });
+    symlinkSync(
+      legacyRoot,
+      exportRoot,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const service = SavedVideosService.getInstance();
+
+    const page = await service.listLibrary();
+
+    expect(page).toMatchObject({ totalCount: 1 });
+    await expect(service.open(page.items[0]!.id)).resolves.toEqual({
+      error: null,
+      ok: true,
+    });
+    expect(electronMocks.openPath).toHaveBeenCalledWith(path);
   });
 
   it("bounds scans, batches stat work, and resolves stable sort ties", async () => {
@@ -211,24 +297,86 @@ describe("SavedVideosService", () => {
     await expect(
       service.listLibrary({ sortBy: "sizeBytes", sortDirection: "asc" }),
     ).resolves.toMatchObject({ isTruncated: true, totalCount: 2 });
+  });
 
-    const items: Awaited<
-      ReturnType<SavedVideosService["listLibrary"]>
-    >["items"] = [];
-    const pathsById = new Map<string, string>();
-    const internals = service as unknown as {
-      appendFiles: (
-        targetItems: typeof items,
-        targetPaths: Map<string, string>,
-        paths: string[],
-      ) => Promise<void>;
+  it("coalesces concurrent library scans", async () => {
+    const path = join(exportRoot, "Pending.mp4");
+    await writeFile(path, "x");
+    const stats = await stat(path);
+    let resolveStat!: (value: typeof stats) => void;
+    const openDirectory = vi.fn(opendir);
+    const service = new SavedVideosService({
+      openDirectory,
+      statFile: () =>
+        new Promise((resolvePromise) => {
+          resolveStat = resolvePromise;
+        }),
+    });
+
+    const first = service.listLibrary();
+    const second = service.listLibrary();
+    await vi.waitFor(() => expect(resolveStat).toBeTypeOf("function"));
+    resolveStat(stats);
+    await Promise.all([first, second]);
+
+    expect(openDirectory).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not cache a scan invalidated while it is in flight", async () => {
+    const path = join(exportRoot, "Pending.mp4");
+    await writeFile(path, "x");
+    const stats = await stat(path);
+    let resolveStat!: (value: typeof stats) => void;
+    let statCallCount = 0;
+    const openDirectory = vi.fn(opendir);
+    const service = new SavedVideosService({
+      openDirectory,
+      statFile: (statPath) => {
+        statCallCount += 1;
+        return statCallCount === 1
+          ? new Promise((resolvePromise) => {
+              resolveStat = resolvePromise;
+            })
+          : stat(statPath);
+      },
+    });
+
+    const pending = service.listLibrary();
+    await vi.waitFor(() => expect(resolveStat).toBeTypeOf("function"));
+    settings = {
+      ...settings,
+      editorExportStoragePath: join(root, "next-exports"),
     };
-    const duplicatePath = join(exportRoot, "A.mp4");
-    await internals.appendFiles(items, pathsById, [
-      duplicatePath,
-      duplicatePath,
+    settingsListener?.(settings);
+    resolveStat(stats);
+    await pending;
+
+    await service.listLibrary();
+    expect(openDirectory).toHaveBeenCalledTimes(4);
+  });
+
+  it("publishes invalidations only to active main windows", () => {
+    const mainWebContents = { id: 101, send: vi.fn() };
+    const overlayWebContents = { id: 102, send: vi.fn() };
+    electronMocks.getAllWindows.mockReturnValue([
+      { isDestroyed: () => false, webContents: mainWebContents },
+      { isDestroyed: () => false, webContents: overlayWebContents },
+      { isDestroyed: () => true, webContents: { id: 103, send: vi.fn() } },
     ]);
-    expect(items).toHaveLength(1);
+    registerIpcWindowRole(mainWebContents, WindowName.Main);
+    registerIpcWindowRole(overlayWebContents, WindowName.AuraOverlay);
+    SavedVideosService.getInstance();
+
+    (
+      SavedVideosService.getInstance() as unknown as {
+        invalidateLibrary: () => void;
+      }
+    ).invalidateLibrary();
+
+    expect(mainWebContents.send).toHaveBeenCalledWith(
+      SavedVideosChannel.LibraryChanged,
+    );
+    expect(overlayWebContents.send).not.toHaveBeenCalled();
   });
 
   it("handles missing roots and files that change while they are scanned", async () => {
@@ -316,7 +464,7 @@ describe("SavedVideosService", () => {
       error: null,
       ok: true,
     });
-    expect(noteUsageDelta).toHaveBeenCalledWith("saved-edits", -5);
+    expect(noteUsageDelta).toHaveBeenCalledWith("export-videos", -5);
     await expect(service.open(id)).resolves.toEqual({
       error: "Saved edit video is not available",
       ok: false,
@@ -329,6 +477,509 @@ describe("SavedVideosService", () => {
       error: "Saved edit video is not available",
       ok: false,
     });
+  });
+
+  it("deletes the oldest exports until usage has cleanup buffer", async () => {
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    const paths = await createSizedExportFiles([
+      ["oldest.mp4", 600 * 1024 ** 2, 1_000],
+      ["middle.mp4", 600 * 1024 ** 2, 2_000],
+      ["newest.mp4", 600 * 1024 ** 2, 3_000],
+    ]);
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 1.8 * GIGABYTE,
+      exportVideosUsageTruncated: false,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    const service = new SavedVideosService({
+      openDirectory: opendir,
+      statFile: createSizedStatFile(
+        new Map([
+          [paths[0]!, 600 * 1024 ** 2],
+          [paths[1]!, 600 * 1024 ** 2],
+          [paths[2]!, 600 * 1024 ** 2],
+        ]),
+      ),
+    });
+
+    await expect(service.cleanup()).resolves.toMatchObject({
+      deletedCount: 2,
+      failedCount: 0,
+      freedBytes: 1_200 * 1024 ** 2,
+      limitBytes: GIGABYTE,
+      usageBytes: 1_800 * 1024 ** 2,
+    });
+    await expect(stat(paths[0]!)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(paths[1]!)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(paths[2]!)).resolves.toMatchObject({ size: 1 });
+    expect(noteUsageDelta).toHaveBeenCalledWith(
+      "export-videos",
+      -1_200 * 1024 ** 2,
+    );
+  });
+
+  it("protects the newly committed export during automatic cleanup", async () => {
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    const paths = await createSizedExportFiles([
+      ["old.mp4", 700 * 1024 ** 2, 1_000],
+      ["new.mp4", 700 * 1024 ** 2, 2_000],
+    ]);
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 1.4 * GIGABYTE,
+      exportVideosUsageTruncated: false,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    const service = new SavedVideosService({
+      statFile: createSizedStatFile(
+        new Map(paths.map((path) => [path, 700 * 1024 ** 2])),
+      ),
+    });
+
+    await expect(
+      service.cleanup({ protectedPaths: [paths[1]!] }),
+    ).resolves.toMatchObject({ deletedCount: 1, failedCount: 0 });
+    await expect(stat(paths[0]!)).rejects.toMatchObject({ code: "ENOENT" });
+    await expect(stat(paths[1]!)).resolves.toMatchObject({ size: 1 });
+  });
+
+  it("skips cleanup for unlimited and under-limit export storage", async () => {
+    const createRetentionPlan = vi.fn().mockResolvedValue({
+      files: [],
+      hasMoreCandidates: false,
+      isTruncated: true,
+      targetUsageBytes: 0.95 * GIGABYTE,
+      usageBytes: 500 * 1024 ** 2,
+    });
+    const service = new SavedVideosService({ createRetentionPlan });
+    getUsage
+      .mockResolvedValueOnce({
+        clipsSizeBytes: 0,
+        diskFreeBytes: 100 * GIGABYTE,
+        exportVideosSizeBytes: 2 * GIGABYTE,
+        exportVideosUsageTruncated: false,
+        lowDiskSpace: false,
+        recordingsSizeBytes: 0,
+      })
+      .mockResolvedValueOnce({
+        clipsSizeBytes: 0,
+        diskFreeBytes: 100 * GIGABYTE,
+        exportVideosSizeBytes: 500 * 1024 ** 2,
+        exportVideosUsageTruncated: false,
+        lowDiskSpace: false,
+        recordingsSizeBytes: 0,
+      })
+      .mockResolvedValueOnce({
+        clipsSizeBytes: 0,
+        diskFreeBytes: 100 * GIGABYTE,
+        exportVideosSizeBytes: 500 * 1024 ** 2,
+        exportVideosUsageTruncated: true,
+        lowDiskSpace: false,
+        recordingsSizeBytes: 0,
+      });
+
+    settings = { ...settings, editorExportMaxStorageGb: 0 };
+    await expect(service.cleanup()).resolves.toMatchObject({
+      deletedCount: 0,
+      limitBytes: 0,
+      usageBytes: 2 * GIGABYTE,
+    });
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    await expect(service.cleanup()).resolves.toMatchObject({
+      deletedCount: 0,
+      usageBytes: 500 * 1024 ** 2,
+    });
+    await expect(service.cleanup()).resolves.toMatchObject({
+      deletedCount: 0,
+      usageBytes: 500 * 1024 ** 2,
+    });
+    expect(createRetentionPlan).toHaveBeenCalledOnce();
+  });
+
+  it("returns safely when a retention scan is invalidated", async () => {
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 2 * GIGABYTE,
+      exportVideosUsageTruncated: false,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    let invalidateScan = false;
+    const service = new SavedVideosService({
+      createRetentionPlan: vi.fn().mockImplementation(async () => {
+        if (invalidateScan) {
+          settings = {
+            ...settings,
+            editorExportStoragePath: join(root, "changed-exports"),
+          };
+          settingsListener?.(settings);
+        }
+        return null;
+      }),
+    });
+    const internals = service as unknown as {
+      scheduleCleanup: (options?: { protectedPaths?: string[] }) => void;
+    };
+    const scheduleCleanup = vi
+      .spyOn(internals, "scheduleCleanup")
+      .mockImplementation(() => {});
+
+    await expect(service.cleanup()).resolves.toMatchObject({
+      deletedCount: 0,
+      usageBytes: 2 * GIGABYTE,
+    });
+    expect(scheduleCleanup).not.toHaveBeenCalled();
+
+    invalidateScan = true;
+    await service.cleanup();
+    expect(scheduleCleanup).toHaveBeenCalledOnce();
+  });
+
+  it("handles non-file, missing, and failed deletion races", async () => {
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    const videoPath = join(exportRoot, "race.mp4");
+    await writeFile(videoPath, "video");
+    const videoStats = await stat(videoPath);
+    const candidate = {
+      deviceId: videoStats.dev,
+      inode: videoStats.ino,
+      modifiedAt: videoStats.mtime,
+      path: videoPath,
+      sizeBytes: videoStats.size,
+    };
+    const plan = {
+      files: [candidate],
+      hasMoreCandidates: false,
+      isTruncated: false,
+      targetUsageBytes: 0.95 * GIGABYTE,
+      usageBytes: 2 * GIGABYTE,
+    };
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 2 * GIGABYTE,
+      exportVideosUsageTruncated: false,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+
+    const directoryStats = await stat(exportRoot);
+    const nonFileService = new SavedVideosService({
+      createRetentionPlan: vi.fn().mockResolvedValue(plan),
+      statFile: vi.fn().mockResolvedValue(directoryStats),
+    });
+    await expect(nonFileService.cleanup()).resolves.toMatchObject({
+      deletedCount: 0,
+      failedCount: 0,
+    });
+
+    const missingError = Object.assign(new Error("gone"), { code: "ENOENT" });
+    const missingService = new SavedVideosService({
+      createRetentionPlan: vi.fn().mockResolvedValue(plan),
+      statFile: vi.fn().mockRejectedValue(missingError),
+    });
+    await expect(missingService.cleanup()).resolves.toMatchObject({
+      deletedCount: 0,
+      failedCount: 0,
+    });
+    expect(noteUsageDelta).toHaveBeenCalledWith(
+      "export-videos",
+      -videoStats.size,
+    );
+
+    noteUsageDelta.mockClear();
+    const logWarn = vi.spyOn(appLog, "logWarn").mockImplementation(() => {});
+    const failedService = new SavedVideosService({
+      createRetentionPlan: vi
+        .fn()
+        .mockResolvedValue({ ...plan, hasMoreCandidates: true }),
+      removeFile: vi.fn(async () => {
+        throw Object.assign(new Error("locked"), { code: "EACCES" });
+      }),
+      statFile: stat,
+    });
+    const failedInternals = failedService as unknown as {
+      scheduleCleanup: (options?: {
+        protectedPaths?: string[];
+        retryCount?: number;
+      }) => void;
+    };
+    const scheduleCleanup = vi
+      .spyOn(failedInternals, "scheduleCleanup")
+      .mockImplementation(() => {});
+    await expect(failedService.cleanup()).resolves.toMatchObject({
+      deletedCount: 0,
+      failedCount: 1,
+    });
+    expect(scheduleCleanup).toHaveBeenCalledWith({ retryCount: 1 });
+    scheduleCleanup.mockClear();
+    await failedService.cleanup({ retryCount: 3 });
+    expect(scheduleCleanup).not.toHaveBeenCalled();
+    expect(noteUsageDelta).not.toHaveBeenCalled();
+    expect(logWarn).toHaveBeenCalledWith(
+      "saved-videos",
+      "Failed to delete retained export video",
+      expect.objectContaining({ error: "locked" }),
+    );
+  });
+
+  it("schedules another bounded cleanup pass when usage remains high", async () => {
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    const videoPath = join(exportRoot, "old.mp4");
+    await writeFile(videoPath, "video");
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 2 * GIGABYTE,
+      exportVideosUsageTruncated: false,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    const service = new SavedVideosService({
+      createRetentionPlan: vi.fn().mockResolvedValue({
+        files: [
+          {
+            deviceId: (await stat(videoPath)).dev,
+            inode: (await stat(videoPath)).ino,
+            modifiedAt: (await stat(videoPath)).mtime,
+            path: videoPath,
+            sizeBytes: (await stat(videoPath)).size,
+          },
+        ],
+        hasMoreCandidates: true,
+        isTruncated: false,
+        targetUsageBytes: 0.95 * GIGABYTE,
+        usageBytes: 2 * GIGABYTE,
+      }),
+      removeFile: vi.fn().mockResolvedValue(undefined),
+      statFile: stat,
+    });
+    const internals = service as unknown as {
+      scheduleCleanup: (options?: { protectedPaths?: string[] }) => void;
+    };
+    const scheduleCleanup = vi
+      .spyOn(internals, "scheduleCleanup")
+      .mockImplementation(() => {});
+
+    await service.cleanup({ protectedPaths: [] });
+
+    expect(scheduleCleanup).toHaveBeenCalledWith({ protectedPaths: [] });
+  });
+
+  it("deletes bounded candidates and continues when a truncated subtotal is below target", async () => {
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    const videoPath = join(exportRoot, "old.mp4");
+    await writeFile(videoPath, "video");
+    const videoStats = await stat(videoPath);
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 500 * 1024 ** 2,
+      exportVideosUsageTruncated: true,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    const createRetentionPlan = vi.fn().mockResolvedValue({
+      files: [
+        {
+          deviceId: videoStats.dev,
+          inode: videoStats.ino,
+          modifiedAt: videoStats.mtime,
+          path: videoPath,
+          sizeBytes: videoStats.size,
+        },
+      ],
+      hasMoreCandidates: true,
+      isTruncated: true,
+      targetUsageBytes: 0.95 * GIGABYTE,
+      usageBytes: 500 * 1024 ** 2,
+    });
+    const removeFile = vi.fn().mockResolvedValue(undefined);
+    const service = new SavedVideosService({
+      createRetentionPlan,
+      removeFile,
+    });
+    const internals = service as unknown as {
+      scheduleCleanup: (options?: {
+        protectedPaths?: string[];
+        retryCount?: number;
+      }) => void;
+    };
+    const scheduleCleanup = vi
+      .spyOn(internals, "scheduleCleanup")
+      .mockImplementation(() => {});
+
+    await expect(
+      service.cleanup({ protectedPaths: [] }),
+    ).resolves.toMatchObject({ deletedCount: 1 });
+
+    expect(removeFile).toHaveBeenCalledWith(videoPath);
+    expect(scheduleCleanup).toHaveBeenCalledWith({ protectedPaths: [] });
+    expect(createRetentionPlan).toHaveBeenCalledWith(
+      expect.not.objectContaining({
+        openDirectory: expect.anything(),
+        statFile: expect.anything(),
+      }),
+    );
+  });
+
+  it("bounds no-progress retries for an empty truncated cleanup pass", async () => {
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 500 * 1024 ** 2,
+      exportVideosUsageTruncated: true,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    const service = new SavedVideosService({
+      createRetentionPlan: vi.fn().mockResolvedValue({
+        files: [],
+        hasMoreCandidates: true,
+        isTruncated: true,
+        targetUsageBytes: 0.95 * GIGABYTE,
+        usageBytes: 500 * 1024 ** 2,
+      }),
+    });
+    const internals = service as unknown as {
+      scheduleCleanup: (options?: { retryCount?: number }) => void;
+    };
+    const scheduleCleanup = vi
+      .spyOn(internals, "scheduleCleanup")
+      .mockImplementation(() => {});
+
+    await service.cleanup({ retryCount: 2 });
+    expect(scheduleCleanup).toHaveBeenCalledWith({ retryCount: 3 });
+
+    scheduleCleanup.mockClear();
+    await service.cleanup({ retryCount: 3 });
+    expect(scheduleCleanup).not.toHaveBeenCalled();
+  });
+
+  it("recovers the cleanup queue and logs scheduled failures", async () => {
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    const service = new SavedVideosService();
+    getUsage.mockRejectedValueOnce(new Error("scan failed"));
+
+    await expect(service.cleanup()).rejects.toThrow("scan failed");
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 0,
+      exportVideosUsageTruncated: false,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    await expect(service.cleanup()).resolves.toMatchObject({ deletedCount: 0 });
+
+    vi.useFakeTimers();
+    const logWarn = vi.spyOn(appLog, "logWarn").mockImplementation(() => {});
+    vi.spyOn(service, "cleanup").mockRejectedValueOnce(
+      new Error("scheduled failure"),
+    );
+    service.initializeRetention();
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(logWarn).toHaveBeenCalledWith(
+      "saved-videos",
+      "Scheduled export cleanup failed",
+      { error: "scheduled failure" },
+    );
+    vi.useRealTimers();
+  });
+
+  it("reschedules cleanup invalidated by a storage root change", async () => {
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 2 * GIGABYTE,
+      exportVideosUsageTruncated: false,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    const service = new SavedVideosService({
+      createRetentionPlan: vi.fn().mockImplementation(async () => {
+        settings = {
+          ...settings,
+          editorExportStoragePath: join(root, "changed-exports"),
+        };
+        settingsListener?.(settings);
+        return {
+          files: [
+            {
+              deviceId: 0,
+              inode: 0,
+              modifiedAt: new Date(0),
+              path: join(exportRoot, "old.mp4"),
+              sizeBytes: GIGABYTE,
+            },
+          ],
+          hasMoreCandidates: false,
+          isTruncated: false,
+          targetUsageBytes: 0.95 * GIGABYTE,
+          usageBytes: 2 * GIGABYTE,
+        };
+      }),
+    });
+    const internals = service as unknown as {
+      scheduleCleanup: (options?: { protectedPaths?: string[] }) => void;
+    };
+    const scheduleCleanup = vi
+      .spyOn(internals, "scheduleCleanup")
+      .mockImplementation(() => {});
+
+    await expect(service.cleanup()).resolves.toMatchObject({ deletedCount: 0 });
+    expect(scheduleCleanup).toHaveBeenCalledOnce();
+  });
+
+  it("clears a pending cleanup timer when reset", () => {
+    vi.useFakeTimers();
+    const service = SavedVideosService.getInstance();
+    service.initializeRetention();
+
+    SavedVideosService.resetForTests();
+
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it("schedules cleanup after startup, commits, and limit reductions", async () => {
+    vi.useFakeTimers();
+    const service = SavedVideosService.getInstance();
+    const cleanup = vi.spyOn(service, "cleanup").mockResolvedValue({
+      deletedCount: 0,
+      failedCount: 0,
+      freedBytes: 0,
+      limitBytes: 50 * GIGABYTE,
+      usageBytes: 0,
+    });
+
+    service.initializeRetention();
+    SavedVideosService.noteExportCommitted({
+      deviceId: 0,
+      inode: 0,
+      modifiedAtMs: 1_000,
+      path: join(exportRoot, "new.mp4"),
+      sizeDeltaBytes: 123,
+      sizeBytes: 123,
+    });
+    settings = { ...settings, editorExportMaxStorageGb: 10 };
+    settingsListener?.(settings);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(noteUsageDelta).toHaveBeenCalledWith("export-videos", 123);
+    expect(cleanup).toHaveBeenCalledWith({
+      protectedPaths: [join(exportRoot, "new.mp4")],
+    });
+    vi.useRealTimers();
   });
 
   it("rejects stale action targets and filesystem races", async () => {
@@ -359,6 +1010,13 @@ describe("SavedVideosService", () => {
       .resolveLibraryRoots()
       .map(createStoragePathKey)
       .join("\0");
+    await writeFile(videoPath, "replacement");
+    await expect(service.delete(id)).resolves.toEqual({
+      error: "Saved edit video is not available",
+      ok: false,
+    });
+    await expect(readFile(videoPath, "utf8")).resolves.toBe("replacement");
+
     await removePath(videoPath);
     await mkdir(videoPath);
     await expect(service.open(id)).resolves.toEqual({
@@ -432,3 +1090,32 @@ describe("SavedVideosService", () => {
     );
   });
 });
+
+async function createSizedExportFiles(
+  files: Array<[name: string, sizeBytes: number, modifiedAtMs: number]>,
+): Promise<string[]> {
+  return Promise.all(
+    files.map(async ([name, _sizeBytes, modifiedAtMs]) => {
+      const path = join(exportRoot, name);
+      await writeFile(path, "x");
+      await utimes(path, new Date(modifiedAtMs), new Date(modifiedAtMs));
+      return path;
+    }),
+  );
+}
+
+function createSizedStatFile(
+  sizes: Map<string, number>,
+): (path: PathLike) => Promise<Stats> {
+  return async (path) => {
+    const stats = await stat(path);
+    const size = sizes.get(String(path)) ?? stats.size;
+    return {
+      ...stats,
+      dev: stats.dev,
+      isFile: () => stats.isFile(),
+      mtime: stats.mtime,
+      size,
+    } as Stats;
+  };
+}

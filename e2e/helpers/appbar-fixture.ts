@@ -7,6 +7,7 @@ import {
   emitDashboardPoeProcessStart,
   emitDashboardPoeProcessStop,
   emitDashboardRecorderOverlayVisibility,
+  emitDashboardRecorderStatus,
   emitDashboardRecordingStorageUsageChanged,
   emitDashboardRecordingStorageUsageRefreshFailed,
   expectNoUnexpectedDashboardBridgeCalls,
@@ -18,6 +19,7 @@ interface AppBarE2EOptions {
   activeGame?: GameId;
   activeGameFocused?: boolean;
   auraLocked?: boolean;
+  editorExportMaxStorageGb?: number;
   poeProcessState?: Parameters<typeof emitDashboardPoeProcessStart>[1];
   recordingMaxStorageGb?: number;
   recordingStorageUsageDeferred?: boolean;
@@ -58,6 +60,7 @@ export {
   emitDashboardPoeProcessStart as emitAppBarPoeProcessStart,
   emitDashboardPoeProcessStop as emitAppBarPoeProcessStop,
   emitDashboardRecorderOverlayVisibility as emitAppBarRecorderOverlayVisibility,
+  emitDashboardRecorderStatus as emitAppBarRecorderStatus,
   emitDashboardRecordingStorageUsageChanged as emitAppBarRecordingStorageUsageChanged,
   emitDashboardRecordingStorageUsageRefreshFailed as emitAppBarRecordingStorageUsageRefreshFailed,
   expectNoUnexpectedDashboardBridgeCalls as expectNoUnexpectedAppBarBridgeCalls,

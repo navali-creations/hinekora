@@ -2,6 +2,13 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  changeAndBlur,
+  findButton,
+  setNativeInputValue,
+} from "../StorageSettingsCard.test.utils";
+
+const GIGABYTE = 1024 ** 3;
 const storeMocks = vi.hoisted(() => ({
   editorExportStatus: "idle",
   editorExportStoragePath: "C:\\Exports",
@@ -13,6 +20,10 @@ const storeMocks = vi.hoisted(() => ({
   } | null,
   recordingMaxStorageGb: 48,
   recordingStoragePath: "C:\\Recordings",
+  recordingUsage: {
+    clipsSizeBytes: 1 * 1024 ** 3,
+    recordingsSizeBytes: 4 * 1024 ** 3,
+  } as { clipsSizeBytes: number; recordingsSizeBytes: number } | null,
   refreshRecordingStorageUsage: vi.fn(),
   refreshStorage: vi.fn(),
   selectPath: vi.fn(),
@@ -32,10 +43,12 @@ vi.mock("~/renderer/store", () => ({
   useRecordingStorageShallow: (
     selector: (recordingStorage: {
       refreshUsage: typeof storeMocks.refreshRecordingStorageUsage;
+      usage: typeof storeMocks.recordingUsage;
     }) => unknown,
   ) =>
     selector({
       refreshUsage: storeMocks.refreshRecordingStorageUsage,
+      usage: storeMocks.recordingUsage,
     }),
   useSettingsShallow: (
     selector: (settings: {
@@ -81,6 +94,10 @@ beforeEach(() => {
   storeMocks.editorExportStoragePath = "C:\\Exports";
   storeMocks.recordingMaxStorageGb = 48;
   storeMocks.recordingStoragePath = "C:\\Recordings";
+  storeMocks.recordingUsage = {
+    clipsSizeBytes: 1 * GIGABYTE,
+    recordingsSizeBytes: 4 * GIGABYTE,
+  };
   storeMocks.setError.mockReset();
   storeMocks.refreshRecordingStorageUsage.mockReset();
   storeMocks.refreshRecordingStorageUsage.mockResolvedValue(undefined);
@@ -95,6 +112,13 @@ beforeEach(() => {
       app: { selectPath: storeMocks.selectPath },
     },
   });
+  HTMLDialogElement.prototype.showModal = function showModal() {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function close() {
+    this.open = false;
+    this.dispatchEvent(new Event("close"));
+  };
 });
 
 afterEach(() => {
@@ -171,6 +195,64 @@ describe("RecordingStorageSettingsFields", () => {
     });
   });
 
+  it("confirms a recording limit that would delete existing media", async () => {
+    storeMocks.recordingUsage = {
+      clipsSizeBytes: 4 * GIGABYTE,
+      recordingsSizeBytes: 10 * GIGABYTE,
+    };
+    storeMocks.updateSettings.mockResolvedValue(undefined);
+    await act(async () => {
+      root.render(<RecordingStorageSettingsFields />);
+    });
+    const input = container.querySelector<HTMLInputElement>(
+      'input[type="number"]',
+    )!;
+
+    await changeAndBlur(input, "10");
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain(
+        "Your recordings and clips currently use 14 GB",
+      );
+      expect(document.body.textContent).toContain("about 9.5 GB");
+    });
+    expect(storeMocks.updateSettings).not.toHaveBeenCalled();
+
+    await act(async () => findButton("Cancel").click());
+    expect(input.value).toBe("48");
+    expect(storeMocks.updateSettings).not.toHaveBeenCalled();
+
+    await changeAndBlur(input, "10");
+    await act(async () => findButton("Set 10 GB limit").click());
+    await vi.waitFor(() => {
+      expect(storeMocks.updateSettings).toHaveBeenCalledWith({
+        recordingMaxStorageGb: 10,
+      });
+    });
+  });
+
+  it("requires confirmation while current recording usage is unavailable", async () => {
+    storeMocks.recordingUsage = null;
+    storeMocks.updateSettings.mockResolvedValue(undefined);
+    await act(async () => {
+      root.render(<RecordingStorageSettingsFields />);
+    });
+    const input = container.querySelector<HTMLInputElement>(
+      'input[type="number"]',
+    )!;
+
+    await changeAndBlur(input, "10");
+
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain(
+        "Current recording usage is still being calculated",
+      );
+    });
+    expect(storeMocks.updateSettings).not.toHaveBeenCalled();
+    await act(async () => findButton("Cancel").click());
+    expect(input.value).toBe("48");
+  });
+
   it("stores a selected recording folder and refreshes storage", async () => {
     storeMocks.selectPath.mockResolvedValue("D:\\New Recordings");
     storeMocks.updateSettings.mockResolvedValue(undefined);
@@ -228,11 +310,3 @@ describe("RecordingStorageSettingsFields", () => {
     expect(buttons[1]?.disabled).toBe(false);
   });
 });
-
-function setNativeInputValue(input: HTMLInputElement, value: string): void {
-  const valueSetter = Object.getOwnPropertyDescriptor(
-    HTMLInputElement.prototype,
-    "value",
-  )?.set;
-  valueSetter?.call(input, value);
-}

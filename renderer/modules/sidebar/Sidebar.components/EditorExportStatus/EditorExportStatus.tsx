@@ -60,7 +60,7 @@ function EditorExportStatus() {
   return (
     <section
       aria-label="Background video processing"
-      className="absolute inset-x-3 bottom-3 isolate overflow-hidden rounded border border-base-content/15 p-2"
+      className="isolate overflow-hidden rounded border border-base-content/15 p-2"
       data-testid="sidebar-editor-export-status"
     >
       <MediaProcessingBackdrop />

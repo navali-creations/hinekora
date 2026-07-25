@@ -21,6 +21,8 @@ import {
   isRealPathInsideOrEqual,
   removeEmptyParentDirectories,
   resolveDatabaseFilePaths,
+  resolveStoragePathAliases,
+  storagePathsOverlap,
 } from "./storage-files";
 
 let root: string;
@@ -133,6 +135,28 @@ describe("storage-files utils", () => {
     } finally {
       rmSync(externalRoot, { recursive: true, force: true });
     }
+  });
+
+  it("detects storage overlap through directory links", () => {
+    const recordingRoot = join(root, "Hinekora Recordings");
+    const exportTarget = join(recordingRoot, "Full Recordings");
+    const exportAlias = join(root, "Hinekora Exports");
+    const missingExportRoot = join(root, "Missing Exports");
+    mkdirSync(exportTarget, { recursive: true });
+    symlinkSync(exportTarget, exportAlias, isWindowsOS() ? "junction" : "dir");
+
+    expect(resolveStoragePathAliases(recordingRoot)).toEqual([
+      resolve(recordingRoot),
+    ]);
+    expect(resolveStoragePathAliases(exportAlias)).toEqual([
+      resolve(exportAlias),
+      resolve(exportTarget),
+    ]);
+    expect(resolveStoragePathAliases(missingExportRoot)).toEqual([
+      resolve(missingExportRoot),
+    ]);
+    expect(storagePathsOverlap(recordingRoot, exportAlias)).toBe(true);
+    expect(storagePathsOverlap(recordingRoot, missingExportRoot)).toBe(false);
   });
 
   it("ignores filesystem races while collecting managed files", async () => {

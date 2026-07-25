@@ -1,7 +1,9 @@
 import { app, BrowserWindow } from "electron";
 
 import { DatabaseService } from "~/main/modules/database";
+import { resolveEditorExportStorageRoot } from "~/main/modules/editor/EditorExport.paths";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
+import { resolveRecordingStorageRoot } from "~/main/modules/recording-storage/RecordingStorage.utils";
 import { logWarn } from "~/main/utils/app-log";
 import {
   assertObject,
@@ -14,6 +16,7 @@ import {
   getIpcWindowRole,
   registerGuardedIpcHandler,
 } from "~/main/utils/ipc-window-roles";
+import { storagePathsOverlap } from "~/main/utils/storage-files";
 
 import {
   type AppSettings,
@@ -87,6 +90,12 @@ class SettingsStoreService {
       this.get(),
       parsedInput,
     );
+    if (
+      Object.hasOwn(normalizedInput, "recordingStoragePath") ||
+      Object.hasOwn(normalizedInput, "editorExportStoragePath")
+    ) {
+      assertStorageRootsDoNotOverlap({ ...this.get(), ...normalizedInput });
+    }
     const shouldApplyStartupSettings =
       Object.hasOwn(normalizedInput, "appLaunchOnStartup") ||
       Object.hasOwn(normalizedInput, "appStartMinimized");
@@ -121,6 +130,7 @@ class SettingsStoreService {
   }
 
   replace(settings: AppSettings): AppSettings {
+    assertStorageRootsDoNotOverlap(settings);
     const storedSettings = this.repository.replace(settings);
     this.settingsCache = storedSettings;
     this.notifyChangeListeners(storedSettings);
@@ -211,6 +221,21 @@ class SettingsStoreService {
         );
       }
     }
+  }
+}
+
+function assertStorageRootsDoNotOverlap(settings: AppSettings): void {
+  const videosPath = app.getPath("videos");
+  const recordingRoot = resolveRecordingStorageRoot(
+    settings.recordingStoragePath,
+    videosPath,
+  );
+  const exportRoot = resolveEditorExportStorageRoot(
+    settings.editorExportStoragePath,
+    videosPath,
+  );
+  if (storagePathsOverlap(recordingRoot, exportRoot)) {
+    throw new Error("Recording and export folders must not contain each other");
   }
 }
 

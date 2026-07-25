@@ -1,6 +1,4 @@
-import type { ChangeEvent } from "react";
 import { useEffect, useState } from "react";
-import { FiFolder as FolderOpen } from "react-icons/fi";
 
 import {
   useEditorSelector,
@@ -9,101 +7,81 @@ import {
   useStorageShallow,
 } from "~/renderer/store";
 
-import { getRecordingStorageSettingsError } from "../RecordingStorageSettingsFields/RecordingStorageSettingsFields.utils";
+import { StorageBudgetField } from "../StorageBudgetField/StorageBudgetField";
+import { StoragePathField } from "../StoragePathField/StoragePathField";
+import { useStoragePathSetting } from "../StoragePathField/useStoragePathSetting";
 
 function ExportStoragePathField() {
-  const { settingsValue, updateSettings } = useSettingsShallow((settings) => ({
-    settingsValue: settings.value,
-    updateSettings: settings.update,
-  }));
-  const { refreshStorage, setError } = useStorageShallow((storage) => ({
-    refreshStorage: storage.refresh,
-    setError: storage.setError,
-  }));
-  const refreshRecordingStorageUsage = useRecordingStorageShallow(
-    (recordingStorage) => recordingStorage.refreshUsage,
+  const settingsValue = useSettingsShallow((settings) => settings.value);
+  const exportUsage = useRecordingStorageShallow(
+    (recordingStorage) => recordingStorage.usage,
   );
-  const exportStatus = useEditorSelector((editor) => editor.exportState.status);
+  const exportUsageBytes = exportUsage?.exportVideosSizeBytes ?? null;
+  const setStorageError = useStorageShallow((storage) => storage.setError);
+  const isExporting =
+    useEditorSelector((editor) => editor.exportState.status) === "exporting";
   const persistedPath = settingsValue?.editorExportStoragePath ?? "";
-  const [pathDraft, setPathDraft] = useState(persistedPath);
+  const [defaultPath, setDefaultPath] = useState("");
 
   useEffect(() => {
-    setPathDraft(persistedPath);
-  }, [persistedPath]);
-
-  const persistPath = async (editorExportStoragePath: string | null) => {
-    try {
-      setError(null);
-      await updateSettings({ editorExportStoragePath });
-    } catch (error) {
-      setPathDraft(persistedPath);
-      setError(getRecordingStorageSettingsError(error));
+    if (persistedPath) {
+      setDefaultPath(persistedPath);
       return;
     }
-
-    try {
-      await Promise.all([refreshStorage(), refreshRecordingStorageUsage()]);
-    } catch (error) {
-      setError(getRecordingStorageSettingsError(error));
-    }
-  };
-
-  const handlePathChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setPathDraft(event.target.value);
-  };
-
-  const handlePathCommit = async () => {
-    const path = pathDraft || null;
-    if (path !== (persistedPath || null)) {
-      await persistPath(path);
-    }
-  };
-
-  const handleBrowse = async () => {
-    try {
-      const directoryPath = await window.electron.app.selectPath({
-        ...(persistedPath ? { defaultPath: persistedPath } : {}),
-        title: "Select exports folder",
-        properties: ["openDirectory"],
+    let active = true;
+    void window.electron.storage
+      .revealPaths()
+      .then((paths) => {
+        if (active) {
+          setDefaultPath(paths.exportStoragePath);
+        }
+      })
+      .catch((error) => {
+        if (active) {
+          setStorageError(
+            error instanceof Error
+              ? error.message
+              : "Could not resolve the default exports folder",
+          );
+        }
       });
-      if (directoryPath) {
-        setPathDraft(directoryPath);
-        await persistPath(directoryPath);
-      }
-    } catch (error) {
-      setError(getRecordingStorageSettingsError(error));
-    }
-  };
+    return () => {
+      active = false;
+    };
+  }, [persistedPath, setStorageError]);
 
-  const isExporting = exportStatus === "exporting";
+  const exportPath = useStoragePathSetting({
+    defaultPath: defaultPath || undefined,
+    dialogTitle: "Select exports folder",
+    persistedPath,
+    settingKey: "editorExportStoragePath",
+  });
 
   return (
-    <label className="grid min-w-0 gap-1.5 text-primary text-[0.8125rem]">
-      Exports folder
-      <div className="join w-full">
-        <input
-          className="input input-bordered input-sm join-item min-w-0 flex-1"
+    <div className="space-y-2">
+      <span className="font-semibold text-sm">Export Storage</span>
+      <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_10rem]">
+        <StoragePathField
+          description="Finished videos saved from the editor. These are separate from your recordings and clips."
           disabled={isExporting}
-          placeholder="Default: Videos\Hinekora Exports"
-          value={pathDraft}
-          onBlur={handlePathCommit}
-          onChange={handlePathChange}
+          label="Exports folder"
+          placeholder="Loading export folder..."
+          value={exportPath.draft}
+          onBlur={exportPath.handleBlur}
+          onBrowse={exportPath.handleBrowse}
+          onChange={exportPath.handleChange}
         />
-        <button
-          className="no-drag btn btn-primary btn-sm btn-square join-item"
+        <StorageBudgetField
+          currentUsageBytes={exportUsageBytes}
+          currentUsageIsPartial={
+            exportUsage?.exportVideosUsageTruncated === true
+          }
           disabled={isExporting}
-          title="Select exports folder"
-          type="button"
-          onClick={handleBrowse}
-        >
-          <FolderOpen size={16} />
-        </button>
+          helpText="Export storage limit. Hinekora automatically deletes the oldest saved edit videos when the limit is reached. Set 0 for unlimited storage."
+          settingKey="editorExportMaxStorageGb"
+        />
       </div>
-      <span className="text-base-content/55 text-xs">
-        Finished videos saved from the editor. These are separate from your
-        recordings and clips.
-      </span>
-    </label>
+    </div>
   );
 }
 

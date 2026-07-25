@@ -27,48 +27,59 @@ export const createStorageSlice: BoundStoreStateCreator<StorageSlice> = (
   set,
   get,
 ) => {
-  const fetchStorageInfo = async () => {
+  let activeLoadCount = 0;
+
+  const beginLoad = () => {
+    activeLoadCount += 1;
     set((state) => {
       state.storage.isLoading = true;
       state.storage.error = null;
     });
+  };
+
+  const finishLoad = () => {
+    activeLoadCount = Math.max(0, activeLoadCount - 1);
+    set((state) => {
+      state.storage.isLoading = activeLoadCount > 0;
+    });
+  };
+
+  const fetchStorageInfo = async () => {
+    beginLoad();
 
     try {
       const info = await window.electron.storage.getInfo();
       set((state) => {
         state.storage.info = info;
-        state.storage.isLoading = false;
       });
     } catch (error) {
       set((state) => {
-        state.storage.isLoading = false;
         state.storage.error =
           error instanceof Error ? error.message : "Failed to fetch storage";
       });
+    } finally {
+      finishLoad();
     }
   };
 
   const fetchGameLeagueUsage = async () => {
-    set((state) => {
-      state.storage.isLoading = true;
-      state.storage.error = null;
-    });
+    beginLoad();
 
     try {
       const gameLeagueUsage =
         await window.electron.storage.getGameLeagueUsage();
       set((state) => {
         state.storage.gameLeagueUsage = gameLeagueUsage;
-        state.storage.isLoading = false;
       });
     } catch (error) {
       set((state) => {
-        state.storage.isLoading = false;
         state.storage.error =
           error instanceof Error
             ? error.message
             : "Failed to fetch storage usage";
       });
+    } finally {
+      finishLoad();
     }
   };
 

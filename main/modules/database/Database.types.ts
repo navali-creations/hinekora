@@ -189,6 +189,16 @@ interface EditorProjectSourceLeagueTable {
   source_league: string;
 }
 
+interface EditorExportVideoTable {
+  path: string;
+  device_id: number;
+  inode: number;
+  size_bytes: number;
+  modified_at_ms: number;
+  created_at: TimestampColumn;
+  updated_at: TimestampColumn;
+}
+
 export interface DatabaseSchema {
   activity_session_clips: ActivitySessionClipTable;
   activity_sessions: ActivitySessionTable;
@@ -197,6 +207,7 @@ export interface DatabaseSchema {
   capture_profiles: CaptureProfileTable;
   editor_project_source_leagues: EditorProjectSourceLeagueTable;
   editor_projects: EditorProjectTable;
+  editor_export_videos: EditorExportVideoTable;
   migrations: MigrationTable;
   poe_league_sync_state: PoeLeagueSyncStateTable;
   poe_leagues: PoeLeagueTable;

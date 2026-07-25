@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  FiAlertTriangle,
   FiArchive,
   FiClock,
   FiDatabase,
@@ -19,6 +20,7 @@ import type {
 
 import { formatBytes } from "../storage.utils/storage.utils";
 import { DiskUsageBar } from "./DiskUsageBar/DiskUsageBar";
+import { ExportVolumeDiskUsageBar } from "./ExportVolumeDiskUsageBar/ExportVolumeDiskUsageBar";
 
 const CATEGORY_ICON_MAP: Record<StorageBreakdownItem["category"], ReactNode> = {
   "death-clips": <FiArchive className="h-3.5 w-3.5" />,
@@ -30,6 +32,9 @@ const CATEGORY_ICON_MAP: Record<StorageBreakdownItem["category"], ReactNode> = {
   "temporary-files": <FiTrash2 className="h-3.5 w-3.5" />,
   database: <FiDatabase className="h-3.5 w-3.5" />,
 };
+const RECORDING_INVENTORY_CATEGORIES = new Set<
+  StorageBreakdownItem["category"]
+>(["death-clips", "full-recordings", "manual-replays", "temporary-files"]);
 
 interface DiskUsageSectionProps {
   info: StorageInfo;
@@ -39,6 +44,16 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
   const [revealedPaths, setRevealedPaths] =
     useState<StorageRevealPathsResult | null>(null);
   const [isRevealed, setIsRevealed] = useState(false);
+  const pathsVersionRef = useRef(info.calculatedAt);
+
+  useEffect(() => {
+    if (pathsVersionRef.current === info.calculatedAt) {
+      return;
+    }
+    pathsVersionRef.current = info.calculatedAt;
+    setRevealedPaths(null);
+    setIsRevealed(false);
+  }, [info.calculatedAt]);
 
   const handleRevealToggle = useCallback(async () => {
     if (isRevealed) {
@@ -59,23 +74,26 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
 
   const displayPath =
     isRevealed && revealedPaths ? revealedPaths.storagePath : info.storagePath;
-  const displayExportsPath =
-    isRevealed && revealedPaths ? revealedPaths.exportsPath : info.exportsPath;
-  const exportsOnStorageDrive =
-    info.diskTotalBytes === info.exportDiskTotalBytes &&
-    info.diskFreeBytes === info.exportDiskFreeBytes;
-  const databaseOnStorageDrive =
-    info.diskTotalBytes === info.databaseDiskTotalBytes &&
-    info.diskFreeBytes === info.databaseDiskFreeBytes;
-  const appInstallationOnStorageDrive =
-    info.diskTotalBytes === info.appInstallationDiskTotalBytes &&
-    info.diskFreeBytes === info.appInstallationDiskFreeBytes;
+  const revealedExportPaths = new Map(
+    revealedPaths?.exportStorageVolumes.map((volume) => [
+      volume.id,
+      volume.path,
+    ]) ?? [],
+  );
+  const recordingExportVolume = info.exportStorageVolumes.find(
+    (volume) => volume.isRecordingStorage,
+  );
+  const separateExportVolumes = info.exportStorageVolumes.filter(
+    (volume) => !volume.isRecordingStorage,
+  );
+  const exportsOnRecordingStorageBytes =
+    recordingExportVolume?.exportVideosSizeBytes ?? 0;
   const trackedBytesOnStorageDrive =
     info.recordingsSizeBytes +
-    (exportsOnStorageDrive ? info.exportVideosSizeBytes : 0) +
+    exportsOnRecordingStorageBytes +
     info.temporarySizeBytes +
-    (appInstallationOnStorageDrive ? info.appInstallationSizeBytes : 0) +
-    (databaseOnStorageDrive ? info.databaseSizeBytes : 0);
+    (info.appInstallationOnStorageDrive ? info.appInstallationSizeBytes : 0) +
+    (info.databaseOnStorageDrive ? info.databaseSizeBytes : 0);
   const otherDiskUsedBytes = Math.max(
     0,
     info.diskTotalBytes - info.diskFreeBytes - trackedBytesOnStorageDrive,
@@ -101,12 +119,12 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
               bytes: info.recordingsSizeBytes,
               colorClass: "bg-primary",
             },
-            ...(exportsOnStorageDrive
+            ...(exportsOnRecordingStorageBytes > 0
               ? [
                   {
                     label: "Hinekora Exports",
-                    bytes: info.exportVideosSizeBytes,
-                    colorClass: "bg-secondary",
+                    bytes: exportsOnRecordingStorageBytes,
+                    colorClass: "bg-sky-400",
                   },
                 ]
               : []),
@@ -115,7 +133,7 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
               bytes: info.temporarySizeBytes,
               colorClass: "bg-info",
             },
-            ...(appInstallationOnStorageDrive
+            ...(info.appInstallationOnStorageDrive
               ? [
                   {
                     label: "App installation",
@@ -124,7 +142,7 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
                   },
                 ]
               : []),
-            ...(databaseOnStorageDrive
+            ...(info.databaseOnStorageDrive
               ? [
                   {
                     label: "Database",
@@ -137,46 +155,38 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
           totalBytes={info.diskTotalBytes}
           onRevealToggle={handleRevealToggle}
         />
-        {!exportsOnStorageDrive && (
-          <DiskUsageBar
+        {separateExportVolumes.map((volume) => (
+          <ExportVolumeDiskUsageBar
+            key={volume.id}
             isRevealed={isRevealed}
-            path={displayExportsPath}
-            segments={[
-              {
-                label: "Other disk usage",
-                bytes: Math.max(
-                  0,
-                  info.exportDiskTotalBytes -
-                    info.exportDiskFreeBytes -
-                    info.exportVideosSizeBytes,
-                ),
-                colorClass: "bg-base-content/20",
-              },
-              {
-                label: "Hinekora Exports",
-                bytes: info.exportVideosSizeBytes,
-                colorClass: "bg-secondary",
-              },
-            ]}
-            totalBytes={info.exportDiskTotalBytes}
             onRevealToggle={handleRevealToggle}
+            revealedPath={revealedExportPaths.get(volume.id)}
+            volume={volume}
           />
-        )}
+        ))}
       </div>
 
-      {!databaseOnStorageDrive && info.databaseSizeBytes > 0 && (
+      {(info.exportVideosUsageTruncated || info.recordingUsageTruncated) && (
+        <div className="flex items-center gap-1.5 text-warning text-xs">
+          <FiAlertTriangle className="h-3 w-3 shrink-0" />
+          Storage totals are partial because the media library is very large
+        </div>
+      )}
+
+      {!info.databaseOnStorageDrive && info.databaseSizeBytes > 0 && (
         <div className="flex items-center gap-1.5 text-info text-xs">
           <FiDatabase className="h-3 w-3" />
           Database is on a different drive than recording storage
         </div>
       )}
 
-      {!appInstallationOnStorageDrive && info.appInstallationSizeBytes > 0 && (
-        <div className="flex items-center gap-1.5 text-info text-xs">
-          <FiPackage className="h-3 w-3" />
-          App installation is on a different drive than recording storage
-        </div>
-      )}
+      {!info.appInstallationOnStorageDrive &&
+        info.appInstallationSizeBytes > 0 && (
+          <div className="flex items-center gap-1.5 text-info text-xs">
+            <FiPackage className="h-3 w-3" />
+            App installation is on a different drive than recording storage
+          </div>
+        )}
 
       {info.breakdown.length > 0 && (
         <div
@@ -212,6 +222,7 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
               return (
                 <div
                   className="flex items-center gap-3 py-1.5"
+                  data-testid={`storage-breakdown-${item.category}`}
                   key={item.category}
                 >
                   <span className="shrink-0 text-base-content/50">
@@ -226,6 +237,12 @@ function DiskUsageSection({ info }: DiskUsageSectionProps) {
                       </span>
                       <span className="shrink-0 text-base-content/50 text-xs tabular-nums">
                         {item.estimated ? "~" : ""}
+                        {(item.category === "export-videos" &&
+                          info.exportVideosUsageTruncated) ||
+                        (RECORDING_INVENTORY_CATEGORIES.has(item.category) &&
+                          info.recordingUsageTruncated)
+                          ? ">="
+                          : ""}
                         {formatBytes(item.sizeBytes)}
                       </span>
                     </div>

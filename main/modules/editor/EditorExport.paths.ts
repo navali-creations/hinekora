@@ -39,12 +39,29 @@ function resolveEditorExportLibraryRoots(
   );
 }
 
+function resolveImplicitlyOwnedEditorExportRoots(
+  input: Pick<
+    ResolveEditorExportLibraryRootsInput,
+    "recordingStorageRoot" | "videosPath"
+  >,
+): string[] {
+  return Array.from(
+    new Map(
+      [
+        join(input.videosPath, DEFAULT_EDITOR_EXPORT_DIRECTORY_NAME),
+        join(input.videosPath, ...LEGACY_EDITOR_EXPORT_DIRECTORY_PARTS),
+        join(input.recordingStorageRoot, PREVIOUS_EDITOR_EXPORT_DIRECTORY_NAME),
+      ].map((root) => [createStoragePathKey(root), root]),
+    ).values(),
+  );
+}
+
 function isCrossPlatformAbsolute(path: string): boolean {
   return isAbsolute(path) || win32.isAbsolute(path);
 }
 
 export {
-  DEFAULT_EDITOR_EXPORT_DIRECTORY_NAME,
   resolveEditorExportLibraryRoots,
   resolveEditorExportStorageRoot,
+  resolveImplicitlyOwnedEditorExportRoots,
 };

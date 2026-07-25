@@ -1,10 +1,11 @@
-import { expect, type Locator, type Page, test } from "@playwright/test";
+import { expect, type Page, test } from "@playwright/test";
 
 import {
   emitAppBarAuraLockChanged,
   emitAppBarPoeProcessStart,
   emitAppBarPoeProcessStop,
   emitAppBarRecorderOverlayVisibility,
+  emitAppBarRecorderStatus,
   emitAppBarRecordingStorageUsageChanged,
   emitAppBarRecordingStorageUsageRefreshFailed,
   expectNoUnexpectedAppBarBridgeCalls,
@@ -19,167 +20,293 @@ import {
 } from "../helpers/poe-process-fixture";
 
 const GIGABYTE = 1024 ** 3;
-const lowDiskSpaceTooltip =
-  "Recording drive space is critically low. New recordings and clips may fail unless space is freed.";
-const storageSettingsTooltip = "Open data and storage settings";
-const storageWarningTooltip =
-  "Storage is within 10% of its limit. Once full, the oldest recordings and clips will be deleted and replaced by new recordings and clips.";
 test.afterEach(async ({ page }) => {
   await expectNoUnexpectedAppBarBridgeCalls(page);
 });
 
-test("shows storage usage and opens data storage settings on click", async ({
+test("shows separate sidebar storage budgets and opens storage settings", async ({
   page,
 }) => {
   await setupAppBarE2E(page);
 
-  const storageMeter = page.getByRole("button", {
-    name: "0 GB used of 50 GB. Open data and storage settings",
+  const storageMeter = page.getByRole("link", {
+    name: "Open data and storage settings",
   });
   await expect(storageMeter).toBeVisible();
   await expect(storageMeter).toHaveCSS("cursor", "pointer");
-
-  const storageProgress = storageMeter.getByRole("progressbar");
-  await expect(storageProgress).toHaveAttribute("aria-valuenow", "0");
-  const [storageLabelBounds, storageProgressBounds] = await Promise.all([
-    storageMeter.getByText("0 GB / 50 GB", { exact: true }).boundingBox(),
-    storageProgress.boundingBox(),
-  ]);
-  expect(storageLabelBounds).not.toBeNull();
-  expect(storageProgressBounds).not.toBeNull();
-  expect(storageProgressBounds?.width).toBeCloseTo(
-    storageLabelBounds?.width ?? 0,
-    0,
-  );
-
-  const storageTooltip = page
-    .locator(".tooltip.tooltip-left")
-    .filter({ has: storageMeter });
-  await storageMeter.hover();
-  await expectDaisyTooltipVisible(storageTooltip, storageSettingsTooltip);
+  await expect(
+    storageMeter.getByRole("progressbar", {
+      name: "Recording Storage: 0 GB of 50 GB",
+    }),
+  ).toHaveAttribute("aria-valuenow", "0");
+  await expect(
+    storageMeter.getByRole("progressbar", {
+      name: "Export Storage: 0 GB of 50 GB",
+    }),
+  ).toHaveAttribute("aria-valuenow", "0");
+  await expect(storageMeter).toContainText("Recording Storage");
+  await expect(storageMeter).toContainText("Export Storage");
 
   await storageMeter.click();
-
   await expectDataStorageSettings(page);
 });
 
-test("updates deferred storage usage without blocking app startup", async ({
+test("keeps sidebar storage anchored while recording status expands", async ({
+  page,
+}) => {
+  await setupAppBarE2E(page);
+
+  await expect.poll(() => getStorageFooterBottomGap(page)).toBe(12);
+  await emitAppBarRecorderStatus(page, {
+    recording: true,
+    recordingStartedAt: "2026-07-22T10:00:00.000Z",
+    runRecordingActive: true,
+    runRecordingStartedAt: "2026-07-22T10:00:00.000Z",
+  });
+  await expect(page.getByText("Run active", { exact: true })).toBeVisible();
+  await expect.poll(() => getStorageFooterBottomGap(page)).toBe(12);
+});
+
+test("updates both deferred storage meters without blocking startup", async ({
   page,
 }) => {
   await setupAppBarE2E(page, { recordingStorageUsageDeferred: true });
-
-  const pendingStorageMeter = page.getByRole("button", {
-    name: "Loading recording storage usage. Open data and storage settings",
+  const storageMeter = page.getByRole("link", {
+    name: "Open data and storage settings",
   });
-  await expect(pendingStorageMeter).toHaveText("-- / 50 GB");
-  await expect(pendingStorageMeter).toHaveAttribute("aria-busy", "true");
+  await expect(
+    storageMeter.getByRole("progressbar", {
+      name: "Recording Storage: -- of 50 GB",
+    }),
+  ).not.toHaveAttribute("aria-valuenow");
 
   await emitAppBarRecordingStorageUsageChanged(page, {
     clipsSizeBytes: 1 * GIGABYTE,
     diskFreeBytes: 89 * GIGABYTE,
     lowDiskSpace: false,
     recordingsSizeBytes: 10 * GIGABYTE,
-    savedEditsSizeBytes: 2 * GIGABYTE,
+    exportVideosSizeBytes: 2 * GIGABYTE,
+    exportVideosUsageTruncated: false,
   });
 
-  const storageMeter = page.getByRole("button", {
-    name: "13 GB used of 50 GB. Open data and storage settings",
-  });
-  await expect(storageMeter).toHaveText("13 GB / 50 GB");
-  await expect(storageMeter).toHaveAttribute("aria-busy", "false");
+  await expect(
+    storageMeter.getByRole("progressbar", {
+      name: "Recording Storage: 11 GB of 50 GB",
+    }),
+  ).toHaveAttribute("aria-valuenow", "22");
+  await expect(
+    storageMeter.getByRole("progressbar", {
+      name: "Export Storage: 2 GB of 50 GB",
+    }),
+  ).toHaveAttribute("aria-valuenow", "4");
 });
 
-test("reports a deferred storage refresh failure without breaking the AppBar", async ({
+test("marks bounded export usage as partial", async ({ page }) => {
+  await setupAppBarE2E(page, { recordingStorageUsageDeferred: true });
+
+  await emitAppBarRecordingStorageUsageChanged(page, {
+    clipsSizeBytes: 0,
+    diskFreeBytes: 89 * GIGABYTE,
+    lowDiskSpace: false,
+    recordingsSizeBytes: 0,
+    exportVideosSizeBytes: 2 * GIGABYTE,
+    exportVideosUsageTruncated: true,
+  });
+
+  const storageMeter = page.getByRole("link", {
+    name: "Open data and storage settings",
+  });
+  await expect(storageMeter).toContainText("≥2 / 50 GB");
+  await expect(
+    storageMeter.getByRole("status", {
+      name: "Export usage is partial because the library is very large",
+    }),
+  ).toBeVisible();
+});
+
+test("confirms a recording budget that would trigger automatic cleanup", async ({
+  page,
+}) => {
+  await setupAppBarE2E(page, {
+    recordingMaxStorageGb: 50,
+    recordingStorageUsage: {
+      clipsSizeBytes: 4 * GIGABYTE,
+      recordingsSizeBytes: 10 * GIGABYTE,
+    },
+  });
+  await page
+    .getByRole("link", { name: "Open data and storage settings" })
+    .click();
+  await expectDataStorageSettings(page);
+
+  const recordingBudget = page
+    .getByLabel("Data & Storage")
+    .getByRole("spinbutton", { name: /^Max storage GB/ })
+    .first();
+  await recordingBudget.fill("10");
+  await recordingBudget.press("Tab");
+
+  const confirmation = page.getByRole("dialog").filter({
+    has: page.getByRole("heading", { name: "Reduce recording storage?" }),
+  });
+  await expect(confirmation).toContainText(
+    "Your recordings and clips currently use 14 GB",
+  );
+  await expect(confirmation).toContainText("about 9.5 GB");
+  expect(
+    (await getAppBarE2ECalls(page)).settingsUpdates.filter(
+      (update) => update.recordingMaxStorageGb !== undefined,
+    ),
+  ).toEqual([]);
+
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(recordingBudget).toHaveValue("50");
+
+  await recordingBudget.fill("10");
+  await recordingBudget.press("Tab");
+  await page.getByRole("button", { name: "Set 10 GB limit" }).click();
+  await expect
+    .poll(async () =>
+      (await getAppBarE2ECalls(page)).settingsUpdates.filter(
+        (update) => update.recordingMaxStorageGb !== undefined,
+      ),
+    )
+    .toEqual([{ recordingMaxStorageGb: 10 }]);
+});
+
+test("confirms an export budget below current saved video usage", async ({
+  page,
+}) => {
+  await setupAppBarE2E(page, {
+    editorExportMaxStorageGb: 50,
+    recordingStorageUsage: {
+      exportVideosSizeBytes: 14 * GIGABYTE,
+    },
+  });
+  await page
+    .getByRole("link", { name: "Open data and storage settings" })
+    .click();
+  await expectDataStorageSettings(page);
+
+  const exportBudget = page
+    .getByLabel("Data & Storage")
+    .getByRole("spinbutton", { name: /^Max storage GB/ })
+    .nth(1);
+  await exportBudget.fill("10");
+  await exportBudget.press("Tab");
+
+  const confirmation = page.getByRole("dialog").filter({
+    has: page.getByRole("heading", { name: "Reduce export storage?" }),
+  });
+  await expect(confirmation).toContainText(
+    "Your saved edit videos currently use 14 GB",
+  );
+  await expect(confirmation).toContainText(
+    "will delete the oldest saved edit videos",
+  );
+  await expect(confirmation).toContainText("about 9.5 GB");
+  await expect(confirmation).toContainText(
+    "Deleted saved edit videos cannot be recovered",
+  );
+  expect(
+    (await getAppBarE2ECalls(page)).settingsUpdates.filter(
+      (update) => update.editorExportMaxStorageGb !== undefined,
+    ),
+  ).toEqual([]);
+
+  await confirmation.getByRole("button", { name: "Cancel" }).click();
+  await expect(exportBudget).toHaveValue("50");
+
+  await exportBudget.fill("10");
+  await exportBudget.press("Tab");
+  await page.getByRole("button", { name: "Set 10 GB limit" }).click();
+  await expect
+    .poll(async () =>
+      (await getAppBarE2ECalls(page)).settingsUpdates.filter(
+        (update) => update.editorExportMaxStorageGb !== undefined,
+      ),
+    )
+    .toEqual([{ editorExportMaxStorageGb: 10 }]);
+});
+
+test("keeps storage settings reachable after a deferred refresh failure", async ({
   page,
 }) => {
   await setupAppBarE2E(page, { recordingStorageUsageDeferred: true });
-
   await emitAppBarRecordingStorageUsageRefreshFailed(
     page,
     "Recording storage usage could not be refreshed",
   );
-
-  const storageMeter = page.getByRole("button", {
-    name: "Recording storage usage is unavailable. Open data and storage settings",
+  const storageMeter = page.getByRole("link", {
+    name: "Open data and storage settings",
   });
-  await expect(storageMeter).toHaveText("-- / 50 GB");
-  await expect(storageMeter).toHaveAttribute("aria-busy", "false");
+  await expect(storageMeter).toContainText("-- / 50 GB");
   await storageMeter.click();
   await expectDataStorageSettings(page);
 });
 
-test("shows the near-limit warning and supports keyboard navigation", async ({
+test("warns independently when recording or export budgets are near", async ({
   page,
 }) => {
   await setupAppBarE2E(page, {
     recordingStorageUsage: {
       clipsSizeBytes: 5 * GIGABYTE,
       recordingsSizeBytes: 40 * GIGABYTE,
+      exportVideosSizeBytes: 46 * GIGABYTE,
     },
   });
-
-  const storageMeter = page.getByRole("button", {
-    name: "45 GB used of 50 GB. Open data and storage settings",
+  await expect(
+    page.getByRole("status", {
+      name: "Recording Storage is within 10% of its limit",
+    }),
+  ).toBeVisible();
+  const exportWarning = page.getByRole("status", {
+    name: "Export Storage is within 10% of its limit",
   });
-  const storageProgress = storageMeter.getByRole("progressbar");
-  await expect(storageProgress).toHaveAttribute("aria-valuenow", "90");
-  await expect(storageProgress.locator("span")).toHaveClass(/bg-warning/);
-
-  const warning = page.getByRole("status", {
-    name: storageWarningTooltip,
+  await expect(exportWarning).toBeVisible();
+  await expect(exportWarning).toHaveClass(/tooltip/);
+  await expect(exportWarning).toHaveClass(/tooltip-left/);
+  await expect(exportWarning).toHaveAttribute(
+    "data-tip",
+    "Export Storage is within 10% of its limit",
+  );
+  const storageMeter = page.getByRole("link", {
+    name: "Open data and storage settings",
   });
-  const warningTooltip = warning.locator("..");
-  await expect(warning).toBeVisible();
-  await expect(warning).toHaveAttribute("tabindex", "0");
-  await expect(warningTooltip).toHaveClass(/tooltip-bottom/);
-  await warning.hover();
-  await expectDaisyTooltipVisible(warningTooltip, storageWarningTooltip);
-  await page.mouse.move(0, 0);
-  await warning.focus();
-  await expect(warning).toBeFocused();
-  await expectDaisyTooltipVisible(warningTooltip, storageWarningTooltip);
-
   await storageMeter.focus();
   await expect(storageMeter).toBeFocused();
-  const storageTooltip = page
-    .locator(".tooltip.tooltip-left")
-    .filter({ has: storageMeter });
-  await expectDaisyTooltipVisible(storageTooltip, storageSettingsTooltip);
   await page.keyboard.press("Enter");
-
   await expectDataStorageSettings(page);
 });
 
-test("shows recording disk free space when the configured limit is disabled", async ({
+test("shows unlimited budgets without deriving a misleading percentage", async ({
   page,
 }) => {
   await setupAppBarE2E(page, {
+    editorExportMaxStorageGb: 0,
     recordingMaxStorageGb: 0,
     recordingStorageUsage: {
       clipsSizeBytes: 1 * GIGABYTE,
-      diskFreeBytes: 89 * GIGABYTE,
       recordingsSizeBytes: 10 * GIGABYTE,
+      exportVideosSizeBytes: 2 * GIGABYTE,
     },
   });
-
-  const storageMeter = page.getByRole("button", {
-    name: "11 GB used; 89 GB free on the recording drive. Open data and storage settings",
+  const storageMeter = page.getByRole("link", {
+    name: "Open data and storage settings",
   });
-  await expect(storageMeter).toHaveText("11 GB / 89 GB");
-  await expect(storageMeter).toHaveCSS("cursor", "pointer");
-
-  const storageProgress = storageMeter.getByRole("progressbar");
-  await expect(storageProgress).toHaveAttribute("aria-valuenow", "11");
-  await expect(storageProgress.locator("span")).toHaveClass(/bg-primary/);
-  await expect(
-    page.getByRole("status", { name: storageWarningTooltip }),
-  ).toHaveCount(0);
-
-  await storageMeter.click();
-  await expectDataStorageSettings(page);
+  const recordingProgress = storageMeter.getByRole("progressbar", {
+    name: "Recording Storage: 11 GB",
+  });
+  const exportProgress = storageMeter.getByRole("progressbar", {
+    name: "Export Storage: 2 GB",
+  });
+  await expect(recordingProgress).not.toHaveAttribute("aria-valuenow");
+  await expect(exportProgress).not.toHaveAttribute("aria-valuenow");
+  await expect(recordingProgress.locator("span")).toHaveCount(0);
+  await expect(exportProgress.locator("span")).toHaveCount(0);
 });
 
-test("shows a critical warning when the recording disk is full", async ({
+test("shows a critical recording-drive warning independently of budgets", async ({
   page,
 }) => {
   await setupAppBarE2E(page, {
@@ -191,20 +318,16 @@ test("shows a critical warning when the recording disk is full", async ({
       recordingsSizeBytes: 10 * GIGABYTE,
     },
   });
-
-  const storageMeter = page.getByRole("button", {
-    name: "11 GB used; 0 GB free on the recording drive. Open data and storage settings",
-  });
-  await expect(storageMeter).toHaveText("11 GB / 0 GB");
-  const storageProgress = storageMeter.getByRole("progressbar");
-  await expect(storageProgress).toHaveAttribute("aria-valuenow", "100");
-  await expect(storageProgress.locator("span")).toHaveClass(/bg-error/);
-
-  const warning = page.getByRole("status", { name: lowDiskSpaceTooltip });
-  const warningTooltip = warning.locator("..");
-  await expect(warningTooltip).toHaveClass(/tooltip-error/);
-  await warning.hover();
-  await expectDaisyTooltipVisible(warningTooltip, lowDiskSpaceTooltip);
+  await expect(
+    page.getByRole("status", {
+      name: "Recording drive space is critically low",
+    }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("status", {
+      name: /Export Storage/,
+    }),
+  ).toHaveCount(0);
 });
 
 test("updates game status for PoE process variants", async ({ page }) => {
@@ -369,38 +492,46 @@ test("keeps the recorder overlay control stable during aura lock events", async 
     });
 });
 
-async function expectDaisyTooltipVisible(
-  tooltip: Locator,
-  expectedText: string,
-): Promise<void> {
-  await expect(tooltip).toHaveAttribute("data-tip", expectedText);
-  await expect
-    .poll(() =>
-      tooltip.evaluate((element) =>
-        Number.parseFloat(getComputedStyle(element, "::before").opacity),
-      ),
-    )
-    .toBeGreaterThan(0.99);
-}
-
 async function expectDataStorageSettings(page: Page): Promise<void> {
   await expect(page).toHaveURL(/\/settings\?tab=data-storage$/);
   await expect(
     page.getByRole("tab", { name: "Data & Storage" }),
   ).toHaveAttribute("aria-selected", "true");
+  const settingsPanel = page.getByLabel("Data & Storage");
   await expect(
-    page.getByText("Recording Storage", { exact: true }),
+    settingsPanel.getByText("Recording Storage", { exact: true }),
   ).toBeVisible();
   await expect(
-    page.getByRole("textbox", { name: /^Recording folder/ }),
+    settingsPanel.getByRole("textbox", { name: /^Recording folder/ }),
   ).toBeVisible();
   await expect(
-    page.getByRole("textbox", { name: /^Exports folder/ }),
+    settingsPanel.getByRole("textbox", { name: /^Exports folder/ }),
   ).toBeVisible();
   await expect(
-    page.getByText(
+    settingsPanel.getByText(
       "Finished videos saved from the editor. These are separate from your recordings and clips.",
       { exact: true },
     ),
   ).toBeVisible();
+}
+
+async function getStorageFooterBottomGap(page: Page): Promise<number> {
+  const sidebar = page.locator("aside").first();
+  const storageMeter = page.getByRole("link", {
+    name: "Open data and storage settings",
+  });
+  const [sidebarBox, storageMeterBox] = await Promise.all([
+    sidebar.boundingBox(),
+    storageMeter.boundingBox(),
+  ]);
+
+  if (!sidebarBox || !storageMeterBox) {
+    return -1;
+  }
+
+  return Math.round(
+    sidebarBox.y +
+      sidebarBox.height -
+      (storageMeterBox.y + storageMeterBox.height),
+  );
 }

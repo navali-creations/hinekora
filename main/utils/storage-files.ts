@@ -9,6 +9,8 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
+import { createStoragePathKey } from "./storage-path-key";
+
 interface ManagedFileStat {
   path: string;
   size: number;
@@ -141,6 +143,36 @@ function isRealPathInsideOrEqual(parent: string, child: string): boolean {
   }
 }
 
+function resolveStoragePathAliases(path: string): string[] {
+  const resolvedPath = resolve(path);
+  try {
+    const realPath = realpathSync(resolvedPath);
+    return Array.from(
+      new Map(
+        [resolvedPath, realPath].map((candidate) => [
+          createStoragePathKey(candidate),
+          candidate,
+        ]),
+      ).values(),
+    );
+  } catch {
+    return [resolvedPath];
+  }
+}
+
+function storagePathsOverlap(first: string, second: string): boolean {
+  const firstAliases = resolveStoragePathAliases(first);
+  const secondAliases = resolveStoragePathAliases(second);
+
+  return firstAliases.some((firstAlias) =>
+    secondAliases.some(
+      (secondAlias) =>
+        isPathInsideOrEqual(firstAlias, secondAlias) ||
+        isPathInsideOrEqual(secondAlias, firstAlias),
+    ),
+  );
+}
+
 export type { ManagedFileStat };
 export {
   calculateDatabaseSize,
@@ -151,4 +183,6 @@ export {
   isRealPathInsideOrEqual,
   removeEmptyParentDirectories,
   resolveDatabaseFilePaths,
+  resolveStoragePathAliases,
+  storagePathsOverlap,
 };

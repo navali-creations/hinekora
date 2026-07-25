@@ -7,8 +7,7 @@ import type { StorageInfo } from "~/main/modules/storage/Storage.dto";
 import DiskUsageSection from "./DiskUsageSection";
 
 const info: StorageInfo = {
-  appInstallationDiskFreeBytes: 500,
-  appInstallationDiskTotalBytes: 1_000,
+  appInstallationOnStorageDrive: true,
   appInstallationSizeBytes: 20,
   breakdown: [
     {
@@ -19,16 +18,22 @@ const info: StorageInfo = {
     },
   ],
   calculatedAt: "2026-07-21T00:00:00.000Z",
-  databaseDiskFreeBytes: 500,
-  databaseDiskTotalBytes: 1_000,
+  databaseOnStorageDrive: true,
   databaseSizeBytes: 10,
   diskFreeBytes: 500,
   diskTotalBytes: 1_000,
-  exportDiskFreeBytes: 500,
-  exportDiskTotalBytes: 1_000,
-  exportsPath: "C:\\**\\Hinekora Exports",
-  exportVideosSizeBytes: 100,
-  mediaSizeBytes: 300,
+  exportStorageVolumes: [
+    {
+      diskFreeBytes: 500,
+      diskTotalBytes: 1_000,
+      exportVideosSizeBytes: 100,
+      id: "storage-volume-1",
+      isRecordingStorage: true,
+      path: "C:\\**\\Hinekora Exports",
+    },
+  ],
+  exportVideosUsageTruncated: false,
+  recordingUsageTruncated: false,
   recordingsSizeBytes: 200,
   rewindBufferEstimateBytes: 0,
   storagePath: "C:\\**\\Hinekora Recordings",
@@ -44,7 +49,11 @@ beforeEach(() => {
   revealPaths.mockReset();
   revealPaths.mockResolvedValue({
     databasePath: "C:\\App\\hinekora.sqlite",
-    exportsPath: "C:\\Videos\\Hinekora Exports",
+    exportStoragePath: "C:\\Videos\\Hinekora Exports",
+    exportStorageVolumes: [
+      { id: "storage-volume-1", path: "C:\\Videos\\Hinekora Exports" },
+      { id: "storage-volume-2", path: "D:\\Legacy\\Exports" },
+    ],
     storagePath: "C:\\Videos\\Hinekora Recordings",
   });
   Object.defineProperty(window, "electron", {
@@ -71,6 +80,11 @@ describe("DiskUsageSection", () => {
     expect(container.textContent).toContain("Hinekora Exports");
     expect(container.textContent).toContain("Hinekora export videos");
     expect(
+      container
+        .querySelector('[title^="Hinekora Exports:"]')
+        ?.classList.contains("bg-sky-400"),
+    ).toBe(true);
+    expect(
       container.querySelectorAll("button[title='Reveal full path']"),
     ).toHaveLength(1);
 
@@ -89,8 +103,24 @@ describe("DiskUsageSection", () => {
         <DiskUsageSection
           info={{
             ...info,
-            exportDiskFreeBytes: 1_500,
-            exportDiskTotalBytes: 2_000,
+            exportStorageVolumes: [
+              {
+                diskFreeBytes: 1_500,
+                diskTotalBytes: 2_000,
+                exportVideosSizeBytes: 100,
+                id: "storage-volume-1",
+                isRecordingStorage: false,
+                path: "C:\\**\\Hinekora Exports",
+              },
+              {
+                diskFreeBytes: 2_500,
+                diskTotalBytes: 3_000,
+                exportVideosSizeBytes: 25,
+                id: "storage-volume-2",
+                isRecordingStorage: false,
+                path: "D:\\**\\Hinekora\\Exports",
+              },
+            ],
           }}
         />,
       );
@@ -98,7 +128,94 @@ describe("DiskUsageSection", () => {
 
     expect(
       container.querySelectorAll("button[title='Reveal full path']"),
-    ).toHaveLength(2);
+    ).toHaveLength(3);
     expect(container.textContent).toContain("C:\\**\\Hinekora Exports");
+    expect(container.textContent).toContain("D:\\**\\Hinekora\\Exports");
+    expect(
+      container.querySelectorAll('[title^="Hinekora Exports:"].bg-sky-400'),
+    ).toHaveLength(2);
+  });
+
+  it("marks truncated export totals as partial", async () => {
+    await act(async () => {
+      root.render(
+        <DiskUsageSection
+          info={{ ...info, exportVideosUsageTruncated: true }}
+        />,
+      );
+    });
+
+    expect(container.textContent).toContain("Storage totals are partial");
+    expect(container.textContent).toContain(">=100 B");
+  });
+
+  it("marks only recording inventory categories as partial", async () => {
+    await act(async () => {
+      root.render(
+        <DiskUsageSection
+          info={{
+            ...info,
+            breakdown: [
+              {
+                category: "full-recordings",
+                fileCount: 1,
+                label: "Full recordings",
+                sizeBytes: 200,
+              },
+              {
+                category: "app-installation",
+                fileCount: 1,
+                label: "App installation",
+                sizeBytes: 20,
+              },
+            ],
+            recordingUsageTruncated: true,
+          }}
+        />,
+      );
+    });
+
+    expect(
+      container.querySelector(
+        '[data-testid="storage-breakdown-full-recordings"]',
+      )?.textContent,
+    ).toContain(">=200 B");
+    expect(
+      container.querySelector(
+        '[data-testid="storage-breakdown-app-installation"]',
+      )?.textContent,
+    ).not.toContain(">=");
+  });
+
+  it("invalidates revealed paths when refreshed storage roots change", async () => {
+    await act(async () => {
+      root.render(<DiskUsageSection info={info} />);
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>("button[title='Reveal full path']")
+        ?.click();
+    });
+    expect(container.textContent).toContain("C:\\Videos\\Hinekora Recordings");
+
+    await act(async () => {
+      root.render(
+        <DiskUsageSection
+          info={{
+            ...info,
+            calculatedAt: "2026-07-23T01:00:00.000Z",
+            storagePath: "D:\\**\\Hinekora Recordings",
+          }}
+        />,
+      );
+    });
+    expect(container.textContent).toContain("D:\\**\\Hinekora Recordings");
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>("button[title='Reveal full path']")
+        ?.click();
+    });
+    expect(revealPaths).toHaveBeenCalledTimes(2);
   });
 });

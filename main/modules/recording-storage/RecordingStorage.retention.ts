@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { isPathInsideOrEqual } from "~/main/utils/storage-files";
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
+import { storageCleanupTargetRatio } from "~/types";
 import type { ReplayClipStorageEntry } from "../replay-clips/ReplayClips.repository";
 import {
   addReplayClipStoragePaths,
@@ -107,13 +108,12 @@ async function createRecordingStorageInventory(input: {
 function selectRecordingStorageCleanupCandidates(input: {
   inventory: RecordingStorageInventory;
   limitBytes: number;
-  nonDeletableSizeBytes?: number;
   options?: RecordingStorageRetentionOptions;
 }): RecordingStorageCleanupSelection {
   const { inventory, limitBytes } = input;
-  const usageBytes =
-    inventory.usageBytes + Math.max(0, input.nonDeletableSizeBytes ?? 0);
-  const targetUsageBytes = limitBytes > 0 ? Math.floor(limitBytes * 0.95) : 0;
+  const usageBytes = inventory.usageBytes;
+  const targetUsageBytes =
+    limitBytes > 0 ? Math.floor(limitBytes * storageCleanupTargetRatio) : 0;
   if (limitBytes <= 0 || usageBytes <= limitBytes) {
     return {
       files: [],

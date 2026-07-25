@@ -93,11 +93,25 @@ export const createRecordingStorageSlice: BoundStoreStateCreator<
       startListening: () => {
         const stopUsageListener =
           window.electron.recordingStorage.onUsageChanged((usage) => {
+            const storageInfo = get().storage?.info;
+            const storageInfoExportUsage =
+              storageInfo?.exportStorageVolumes.reduce(
+                (total, volume) => total + volume.exportVideosSizeBytes,
+                0,
+              );
             set((state) => {
               state.recordingStorage.usage = usage;
               state.recordingStorage.isUsageLoading = false;
               state.recordingStorage.usageError = null;
             });
+            if (
+              storageInfo &&
+              (storageInfoExportUsage !== usage.exportVideosSizeBytes ||
+                storageInfo.exportVideosUsageTruncated !==
+                  usage.exportVideosUsageTruncated)
+            ) {
+              void get().storage?.fetchStorageInfo();
+            }
           });
         const stopUsageRefreshFailedListener =
           window.electron.recordingStorage.onUsageRefreshFailed((error) => {

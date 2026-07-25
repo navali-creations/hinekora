@@ -28,6 +28,10 @@ import type {
   SavedEditsLibraryQuery,
   SavedEditsLibrarySortKey,
 } from "../../main/modules/saved-edits";
+import type {
+  SavedVideoItem,
+  SavedVideosLibraryQuery,
+} from "../../main/modules/saved-videos";
 import {
   type AppSettings,
   createDefaultSettings,
@@ -66,11 +70,14 @@ interface EditorE2ECalls {
   deleteAllCount: number;
   deletedProjectIds: string[];
   deletedSavedEditIds: string[];
+  deletedSavedVideoIds: string[];
   exportRequests: EditorExportInput[];
   mediaAssetQueries: unknown[];
   revealedClipIds: string[];
   revealedExportIds: string[];
   revealedSavedEditIds: string[];
+  openedSavedVideoIds: string[];
+  revealedSavedVideoIds: string[];
   recordingBookmarkQueries: Array<{ query: unknown; recordingId: string }>;
   savedEditDeleteAllCount: number;
   savedProjects: EditorProject[];
@@ -95,6 +102,7 @@ interface EditorE2EFixture {
   recordingBookmarkPages: Record<string, RecordingBookmarksPage>;
   recordingStatus: ManagedRecorderStatus;
   savedEditRecords: EditorE2ESavedEditRecord[];
+  savedVideos: SavedVideoItem[];
   secondaryProject: EditorProject;
   settings: AppSettings;
 }
@@ -291,6 +299,14 @@ function createEditorE2EFixture(): EditorE2EFixture {
       mixedLeagueProject,
       historyOverflowProject,
     ].map(createEditorE2ESavedEditRecord),
+    savedVideos: [
+      {
+        fileName: "boss-kill.mp4",
+        id: "a".repeat(64),
+        savedAt: editorE2ENow,
+        sizeBytes: 12_582_912,
+      },
+    ],
     secondaryProject,
     settings: {
       ...createDefaultSettings(),
@@ -489,6 +505,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
       const settings = { ...fixture.settings };
       let settingsChangedListener: ((settings: AppSettings) => void) | null =
         null;
+      let savedVideosChangedListener: (() => void) | null = null;
       let exportLifecycleChangedListener:
         | ((lifecycle: EditorExportLifecycleUpdate) => void)
         | null = null;
@@ -701,11 +718,14 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
         deleteAllCount: 0,
         deletedProjectIds: [] as string[],
         deletedSavedEditIds: [] as string[],
+        deletedSavedVideoIds: [] as string[],
         exportRequests: [] as EditorExportInput[],
         mediaAssetQueries: [] as unknown[],
         revealedClipIds: [] as string[],
         revealedExportIds: [] as string[],
         revealedSavedEditIds: [] as string[],
+        openedSavedVideoIds: [] as string[],
+        revealedSavedVideoIds: [] as string[],
         recordingBookmarkQueries: [] as Array<{
           query: unknown;
           recordingId: string;
@@ -716,6 +736,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
         unexpectedBridgeCalls: [] as string[],
         workspaceQueries: [] as unknown[],
       };
+      const savedVideoItems = clone(fixture.savedVideos);
       const createWorkspace = (
         project = projectsById.get(state.currentProjectId),
       ): EditorWorkspace => ({
@@ -1154,7 +1175,8 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
             diskFreeBytes: 900_000_000_000,
             lowDiskSpace: false,
             recordingsSizeBytes: 0,
-            savedEditsSizeBytes: 0,
+            exportVideosSizeBytes: 0,
+            exportVideosUsageTruncated: false,
           }),
           onUsageChanged: () => unsubscribe,
           onUsageRefreshFailed: () => unsubscribe,
@@ -1197,19 +1219,55 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
         savedVideos: createBridgeDomain<EditorE2EElectron["savedVideos"]>(
           "savedVideos",
           {
-            delete: async () => ({ error: null, ok: true }),
-            listLibrary: async () => ({
-              isTruncated: false,
-              items: [],
-              pageCount: 1,
-              pageIndex: 0,
-              pageSize: 20,
-              sortBy: "savedAt",
-              sortDirection: "desc",
-              totalCount: 0,
-            }),
-            open: async () => ({ error: null, ok: true }),
-            reveal: async () => ({ error: null, ok: true }),
+            delete: async (id: string) => {
+              state.deletedSavedVideoIds.push(id);
+              const index = savedVideoItems.findIndex((item) => item.id === id);
+              if (index >= 0) {
+                savedVideoItems.splice(index, 1);
+              }
+              savedVideosChangedListener?.();
+              return { error: null, ok: true };
+            },
+            listLibrary: async (query: SavedVideosLibraryQuery = {}) => {
+              const pageIndex = query.pageIndex ?? 0;
+              const pageSize = query.pageSize ?? 20;
+              const sortBy = query.sortBy ?? "savedAt";
+              const sortDirection = query.sortDirection ?? "desc";
+              const items = [...savedVideoItems].sort((left, right) => {
+                const comparison =
+                  sortBy === "sizeBytes"
+                    ? left.sizeBytes - right.sizeBytes
+                    : left[sortBy].localeCompare(right[sortBy]);
+                return sortDirection === "asc" ? comparison : -comparison;
+              });
+              return {
+                isTruncated: false,
+                items: clone(
+                  items.slice(
+                    pageIndex * pageSize,
+                    pageIndex * pageSize + pageSize,
+                  ),
+                ),
+                pageCount: Math.max(1, Math.ceil(items.length / pageSize)),
+                pageIndex,
+                pageSize,
+                sortBy,
+                sortDirection,
+                totalCount: items.length,
+              };
+            },
+            onLibraryChanged: (callback) => {
+              savedVideosChangedListener = callback;
+              return unsubscribe;
+            },
+            open: async (id: string) => {
+              state.openedSavedVideoIds.push(id);
+              return { error: null, ok: true };
+            },
+            reveal: async (id: string) => {
+              state.revealedSavedVideoIds.push(id);
+              return { error: null, ok: true };
+            },
           },
         ),
         settings: createBridgeDomain<EditorE2EElectron["settings"]>(

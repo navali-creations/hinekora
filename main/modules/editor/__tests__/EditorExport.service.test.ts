@@ -4,9 +4,15 @@ import { join } from "node:path";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import * as appLog from "~/main/utils/app-log";
+
 import type { EditorExportClipInput, EditorProject } from "../Editor.dto";
 import { EditorTemporaryFileCleanupError } from "../Editor.files";
-import { EditorExportService } from "../EditorExport.service";
+import {
+  EditorExportService,
+  type EditorExportVideoCommit,
+  type EditorOverwriteCommit,
+} from "../EditorExport.service";
 import {
   createEditorExportInput,
   createEditorExportProject,
@@ -18,9 +24,12 @@ import {
 function createService(
   input: {
     persistProjectSnapshot?: (project: EditorProject) => EditorProject;
-    onSavedEditCommitted?: (sizeBytes: number) => void;
+    onExportVideoCommitted?: (commit: EditorExportVideoCommit) => void;
+    onOverwriteCommitted?: (commit: EditorOverwriteCommit) => void;
     removeExportFile?: typeof rm;
+    renameExportFile?: typeof import("node:fs/promises").rename;
     renderExportWithFfmpeg?: (input: { outputPath: string }) => Promise<void>;
+    sourcePath?: string;
     storageRoot?: string;
   } = {},
 ) {
@@ -33,14 +42,22 @@ function createService(
     createMediaUrl: (exportId) => `hinekora-editor-export://${exportId}`,
     persistProjectSnapshot:
       input.persistProjectSnapshot ?? ((project) => project),
-    onSavedEditCommitted: input.onSavedEditCommitted ?? (() => undefined),
+    onExportVideoCommitted: input.onExportVideoCommitted ?? (() => undefined),
+    ...(input.onOverwriteCommitted
+      ? { onOverwriteCommitted: input.onOverwriteCommitted }
+      : {}),
     ...(input.removeExportFile
       ? { removeExportFile: input.removeExportFile }
       : {}),
     renderExportWithFfmpeg:
       input.renderExportWithFfmpeg ??
       (async ({ outputPath }) => writeFile(outputPath, "rendered")),
-    resolveExportSource: (source) => ({ path: `${source.id}.mp4` }),
+    ...(input.renameExportFile
+      ? { renameExportFile: input.renameExportFile }
+      : {}),
+    resolveExportSource: (source) => ({
+      path: input.sourcePath ?? `${source.id}.mp4`,
+    }),
     resolveStorageRoot: () => input.storageRoot ?? process.cwd(),
     shutdownTimeoutMs: 100,
   });
@@ -96,8 +113,8 @@ describe("EditorExportService", () => {
     const storageRoot = await mkdtemp(
       join(tmpdir(), "hinekora-export-service-"),
     );
-    const onSavedEditCommitted = vi.fn();
-    const service = createService({ onSavedEditCommitted, storageRoot });
+    const onExportVideoCommitted = vi.fn();
+    const service = createService({ onExportVideoCommitted, storageRoot });
 
     try {
       const result = await service.exportProject(createEditorExportInput());
@@ -110,7 +127,13 @@ describe("EditorExportService", () => {
         ".hinekora-editor-exports",
         result.fileName,
       ]);
-      expect(onSavedEditCommitted).toHaveBeenCalledWith(result.sizeBytes);
+      expect(onExportVideoCommitted).toHaveBeenCalledWith(
+        expect.objectContaining({
+          path: join(outputDirectory, result.fileName),
+          sizeBytes: result.sizeBytes,
+          sizeDeltaBytes: result.sizeBytes,
+        }),
+      );
     } finally {
       await rm(storageRoot, { force: true, recursive: true });
     }
@@ -136,6 +159,111 @@ describe("EditorExportService", () => {
       ).resolves.toBe("rendered");
       expect(removeExportFile).toHaveBeenCalledTimes(1);
       expect(service.getExportLifecycle().status).toBe("ready");
+    } finally {
+      await rm(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("removes a newly committed video when ownership registration fails", async () => {
+    const storageRoot = await mkdtemp(
+      join(tmpdir(), "hinekora-export-service-"),
+    );
+    const service = createService({
+      onExportVideoCommitted: () => {
+        throw new Error("ownership unavailable");
+      },
+      storageRoot,
+    });
+
+    try {
+      await expect(
+        service.exportProject(createEditorExportInput()),
+      ).rejects.toThrow("ownership unavailable");
+      await expect(readdir(storageRoot)).resolves.toEqual([
+        ".hinekora-editor-exports",
+      ]);
+      expect(service.getExportLifecycle()).toMatchObject({
+        error: "ownership unavailable",
+        status: "failed",
+      });
+    } finally {
+      await rm(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("reports when a failed registration cannot roll back its committed video", async () => {
+    const storageRoot = await mkdtemp(
+      join(tmpdir(), "hinekora-export-service-"),
+    );
+    const outputPath = join(storageRoot, "source.mp4");
+    const removeExportFile = vi.fn(
+      async (
+        path: Parameters<typeof rm>[0],
+        options?: Parameters<typeof rm>[1],
+      ) => {
+        if (path === outputPath) {
+          throw new Error("file is locked");
+        }
+        await rm(path, options);
+      },
+    );
+    const service = createService({
+      onExportVideoCommitted: () => {
+        throw new Error("ownership unavailable");
+      },
+      removeExportFile,
+      storageRoot,
+    });
+
+    try {
+      await expect(
+        service.exportProject(createEditorExportInput()),
+      ).rejects.toThrow(
+        "Video registration failed, and the saved file could not be removed",
+      );
+      await expect(readFile(outputPath, "utf8")).resolves.toBe("rendered");
+    } finally {
+      await rm(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps a committed overwrite successful when accounting fails", async () => {
+    const storageRoot = await mkdtemp(
+      join(tmpdir(), "hinekora-export-service-"),
+    );
+    const sourcePath = join(storageRoot, "original.mp4");
+    await writeFile(sourcePath, "original");
+    const logWarn = vi.spyOn(appLog, "logWarn").mockImplementation(() => {});
+    const onOverwriteCommitted = vi.fn(() => {
+      throw new Error("database unavailable");
+    });
+    const renameExportFile = vi.fn().mockResolvedValue(undefined);
+    const service = createService({
+      onOverwriteCommitted,
+      renameExportFile,
+      sourcePath,
+      storageRoot,
+    });
+
+    try {
+      await expect(
+        service.exportProject(
+          createEditorExportInput({
+            mode: "overwrite",
+            project: createEditorExportProject(),
+          }),
+        ),
+      ).resolves.toMatchObject({ mode: "overwrite" });
+      expect(service.getExportLifecycle().status).toBe("ready");
+      expect(onOverwriteCommitted).toHaveBeenCalledOnce();
+      expect(logWarn).toHaveBeenCalledWith(
+        "editor",
+        "Editor overwrite accounting deferred",
+        {
+          error: "database unavailable",
+          sourceKind: "clip",
+        },
+      );
     } finally {
       await rm(storageRoot, { force: true, recursive: true });
     }

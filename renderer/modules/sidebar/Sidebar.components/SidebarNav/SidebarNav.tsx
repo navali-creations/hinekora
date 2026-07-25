@@ -79,7 +79,10 @@ function SidebarNav() {
   });
 
   return (
-    <nav aria-label="Main navigation" className="p-3">
+    <nav
+      aria-label="Main navigation"
+      className="min-h-0 flex-1 overflow-y-auto p-3"
+    >
       <ul className="menu menu-sm gap-1 p-0">
         {navItems.map((item) => {
           const Icon = item.icon;

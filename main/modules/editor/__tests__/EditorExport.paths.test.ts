@@ -3,7 +3,6 @@ import { join, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
-  DEFAULT_EDITOR_EXPORT_DIRECTORY_NAME,
   resolveEditorExportLibraryRoots,
   resolveEditorExportStorageRoot,
 } from "../EditorExport.paths";
@@ -13,7 +12,7 @@ describe("editor export storage paths", () => {
     const videosPath = join("C:", "Users", "seb", "Videos");
 
     expect(resolveEditorExportStorageRoot(null, videosPath)).toBe(
-      join(videosPath, DEFAULT_EDITOR_EXPORT_DIRECTORY_NAME),
+      join(videosPath, "Hinekora Exports"),
     );
     expect(
       resolveEditorExportStorageRoot(join("D:", "Exports"), videosPath),

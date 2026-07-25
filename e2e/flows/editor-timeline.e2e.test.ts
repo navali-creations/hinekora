@@ -572,7 +572,7 @@ test("covers saved edits route library interactions", async ({ page }) => {
     .toBe(1);
 });
 
-test("opens the completed Saved Edits library from the sidebar", async ({
+test("covers completed Saved Edits library actions from the sidebar", async ({
   page,
 }) => {
   await setupEditorE2E(page);
@@ -584,7 +584,29 @@ test("opens the completed Saved Edits library from the sidebar", async ({
   await expect(
     page.getByRole("heading", { name: "Saved Edits", exact: true }),
   ).toBeVisible();
+  await expect(page.getByText("boss-kill.mp4", { exact: true })).toBeVisible();
+
+  await page.getByLabel("Play saved edit boss-kill.mp4").click();
+  await page.getByLabel("Open boss-kill.mp4 in explorer").click();
+  await expect
+    .poll(async () => {
+      const calls = await getEditorE2ECalls(page);
+      return {
+        opened: calls.openedSavedVideoIds,
+        revealed: calls.revealedSavedVideoIds,
+      };
+    })
+    .toEqual({ opened: ["a".repeat(64)], revealed: ["a".repeat(64)] });
+
+  await page.getByLabel("Delete saved edit boss-kill.mp4").click();
+  await expect(
+    page.getByRole("heading", { name: "Delete saved edit?" }),
+  ).toBeVisible();
+  await page.getByRole("button", { name: "Delete video" }).click();
   await expect(page.getByText("No saved edit videos yet.")).toBeVisible();
+  await expect
+    .poll(async () => (await getEditorE2ECalls(page)).deletedSavedVideoIds)
+    .toEqual(["a".repeat(64)]);
 });
 
 test("covers copy and export dialog actions", async ({ page }) => {

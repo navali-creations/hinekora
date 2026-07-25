@@ -51,6 +51,7 @@ describe("shared schemas", () => {
       installedGames: ["poe1"],
       recordingStoragePath: null,
       editorExportStoragePath: null,
+      editorExportMaxStorageGb: 50,
       keybindManualBookmark: "Alt+B",
       keybindManualReplay: "Alt+C",
       replayClipPreviewResolution: "720p",

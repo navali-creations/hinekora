@@ -596,6 +596,7 @@ export const RecorderOverlayBoundsSchema = z.object({
 export type RecorderOverlayBounds = z.infer<typeof RecorderOverlayBoundsSchema>;
 
 export const defaultRecordingMaxStorageGb = 50;
+export const defaultEditorExportMaxStorageGb = 50;
 
 export const AppSettingsSchema = z.object({
   setupCompleted: z.boolean().default(false),
@@ -615,6 +616,12 @@ export const AppSettingsSchema = z.object({
   installedGames: z.array(GameIdSchema).min(1).max(2).default(["poe1"]),
   recordingStoragePath: z.string().max(2_048).nullable().default(null),
   editorExportStoragePath: z.string().max(2_048).nullable().default(null),
+  editorExportMaxStorageGb: z
+    .number()
+    .int()
+    .min(0)
+    .max(100_000)
+    .default(defaultEditorExportMaxStorageGb),
   keybindManualBookmark: OptionalKeybindAcceleratorSchema.default(
     keybindActionConfigs.manualBookmark.defaultAccelerator,
   ),

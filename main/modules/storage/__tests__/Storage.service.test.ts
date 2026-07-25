@@ -11,6 +11,7 @@ import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DatabaseService } from "~/main/modules/database";
+import { EditorExportOwnershipRepository } from "~/main/modules/editor/EditorExportOwnership.repository";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { RecordingStorageRepository } from "~/main/modules/recording-storage/RecordingStorage.repository";
@@ -22,6 +23,11 @@ import { mockIpcMainHandlers } from "~/main/test/ipc";
 import type { ManagedRecorderStatus } from "~/types";
 import { createDefaultSettings } from "~/types";
 import { StorageChannel } from "../Storage.channels";
+import {
+  addExportFileToStorageTotals,
+  createExportStorageTotals,
+  createExportStorageVolumes,
+} from "../Storage.info";
 import { StorageService } from "../Storage.service";
 
 const electronMocks = vi.hoisted(() => ({
@@ -123,7 +129,304 @@ describe("StorageService", () => {
     StorageService.resetForTests();
   });
 
-  it("reports disk usage and game league usage from managed media", () => {
+  it("coalesces concurrent storage inventory requests", async () => {
+    const service = new StorageService();
+
+    const first = service.getInfo();
+    const second = service.getInfo();
+
+    expect(second).toBe(first);
+    await first;
+    const third = service.getInfo();
+    expect(third).not.toBe(first);
+    await third;
+  });
+
+  it("starts a new inventory when export roots change during a scan", async () => {
+    let settings = {
+      ...createDefaultSettings(),
+      recordingStoragePath: storageRoot,
+    };
+    vi.mocked(SettingsStoreService.getInstance).mockReturnValue({
+      get: () => settings,
+    } as unknown as SettingsStoreService);
+    let resolveFirstScan!: (value: null) => void;
+    const firstScan = new Promise<null>((resolvePromise) => {
+      resolveFirstScan = resolvePromise;
+    });
+    const scanExportFiles = vi
+      .fn()
+      .mockReturnValueOnce(firstScan)
+      .mockResolvedValue({
+        fileCount: 0,
+        inspectedEntryCount: 0,
+        isTruncated: false,
+      });
+    const service = new StorageService({ scanExportFiles });
+
+    const initialRequest = service.getInfo();
+    await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
+    const nextExportRoot = join(root, "next-exports");
+    settings = { ...settings, editorExportStoragePath: nextExportRoot };
+    const changedRequest = service.getInfo();
+    const changed = await changedRequest;
+    resolveFirstScan(null);
+
+    await expect(initialRequest).resolves.toBe(changed);
+    expect(scanExportFiles).toHaveBeenCalledTimes(2);
+    expect(changed.exportStorageVolumes[0]?.path).toContain("next-exports");
+  });
+
+  it("reports exports on configured, recording, and legacy volumes", async () => {
+    const configuredExports = join(root, "configured-exports");
+    vi.mocked(SettingsStoreService.getInstance).mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        editorExportStoragePath: configuredExports,
+        recordingStoragePath: storageRoot,
+      }),
+    } as unknown as SettingsStoreService);
+    const videosPath = join(root, "videos");
+    const legacyExports = join(videosPath, "Hinekora", "Exports");
+    const previousExports = join(storageRoot, "Saved Edits");
+    const getStorageDeviceId = vi.fn((path: string | null) => {
+      if (!path) {
+        return null;
+      }
+      if (resolve(path).startsWith(resolve(configuredExports))) {
+        return 2;
+      }
+      if (resolve(path).startsWith(resolve(legacyExports))) {
+        return 3;
+      }
+      return 1;
+    });
+    const calculateDiskUsage = vi.fn((path: string) => {
+      const deviceId = getStorageDeviceId(path) ?? 0;
+      return { freeBytes: deviceId * 100, totalBytes: deviceId * 1_000 };
+    });
+    const scanExportFiles = vi.fn(async (options) => {
+      await options.onFiles([
+        {
+          deviceId: 2,
+          inode: 2,
+          modifiedAt: new Date(0),
+          path: join(configuredExports, "configured.mp4"),
+          sizeBytes: 10,
+        },
+        {
+          deviceId: 3,
+          inode: 3,
+          modifiedAt: new Date(0),
+          path: join(legacyExports, "legacy.mp4"),
+          sizeBytes: 20,
+        },
+        {
+          deviceId: 1,
+          inode: 1,
+          modifiedAt: new Date(0),
+          path: join(previousExports, "previous.mp4"),
+          sizeBytes: 30,
+        },
+        {
+          deviceId: 2,
+          inode: 22,
+          modifiedAt: new Date("2100-01-01T00:00:00.000Z"),
+          path: join(configuredExports, "external.mp4"),
+          sizeBytes: 40,
+        },
+      ]);
+      return {
+        fileCount: 4,
+        inspectedEntryCount: 4,
+        isTruncated: false,
+      };
+    });
+    new EditorExportOwnershipRepository(database).upsert({
+      deviceId: 2,
+      inode: 2,
+      modifiedAtMs: 0,
+      path: join(configuredExports, "configured.mp4"),
+      sizeBytes: 10,
+    });
+    const service = new StorageService({
+      calculateDiskUsage,
+      getStorageDeviceId,
+      scanExportFiles,
+    });
+
+    const info = await service.getInfo();
+
+    expect(info.exportStorageVolumes).toEqual([
+      expect.objectContaining({
+        exportVideosSizeBytes: 30,
+        isRecordingStorage: true,
+      }),
+      expect.objectContaining({
+        exportVideosSizeBytes: 10,
+      }),
+      expect.objectContaining({
+        exportVideosSizeBytes: 20,
+        isRecordingStorage: false,
+      }),
+    ]);
+    expect(info.breakdown).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: "export-videos",
+          fileCount: 3,
+          sizeBytes: 60,
+        }),
+      ]),
+    );
+  });
+
+  it("cancels an inventory after asynchronous storage aggregation", async () => {
+    let abortCheckCount = 0;
+    const service = new StorageService({
+      calculatePathSize: async () => 0,
+      collectStorageRootInventory: async () => ({
+        isTruncated: false,
+        recordingFiles: [],
+        temporaryFiles: [],
+      }),
+      scanExportFiles: async () => ({
+        fileCount: 0,
+        inspectedEntryCount: 0,
+        isTruncated: false,
+      }),
+    });
+    const internals = service as unknown as {
+      calculateInfo: (
+        roots: unknown,
+        shouldAbort: () => boolean,
+      ) => Promise<unknown>;
+      resolveInfoRoots: () => unknown;
+    };
+
+    await expect(
+      internals.calculateInfo(internals.resolveInfoRoots(), () => {
+        abortCheckCount += 1;
+        return abortCheckCount === 2;
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("prefers the configured export path for roots on one volume", () => {
+    const configuredExports = join(root, "configured-exports");
+    const legacyExports = join(root, "legacy-exports");
+    mkdirSync(configuredExports);
+    mkdirSync(legacyExports);
+
+    const totals = createExportStorageTotals(
+      [legacyExports, configuredExports],
+      configuredExports,
+      null,
+      () => 1,
+    );
+
+    expect([...totals.volumes.values()]).toEqual([
+      expect.objectContaining({ path: configuredExports }),
+    ]);
+  });
+
+  it("orders equivalent legacy export volumes by path", () => {
+    const createVolume = (deviceId: number, path: string) => ({
+      deviceId,
+      exportVideosSizeBytes: 0,
+      id: `storage-volume-${deviceId}`,
+      isConfiguredExportStorage: false,
+      isRecordingStorage: false,
+      path,
+    });
+
+    const volumes = createExportStorageVolumes(
+      {
+        configuredRootKey: "",
+        exportFileCount: 0,
+        exportVideosSizeBytes: 0,
+        storageDeviceId: null,
+        volumes: new Map([
+          [2, createVolume(2, join(root, "z-legacy"))],
+          [3, createVolume(3, join(root, "a-legacy"))],
+        ]),
+      },
+      () => ({ freeBytes: 1, totalBytes: 2 }),
+    );
+
+    expect(volumes.map((volume) => volume.path)).toEqual([
+      expect.stringContaining("a-legacy"),
+      expect.stringContaining("z-legacy"),
+    ]);
+  });
+
+  it("tracks an export whose file device differs from its root", () => {
+    const configuredExports = join(root, "configured-exports");
+    const totals = createExportStorageTotals(
+      [configuredExports],
+      configuredExports,
+      2,
+      () => 1,
+    );
+
+    addExportFileToStorageTotals(totals, {
+      deviceId: 2,
+      path: join(configuredExports, "saved.mp4"),
+      sizeBytes: 123,
+    });
+
+    expect(totals.exportFileCount).toBe(1);
+    expect(totals.exportVideosSizeBytes).toBe(123);
+    expect(totals.volumes.get(2)).toMatchObject({
+      exportVideosSizeBytes: 123,
+      isConfiguredExportStorage: true,
+      isRecordingStorage: true,
+      path: configuredExports,
+    });
+  });
+
+  it("caches sequential inventories, bypasses changed roots, and bounds exports", async () => {
+    let settings = {
+      ...createDefaultSettings(),
+      activeGame: "poe1" as const,
+      activeLeague: "Keepers",
+      recordingStoragePath: storageRoot,
+    };
+    vi.mocked(SettingsStoreService.getInstance).mockReturnValue({
+      get: () => settings,
+    } as unknown as SettingsStoreService);
+    const service = new StorageService({
+      infoCacheMs: 5_000,
+      maxExportFiles: 1,
+    });
+
+    const initial = await service.getInfo();
+    await expect(service.getInfo()).resolves.toBe(initial);
+
+    const nextExportRoot = join(root, "videos", "Hinekora", "Exports");
+    mkdirSync(nextExportRoot, { recursive: true });
+    writeFileSync(join(nextExportRoot, "one.mp4"), "one");
+    writeFileSync(join(nextExportRoot, "two.mp4"), "two");
+    settings = { ...settings, editorExportStoragePath: nextExportRoot };
+    const changedRoot = await service.getInfo();
+    expect(changedRoot).not.toBe(initial);
+    expect(changedRoot.exportVideosUsageTruncated).toBe(true);
+    expect(changedRoot.breakdown).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          category: "export-videos",
+          fileCount: 1,
+          sizeBytes: 3,
+        }),
+      ]),
+    );
+
+    const expiredAt = Date.now() + 5_001;
+    vi.spyOn(Date, "now").mockReturnValue(expiredAt);
+    await expect(service.getInfo()).resolves.not.toBe(changedRoot);
+  });
+
+  it("reports disk usage and game league usage from managed media", async () => {
     const deathClipDirectory = join(storageRoot, "Death Clips");
     const fullRecordingDirectory = join(storageRoot, "Full Recordings");
     const manualReplayDirectory = join(storageRoot, "Manual Replays");
@@ -174,10 +477,10 @@ describe("StorageService", () => {
     });
     const service = new StorageService();
 
-    expect(service.getInfo()).toEqual(
+    await expect(service.getInfo()).resolves.toEqual(
       expect.objectContaining({
         appInstallationSizeBytes: 7,
-        mediaSizeBytes: 24,
+        recordingsSizeBytes: 19,
         rewindBufferEstimateBytes: 90_000_000,
         temporarySizeBytes: 9,
         diskTotalBytes: expect.any(Number),
@@ -224,12 +527,12 @@ describe("StorageService", () => {
         ]),
       }),
     );
-    expect(service.getInfo()).toEqual(
+    await expect(service.getInfo()).resolves.toEqual(
       expect.objectContaining({
         appInstallationSizeBytes: 7,
       }),
     );
-    expect(service.getGameLeagueUsage()).toEqual([
+    expect(await service.getGameLeagueUsage()).toEqual([
       expect.objectContaining({
         game: "poe1",
         leagueName: "Keepers",
@@ -240,7 +543,7 @@ describe("StorageService", () => {
     ]);
   });
 
-  it("rebases replay clip rows before reporting migrated manual replay storage", () => {
+  it("rebases replay clip rows before reporting migrated manual replay storage", async () => {
     const legacyDirectory = join(storageRoot, "Manual Clips");
     const canonicalDirectory = join(storageRoot, "Manual Replays");
     const legacyPath = join(legacyDirectory, "manual.mp4");
@@ -258,9 +561,9 @@ describe("StorageService", () => {
     );
     const service = new StorageService();
 
-    expect(service.getInfo()).toEqual(
+    await expect(service.getInfo()).resolves.toEqual(
       expect.objectContaining({
-        mediaSizeBytes: 6,
+        recordingsSizeBytes: 6,
         breakdown: expect.arrayContaining([
           expect.objectContaining({
             category: "manual-replays",
@@ -280,18 +583,18 @@ describe("StorageService", () => {
     );
   });
 
-  it("uses the packaged executable directory for app installation size", () => {
+  it("uses the packaged executable directory for app installation size", async () => {
     electronMocks.isPackaged = true;
     const service = new StorageService();
 
-    expect(service.getInfo()).toEqual(
+    await expect(service.getInfo()).resolves.toEqual(
       expect.objectContaining({
         appInstallationSizeBytes: expect.any(Number),
       }),
     );
   });
 
-  it("ignores missing clip files while collecting storage info", () => {
+  it("ignores missing clip files while collecting storage info", async () => {
     const deathClipDirectory = join(storageRoot, "Death Clips");
     mkdirSync(deathClipDirectory);
     const emptyClipPath = join(deathClipDirectory, "empty.mp4");
@@ -311,10 +614,42 @@ describe("StorageService", () => {
     );
     const service = new StorageService();
 
-    expect(service.getInfo().mediaSizeBytes).toBe(0);
+    await expect(service.getInfo()).resolves.toMatchObject({
+      recordingsSizeBytes: 0,
+    });
   });
 
-  it("counts filesystem-only full recordings in the active game league", () => {
+  it("ignores clip paths and cached inventories outside the current storage root", async () => {
+    replayClipsRepository.upsert(
+      createReplayClip({
+        processedClipPath: join(root, "outside.mp4"),
+        sizeBytes: 0,
+      }),
+    );
+    const service = new StorageService();
+    await service.getInfo();
+    (
+      service as unknown as {
+        recordingInventoryCache: {
+          files: [];
+          root: string;
+        };
+      }
+    ).recordingInventoryCache = {
+      files: [],
+      root: join(root, "previous-storage-root"),
+    };
+
+    await expect(service.getGameLeagueUsage()).resolves.toEqual([
+      expect.objectContaining({
+        clipCount: 1,
+        estimatedSizeBytes: 0,
+        recordingCount: 0,
+      }),
+    ]);
+  });
+
+  it("counts filesystem-only full recordings in the active game league", async () => {
     const deathClipDirectory = join(storageRoot, "Death Clips");
     const fullRecordingDirectory = join(storageRoot, "Full Recordings");
     const manualReplayDirectory = join(storageRoot, "Manual Replays");
@@ -326,7 +661,8 @@ describe("StorageService", () => {
     writeFileSync(join(manualReplayDirectory, "orphan-manual.mp4"), "manual");
     const service = new StorageService();
 
-    expect(service.getInfo().breakdown).toEqual(
+    const storageInfo = await service.getInfo();
+    expect(storageInfo.breakdown).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           category: "temporary-files",
@@ -335,7 +671,7 @@ describe("StorageService", () => {
         }),
       ]),
     );
-    expect(service.getGameLeagueUsage()).toEqual([
+    expect(await service.getGameLeagueUsage()).toEqual([
       expect.objectContaining({
         game: "poe1",
         leagueName: "Keepers",
@@ -346,7 +682,7 @@ describe("StorageService", () => {
     ]);
   });
 
-  it("counts duplicate clip paths once and sorts equal-size usage buckets", () => {
+  it("counts duplicate clip paths once and sorts equal-size usage buckets", async () => {
     const clipPath = join(storageRoot, "2026-06-12_10-30-00-death-10s.mp4");
     writeFileSync(clipPath, "clip");
     replayClipsRepository.upsert(
@@ -392,7 +728,7 @@ describe("StorageService", () => {
       }),
     );
 
-    expect(serviceUsageSummary(new StorageService())).toEqual([
+    expect(await serviceUsageSummary(new StorageService())).toEqual([
       ["poe1", "Keepers", 2, 4],
       ["poe1", "Alpha", 1, 0],
       ["poe1", "Beta", 1, 0],
@@ -400,7 +736,7 @@ describe("StorageService", () => {
     ]);
   });
 
-  it("does not double-count run recordings already counted as clips", () => {
+  it("does not double-count run recordings already counted as clips", async () => {
     const sharedPath = resolve(
       join(storageRoot, "2026-06-12_10-30-00-death-10s.mp4"),
     );
@@ -422,7 +758,7 @@ describe("StorageService", () => {
     });
     const service = new StorageService();
 
-    expect(service.getGameLeagueUsage()).toEqual([
+    expect(await service.getGameLeagueUsage()).toEqual([
       expect.objectContaining({
         clipCount: 1,
         estimatedSizeBytes: 4,
@@ -431,7 +767,7 @@ describe("StorageService", () => {
     ]);
   });
 
-  it("counts metadata-only run recordings and active recording usage", () => {
+  it("counts metadata-only run recordings and active recording usage", async () => {
     const missingRunPath = join(storageRoot, "2026-06-12_11-00-00.mp4");
     recordingStorageRepository.upsertRunRecording({
       path: missingRunPath,
@@ -444,7 +780,7 @@ describe("StorageService", () => {
       getStatus: () => mockRecorderStatus({ runRecordingActive: true }),
     } as unknown as ManagedRecorderService);
 
-    expect(new StorageService().getGameLeagueUsage()).toEqual([
+    expect(await new StorageService().getGameLeagueUsage()).toEqual([
       expect.objectContaining({
         game: "poe1",
         leagueName: "Keepers",
@@ -464,14 +800,10 @@ describe("StorageService", () => {
     });
     const service = new StorageService();
 
-    expect(service.getInfo()).toEqual(
+    await expect(service.getInfo()).resolves.toEqual(
       expect.objectContaining({
         appInstallationSizeBytes: 0,
-        appInstallationDiskTotalBytes: 0,
-        appInstallationDiskFreeBytes: 0,
         databaseSizeBytes: 0,
-        databaseDiskTotalBytes: 0,
-        databaseDiskFreeBytes: 0,
       }),
     );
     await expect(
@@ -788,11 +1120,19 @@ describe("StorageService", () => {
   });
 
   it("reveals resolved storage paths", () => {
+    const exportRoot = resolve(root, "videos", "Hinekora Exports");
+    mkdirSync(exportRoot, { recursive: true });
     const service = new StorageService();
 
     expect(service.revealPaths()).toEqual({
       storagePath: resolve(storageRoot),
-      exportsPath: resolve(root, "videos", "Hinekora Exports"),
+      exportStoragePath: exportRoot,
+      exportStorageVolumes: [
+        {
+          id: expect.stringMatching(/^storage-volume-/),
+          path: exportRoot,
+        },
+      ],
       databasePath: database.path,
     });
   });
@@ -828,32 +1168,29 @@ describe("StorageService", () => {
 
   it("registers IPC handlers with bounded delete input", async () => {
     const service = new StorageService();
-    vi.spyOn(service, "getInfo").mockReturnValue({
+    vi.spyOn(service, "getInfo").mockResolvedValue({
       storagePath: "C:\\**\\Hinekora Recordings",
-      exportsPath: "C:\\**\\Hinekora Exports",
       appInstallationSizeBytes: 7,
       recordingsSizeBytes: 0,
-      exportVideosSizeBytes: 0,
-      mediaSizeBytes: 0,
+      recordingUsageTruncated: false,
+      exportStorageVolumes: [],
+      exportVideosUsageTruncated: false,
       rewindBufferEstimateBytes: 60_000_000,
       temporarySizeBytes: 0,
       databaseSizeBytes: 0,
       totalTrackedSizeBytes: 0,
       diskTotalBytes: 0,
       diskFreeBytes: 0,
-      exportDiskTotalBytes: 0,
-      exportDiskFreeBytes: 0,
-      appInstallationDiskTotalBytes: 0,
-      appInstallationDiskFreeBytes: 0,
-      databaseDiskTotalBytes: 0,
-      databaseDiskFreeBytes: 0,
+      appInstallationOnStorageDrive: false,
+      databaseOnStorageDrive: false,
       breakdown: [],
       calculatedAt: "2026-06-12T10:00:00.000Z",
     });
-    vi.spyOn(service, "getGameLeagueUsage").mockReturnValue([]);
+    vi.spyOn(service, "getGameLeagueUsage").mockResolvedValue([]);
     vi.spyOn(service, "revealPaths").mockReturnValue({
       storagePath: resolve(storageRoot),
-      exportsPath: resolve(storageRoot, "exports"),
+      exportStoragePath: resolve(root, "videos", "Hinekora Exports"),
+      exportStorageVolumes: [],
       databasePath: database.path,
     });
     vi.spyOn(service, "deleteGameLeagueData").mockResolvedValue({
@@ -871,7 +1208,8 @@ describe("StorageService", () => {
     ).toEqual([]);
     expect(await ipcHandlers.get(StorageChannel.RevealPaths)?.({})).toEqual({
       storagePath: resolve(storageRoot),
-      exportsPath: resolve(storageRoot, "exports"),
+      exportStoragePath: resolve(root, "videos", "Hinekora Exports"),
+      exportStorageVolumes: [],
       databasePath: database.path,
     });
     expect(
@@ -897,13 +1235,11 @@ describe("StorageService", () => {
   });
 });
 
-function serviceUsageSummary(service: StorageService) {
-  return service
-    .getGameLeagueUsage()
-    .map((item) => [
-      item.game,
-      item.leagueName,
-      item.clipCount,
-      item.estimatedSizeBytes,
-    ]);
+async function serviceUsageSummary(service: StorageService) {
+  return (await service.getGameLeagueUsage()).map((item) => [
+    item.game,
+    item.leagueName,
+    item.clipCount,
+    item.estimatedSizeBytes,
+  ]);
 }

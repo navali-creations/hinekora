@@ -16,7 +16,8 @@ function createUsage(): RecordingStorageUsage {
     diskFreeBytes: 50,
     lowDiskSpace: false,
     recordingsSizeBytes: 0,
-    savedEditsSizeBytes: 0,
+    exportVideosSizeBytes: 0,
+    exportVideosUsageTruncated: false,
   };
 }
 
@@ -142,6 +143,35 @@ describe("RecordingStorage slice", () => {
     expect(store.getState().recordingStorage.usage).toEqual(usage);
     expect(getUsage).not.toHaveBeenCalled();
     expect(onUsageChanged).toHaveBeenCalledTimes(1);
+    stopListening();
+  });
+
+  it("refreshes loaded disk details when export usage changes", async () => {
+    const store = createTestStore();
+    const fetchStorageInfo = vi.fn().mockResolvedValue(undefined);
+    store.setState({
+      recordingStorage: {
+        ...store.getState().recordingStorage,
+        usage: createUsage(),
+      },
+      storage: {
+        fetchStorageInfo,
+        info: {
+          exportStorageVolumes: [],
+          exportVideosUsageTruncated: false,
+        } as never,
+      },
+    } as unknown as Partial<BoundStore>);
+    const stopListening = store.getState().recordingStorage.startListening();
+
+    usageChangedListener?.({
+      ...createUsage(),
+      exportVideosSizeBytes: 25,
+    });
+
+    await vi.waitFor(() => {
+      expect(fetchStorageInfo).toHaveBeenCalledOnce();
+    });
     stopListening();
   });
 

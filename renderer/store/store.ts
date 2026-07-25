@@ -137,6 +137,7 @@ export const useBoundStore = create<BoundStore>()(
             clientLogSlice.clientLog.startListening(),
             replayClipsSlice.replayClips.startListening(),
             recordingStorageSlice.recordingStorage.startListening(),
+            savedVideosSlice.savedVideos.startListening(),
             updaterSlice.updater.startListening(),
           ];
 

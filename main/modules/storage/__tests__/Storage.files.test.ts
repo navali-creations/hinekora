@@ -17,8 +17,7 @@ import {
   calculateDiskUsage,
   calculatePathSize,
   collectDeleteFiles,
-  collectRecordingFiles,
-  collectTemporaryFiles,
+  collectStorageRootInventory,
   getExistingFileSize,
   parseResolution,
   removeEmptyParentDirectories,
@@ -43,7 +42,7 @@ afterEach(() => {
 });
 
 describe("Storage.files", () => {
-  it("collects managed media, temporary files, and delete candidates", () => {
+  it("collects managed media, temporary files, and delete candidates", async () => {
     const fullRecordingDirectory = join(storageRoot, "Full Recordings");
     const nestedDirectory = join(storageRoot, "scratch");
     const managedPath = join(fullRecordingDirectory, "2026-06-12_10-30-00.mp4");
@@ -67,16 +66,51 @@ describe("Storage.files", () => {
     writeFileSync(emptyManagedPath, "");
     writeFileSync(temporaryPath, "temporary");
 
-    expect(collectRecordingFiles(join(root, "missing"))).toEqual([]);
-    expect(collectRecordingFiles(managedPath)).toEqual([]);
-    expect(collectRecordingFiles(storageRoot)).toEqual([
-      { path: resolve(managedPath), size: 3 },
-    ]);
-    expect(collectTemporaryFiles(join(root, "missing"), new Set())).toEqual([]);
-    expect(collectTemporaryFiles(managedPath, new Set())).toEqual([]);
-    expect(
-      collectTemporaryFiles(storageRoot, new Set([resolve(managedPath)])),
-    ).toEqual([{ path: resolve(temporaryPath), size: 9 }]);
+    await expect(
+      collectStorageRootInventory(join(root, "missing"), new Set()),
+    ).resolves.toEqual({
+      isTruncated: false,
+      recordingFiles: [],
+      temporaryFiles: [],
+    });
+    await expect(
+      collectStorageRootInventory(managedPath, new Set()),
+    ).resolves.toEqual({
+      isTruncated: false,
+      recordingFiles: [],
+      temporaryFiles: [],
+    });
+    await expect(
+      collectStorageRootInventory(storageRoot, new Set([resolve(managedPath)])),
+    ).resolves.toEqual({
+      isTruncated: false,
+      recordingFiles: [{ path: resolve(managedPath), size: 3 }],
+      temporaryFiles: [{ path: resolve(temporaryPath), size: 9 }],
+    });
+    await expect(
+      collectStorageRootInventory(
+        storageRoot,
+        new Set([resolve(temporaryPath)]),
+      ),
+    ).resolves.toEqual({
+      isTruncated: false,
+      recordingFiles: [{ path: resolve(managedPath), size: 3 }],
+      temporaryFiles: [],
+    });
+    await expect(
+      collectStorageRootInventory(storageRoot, new Set(), [nestedDirectory]),
+    ).resolves.toEqual({
+      isTruncated: false,
+      recordingFiles: [{ path: resolve(managedPath), size: 3 }],
+      temporaryFiles: [],
+    });
+    await expect(
+      collectStorageRootInventory(storageRoot, new Set(), [storageRoot]),
+    ).resolves.toEqual({
+      isTruncated: false,
+      recordingFiles: [],
+      temporaryFiles: [],
+    });
     expect(resolveManagedMediaPath(null, storageRoot)).toBeNull();
     expect(
       resolveManagedMediaPath(join(root, "outside.mp4"), storageRoot),
@@ -109,7 +143,7 @@ describe("Storage.files", () => {
     ).toEqual([{ path: resolve(emptyManagedPath), size: 0 }]);
   });
 
-  it("calculates sizes, database sidecars, and resolutions", () => {
+  it("calculates sizes, database sidecars, and resolutions", async () => {
     const fullRecordingDirectory = join(storageRoot, "Full Recordings");
     const managedPath = join(fullRecordingDirectory, "2026-06-12_10-30-00.mp4");
     const databasePath = join(root, "hinekora.sqlite");
@@ -131,9 +165,9 @@ describe("Storage.files", () => {
       totalBytes: 0,
     });
     expect(getExistingFileSize(join(root, "missing.mp4"))).toBe(0);
-    expect(calculatePathSize(join(root, "missing"))).toBe(0);
-    expect(calculatePathSize(managedPath)).toBe(3);
-    expect(calculatePathSize(storageRoot)).toBe(3);
+    await expect(calculatePathSize(join(root, "missing"))).resolves.toBe(0);
+    await expect(calculatePathSize(managedPath)).resolves.toBe(3);
+    await expect(calculatePathSize(storageRoot)).resolves.toBe(3);
     expect(sumFileSizes([{ path: managedPath, size: 3 }])).toBe(3);
     expect(parseResolution(null)).toBeNull();
     expect(parseResolution("native")).toBeNull();
@@ -161,35 +195,128 @@ describe("Storage.files", () => {
     expect(existsSync(storageRoot)).toBe(true);
   });
 
+  it("batches large directories and cancels at asynchronous scan boundaries", async () => {
+    const batchRoot = join(root, "batch");
+    mkdirSync(batchRoot);
+    for (let index = 0; index < 65; index += 1) {
+      writeFileSync(join(batchRoot, `${index}.tmp`), "x");
+    }
+
+    await expect(
+      collectStorageRootInventory(batchRoot, new Set()),
+    ).resolves.toEqual({
+      isTruncated: false,
+      recordingFiles: [],
+      temporaryFiles: expect.arrayContaining([
+        expect.objectContaining({ size: 1 }),
+      ]),
+    });
+
+    const abortOnCheck = (targetCheck: number) => {
+      let checkCount = 0;
+      return () => {
+        checkCount += 1;
+        return checkCount === targetCheck;
+      };
+    };
+    await expect(
+      calculatePathSize(batchRoot, abortOnCheck(2)),
+    ).resolves.toBeNull();
+    await expect(
+      collectStorageRootInventory(batchRoot, new Set(), [], abortOnCheck(2)),
+    ).resolves.toBeNull();
+    await expect(
+      collectStorageRootInventory(batchRoot, new Set(), [], abortOnCheck(66)),
+    ).resolves.toBeNull();
+
+    const oneFileRoot = join(root, "one-file");
+    mkdirSync(oneFileRoot);
+    writeFileSync(join(oneFileRoot, "one.tmp"), "x");
+    await expect(
+      collectStorageRootInventory(oneFileRoot, new Set(), [], abortOnCheck(3)),
+    ).resolves.toBeNull();
+    await expect(
+      collectStorageRootInventory(oneFileRoot, new Set(), [], abortOnCheck(4)),
+    ).resolves.toBeNull();
+    await expect(
+      collectStorageRootInventory(oneFileRoot, new Set(), [], abortOnCheck(5)),
+    ).resolves.toBeNull();
+  });
+
+  it("bounds recording-root inventory by entries and files", async () => {
+    const boundedRoot = join(root, "bounded");
+    mkdirSync(boundedRoot);
+    for (let index = 0; index < 65; index += 1) {
+      writeFileSync(join(boundedRoot, `${index}.tmp`), "x");
+    }
+
+    await expect(
+      collectStorageRootInventory(boundedRoot, new Set(), [], () => false, {
+        maxFiles: 1,
+      }),
+    ).resolves.toMatchObject({
+      isTruncated: true,
+      temporaryFiles: [{ path: join(boundedRoot, "0.tmp"), size: 1 }],
+    });
+    await expect(
+      collectStorageRootInventory(boundedRoot, new Set(), [], () => false, {
+        maxFiles: 64,
+      }),
+    ).resolves.toMatchObject({
+      isTruncated: true,
+      temporaryFiles: expect.arrayContaining([
+        { path: join(boundedRoot, "0.tmp"), size: 1 },
+      ]),
+    });
+    await expect(
+      collectStorageRootInventory(boundedRoot, new Set(), [], () => false, {
+        maxEntries: 0,
+      }),
+    ).resolves.toMatchObject({
+      isTruncated: true,
+      temporaryFiles: [],
+    });
+  });
+
+  it("aborts at entry-limit and final scan boundaries", async () => {
+    const boundedRoot = join(root, "abort-bounded");
+    const emptyRoot = join(root, "abort-empty");
+    mkdirSync(boundedRoot);
+    mkdirSync(emptyRoot);
+    writeFileSync(join(boundedRoot, "one.tmp"), "x");
+    let entryAbortChecks = 0;
+    await expect(
+      collectStorageRootInventory(
+        boundedRoot,
+        new Set(),
+        [],
+        () => {
+          entryAbortChecks += 1;
+          return entryAbortChecks >= 3;
+        },
+        { maxEntries: 0 },
+      ),
+    ).resolves.toBeNull();
+
+    let finalAbortChecks = 0;
+    await expect(
+      collectStorageRootInventory(emptyRoot, new Set(), [], () => {
+        finalAbortChecks += 1;
+        return finalAbortChecks >= 4;
+      }),
+    ).resolves.toBeNull();
+  });
+
   it("handles defensive filesystem races while measuring storage", async () => {
+    writeFileSync(join(storageRoot, "stat-throws.tmp"), "x");
+    writeFileSync(join(storageRoot, "not-file-stat.tmp"), "x");
     vi.resetModules();
     vi.doMock("node:fs", async (importOriginal) => {
       const actual = await importOriginal<typeof import("node:fs")>();
-      const nonFileEntry = {
-        isDirectory: () => false,
-        isFile: () => false,
-        name: "socket.mp4",
-      };
 
       return {
         ...actual,
         existsSync: () => true,
-        readdirSync: (path: string) => {
-          if (path.includes("readdir-throws")) {
-            throw new Error("readdir failed");
-          }
-          if (path.includes("export-stat-throws")) {
-            return [
-              {
-                isDirectory: () => false,
-                isFile: () => true,
-                name: "stat-throws.mp4",
-              },
-            ];
-          }
-
-          return [nonFileEntry];
-        },
         statSync: (path: string) => {
           if (path.includes("stat-throws")) {
             throw new Error("stat failed");
@@ -210,11 +337,62 @@ describe("Storage.files", () => {
         },
       };
     });
+    vi.doMock("node:fs/promises", async (importOriginal) => {
+      const actual = await importOriginal<typeof import("node:fs/promises")>();
+      return {
+        ...actual,
+        opendir: async (path: string) => {
+          if (path.includes("readdir-throws")) {
+            throw new Error("readdir failed");
+          }
+          if (path.includes("non-file-entry")) {
+            return {
+              async *[Symbol.asyncIterator]() {
+                yield {
+                  isDirectory: () => false,
+                  isFile: () => false,
+                  name: "ignored",
+                };
+              },
+              path,
+            } as Awaited<ReturnType<typeof actual.opendir>>;
+          }
+          return actual.opendir(path);
+        },
+        stat: async (path: string) => {
+          if (path.includes("stat-throws")) {
+            throw new Error("stat failed");
+          }
+          if (path.includes("not-file-stat")) {
+            return {
+              isDirectory: () => false,
+              isFile: () => false,
+              size: 1,
+            };
+          }
+          if (path.includes("not-file-or-dir")) {
+            return {
+              isDirectory: () => false,
+              isFile: () => false,
+              size: 0,
+            };
+          }
+          if (path.includes("readdir-throws")) {
+            return {
+              isDirectory: () => true,
+              isFile: () => false,
+              size: 0,
+            };
+          }
+          return actual.stat(path);
+        },
+      };
+    });
 
     const {
       calculatePathSize: mockedCalculatePathSize,
-      collectSavedEditFiles: mockedCollectSavedEditFiles,
-      collectTemporaryFiles: mockedCollectTemporaryFiles,
+      collectStorageRootInventory: mockedCollectStorageRootInventory,
+      getStorageDeviceId: mockedGetStorageDeviceId,
       resolveManagedMediaPath: mockedResolveManagedMediaPath,
     } = await import("../Storage.files");
 
@@ -224,10 +402,33 @@ describe("Storage.files", () => {
         storageRoot,
       ),
     ).toBeNull();
-    expect(mockedCalculatePathSize("not-file-or-dir")).toBe(0);
-    expect(mockedCalculatePathSize("readdir-throws")).toBe(0);
-    expect(mockedCalculatePathSize("directory-with-non-file")).toBe(0);
-    expect(mockedCollectSavedEditFiles(["export-stat-throws"])).toEqual([]);
-    expect(mockedCollectTemporaryFiles(storageRoot, new Set())).toEqual([]);
+    await expect(mockedCalculatePathSize("not-file-or-dir")).resolves.toBe(0);
+    await expect(mockedCalculatePathSize("readdir-throws")).resolves.toBe(0);
+    await expect(
+      mockedCalculatePathSize(storageRoot, () => true),
+    ).resolves.toBeNull();
+    expect(mockedGetStorageDeviceId(null)).toBeNull();
+    expect(mockedGetStorageDeviceId("stat-throws")).toBeNull();
+    await expect(
+      mockedCollectStorageRootInventory("readdir-throws", new Set()),
+    ).resolves.toEqual({
+      isTruncated: false,
+      recordingFiles: [],
+      temporaryFiles: [],
+    });
+    await expect(
+      mockedCollectStorageRootInventory("non-file-entry", new Set()),
+    ).resolves.toEqual({
+      isTruncated: false,
+      recordingFiles: [],
+      temporaryFiles: [],
+    });
+    await expect(
+      mockedCollectStorageRootInventory(storageRoot, new Set()),
+    ).resolves.toEqual({
+      isTruncated: false,
+      recordingFiles: [],
+      temporaryFiles: [],
+    });
   });
 });

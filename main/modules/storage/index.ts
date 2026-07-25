@@ -3,6 +3,7 @@ export { StorageChannel } from "./Storage.channels";
 export type {
   DeleteGameLeagueDataResult,
   StorageBreakdownItem,
+  StorageExportVolume,
   StorageGameLeagueInput,
   StorageGameLeagueUsage,
   StorageInfo,

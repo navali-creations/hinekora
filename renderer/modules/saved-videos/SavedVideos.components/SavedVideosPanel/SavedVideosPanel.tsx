@@ -28,14 +28,23 @@ import {
 } from "./SavedVideosPanel.utils";
 
 function SavedVideosPanel() {
-  const { error, hydrateLibrary, items, libraryPage, openVideo } =
-    useSavedVideosShallow((savedVideos) => ({
-      error: savedVideos.error,
-      hydrateLibrary: savedVideos.hydrateLibrary,
-      items: savedVideos.items,
-      libraryPage: savedVideos.libraryPage,
-      openVideo: savedVideos.openVideo,
-    }));
+  const {
+    error,
+    hydrateLibrary,
+    isLoading,
+    items,
+    libraryPage,
+    openVideo,
+    refreshLibrary,
+  } = useSavedVideosShallow((savedVideos) => ({
+    error: savedVideos.error,
+    hydrateLibrary: savedVideos.hydrateLibrary,
+    isLoading: savedVideos.isLoading,
+    items: savedVideos.items,
+    libraryPage: savedVideos.libraryPage,
+    openVideo: savedVideos.openVideo,
+    refreshLibrary: savedVideos.refreshLibrary,
+  }));
   const createQuery = useCallback(
     ({
       pagination,
@@ -71,6 +80,10 @@ function SavedVideosPanel() {
 
   const handleRowClick = (video: SavedVideoItem) => {
     void openVideo(video.id);
+  };
+
+  const handleRetry = () => {
+    void refreshLibrary();
   };
 
   const columns = useMemo<ColumnDef<SavedVideoItem>[]>(
@@ -120,7 +133,11 @@ function SavedVideosPanel() {
   return (
     <section className="col-span-12 flex min-h-0 flex-col overflow-hidden rounded-lg bg-base-200">
       <MediaLibraryTable
-        emptyMessage="No saved edit videos yet."
+        emptyMessage={
+          isLoading && libraryPage === null
+            ? "Loading saved videos..."
+            : "No saved edit videos yet."
+        }
         getCellClassName={getCellClassName}
         getHeaderClassName={getHeaderClassName}
         table={table}
@@ -133,9 +150,17 @@ function SavedVideosPanel() {
         </p>
       )}
       {error && (
-        <p className="m-0 shrink-0 border-base-content/10 border-t px-4 py-3 text-error text-sm">
-          {error}
-        </p>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-base-content/10 border-t px-4 py-2 text-error text-sm">
+          <p className="m-0">{error}</p>
+          <button
+            className="btn btn-error btn-outline btn-xs"
+            disabled={isLoading}
+            type="button"
+            onClick={handleRetry}
+          >
+            Retry
+          </button>
+        </div>
       )}
     </section>
   );

@@ -1,17 +1,18 @@
-import { type Dirent, existsSync, readdirSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, statSync } from "node:fs";
+import { opendir, stat } from "node:fs/promises";
+import { resolve } from "node:path";
 
 import { isManagedRecordingFilePath } from "~/main/modules/recording-storage/RecordingStorage.utils";
 import { resolveReplayClipFilePath } from "~/main/modules/replay-clips/ReplayClips.files";
 import {
   calculateDatabaseSize,
   calculateDiskUsage,
-  collectManagedFiles,
   getExistingFileSize,
+  isPathInsideOrEqual,
   removeEmptyParentDirectories,
   resolveDatabaseFilePaths,
+  resolveStoragePathAliases,
 } from "~/main/utils/storage-files";
-import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 import type { ReplayClip } from "~/types";
 
@@ -20,10 +21,42 @@ interface StorageFile {
   size: number;
 }
 
-function calculatePathSize(path: string): number {
-  let stats: ReturnType<typeof statSync>;
+interface StorageRootInventory {
+  isTruncated: boolean;
+  recordingFiles: StorageFile[];
+  temporaryFiles: StorageFile[];
+}
+
+interface ScanStorageDirectoryOptions {
+  excludedDirectories?: readonly string[];
+  maxEntries?: number;
+  maxFiles?: number;
+  onFiles: (files: StorageFile[]) => void;
+  root: string;
+  shouldAbort: () => boolean;
+}
+
+const storageScanBatchSize = 64;
+const defaultStorageScanMaxEntries = 250_000;
+const defaultStorageScanMaxFiles = 250_000;
+
+interface StorageDirectoryScanResult {
+  fileCount: number;
+  inspectedEntryCount: number;
+  isTruncated: boolean;
+}
+
+async function calculatePathSize(
+  path: string,
+  shouldAbort: () => boolean = () => false,
+): Promise<number | null> {
+  if (shouldAbort()) {
+    return null;
+  }
+
+  let stats: Awaited<ReturnType<typeof stat>>;
   try {
-    stats = statSync(path);
+    stats = await stat(path);
   } catch {
     return 0;
   }
@@ -36,30 +69,17 @@ function calculatePathSize(path: string): number {
   }
 
   let sizeBytes = 0;
-  const pendingDirectories = [path];
-  while (pendingDirectories.length > 0) {
-    const currentDirectory = pendingDirectories.pop()!;
-    let entries: Dirent<string>[];
-    try {
-      entries = readdirSync(currentDirectory, { withFileTypes: true });
-    } catch {
-      continue;
-    }
+  const result = await scanStorageDirectory({
+    maxEntries: Number.MAX_SAFE_INTEGER,
+    maxFiles: Number.MAX_SAFE_INTEGER,
+    onFiles: (files) => {
+      sizeBytes += sumFileSizes(files);
+    },
+    root: path,
+    shouldAbort,
+  });
 
-    for (const entry of entries) {
-      const entryPath = join(currentDirectory, entry.name);
-      if (entry.isDirectory()) {
-        pendingDirectories.push(entryPath);
-        continue;
-      }
-      if (!entry.isFile()) {
-        continue;
-      }
-      sizeBytes += getExistingFileSize(entryPath);
-    }
-  }
-
-  return sizeBytes;
+  return result ? sizeBytes : null;
 }
 
 function collectDeleteFiles(
@@ -104,92 +124,153 @@ function getExistingStorageFile(path: string): StorageFile | null {
   }
 }
 
-function collectRecordingFiles(storageRoot: string): StorageFile[] {
-  return collectManagedFiles(storageRoot, isManagedRecordingFilePath).map(
-    (file) => ({
-      path: file.path,
-      size: file.size,
-    }),
-  );
-}
-
-function collectSavedEditFiles(exportRoots: readonly string[]): StorageFile[] {
-  const files = new Map<string, StorageFile>();
-  const uniqueRoots = Array.from(
-    new Map(
-      exportRoots.map((root) => [createStoragePathKey(root), root] as const),
-    ).values(),
-  );
-  for (const exportRoot of uniqueRoots) {
-    let entries: Dirent<string>[];
-    try {
-      entries = readdirSync(exportRoot, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".mp4")) {
-        continue;
-      }
-
-      const file = getExistingStorageFile(resolve(exportRoot, entry.name));
-      if (!file) {
-        continue;
-      }
-
-      files.set(createStoragePathKey(file.path), {
-        path: file.path,
-        size: file.size,
-      });
-    }
-  }
-
-  return [...files.values()];
-}
-
-function collectTemporaryFiles(
+async function collectStorageRootInventory(
   storageRoot: string,
   managedMediaPathSet: Set<string>,
-): StorageFile[] {
-  if (!existsSync(storageRoot)) {
-    return [];
-  }
+  excludedDirectories: readonly string[] = [],
+  shouldAbort: () => boolean = () => false,
+  limits: { maxEntries?: number; maxFiles?: number } = {},
+): Promise<StorageRootInventory | null> {
+  const recordingFiles: StorageFile[] = [];
+  const temporaryFiles: StorageFile[] = [];
+  const result = await scanStorageDirectory({
+    excludedDirectories,
+    ...limits,
+    onFiles: (files) => {
+      for (const file of files) {
+        if (isManagedRecordingFilePath(storageRoot, file.path)) {
+          recordingFiles.push(file);
+        } else if (!managedMediaPathSet.has(file.path)) {
+          temporaryFiles.push(file);
+        }
+      }
+    },
+    root: storageRoot,
+    shouldAbort,
+  });
 
-  const files: StorageFile[] = [];
-  const pendingDirectories = [storageRoot];
+  return result
+    ? {
+        isTruncated: result.isTruncated,
+        recordingFiles,
+        temporaryFiles,
+      }
+    : null;
+}
+
+async function scanStorageDirectory(
+  options: ScanStorageDirectoryOptions,
+): Promise<StorageDirectoryScanResult | null> {
+  const maxEntries = Math.max(
+    0,
+    options.maxEntries ?? defaultStorageScanMaxEntries,
+  );
+  const maxFiles = Math.max(0, options.maxFiles ?? defaultStorageScanMaxFiles);
+  let fileCount = 0;
+  let inspectedEntryCount = 0;
+  const excludedDirectoryAliases = (options.excludedDirectories ?? []).flatMap(
+    (path) => resolveStoragePathAliases(path),
+  );
+  const isExcluded = (path: string) =>
+    excludedDirectoryAliases.some((directory) =>
+      isPathInsideOrEqual(directory, path),
+    );
+  const appendPaths = async (
+    paths: string[],
+  ): Promise<"aborted" | "complete" | "truncated"> => {
+    if (options.shouldAbort()) {
+      return "aborted";
+    }
+    const files = (
+      await Promise.all(
+        paths.map(async (path): Promise<StorageFile | null> => {
+          try {
+            const stats = await stat(path);
+            return stats.isFile() && stats.size > 0
+              ? { path, size: stats.size }
+              : null;
+          } catch {
+            return null;
+          }
+        }),
+      )
+    ).filter((file): file is StorageFile => file !== null);
+    if (options.shouldAbort()) {
+      return "aborted";
+    }
+    const accepted: StorageFile[] = [];
+    for (const file of files) {
+      if (fileCount >= maxFiles) {
+        options.onFiles(accepted);
+        return "truncated";
+      }
+      fileCount += 1;
+      accepted.push(file);
+    }
+    options.onFiles(accepted);
+    return "complete";
+  };
+
+  const pendingDirectories = [resolve(options.root)];
   while (pendingDirectories.length > 0) {
+    if (options.shouldAbort()) {
+      return null;
+    }
     const currentDirectory = pendingDirectories.pop()!;
-    let entries: Dirent<string>[];
+    if (isExcluded(currentDirectory)) {
+      continue;
+    }
+    let directory: Awaited<ReturnType<typeof opendir>>;
     try {
-      entries = readdirSync(currentDirectory, { withFileTypes: true });
+      directory = await opendir(currentDirectory);
     } catch {
       continue;
     }
 
-    for (const entry of entries) {
-      const entryPath = join(currentDirectory, entry.name);
+    let pendingPaths: string[] = [];
+    for await (const entry of directory) {
+      if (options.shouldAbort()) {
+        return null;
+      }
+      inspectedEntryCount += 1;
+      if (inspectedEntryCount > maxEntries) {
+        const appendResult = await appendPaths(pendingPaths);
+        return appendResult === "aborted"
+          ? null
+          : { fileCount, inspectedEntryCount, isTruncated: true };
+      }
+      const entryPath = resolve(directory.path, entry.name);
+      if (isExcluded(entryPath)) {
+        continue;
+      }
       if (entry.isDirectory()) {
         pendingDirectories.push(entryPath);
-        continue;
+      } else if (entry.isFile()) {
+        pendingPaths.push(entryPath);
       }
-      if (!entry.isFile()) {
-        continue;
+      if (pendingPaths.length >= storageScanBatchSize) {
+        const appendResult = await appendPaths(pendingPaths);
+        if (appendResult === "aborted") {
+          return null;
+        }
+        if (appendResult === "truncated") {
+          return { fileCount, inspectedEntryCount, isTruncated: true };
+        }
+        pendingPaths = [];
       }
-
-      const resolvedPath = resolve(entryPath);
-      if (managedMediaPathSet.has(resolvedPath)) {
-        continue;
-      }
-
-      const size = getExistingFileSize(resolvedPath);
-      if (size > 0) {
-        files.push({ path: resolvedPath, size });
-      }
+    }
+    const appendResult = await appendPaths(pendingPaths);
+    if (appendResult === "aborted") {
+      return null;
+    }
+    if (appendResult === "truncated") {
+      return { fileCount, inspectedEntryCount, isTruncated: true };
     }
   }
 
-  return files;
+  return options.shouldAbort()
+    ? null
+    : { fileCount, inspectedEntryCount, isTruncated: false };
 }
 
 function parseResolution(
@@ -259,16 +340,26 @@ function sumFileSizes(files: StorageFile[]): number {
   return files.reduce((sum, file) => sum + file.size, 0);
 }
 
+function getStorageDeviceId(path: string | null): number | null {
+  if (!path) {
+    return null;
+  }
+  try {
+    return statSync(path).dev;
+  } catch {
+    return null;
+  }
+}
+
 export type { StorageFile };
 export {
   calculateDatabaseSize,
   calculateDiskUsage,
   calculatePathSize,
   collectDeleteFiles,
-  collectRecordingFiles,
-  collectSavedEditFiles,
-  collectTemporaryFiles,
+  collectStorageRootInventory,
   getExistingFileSize,
+  getStorageDeviceId,
   parseResolution,
   removeEmptyParentDirectories,
   resolveClipPaths,

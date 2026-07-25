@@ -202,7 +202,7 @@ async function bootstrap(): Promise<void> {
   SavedEditsService.getInstance();
   logInfo("startup", "Draft edits initialized");
 
-  SavedVideosService.getInstance();
+  const savedVideos = SavedVideosService.getInstance();
   logInfo("startup", "Saved edit videos initialized");
 
   const bookmarks = BookmarksService.getInstance();
@@ -229,6 +229,7 @@ async function bootstrap(): Promise<void> {
   await MainWindowService.getInstance().createMainWindow();
   logInfo("startup", "Main window created");
   void EditorService.cleanupAbandonedExports();
+  savedVideos.initializeRetention();
 
   scheduleRecordingStorageInitialization(recordingStorage);
 

@@ -39,6 +39,7 @@ function createTestStore() {
 describe("SavedVideos slice", () => {
   const deleteVideo = vi.fn();
   const listLibrary = vi.fn();
+  const onLibraryChanged = vi.fn();
   const openVideo = vi.fn();
   const revealVideo = vi.fn();
 
@@ -48,12 +49,14 @@ describe("SavedVideos slice", () => {
     listLibrary.mockResolvedValue(createPage([video]));
     openVideo.mockResolvedValue({ error: null, ok: true });
     revealVideo.mockResolvedValue({ error: null, ok: true });
+    onLibraryChanged.mockImplementation(() => () => undefined);
     Object.defineProperty(window, "electron", {
       configurable: true,
       value: {
         savedVideos: {
           delete: deleteVideo,
           listLibrary,
+          onLibraryChanged,
           open: openVideo,
           reveal: revealVideo,
         },
@@ -93,6 +96,7 @@ describe("SavedVideos slice", () => {
     const first = store
       .getState()
       .savedVideos.hydrateLibrary({ pageIndex: 0, pageSize: 10 });
+    expect(store.getState().savedVideos.isLoading).toBe(true);
     const second = store
       .getState()
       .savedVideos.hydrateLibrary({ pageIndex: 1, pageSize: 10 });
@@ -106,6 +110,34 @@ describe("SavedVideos slice", () => {
       .getState()
       .savedVideos.hydrateLibrary({ pageIndex: 2, pageSize: 10 });
     expect(store.getState().savedVideos.error).toBe("Library unavailable");
+    expect(store.getState().savedVideos).toMatchObject({
+      isLoading: false,
+      isStale: true,
+    });
+  });
+
+  it("coalesces identical requests and retries an initial failure", async () => {
+    let rejectFirst!: (error: Error) => void;
+    listLibrary
+      .mockReturnValueOnce(
+        new Promise<SavedVideosLibraryPage>((_resolve, reject) => {
+          rejectFirst = reject;
+        }),
+      )
+      .mockResolvedValueOnce(createPage([video]));
+    const store = createTestStore();
+    const query = { pageIndex: 0, pageSize: 10 };
+
+    const first = store.getState().savedVideos.hydrateLibrary(query);
+    const duplicate = store.getState().savedVideos.hydrateLibrary(query);
+    expect(listLibrary).toHaveBeenCalledOnce();
+    rejectFirst(new Error("Library unavailable"));
+    await Promise.all([first, duplicate]);
+
+    expect(store.getState().savedVideos.libraryQuery).toEqual(query);
+    await store.getState().savedVideos.refreshLibrary();
+    expect(listLibrary).toHaveBeenCalledTimes(2);
+    expect(store.getState().savedVideos.items).toEqual([video]);
   });
 
   it("runs video actions, refreshes after deletion, and surfaces failures", async () => {
@@ -120,7 +152,7 @@ describe("SavedVideos slice", () => {
     expect(openVideo).toHaveBeenCalledWith(video.id);
     expect(revealVideo).toHaveBeenCalledWith(video.id);
     expect(deleteVideo).toHaveBeenCalledWith(video.id);
-    expect(listLibrary).toHaveBeenCalledTimes(2);
+    expect(listLibrary).toHaveBeenCalledTimes(1);
 
     openVideo.mockResolvedValueOnce({ error: "Cannot open", ok: false });
     await store.getState().savedVideos.openVideo(video.id);
@@ -135,5 +167,32 @@ describe("SavedVideos slice", () => {
     expect(store.getState().savedVideos.error).toBe(
       "Saved edit video is unavailable",
     );
+  });
+
+  it("refreshes an active query when the main process invalidates it", async () => {
+    const listeners: Array<() => void> = [];
+    const unsubscribe = vi.fn();
+    onLibraryChanged.mockImplementation((callback: () => void) => {
+      listeners.push(callback);
+      return unsubscribe;
+    });
+    const store = createTestStore();
+    const stopListening = store.getState().savedVideos.startListening();
+    listeners[0]?.();
+    expect(listLibrary).not.toHaveBeenCalled();
+    await store
+      .getState()
+      .savedVideos.hydrateLibrary({ pageSize: 20, sortBy: "savedAt" });
+    listLibrary.mockResolvedValueOnce(createPage([]));
+
+    listeners[0]?.();
+    await vi.waitFor(() =>
+      expect(store.getState().savedVideos.items).toEqual([]),
+    );
+
+    expect(listLibrary).toHaveBeenCalledTimes(2);
+    expect(store.getState().savedVideos.isStale).toBe(false);
+    stopListening();
+    expect(unsubscribe).toHaveBeenCalledOnce();
   });
 });

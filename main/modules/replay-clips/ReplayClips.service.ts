@@ -88,6 +88,10 @@ class ReplayClipsService {
     ReplayClipsService.instance = null;
   }
 
+  static noteEditorOverwriteIfInitialized(id: string, sizeBytes: number): void {
+    ReplayClipsService.instance?.noteEditorOverwrite(id, sizeBytes);
+  }
+
   constructor() {
     this.repository = new ReplayClipsRepository(DatabaseService.getInstance());
     this.storageService = new ReplayClipStorageService(this.repository);
@@ -208,6 +212,31 @@ class ReplayClipsService {
         ? createReplayClipMediaUrl(id, sizedClip.updatedAt)
         : null,
     };
+  }
+
+  noteEditorOverwrite(id: string, sizeBytes: number): void {
+    const previousClip = this.repository.get(id);
+    if (!previousClip) {
+      RecordingStorageService.getInstance().publishUsageChanged();
+      return;
+    }
+
+    this.repository.updateSize(id, Math.max(0, sizeBytes));
+    const nextClip = this.repository.get(id);
+    /* v8 ignore next -- The clip cannot disappear between synchronous repository calls. */
+    if (!nextClip) {
+      RecordingStorageService.getInstance().publishUsageChanged();
+      return;
+    }
+    RecordingStorageService.getInstance().noteReplayClipUsageChange(
+      previousClip,
+      nextClip,
+    );
+    this.publishToWindowRoles(
+      ReplayClipsChannel.StatusChanged,
+      this.createReplayClipView(nextClip),
+      replayClipStatusWindowRoles,
+    );
   }
 
   getMediaPath(id: string): string | null {

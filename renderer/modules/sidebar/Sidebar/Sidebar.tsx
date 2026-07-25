@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 
 import { useManagedRecorderSelector } from "~/renderer/store";
 
@@ -6,6 +6,7 @@ import { EditorExportCancelConfirmationModal } from "../../editor/Editor.compone
 import { EditorExportStatus } from "../Sidebar.components/EditorExportStatus/EditorExportStatus";
 import { RecordingStatus } from "../Sidebar.components/RecordingStatus/RecordingStatus";
 import { SidebarNav } from "../Sidebar.components/SidebarNav/SidebarNav";
+import { SidebarStorageUsage } from "../Sidebar.components/SidebarStorageUsage/SidebarStorageUsage";
 
 const SESSION_STATUS_HEIGHT = 133;
 
@@ -16,28 +17,23 @@ function Sidebar() {
 
   return (
     <aside className="no-drag relative z-10 flex h-full min-h-0 w-[160px] flex-col border-r border-base-100 shadow-[0_0_10px_black]">
-      <AnimatePresence initial={false}>
-        <motion.div
-          animate={{ y: isRecording ? 0 : -SESSION_STATUS_HEIGHT }}
-          className="relative"
-          exit={{ y: -SESSION_STATUS_HEIGHT }}
-          initial={{ y: -SESSION_STATUS_HEIGHT }}
-          transition={{ duration: 0.3, ease: "easeInOut" }}
-        >
-          <RecordingStatus />
-        </motion.div>
-      </AnimatePresence>
-
       <motion.div
-        animate={{ y: isRecording ? 0 : -SESSION_STATUS_HEIGHT }}
-        className="flex h-full flex-col"
-        exit={{ y: 0 }}
-        initial={{ y: 0 }}
+        animate={{ height: isRecording ? SESSION_STATUS_HEIGHT : 0 }}
+        aria-hidden={!isRecording}
+        className="shrink-0 overflow-hidden"
+        initial={false}
         transition={{ duration: 0.3, ease: "easeInOut" }}
       >
-        <SidebarNav />
+        <RecordingStatus />
       </motion.div>
-      <EditorExportStatus />
+
+      <div className="flex min-h-0 flex-1 flex-col">
+        <SidebarNav />
+        <div className="mt-auto grid shrink-0 gap-2 p-3 pt-2">
+          <EditorExportStatus />
+          <SidebarStorageUsage />
+        </div>
+      </div>
       <EditorExportCancelConfirmationModal />
     </aside>
   );

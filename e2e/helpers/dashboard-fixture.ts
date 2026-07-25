@@ -210,6 +210,7 @@ interface DashboardE2EOptions {
   appSetupValidation?: StepValidationResult;
   auraLocked?: boolean;
   bookmarks?: BookmarkLibraryItem[];
+  editorExportMaxStorageGb?: number;
   recordingMaxStorageGb?: number;
   recordingStorageUsageDeferred?: boolean;
   recordingStorageUsage?: Partial<RecordingStorageUsage>;
@@ -279,6 +280,9 @@ function createDashboardE2EFixture(
     recordingFps: 60,
     recordingMaxStorageGb:
       options.recordingMaxStorageGb ?? defaultSettings.recordingMaxStorageGb,
+    editorExportMaxStorageGb:
+      options.editorExportMaxStorageGb ??
+      defaultSettings.editorExportMaxStorageGb,
     recordingRunQuality: "moderate",
     recorderOverlayIgnoreGameFocus:
       options.recorderOverlayIgnoreGameFocus ??
@@ -376,21 +380,26 @@ function createDashboardE2EFixture(
     runtimePath: null,
   };
   const storageInfo: StorageInfo = {
-    appInstallationDiskFreeBytes: 900_000_000_000,
-    appInstallationDiskTotalBytes: 1_000_000_000_000,
+    appInstallationOnStorageDrive: true,
     appInstallationSizeBytes: 100_000_000,
     breakdown: [],
     calculatedAt: dashboardE2ENow,
-    databaseDiskFreeBytes: 900_000_000_000,
-    databaseDiskTotalBytes: 1_000_000_000_000,
+    databaseOnStorageDrive: true,
     databaseSizeBytes: 1024,
     diskFreeBytes: 900_000_000_000,
     diskTotalBytes: 1_000_000_000_000,
-    exportDiskFreeBytes: 900_000_000_000,
-    exportDiskTotalBytes: 1_000_000_000_000,
-    exportsPath: "C:/Hinekora Exports",
-    exportVideosSizeBytes: 0,
-    mediaSizeBytes: 0,
+    exportStorageVolumes: [
+      {
+        diskFreeBytes: 900_000_000_000,
+        diskTotalBytes: 1_000_000_000_000,
+        exportVideosSizeBytes: 0,
+        id: "storage-volume-1",
+        isRecordingStorage: true,
+        path: "C:/Hinekora Exports",
+      },
+    ],
+    exportVideosUsageTruncated: false,
+    recordingUsageTruncated: false,
     recordingsSizeBytes: 0,
     rewindBufferEstimateBytes: 0,
     storagePath: "C:/Hinekora",
@@ -439,7 +448,8 @@ function createDashboardE2EFixture(
             diskFreeBytes: 900_000_000_000,
             lowDiskSpace: false,
             recordingsSizeBytes: 0,
-            savedEditsSizeBytes: 0,
+            exportVideosSizeBytes: 0,
+            exportVideosUsageTruncated: false,
             ...options.recordingStorageUsage,
           },
     recordingStorageEstimateDelayMs:
@@ -1663,6 +1673,7 @@ async function setupDashboardE2E(
               sortDirection: "desc",
               totalCount: 0,
             }),
+            onLibraryChanged: () => () => undefined,
             open: async () => ({ error: null, ok: true }),
             reveal: async () => ({ error: null, ok: true }),
           },
@@ -1707,6 +1718,15 @@ async function setupDashboardE2E(
           {
             getGameLeagueUsage: async () => [],
             getInfo: async () => clone(fixture.storageInfo),
+            revealPaths: async () => ({
+              databasePath:
+                "C:\\Users\\E2E\\AppData\\Roaming\\Hinekora\\hinekora.sqlite",
+              exportStoragePath:
+                settings.editorExportStoragePath ||
+                "C:\\Users\\E2E\\Videos\\Hinekora Exports",
+              exportStorageVolumes: [],
+              storagePath: fixture.storageInfo.storagePath,
+            }),
           },
         ),
         stateTransfer: createBridgeDomain<

@@ -6,10 +6,18 @@ import { app } from "electron";
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
 import {
+  resolveEditorExportInventoryRoots,
+  type ScanEditorExportFilesOptions,
+  type scanEditorExportFiles,
+} from "~/main/modules/editor/EditorExport.inventory";
+import { createEditorExportOwnershipPolicy } from "~/main/modules/editor/EditorExport.ownership";
+import {
   resolveEditorExportLibraryRoots,
   resolveEditorExportStorageRoot,
+  resolveImplicitlyOwnedEditorExportRoots,
 } from "~/main/modules/editor/EditorExport.paths";
-import { WindowName } from "~/main/modules/main-window/MainWindow.types";
+import { EditorExportInventoryService } from "~/main/modules/editor/EditorExportInventory.service";
+import { EditorExportOwnershipRepository } from "~/main/modules/editor/EditorExportOwnership.repository";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { recordingQualityBaseBitrates } from "~/main/modules/managed-recorder/ManagedRecorder.utils";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
@@ -22,21 +30,18 @@ import {
 import { ReplayClipsRepository } from "~/main/modules/replay-clips/ReplayClips.repository";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { logInfo } from "~/main/utils/app-log";
-import {
-  assertObject,
-  assertString,
-  safeErrorMessage,
-} from "~/main/utils/ipc-validation";
-import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
+import { safeErrorMessage } from "~/main/utils/ipc-validation";
 import { maskPath } from "~/main/utils/mask-path";
-import { isPathInsideOrEqual } from "~/main/utils/storage-files";
+import {
+  isPathInsideOrEqual,
+  resolveStoragePathAliases,
+} from "~/main/utils/storage-files";
+import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 import { type GameId, rewindBufferSeconds } from "~/types";
-import { StorageChannel } from "./Storage.channels";
 import { deleteGameLeagueStorage } from "./Storage.deletion";
 import type {
   DeleteGameLeagueDataResult,
-  StorageBreakdownItem,
   StorageGameLeagueInput,
   StorageGameLeagueUsage,
   StorageInfo,
@@ -46,25 +51,28 @@ import {
   calculateDatabaseSize,
   calculateDiskUsage,
   calculatePathSize,
-  collectRecordingFiles,
-  collectSavedEditFiles,
-  collectTemporaryFiles,
-  getExistingFileSize,
+  collectStorageRootInventory,
+  getStorageDeviceId,
   parseResolution,
-  resolveClipPaths,
   resolveDatabaseFilePaths,
   type StorageFile,
   sumFileSizes,
 } from "./Storage.files";
+import { setupStorageIpcHandlers } from "./Storage.handlers";
+import {
+  addExportFileToStorageTotals,
+  createExportStorageTotals,
+  createExportStorageVolumes,
+  createStorageBreakdown,
+  storagePathAnchors,
+} from "./Storage.info";
 import { StorageFileDeletionService } from "./StorageFileDeletion.service";
 
 const STORAGE_LOG_SCOPE = "storage";
-const STORAGE_PATH_ANCHORS = [
-  "Hinekora Recordings",
-  "Hinekora Exports",
-  "Hinekora",
-];
 const FALLBACK_REWIND_BUFFER_RESOLUTION = { width: 1920, height: 1080 };
+const DEFAULT_INFO_CACHE_MS = 5_000;
+const DEFAULT_MAX_EXPORT_ENTRIES = 250_000;
+const DEFAULT_MAX_EXPORT_FILES = 250_000;
 
 interface UsageBucket {
   game: GameId;
@@ -74,15 +82,62 @@ interface UsageBucket {
   estimatedSizeBytes: number;
 }
 
+interface StorageServiceDependencies {
+  calculateDiskUsage?: typeof calculateDiskUsage;
+  calculatePathSize?: typeof calculatePathSize;
+  collectStorageRootInventory?: typeof collectStorageRootInventory;
+  getStorageDeviceId?: typeof getStorageDeviceId;
+  infoCacheMs?: number;
+  maxExportEntries?: number;
+  maxExportFiles?: number;
+  scanExportFiles?: (
+    options: ScanEditorExportFilesOptions,
+  ) => ReturnType<typeof scanEditorExportFiles>;
+}
+
+interface StorageInfoRoots {
+  exportLibraryRoots: string[];
+  exportStorageRoot: string;
+  key: string;
+  storageRoot: string;
+}
+
 class StorageService {
   private static instance: StorageService | null = null;
 
   private appInstallationSizeCache: { path: string; sizeBytes: number } | null =
     null;
+  private infoCache: {
+    calculatedAtMs: number;
+    info: StorageInfo;
+    rootsKey: string;
+  } | null = null;
+  private infoGeneration = 0;
+  private infoRequest: {
+    generation: number;
+    promise: Promise<StorageInfo>;
+    rootsKey: string;
+  } | null = null;
+  private infoRootsKey: string | null = null;
+  private readonly calculateDiskUsage: typeof calculateDiskUsage;
+  private readonly calculatePathSize: typeof calculatePathSize;
+  private readonly collectStorageRootInventory: typeof collectStorageRootInventory;
   private readonly database: DatabaseService;
   private readonly fileDeletions: StorageFileDeletionService;
+  private readonly exportOwnershipRepository: EditorExportOwnershipRepository;
+  private readonly infoCacheMs: number;
+  private readonly maxExportEntries: number;
+  private readonly maxExportFiles: number;
+  private readonly getStorageDeviceId: typeof getStorageDeviceId;
   private readonly recordingStorageRepository: RecordingStorageRepository;
+  private recordingInventoryCache: {
+    files: StorageFile[];
+    root: string;
+  } | null = null;
   private readonly replayClipsRepository: ReplayClipsRepository;
+  private readonly scanExportFiles: (
+    options: ScanEditorExportFilesOptions,
+  ) => ReturnType<typeof scanEditorExportFiles>;
 
   static getInstance(): StorageService {
     if (!StorageService.instance) {
@@ -96,27 +151,170 @@ class StorageService {
     StorageService.instance = null;
   }
 
-  constructor() {
+  static noteExportInventoryChanged(): void {
+    StorageService.instance?.invalidateInfoCache();
+  }
+
+  constructor(dependencies: StorageServiceDependencies = {}) {
     this.database = DatabaseService.getInstance();
     this.fileDeletions = new StorageFileDeletionService(this.database);
+    this.exportOwnershipRepository = new EditorExportOwnershipRepository(
+      this.database,
+    );
     this.recordingStorageRepository = new RecordingStorageRepository(
       this.database,
     );
     this.replayClipsRepository = new ReplayClipsRepository(this.database);
-    this.setupHandlers();
+    this.calculateDiskUsage =
+      dependencies.calculateDiskUsage ?? calculateDiskUsage;
+    this.calculatePathSize =
+      dependencies.calculatePathSize ?? calculatePathSize;
+    this.collectStorageRootInventory =
+      dependencies.collectStorageRootInventory ?? collectStorageRootInventory;
+    this.getStorageDeviceId =
+      dependencies.getStorageDeviceId ?? getStorageDeviceId;
+    this.infoCacheMs = Math.max(
+      0,
+      dependencies.infoCacheMs ?? DEFAULT_INFO_CACHE_MS,
+    );
+    this.maxExportEntries = Math.max(
+      0,
+      dependencies.maxExportEntries ?? DEFAULT_MAX_EXPORT_ENTRIES,
+    );
+    this.maxExportFiles = Math.max(
+      0,
+      dependencies.maxExportFiles ?? DEFAULT_MAX_EXPORT_FILES,
+    );
+    this.scanExportFiles =
+      dependencies.scanExportFiles ??
+      ((options) => EditorExportInventoryService.getInstance().scan(options));
+    setupStorageIpcHandlers({
+      deleteGameLeagueData: (input) => this.deleteGameLeagueData(input),
+      getGameLeagueUsage: () => this.getGameLeagueUsage(),
+      getInfo: () => this.getInfo(),
+      revealPaths: () => this.revealPaths(),
+    });
   }
 
-  getInfo(): StorageInfo {
-    const storageRoot = this.resolveStorageRoot();
-    this.ensureStorageRoot(storageRoot);
-    const exportStorageRoot = this.resolveExportStorageRoot();
-    this.ensureDirectory(exportStorageRoot);
-    const exportLibraryRoots = this.resolveExportLibraryRoots(storageRoot);
+  getInfo(): Promise<StorageInfo> {
+    const roots = this.resolveInfoRoots();
+    if (roots.key !== this.infoRootsKey) {
+      this.infoRootsKey = roots.key;
+      this.infoGeneration += 1;
+    }
+    if (
+      this.infoCache?.rootsKey === roots.key &&
+      Date.now() - this.infoCache.calculatedAtMs < this.infoCacheMs
+    ) {
+      return Promise.resolve(this.infoCache.info);
+    }
+    const generation = this.infoGeneration;
+    if (
+      this.infoRequest?.rootsKey === roots.key &&
+      this.infoRequest.generation === generation
+    ) {
+      return this.infoRequest.promise;
+    }
+    const request = (async () => {
+      await RecordingStorageService.waitForPerformanceSensitiveActivityToEnd();
+      const activityGeneration =
+        RecordingStorageService.getPerformanceSensitiveActivityGeneration();
+      return this.calculateInfo(
+        roots,
+        () =>
+          generation !== this.infoGeneration ||
+          RecordingStorageService.isPerformanceSensitiveActivityActive() ||
+          activityGeneration !==
+            RecordingStorageService.getPerformanceSensitiveActivityGeneration(),
+      );
+    })().then((info) => {
+      if (!info) {
+        return this.getInfo();
+      }
+      this.infoCache = {
+        calculatedAtMs: Date.now(),
+        info,
+        rootsKey: roots.key,
+      };
+      return info;
+    });
+    this.infoRequest = { generation, promise: request, rootsKey: roots.key };
+    const clearRequest = () => {
+      if (this.infoRequest?.promise === request) {
+        this.infoRequest = null;
+      }
+    };
+    void request.then(clearRequest, clearRequest);
+    return request;
+  }
 
-    const clipFiles = this.collectClipFiles(storageRoot);
-    const clipPathSet = new Set(clipFiles.map((file) => file.path));
-    const mediaFiles = collectRecordingFiles(storageRoot);
-    const savedEditFiles = collectSavedEditFiles(exportLibraryRoots);
+  private async calculateInfo(
+    roots: StorageInfoRoots,
+    shouldAbort: () => boolean,
+  ): Promise<StorageInfo | null> {
+    const { exportLibraryRoots, exportStorageRoot, storageRoot } = roots;
+    this.ensureStorageRoot(storageRoot);
+    this.ensureDirectory(exportStorageRoot);
+    const exportLibraryAliases = exportLibraryRoots.flatMap((path) =>
+      resolveStoragePathAliases(path),
+    );
+    const exportScanRoots =
+      resolveEditorExportInventoryRoots(exportLibraryRoots);
+    const storageDeviceId = this.getStorageDeviceId(storageRoot);
+
+    const clipPathSet = this.collectClipPathKeys(storageRoot);
+    const exportTotals = createExportStorageTotals(
+      exportScanRoots,
+      exportStorageRoot,
+      storageDeviceId,
+      this.getStorageDeviceId,
+    );
+    const exportOwnership = createEditorExportOwnershipPolicy(
+      this.exportOwnershipRepository.list(),
+      resolveImplicitlyOwnedEditorExportRoots({
+        recordingStorageRoot: storageRoot,
+        videosPath: app.getPath("videos"),
+      }),
+      {
+        root: exportStorageRoot,
+        trackingStartedAtMs:
+          this.exportOwnershipRepository.getTrackingStartedAtMs(),
+      },
+    );
+    const databasePath = this.database.path;
+    const appInstallationPath = this.resolveAppInstallationPath();
+    const [exportInventory, storageInventory, appInstallationSizeBytes] =
+      await Promise.all([
+        this.scanExportFiles({
+          maxEntries: this.maxExportEntries,
+          maxFiles: this.maxExportFiles,
+          onFiles: (files) => {
+            for (const file of files) {
+              if (exportOwnership.isOwned(file)) {
+                addExportFileToStorageTotals(exportTotals, file);
+              }
+            }
+          },
+          roots: exportScanRoots,
+          shouldAbort,
+        }),
+        this.collectStorageRootInventory(
+          storageRoot,
+          new Set(resolveDatabaseFilePaths(databasePath)),
+          exportLibraryAliases,
+          shouldAbort,
+        ),
+        this.calculateAppInstallationSize(appInstallationPath, shouldAbort),
+      ]);
+    if (
+      !exportInventory ||
+      !storageInventory ||
+      appInstallationSizeBytes === null ||
+      shouldAbort()
+    ) {
+      return null;
+    }
+    const mediaFiles = storageInventory.recordingFiles;
     const manualReplayFiles = mediaFiles.filter((file) =>
       this.isMediaFileInDirectory(file.path, storageRoot, "manualReplays"),
     );
@@ -127,7 +325,7 @@ class StorageService {
       (file) =>
         !manualReplayPathSet.has(file.path) &&
         (this.isMediaFileInDirectory(file.path, storageRoot, "deathClips") ||
-          clipPathSet.has(file.path)),
+          clipPathSet.has(createStoragePathKey(file.path))),
     );
     const clipMediaPathSet = new Set(
       [...manualReplayFiles, ...deathClipFiles].map((file) => file.path),
@@ -135,76 +333,78 @@ class StorageService {
     const fullRecordingFiles = mediaFiles.filter(
       (file) => !clipMediaPathSet.has(file.path),
     );
-    const databasePath = this.database.path;
-    const mediaPathSet = new Set(
-      [...mediaFiles, ...savedEditFiles].map((file) => file.path),
-    );
-    const temporaryFiles = collectTemporaryFiles(
-      storageRoot,
-      new Set([...mediaPathSet, ...resolveDatabaseFilePaths(databasePath)]),
-    );
-    const appInstallationPath = this.resolveAppInstallationPath();
-    const appInstallationSizeBytes =
-      this.calculateAppInstallationSize(appInstallationPath);
+    const temporaryFiles = storageInventory.temporaryFiles;
     const databaseSizeBytes = calculateDatabaseSize(databasePath);
-    const storageDisk = calculateDiskUsage(storageRoot);
-    const exportDisk = calculateDiskUsage(exportStorageRoot);
-    const appInstallationDisk =
-      appInstallationPath === null
-        ? { totalBytes: 0, freeBytes: 0 }
-        : calculateDiskUsage(appInstallationPath);
-    const databaseDisk =
-      databasePath === ":memory:"
-        ? { totalBytes: 0, freeBytes: 0 }
-        : calculateDiskUsage(dirname(databasePath));
+    const storageDisk = this.calculateDiskUsage(storageRoot);
     const recordingsSizeBytes = sumFileSizes(mediaFiles);
-    const exportVideosSizeBytes = sumFileSizes(savedEditFiles);
-    const mediaSizeBytes = recordingsSizeBytes + exportVideosSizeBytes;
+    const appInstallationDeviceId =
+      this.getStorageDeviceId(appInstallationPath);
+    const databaseDeviceId = this.getStorageDeviceId(
+      databasePath === ":memory:" ? null : databasePath,
+    );
     const temporarySizeBytes = sumFileSizes(temporaryFiles);
     const rewindBufferEstimateBytes = this.estimateRewindBufferSizeBytes();
-    const breakdown = this.createBreakdown({
+    const breakdown = createStorageBreakdown({
       appInstallationSizeBytes,
       databaseSizeBytes,
       deathClips: deathClipFiles,
       fullRecordings: fullRecordingFiles,
       manualReplays: manualReplayFiles,
       rewindBufferEstimateBytes,
-      savedEdits: savedEditFiles,
+      exportVideos: {
+        fileCount: exportTotals.exportFileCount,
+        sizeBytes: exportTotals.exportVideosSizeBytes,
+      },
       temporaryFiles,
     });
+    const exportStorageVolumes = createExportStorageVolumes(
+      exportTotals,
+      this.calculateDiskUsage,
+    );
+
+    if (shouldAbort()) {
+      return null;
+    }
+    this.recordingInventoryCache = {
+      files: mediaFiles,
+      root: storageRoot,
+    };
 
     return {
-      storagePath: maskPath(storageRoot, STORAGE_PATH_ANCHORS),
-      exportsPath: maskPath(exportStorageRoot, STORAGE_PATH_ANCHORS),
+      storagePath: maskPath(storageRoot, storagePathAnchors),
       recordingsSizeBytes,
-      exportVideosSizeBytes,
-      mediaSizeBytes,
+      recordingUsageTruncated: storageInventory.isTruncated,
+      exportStorageVolumes,
+      exportVideosUsageTruncated: exportInventory.isTruncated,
       appInstallationSizeBytes,
       temporarySizeBytes,
       rewindBufferEstimateBytes,
       databaseSizeBytes,
       totalTrackedSizeBytes:
-        mediaSizeBytes +
+        recordingsSizeBytes +
+        exportTotals.exportVideosSizeBytes +
         temporarySizeBytes +
         appInstallationSizeBytes +
         databaseSizeBytes,
       diskTotalBytes: storageDisk.totalBytes,
       diskFreeBytes: storageDisk.freeBytes,
-      exportDiskTotalBytes: exportDisk.totalBytes,
-      exportDiskFreeBytes: exportDisk.freeBytes,
-      appInstallationDiskTotalBytes: appInstallationDisk.totalBytes,
-      appInstallationDiskFreeBytes: appInstallationDisk.freeBytes,
-      databaseDiskTotalBytes: databaseDisk.totalBytes,
-      databaseDiskFreeBytes: databaseDisk.freeBytes,
+      appInstallationOnStorageDrive:
+        storageDeviceId !== null && storageDeviceId === appInstallationDeviceId,
+      databaseOnStorageDrive:
+        storageDeviceId !== null && storageDeviceId === databaseDeviceId,
       breakdown,
       calculatedAt: new Date().toISOString(),
     };
   }
 
-  getGameLeagueUsage(): StorageGameLeagueUsage[] {
-    RecordingStorageService.getInstance().refreshLibrary({
-      publishUsage: false,
-    });
+  private invalidateInfoCache(): void {
+    this.infoGeneration += 1;
+    this.infoCache = null;
+    this.infoRequest = null;
+  }
+
+  async getGameLeagueUsage(): Promise<StorageGameLeagueUsage[]> {
+    await this.getInfo();
     const buckets = new Map<string, UsageBucket>();
 
     for (const clip of this.replayClipsRepository.listStorageUsage()) {
@@ -213,17 +413,55 @@ class StorageService {
       bucket.estimatedSizeBytes += clip.sizeBytes;
     }
 
-    for (const recording of this.recordingStorageRepository.listStorageUsage()) {
+    const settings = SettingsStoreService.getInstance().get();
+    const storageRoot = this.resolveStorageRoot();
+    const clipPathKeys = this.collectClipPathKeys(storageRoot);
+    const inventoryFiles =
+      this.recordingInventoryCache?.root === storageRoot
+        ? this.recordingInventoryCache.files
+        : [];
+    const inventorySizeByPath = new Map(
+      inventoryFiles.map((file) => [
+        createStoragePathKey(file.path),
+        file.size,
+      ]),
+    );
+    const knownRecordingPathKeys = new Set<string>();
+    for (const recording of this.recordingStorageRepository.listDeleteTargets(
+      {},
+    )) {
+      const pathKey = createStoragePathKey(recording.path);
+      knownRecordingPathKeys.add(pathKey);
+      if (clipPathKeys.has(pathKey)) {
+        continue;
+      }
       const bucket = this.getUsageBucket(
         buckets,
-        recording.game,
-        recording.leagueName,
+        recording.sourceGame,
+        recording.sourceLeague,
       );
-      bucket.recordingCount += recording.recordingCount;
-      bucket.estimatedSizeBytes += recording.sizeBytes;
+      bucket.recordingCount += 1;
+      bucket.estimatedSizeBytes += inventorySizeByPath.get(pathKey) ?? 0;
     }
 
-    const settings = SettingsStoreService.getInstance().get();
+    for (const file of inventoryFiles) {
+      const pathKey = createStoragePathKey(file.path);
+      if (
+        knownRecordingPathKeys.has(pathKey) ||
+        clipPathKeys.has(pathKey) ||
+        !this.isRunRecordingLibraryPath(file.path, storageRoot)
+      ) {
+        continue;
+      }
+      const bucket = this.getUsageBucket(
+        buckets,
+        settings.activeGame,
+        settings.activeLeague,
+      );
+      bucket.recordingCount += 1;
+      bucket.estimatedSizeBytes += file.size;
+    }
+
     const recorderStatus = ManagedRecorderService.getInstance().getStatus();
 
     return [...buckets.values()]
@@ -245,6 +483,16 @@ class StorageService {
           a.game.localeCompare(b.game) ||
           a.leagueName.localeCompare(b.leagueName),
       );
+  }
+
+  private isRunRecordingLibraryPath(
+    path: string,
+    storageRoot: string,
+  ): boolean {
+    return (
+      !this.isMediaFileInDirectory(path, storageRoot, "deathClips") &&
+      !this.isMediaFileInDirectory(path, storageRoot, "manualReplays")
+    );
   }
 
   async deleteGameLeagueData(
@@ -288,6 +536,7 @@ class StorageService {
         storageRoot,
       });
 
+      this.invalidateInfoCache();
       this.vacuumDatabase();
       RecordingStorageService.getInstance().publishUsageChanged();
 
@@ -330,152 +579,38 @@ class StorageService {
   }
 
   revealPaths(): StorageRevealPathsResult {
+    const roots = this.resolveInfoRoots();
+    const storageDeviceId = this.getStorageDeviceId(roots.storageRoot);
+    const exportTotals = createExportStorageTotals(
+      resolveEditorExportInventoryRoots(roots.exportLibraryRoots),
+      roots.exportStorageRoot,
+      storageDeviceId,
+      this.getStorageDeviceId,
+    );
     return {
-      storagePath: this.resolveStorageRoot(),
-      exportsPath: this.resolveExportStorageRoot(),
+      storagePath: roots.storageRoot,
+      exportStoragePath: roots.exportStorageRoot,
+      exportStorageVolumes: [...exportTotals.volumes.values()].map(
+        (volume) => ({ id: volume.id, path: volume.path }),
+      ),
       databasePath: this.database.path,
     };
   }
 
-  private setupHandlers(): void {
-    registerGuardedIpcHandler(StorageChannel.GetInfo, [WindowName.Main], () =>
-      this.getInfo(),
-    );
-    registerGuardedIpcHandler(
-      StorageChannel.GetGameLeagueUsage,
-      [WindowName.Main],
-      () => this.getGameLeagueUsage(),
-    );
-    registerGuardedIpcHandler(
-      StorageChannel.DeleteGameLeagueData,
-      [WindowName.Main],
-      (_event, input: unknown) => {
-        try {
-          const parsedInput = this.parseGameLeagueInput(
-            input,
-            StorageChannel.DeleteGameLeagueData,
-          );
-
-          return this.deleteGameLeagueData(parsedInput);
-        } catch (error) {
-          return {
-            success: false,
-            freedBytes: 0,
-            deletedClipCount: 0,
-            deletedRecordingCount: 0,
-            error: safeErrorMessage(error),
-          };
+  private collectClipPathKeys(storageRoot: string): Set<string> {
+    const paths = new Set<string>();
+    for (const clip of this.replayClipsRepository.listStoragePaths()) {
+      for (const path of [clip.processedClipPath, clip.originalObsPath]) {
+        if (!path) {
+          continue;
         }
-      },
-    );
-    registerGuardedIpcHandler(
-      StorageChannel.RevealPaths,
-      [WindowName.Main],
-      () => this.revealPaths(),
-    );
-  }
-
-  private parseGameLeagueInput(
-    input: unknown,
-    channel: string,
-  ): StorageGameLeagueInput {
-    assertObject(input, "input", channel);
-    const game = input.game;
-    const leagueName = input.leagueName;
-    assertString(game, "game", channel, { min: 1, max: 16 });
-    assertString(leagueName, "league", channel, { min: 1, max: 80 });
-    if (game !== "poe1" && game !== "poe2") {
-      throw new Error("game must be poe1 or poe2");
-    }
-
-    return { game, leagueName };
-  }
-
-  private createBreakdown(input: {
-    appInstallationSizeBytes: number;
-    databaseSizeBytes: number;
-    deathClips: StorageFile[];
-    fullRecordings: StorageFile[];
-    manualReplays: StorageFile[];
-    rewindBufferEstimateBytes: number;
-    savedEdits: StorageFile[];
-    temporaryFiles: StorageFile[];
-  }): StorageBreakdownItem[] {
-    const items: StorageBreakdownItem[] = [
-      {
-        category: "full-recordings",
-        label: "Full recordings",
-        fileCount: input.fullRecordings.length,
-        sizeBytes: sumFileSizes(input.fullRecordings),
-      },
-      {
-        category: "death-clips",
-        label: "Death clips",
-        fileCount: input.deathClips.length,
-        sizeBytes: sumFileSizes(input.deathClips),
-      },
-      {
-        category: "manual-replays",
-        label: "Manual replays",
-        fileCount: input.manualReplays.length,
-        sizeBytes: sumFileSizes(input.manualReplays),
-      },
-      {
-        category: "export-videos",
-        label: "Hinekora export videos",
-        fileCount: input.savedEdits.length,
-        sizeBytes: sumFileSizes(input.savedEdits),
-      },
-      {
-        category: "app-installation",
-        label: "App installation",
-        fileCount: input.appInstallationSizeBytes > 0 ? 1 : 0,
-        sizeBytes: input.appInstallationSizeBytes,
-      },
-      {
-        category: "rewind-buffer",
-        estimated: true,
-        label: "Rewind buffer",
-        fileCount: 1,
-        sizeBytes: input.rewindBufferEstimateBytes,
-      },
-      {
-        category: "temporary-files",
-        label: "Temporary files",
-        fileCount: input.temporaryFiles.length,
-        sizeBytes: sumFileSizes(input.temporaryFiles),
-      },
-      {
-        category: "database",
-        label: "Database & app data",
-        fileCount: input.databaseSizeBytes > 0 ? 1 : 0,
-        sizeBytes: input.databaseSizeBytes,
-      },
-    ];
-
-    return items
-      .filter(
-        (item) =>
-          item.category === "temporary-files" ||
-          item.category === "rewind-buffer" ||
-          item.fileCount > 0 ||
-          item.sizeBytes > 0,
-      )
-      .sort((a, b) => b.sizeBytes - a.sizeBytes);
-  }
-
-  private collectClipFiles(storageRoot: string): StorageFile[] {
-    const files = new Map<string, StorageFile>();
-    for (const clip of this.replayClipsRepository.listAll()) {
-      for (const path of resolveClipPaths(clip, storageRoot)) {
-        const size = getExistingFileSize(path);
-        if (size > 0) {
-          files.set(path, { path, size });
+        const resolvedPath = resolve(path);
+        if (isPathInsideOrEqual(storageRoot, resolvedPath)) {
+          paths.add(createStoragePathKey(resolvedPath));
         }
       }
     }
-
-    return [...files.values()];
+    return paths;
   }
 
   private getUsageBucket(
@@ -501,7 +636,10 @@ class StorageService {
     return bucket;
   }
 
-  private calculateAppInstallationSize(path: string | null): number {
+  private async calculateAppInstallationSize(
+    path: string | null,
+    shouldAbort: () => boolean,
+  ): Promise<number | null> {
     if (!path) {
       return 0;
     }
@@ -510,7 +648,10 @@ class StorageService {
       return this.appInstallationSizeCache.sizeBytes;
     }
 
-    const sizeBytes = calculatePathSize(resolvedPath);
+    const sizeBytes = await this.calculatePathSize(resolvedPath, shouldAbort);
+    if (sizeBytes === null) {
+      return null;
+    }
     this.appInstallationSizeCache = { path: resolvedPath, sizeBytes };
 
     return sizeBytes;
@@ -557,21 +698,30 @@ class StorageService {
     );
   }
 
-  private resolveExportStorageRoot(): string {
+  private resolveInfoRoots(): StorageInfoRoots {
     const settings = SettingsStoreService.getInstance().get();
-    return resolveEditorExportStorageRoot(
-      settings.editorExportStoragePath,
-      app.getPath("videos"),
+    const videosPath = app.getPath("videos");
+    const storageRoot = resolveRecordingStorageRoot(
+      settings.recordingStoragePath,
+      videosPath,
     );
-  }
-
-  private resolveExportLibraryRoots(recordingStorageRoot: string): string[] {
-    const settings = SettingsStoreService.getInstance().get();
-    return resolveEditorExportLibraryRoots({
+    const exportStorageRoot = resolveEditorExportStorageRoot(
+      settings.editorExportStoragePath,
+      videosPath,
+    );
+    const exportLibraryRoots = resolveEditorExportLibraryRoots({
       configuredExportPath: settings.editorExportStoragePath,
-      recordingStorageRoot,
-      videosPath: app.getPath("videos"),
+      recordingStorageRoot: storageRoot,
+      videosPath,
     });
+    const key = [
+      resolveStoragePathAliases(storageRoot).at(-1)!,
+      ...resolveEditorExportInventoryRoots(exportLibraryRoots),
+    ]
+      .map(createStoragePathKey)
+      .join("\0");
+
+    return { exportLibraryRoots, exportStorageRoot, key, storageRoot };
   }
 
   private resolveAppInstallationPath(): string | null {
