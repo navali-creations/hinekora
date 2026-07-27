@@ -213,7 +213,6 @@ function createStorageVolumeId(deviceId: number): string {
   return `storage-volume-${deviceId}`;
 }
 
-export type { ExportStorageTotals };
 export {
   addExportFileToStorageTotals,
   createExportStorageTotals,

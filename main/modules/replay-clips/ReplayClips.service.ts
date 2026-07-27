@@ -239,6 +239,28 @@ class ReplayClipsService {
     );
   }
 
+  async refreshClipSize(id: string): Promise<void> {
+    const previousClip = this.repository.get(id);
+    if (!previousClip) {
+      RecordingStorageService.getInstance().publishUsageChanged();
+      return;
+    }
+
+    const nextClip = await this.storageService.withClipSize(previousClip, true);
+    if (nextClip.sizeBytes === previousClip.sizeBytes) {
+      return;
+    }
+    RecordingStorageService.getInstance().noteReplayClipUsageChange(
+      previousClip,
+      nextClip,
+    );
+    this.publishToWindowRoles(
+      ReplayClipsChannel.StatusChanged,
+      this.createReplayClipView(nextClip),
+      replayClipStatusWindowRoles,
+    );
+  }
+
   getMediaPath(id: string): string | null {
     return this.storageService.getStoredClipMediaPath(id);
   }

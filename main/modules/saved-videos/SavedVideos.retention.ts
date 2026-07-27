@@ -3,6 +3,7 @@ import {
   type ScanEditorExportFilesOptions,
   scanEditorExportFiles,
 } from "~/main/modules/editor/EditorExport.inventory";
+import { createStoragePathAliasKeys } from "~/main/utils/storage-files";
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 import { storageCleanupTargetRatio } from "~/types";
@@ -37,7 +38,7 @@ async function createSavedVideosRetentionPlan(
 ): Promise<SavedVideosRetentionPlan | null> {
   const candidates: EditorExportFile[] = [];
   const protectedPathKeys = new Set(
-    (options.protectedPaths ?? []).map(createStoragePathKey),
+    (options.protectedPaths ?? []).flatMap(createStoragePathAliasKeys),
   );
   const candidateLimit = Math.max(
     1,
@@ -91,9 +92,7 @@ async function createSavedVideosRetentionPlan(
     options.limitBytes > 0
       ? Math.floor(options.limitBytes * storageCleanupTargetRatio)
       : 0;
-  const shouldClean =
-    options.limitBytes > 0 &&
-    (usageBytes > options.limitBytes || result.isTruncated);
+  const shouldClean = options.limitBytes > 0 && usageBytes > options.limitBytes;
 
   return {
     files: shouldClean ? candidates : [],

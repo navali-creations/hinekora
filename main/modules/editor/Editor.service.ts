@@ -111,6 +111,9 @@ interface EditorServiceDependencies {
   ) => EditorResolvedExportClip[];
   linkExportFile?: typeof link;
   onExportVideoCommitted?: (commit: EditorExportVideoCommit) => void;
+  onOverwriteAccountingFailed?: (
+    commit: EditorOverwriteCommit,
+  ) => Promise<void> | void;
   onOverwriteCommitted?: (commit: EditorOverwriteCommit) => void;
   projectRepository?: EditorProjectRepository;
   removeExportFile?: typeof rm;
@@ -226,6 +229,9 @@ class EditorService {
       onExportVideoCommitted:
         dependencies.onExportVideoCommitted ??
         ((commit) => this.noteExportVideoUsage(commit)),
+      onOverwriteAccountingFailed:
+        dependencies.onOverwriteAccountingFailed ??
+        ((commit) => this.reconcileOverwriteUsage(commit)),
       onOverwriteCommitted:
         dependencies.onOverwriteCommitted ??
         ((commit) => this.noteOverwriteUsage(commit)),
@@ -1304,6 +1310,17 @@ class EditorService {
       commit.source.id,
       commit.sizeBytes,
     );
+  }
+
+  private reconcileOverwriteUsage(
+    commit: EditorOverwriteCommit,
+  ): Promise<void> | void {
+    if (commit.source.kind === "recording") {
+      RecordingStorageService.getInstance().refreshLibrary();
+      return;
+    }
+
+    return ReplayClipsService.getInstance().refreshClipSize(commit.source.id);
   }
 }
 

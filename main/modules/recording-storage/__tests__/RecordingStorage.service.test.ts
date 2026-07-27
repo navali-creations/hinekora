@@ -52,6 +52,7 @@ import { RecordingStorageService } from "../RecordingStorage.service";
 const electronMocks = vi.hoisted(() => ({
   getAllWindows: vi.fn<() => Electron.BrowserWindow[]>(() => []),
   getPath: vi.fn(),
+  ipcMainHandle: vi.fn(),
   openPath: vi.fn(),
   showItemInFolder: vi.fn(),
 }));
@@ -62,6 +63,9 @@ vi.mock("electron", () => ({
   },
   app: {
     getPath: electronMocks.getPath,
+  },
+  ipcMain: {
+    handle: electronMocks.ipcMainHandle,
   },
   shell: {
     openPath: electronMocks.openPath,
@@ -101,6 +105,7 @@ beforeEach(() => {
   showItemInFolder = vi.fn<(path: string) => void>();
   electronMocks.getAllWindows.mockReturnValue([]);
   electronMocks.getPath.mockReturnValue(join(root, "videos"));
+  electronMocks.ipcMainHandle.mockReset();
   electronMocks.openPath.mockImplementation(openPath);
   electronMocks.showItemInFolder.mockImplementation(showItemInFolder);
   vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
@@ -117,6 +122,7 @@ afterEach(() => {
   vi.useRealTimers();
   RecordingStorageService.resetForTests();
   electronMocks.getPath.mockReset();
+  electronMocks.ipcMainHandle.mockReset();
   electronMocks.openPath.mockReset();
   electronMocks.showItemInFolder.mockReset();
   vi.restoreAllMocks();

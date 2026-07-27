@@ -41,6 +41,8 @@ import {
 const editorExportProgressIntervalMs = 100;
 const maxEditorExportPathEntries = 20;
 const editorLogScope = "editor";
+const overwriteAccountingRetryDelayMs = 1_000;
+const overwriteAccountingRetryLimit = 3;
 
 const idleEditorExportLifecycle: EditorExportLifecycle = {
   canCancel: false,
@@ -80,6 +82,9 @@ interface EditorExportServiceDependencies {
   linkExportFile?: typeof link;
   persistProjectSnapshot: (project: EditorProject) => EditorProject;
   onExportVideoCommitted: (commit: EditorExportVideoCommit) => void;
+  onOverwriteAccountingFailed?: (
+    commit: EditorOverwriteCommit,
+  ) => Promise<void> | void;
   onOverwriteCommitted?: (commit: EditorOverwriteCommit) => void;
   removeExportFile?: typeof rm;
   renameExportFile?: typeof rename;
@@ -116,6 +121,9 @@ class EditorExportService {
   private readonly activeExports = new Map<string, ActiveEditorExport>();
   private readonly dependencies: EditorExportServiceDependencies;
   private readonly exportPaths = new Map<string, string>();
+  private readonly overwriteAccountingTimers = new Set<
+    ReturnType<typeof setTimeout>
+  >();
   private exportLifecycle: EditorExportLifecycle = idleEditorExportLifecycle;
   private isShuttingDown = false;
 
@@ -357,18 +365,11 @@ class EditorExportService {
       }
       tempOutputPath = null;
       if (overwriteReference) {
-        try {
-          this.dependencies.onOverwriteCommitted?.({
-            modifiedAtMs: stats.mtimeMs ?? Date.now(),
-            sizeBytes: stats.size,
-            source: overwriteReference,
-          });
-        } catch (error) {
-          logWarn(editorLogScope, "Editor overwrite accounting deferred", {
-            error: safeErrorMessage(error),
-            sourceKind: overwriteReference.kind,
-          });
-        }
+        this.noteOverwriteCommitted({
+          modifiedAtMs: stats.mtimeMs ?? Date.now(),
+          sizeBytes: stats.size,
+          source: overwriteReference,
+        });
       } else {
         try {
           this.dependencies.onExportVideoCommitted({
@@ -545,6 +546,64 @@ class EditorExportService {
     return this.activeExports.size > 0;
   }
 
+  private noteOverwriteCommitted(
+    commit: EditorOverwriteCommit,
+    retryCount = 0,
+  ): void {
+    if (!this.dependencies.onOverwriteCommitted) {
+      return;
+    }
+
+    try {
+      this.dependencies.onOverwriteCommitted(commit);
+    } catch (error) {
+      if (retryCount < overwriteAccountingRetryLimit) {
+        const nextRetryCount = retryCount + 1;
+        const timer = setTimeout(() => {
+          this.overwriteAccountingTimers.delete(timer);
+          this.noteOverwriteCommitted(commit, nextRetryCount);
+        }, overwriteAccountingRetryDelayMs);
+        timer.unref?.();
+        this.overwriteAccountingTimers.add(timer);
+        logWarn(editorLogScope, "Editor overwrite accounting deferred", {
+          error: safeErrorMessage(error),
+          retryCount: nextRetryCount,
+          sourceKind: commit.source.kind,
+        });
+        return;
+      }
+
+      logWarn(editorLogScope, "Editor overwrite accounting failed", {
+        error: safeErrorMessage(error),
+        retryCount,
+        sourceKind: commit.source.kind,
+      });
+      this.noteOverwriteAccountingFailed(commit);
+    }
+  }
+
+  private noteOverwriteAccountingFailed(commit: EditorOverwriteCommit): void {
+    if (!this.dependencies.onOverwriteAccountingFailed) {
+      return;
+    }
+
+    void Promise.resolve()
+      .then(() => this.dependencies.onOverwriteAccountingFailed?.(commit))
+      .catch((error) => {
+        logWarn(editorLogScope, "Editor overwrite accounting recovery failed", {
+          error: safeErrorMessage(error),
+          sourceKind: commit.source.kind,
+        });
+      });
+  }
+
+  private clearOverwriteAccountingTimers(): void {
+    for (const timer of this.overwriteAccountingTimers) {
+      clearTimeout(timer);
+    }
+    this.overwriteAccountingTimers.clear();
+  }
+
   private rememberExportPath(exportId: string, outputPath: string): void {
     this.exportPaths.set(exportId, outputPath);
     while (this.exportPaths.size > maxEditorExportPathEntries) {
@@ -561,6 +620,7 @@ class EditorExportService {
 
   async shutdown(): Promise<void> {
     this.isShuttingDown = true;
+    this.clearOverwriteAccountingTimers();
     const activeExports = [...this.activeExports.values()];
     for (const activeExport of activeExports) {
       if (activeExport.phase === "rendering") {

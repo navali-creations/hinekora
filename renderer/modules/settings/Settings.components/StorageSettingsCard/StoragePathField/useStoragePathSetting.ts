@@ -1,5 +1,5 @@
 import type { ChangeEvent } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   useRecordingStorageShallow,
@@ -33,8 +33,18 @@ function useStoragePathSetting({
   );
   const displayedPersistedPath = persistedPath || defaultPath || "";
   const [draft, setDraft] = useState(displayedPersistedPath);
+  const previousDisplayedPersistedPathRef = useRef(displayedPersistedPath);
 
-  useEffect(() => setDraft(displayedPersistedPath), [displayedPersistedPath]);
+  useEffect(() => {
+    const previousDisplayedPersistedPath =
+      previousDisplayedPersistedPathRef.current;
+    setDraft((currentDraft) =>
+      currentDraft === previousDisplayedPersistedPath
+        ? displayedPersistedPath
+        : currentDraft,
+    );
+    previousDisplayedPersistedPathRef.current = displayedPersistedPath;
+  }, [displayedPersistedPath]);
 
   const persist = async (path: string | null) => {
     try {

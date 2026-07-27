@@ -7,6 +7,7 @@ import {
   scanEditorExportFiles,
 } from "~/main/modules/editor/EditorExport.inventory";
 import type { ReplayClipsRepository } from "~/main/modules/replay-clips/ReplayClips.repository";
+import { yieldToEventLoop } from "~/main/utils/async";
 import { isPathInsideOrEqual } from "~/main/utils/storage-files";
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
@@ -293,10 +294,6 @@ function unionClipGroups(parents: number[], left: number, right: number): void {
   if (leftRoot !== rightRoot) {
     parents[rightRoot] = leftRoot;
   }
-}
-
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolvePromise) => setImmediate(resolvePromise));
 }
 
 export { calculateRecordingStorageUsage };

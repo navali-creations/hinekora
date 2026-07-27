@@ -1,5 +1,6 @@
 import { dirname } from "node:path";
 
+import { createStoragePathAliasKeys } from "~/main/utils/storage-files";
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 import type { EditorExportFile } from "./EditorExport.inventory";
@@ -7,31 +8,14 @@ import type { EditorExportOwnershipRecord } from "./EditorExportOwnership.reposi
 
 interface EditorExportOwnershipPolicy {
   isOwned(file: EditorExportFile): boolean;
-  registeredByPathKey: ReadonlyMap<string, EditorExportOwnershipRecord>;
-}
-
-interface EditorExportCompatibilityOwnership {
-  root: string;
-  trackingStartedAtMs: number | null;
 }
 
 function createEditorExportOwnershipPolicy(
   registeredExports: readonly EditorExportOwnershipRecord[],
   implicitlyOwnedRoots: readonly string[],
-  compatibility?: EditorExportCompatibilityOwnership,
 ): EditorExportOwnershipPolicy {
-  const implicitRootKeys = new Set(
-    implicitlyOwnedRoots.map(createStoragePathKey),
-  );
-  const compatibilityRootKey = compatibility
-    ? createStoragePathKey(compatibility.root)
-    : null;
-  const registeredByPathKey = new Map(
-    registeredExports.map((record) => [
-      createStoragePathKey(record.path),
-      record,
-    ]),
-  );
+  const implicitRootKeys = createAliasKeySet(implicitlyOwnedRoots);
+  const registeredByPathKey = createRegisteredOwnershipMap(registeredExports);
 
   return {
     isOwned: (file) => {
@@ -45,15 +29,33 @@ function createEditorExportOwnershipPolicy(
         return hasSameRegisteredEditorExportIdentity(registered, file);
       }
 
-      return (
-        compatibility?.trackingStartedAtMs !== null &&
-        compatibility?.trackingStartedAtMs !== undefined &&
-        compatibilityRootKey === createStoragePathKey(dirname(file.path)) &&
-        file.modifiedAt.getTime() <= compatibility.trackingStartedAtMs
-      );
+      return false;
     },
-    registeredByPathKey,
   };
+}
+
+function createAliasKeySet(paths: readonly string[]): Set<string> {
+  const keys = new Set<string>();
+  for (const path of paths) {
+    for (const key of createStoragePathAliasKeys(path)) {
+      keys.add(key);
+    }
+  }
+
+  return keys;
+}
+
+function createRegisteredOwnershipMap(
+  records: readonly EditorExportOwnershipRecord[],
+): Map<string, EditorExportOwnershipRecord> {
+  const registeredByPathKey = new Map<string, EditorExportOwnershipRecord>();
+  for (const record of records) {
+    for (const key of createStoragePathAliasKeys(record.path)) {
+      registeredByPathKey.set(key, record);
+    }
+  }
+
+  return registeredByPathKey;
 }
 
 function hasSameRegisteredEditorExportIdentity(
@@ -73,6 +75,19 @@ function hasSameRegisteredEditorExportIdentity(
     registered.sizeBytes === file.sizeBytes &&
     Math.abs(registered.modifiedAtMs - file.modifiedAt.getTime()) <= 1
   );
+}
+
+function createEditorExportFileAliasKeyMap(
+  files: readonly EditorExportFile[],
+): Map<string, EditorExportFile> {
+  const filesByAliasKey = new Map<string, EditorExportFile>();
+  for (const file of files) {
+    for (const key of createStoragePathAliasKeys(file.path)) {
+      filesByAliasKey.set(key, file);
+    }
+  }
+
+  return filesByAliasKey;
 }
 
 function hasSameEditorExportIdentity(
@@ -105,4 +120,9 @@ function hasSameEditorExportIdentity(
   );
 }
 
-export { createEditorExportOwnershipPolicy, hasSameEditorExportIdentity };
+export {
+  createEditorExportFileAliasKeyMap,
+  createEditorExportOwnershipPolicy,
+  hasSameEditorExportIdentity,
+  hasSameRegisteredEditorExportIdentity,
+};

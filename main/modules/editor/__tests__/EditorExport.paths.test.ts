@@ -22,7 +22,7 @@ describe("editor export storage paths", () => {
     );
   });
 
-  it("returns the active and legacy roots once each", () => {
+  it("returns the active, default, registered, and legacy roots once each", () => {
     const videosPath = join("C:", "Users", "seb", "Videos");
     const recordingStorageRoot = join(videosPath, "Hinekora Recordings");
 
@@ -41,12 +41,45 @@ describe("editor export storage paths", () => {
     expect(
       resolveEditorExportLibraryRoots({
         configuredExportPath: join(videosPath, "Hinekora", "Exports"),
+        registeredExportPaths: [
+          join("D:", "Previous Exports", "old.mp4"),
+          join("D:", "Previous Exports", "new.mp4"),
+        ],
         recordingStorageRoot: join(videosPath, "Hinekora"),
         videosPath,
       }),
     ).toEqual([
       join(videosPath, "Hinekora", "Exports"),
+      join(videosPath, "Hinekora Exports"),
       join(videosPath, "Hinekora", "Saved Edits"),
+      join("D:", "Previous Exports"),
     ]);
+  });
+
+  it("does not scan custom export roots until they contain registered exports", () => {
+    const videosPath = join("C:", "Users", "seb", "Videos");
+    const recordingStorageRoot = join(videosPath, "Hinekora Recordings");
+    const customRoot = join("D:", "Personal Videos");
+
+    expect(
+      resolveEditorExportLibraryRoots({
+        configuredExportPath: customRoot,
+        recordingStorageRoot,
+        videosPath,
+      }),
+    ).toEqual([
+      join(videosPath, "Hinekora Exports"),
+      join(videosPath, "Hinekora", "Exports"),
+      join(recordingStorageRoot, "Saved Edits"),
+    ]);
+
+    expect(
+      resolveEditorExportLibraryRoots({
+        configuredExportPath: customRoot,
+        registeredExportPaths: [join(customRoot, "Saved.mp4")],
+        recordingStorageRoot,
+        videosPath,
+      }),
+    ).toContain(customRoot);
   });
 });

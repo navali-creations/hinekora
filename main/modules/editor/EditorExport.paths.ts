@@ -1,4 +1,4 @@
-import { isAbsolute, join, resolve, win32 } from "node:path";
+import { dirname, isAbsolute, join, resolve, win32 } from "node:path";
 
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
@@ -8,6 +8,7 @@ const PREVIOUS_EDITOR_EXPORT_DIRECTORY_NAME = "Saved Edits";
 
 interface ResolveEditorExportLibraryRootsInput {
   configuredExportPath: string | null;
+  registeredExportPaths?: readonly string[];
   recordingStorageRoot: string;
   videosPath: string;
 }
@@ -25,13 +26,18 @@ function resolveEditorExportStorageRoot(
 function resolveEditorExportLibraryRoots(
   input: ResolveEditorExportLibraryRootsInput,
 ): string[] {
+  const configuredRoot = resolveEditorExportStorageRoot(
+    input.configuredExportPath,
+    input.videosPath,
+  );
+  const implicitRoots = resolveImplicitlyOwnedEditorExportRoots(input);
+  const implicitRootKeys = new Set(implicitRoots.map(createStoragePathKey));
   const roots = [
-    resolveEditorExportStorageRoot(
-      input.configuredExportPath,
-      input.videosPath,
-    ),
-    join(input.videosPath, ...LEGACY_EDITOR_EXPORT_DIRECTORY_PARTS),
-    join(input.recordingStorageRoot, PREVIOUS_EDITOR_EXPORT_DIRECTORY_NAME),
+    ...(implicitRootKeys.has(createStoragePathKey(configuredRoot))
+      ? [configuredRoot]
+      : []),
+    ...implicitRoots,
+    ...(input.registeredExportPaths ?? []).map(dirname),
   ];
 
   return Array.from(

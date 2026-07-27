@@ -25,6 +25,7 @@ function createService(
   input: {
     persistProjectSnapshot?: (project: EditorProject) => EditorProject;
     onExportVideoCommitted?: (commit: EditorExportVideoCommit) => void;
+    onOverwriteAccountingFailed?: (commit: EditorOverwriteCommit) => void;
     onOverwriteCommitted?: (commit: EditorOverwriteCommit) => void;
     removeExportFile?: typeof rm;
     renameExportFile?: typeof import("node:fs/promises").rename;
@@ -43,6 +44,9 @@ function createService(
     persistProjectSnapshot:
       input.persistProjectSnapshot ?? ((project) => project),
     onExportVideoCommitted: input.onExportVideoCommitted ?? (() => undefined),
+    ...(input.onOverwriteAccountingFailed
+      ? { onOverwriteAccountingFailed: input.onOverwriteAccountingFailed }
+      : {}),
     ...(input.onOverwriteCommitted
       ? { onOverwriteCommitted: input.onOverwriteCommitted }
       : {}),
@@ -227,16 +231,20 @@ describe("EditorExportService", () => {
     }
   });
 
-  it("keeps a committed overwrite successful when accounting fails", async () => {
+  it("keeps a committed overwrite successful and retries deferred accounting", async () => {
+    vi.useFakeTimers();
     const storageRoot = await mkdtemp(
       join(tmpdir(), "hinekora-export-service-"),
     );
     const sourcePath = join(storageRoot, "original.mp4");
     await writeFile(sourcePath, "original");
     const logWarn = vi.spyOn(appLog, "logWarn").mockImplementation(() => {});
-    const onOverwriteCommitted = vi.fn(() => {
-      throw new Error("database unavailable");
-    });
+    const onOverwriteCommitted = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("database unavailable");
+      })
+      .mockImplementation(() => undefined);
     const renameExportFile = vi.fn().mockResolvedValue(undefined);
     const service = createService({
       onOverwriteCommitted,
@@ -261,10 +269,70 @@ describe("EditorExportService", () => {
         "Editor overwrite accounting deferred",
         {
           error: "database unavailable",
+          retryCount: 1,
+          sourceKind: "clip",
+        },
+      );
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(onOverwriteCommitted).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+      await rm(storageRoot, { force: true, recursive: true });
+    }
+  });
+
+  it("runs overwrite accounting recovery after bounded retry exhaustion", async () => {
+    vi.useFakeTimers();
+    const storageRoot = await mkdtemp(
+      join(tmpdir(), "hinekora-export-service-"),
+    );
+    const sourcePath = join(storageRoot, "original.mp4");
+    await writeFile(sourcePath, "original");
+    const logWarn = vi.spyOn(appLog, "logWarn").mockImplementation(() => {});
+    const onOverwriteCommitted = vi.fn(() => {
+      throw new Error("database unavailable");
+    });
+    const onOverwriteAccountingFailed = vi.fn();
+    const service = createService({
+      onOverwriteAccountingFailed,
+      onOverwriteCommitted,
+      renameExportFile: vi.fn().mockResolvedValue(undefined),
+      sourcePath,
+      storageRoot,
+    });
+
+    try {
+      await expect(
+        service.exportProject(
+          createEditorExportInput({
+            mode: "overwrite",
+            project: createEditorExportProject(),
+          }),
+        ),
+      ).resolves.toMatchObject({ mode: "overwrite" });
+
+      for (let index = 0; index < 3; index += 1) {
+        await vi.advanceTimersByTimeAsync(1_000);
+      }
+      await Promise.resolve();
+
+      expect(onOverwriteCommitted).toHaveBeenCalledTimes(4);
+      expect(onOverwriteAccountingFailed).toHaveBeenCalledWith({
+        modifiedAtMs: expect.any(Number),
+        sizeBytes: 8,
+        source: { id: "clip-1", kind: "clip" },
+      });
+      expect(logWarn).toHaveBeenCalledWith(
+        "editor",
+        "Editor overwrite accounting failed",
+        {
+          error: "database unavailable",
+          retryCount: 3,
           sourceKind: "clip",
         },
       );
     } finally {
+      vi.useRealTimers();
       await rm(storageRoot, { force: true, recursive: true });
     }
   });

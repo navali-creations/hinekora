@@ -52,6 +52,7 @@ import {
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 import { type AppSettings, createDefaultSettings } from "~/types";
+import type { EditorExportOwnershipRepository } from "../../editor/EditorExportOwnership.repository";
 import { SavedVideosChannel } from "../SavedVideos.channels";
 import { SavedVideosService } from "../SavedVideos.service";
 import {
@@ -215,46 +216,154 @@ describe("SavedVideosService", () => {
     settings = { ...settings, editorExportStoragePath: nextExportRoot };
     settingsListener?.(settings);
     await expect(service.listLibrary()).resolves.toMatchObject({
-      totalCount: 2,
+      totalCount: 4,
     });
   });
 
-  it("keeps custom-root exports created before ownership tracking visible", async () => {
+  it("ignores unregistered custom-root videos and keeps registered exports visible", async () => {
     const customRoot = join(root, "custom-exports");
-    const existingPath = join(customRoot, "Existing.mp4");
-    const unregisteredNewPath = join(customRoot, "Unregistered.mp4");
+    const personalPath = join(customRoot, "Personal.mp4");
+    const registeredPath = join(customRoot, "Registered.mp4");
     await mkdir(customRoot);
     await Promise.all([
-      writeFile(existingPath, "existing"),
-      writeFile(unregisteredNewPath, "new"),
+      writeFile(personalPath, "personal"),
+      writeFile(registeredPath, "registered"),
     ]);
     await Promise.all([
-      utimes(existingPath, new Date(1_000), new Date(1_000)),
-      utimes(
-        unregisteredNewPath,
-        new Date(Date.now() + 60_000),
-        new Date(Date.now() + 60_000),
-      ),
+      utimes(personalPath, new Date(1_000), new Date(1_000)),
+      utimes(registeredPath, new Date(2_000), new Date(2_000)),
     ]);
     settings = { ...settings, editorExportStoragePath: customRoot };
     const service = SavedVideosService.getInstance();
 
     await expect(service.listLibrary()).resolves.toMatchObject({
-      items: [{ fileName: "Existing.mp4" }],
-      totalCount: 1,
+      totalCount: 0,
     });
 
-    const newStats = await stat(unregisteredNewPath);
+    const newStats = await stat(registeredPath);
     SavedVideosService.noteExportCommitted({
       deviceId: newStats.dev,
       inode: newStats.ino,
       modifiedAtMs: newStats.mtimeMs,
-      path: unregisteredNewPath,
+      path: registeredPath,
       sizeDeltaBytes: newStats.size,
       sizeBytes: newStats.size,
     });
     await expect(service.listLibrary()).resolves.toMatchObject({
-      totalCount: 2,
+      items: [{ fileName: "Registered.mp4" }],
+      totalCount: 1,
+    });
+
+    settings = {
+      ...settings,
+      editorExportStoragePath: join(root, "next-custom-exports"),
+    };
+    settingsListener?.(settings);
+    await expect(service.listLibrary()).resolves.toMatchObject({
+      items: [{ fileName: "Registered.mp4" }],
+      totalCount: 1,
+    });
+  });
+
+  it("does not delete unregistered videos from a custom export root", async () => {
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    const customRoot = join(root, "personal-videos");
+    const personalPath = join(customRoot, "Vacation.mp4");
+    await mkdir(customRoot);
+    await writeFile(personalPath, "personal");
+    await utimes(personalPath, new Date(1_000), new Date(1_000));
+    settings = { ...settings, editorExportStoragePath: customRoot };
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 2 * GIGABYTE,
+      exportVideosUsageTruncated: false,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    const service = new SavedVideosService({
+      statFile: createSizedStatFile(new Map([[personalPath, 2 * GIGABYTE]])),
+    });
+
+    await expect(service.cleanup()).resolves.toMatchObject({
+      deletedCount: 0,
+      failedCount: 0,
+    });
+    await expect(readFile(personalPath, "utf8")).resolves.toBe("personal");
+    expect(noteUsageDelta).not.toHaveBeenCalled();
+  });
+
+  it("does not reread ownership records from cleanup abort checks", async () => {
+    settings = {
+      ...settings,
+      editorExportMaxStorageGb: 1,
+      editorExportStoragePath: join(root, "personal-videos"),
+    };
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 2 * GIGABYTE,
+      exportVideosUsageTruncated: false,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    const ownershipRepository = {
+      list: vi.fn(() => []),
+      pruneStale: vi.fn(() => 0),
+      remove: vi.fn(),
+      upsert: vi.fn(),
+    } as unknown as EditorExportOwnershipRepository;
+    const service = new SavedVideosService({
+      createRetentionPlan: async (options) => {
+        options.shouldAbort?.();
+        options.shouldAbort?.();
+        options.shouldAbort?.();
+        return {
+          files: [],
+          hasMoreCandidates: false,
+          isTruncated: false,
+          targetUsageBytes: 0.95 * GIGABYTE,
+          usageBytes: 2 * GIGABYTE,
+        };
+      },
+      ownershipRepository,
+    });
+
+    await expect(service.cleanup()).resolves.toMatchObject({
+      deletedCount: 0,
+      failedCount: 0,
+    });
+
+    expect(ownershipRepository.list).toHaveBeenCalledTimes(3);
+  });
+
+  it("keeps registered custom-root exports visible through root aliases", async () => {
+    const physicalRoot = join(root, "physical-exports");
+    const aliasedRoot = join(root, "aliased-exports");
+    await mkdir(physicalRoot);
+    symlinkSync(
+      physicalRoot,
+      aliasedRoot,
+      process.platform === "win32" ? "junction" : "dir",
+    );
+    const aliasedPath = join(aliasedRoot, "Aliased.mp4");
+    await writeFile(aliasedPath, "video");
+    settings = { ...settings, editorExportStoragePath: aliasedRoot };
+    const service = SavedVideosService.getInstance();
+    const stats = await stat(aliasedPath);
+
+    SavedVideosService.noteExportCommitted({
+      deviceId: stats.dev,
+      inode: stats.ino,
+      modifiedAtMs: stats.mtimeMs,
+      path: aliasedPath,
+      sizeDeltaBytes: stats.size,
+      sizeBytes: stats.size,
+    });
+
+    await expect(service.listLibrary()).resolves.toMatchObject({
+      items: [{ fileName: "Aliased.mp4" }],
+      totalCount: 1,
     });
   });
 
@@ -345,7 +454,7 @@ describe("SavedVideosService", () => {
     await vi.waitFor(() => expect(resolveStat).toBeTypeOf("function"));
     settings = {
       ...settings,
-      editorExportStoragePath: join(root, "next-exports"),
+      recordingStoragePath: join(root, "next-recordings"),
     };
     settingsListener?.(settings);
     resolveStat(stats);
@@ -358,13 +467,30 @@ describe("SavedVideosService", () => {
   it("publishes invalidations only to active main windows", () => {
     const mainWebContents = { id: 101, send: vi.fn() };
     const overlayWebContents = { id: 102, send: vi.fn() };
+    const closedWebContents = {
+      id: 104,
+      isDestroyed: () => true,
+      send: vi.fn(),
+    };
+    const failingWebContents = {
+      id: 105,
+      isDestroyed: () => false,
+      send: vi.fn(() => {
+        throw new Error("closed");
+      }),
+    };
+    const logWarn = vi.spyOn(appLog, "logWarn").mockImplementation(() => {});
     electronMocks.getAllWindows.mockReturnValue([
       { isDestroyed: () => false, webContents: mainWebContents },
       { isDestroyed: () => false, webContents: overlayWebContents },
       { isDestroyed: () => true, webContents: { id: 103, send: vi.fn() } },
+      { isDestroyed: () => false, webContents: closedWebContents },
+      { isDestroyed: () => false, webContents: failingWebContents },
     ]);
     registerIpcWindowRole(mainWebContents, WindowName.Main);
     registerIpcWindowRole(overlayWebContents, WindowName.AuraOverlay);
+    registerIpcWindowRole(closedWebContents, WindowName.Main);
+    registerIpcWindowRole(failingWebContents, WindowName.Main);
     SavedVideosService.getInstance();
 
     (
@@ -377,6 +503,12 @@ describe("SavedVideosService", () => {
       SavedVideosChannel.LibraryChanged,
     );
     expect(overlayWebContents.send).not.toHaveBeenCalled();
+    expect(closedWebContents.send).not.toHaveBeenCalled();
+    expect(logWarn).toHaveBeenCalledWith(
+      "saved-videos",
+      "Saved edit video library notification failed",
+      { error: "closed" },
+    );
   });
 
   it("handles missing roots and files that change while they are scanned", async () => {
@@ -429,9 +561,9 @@ describe("SavedVideosService", () => {
     });
     await expect(failedStatService.listLibrary()).rejects.toThrow("locked");
 
-    const invalidRoot = join(root, "not-a-directory");
-    await writeFile(invalidRoot, "file");
-    settings = { ...settings, editorExportStoragePath: invalidRoot };
+    await removePath(exportRoot, { force: true, recursive: true });
+    await writeFile(exportRoot, "file");
+    settings = { ...settings, editorExportStoragePath: null };
     await expect(new SavedVideosService().listLibrary()).rejects.toThrow();
   });
 
@@ -617,7 +749,7 @@ describe("SavedVideosService", () => {
         if (invalidateScan) {
           settings = {
             ...settings,
-            editorExportStoragePath: join(root, "changed-exports"),
+            recordingStoragePath: join(root, "changed-recordings"),
           };
           settingsListener?.(settings);
         }
@@ -639,7 +771,7 @@ describe("SavedVideosService", () => {
 
     invalidateScan = true;
     await service.cleanup();
-    expect(scheduleCleanup).toHaveBeenCalledOnce();
+    expect(scheduleCleanup).toHaveBeenCalledTimes(2);
   });
 
   it("handles non-file, missing, and failed deletion races", async () => {
@@ -773,7 +905,7 @@ describe("SavedVideosService", () => {
     expect(scheduleCleanup).toHaveBeenCalledWith({ protectedPaths: [] });
   });
 
-  it("deletes bounded candidates and continues when a truncated subtotal is below target", async () => {
+  it("does not delete candidates when a truncated measured subtotal is below the limit", async () => {
     settings = { ...settings, editorExportMaxStorageGb: 1 };
     const videoPath = join(exportRoot, "old.mp4");
     await writeFile(videoPath, "video");
@@ -818,10 +950,13 @@ describe("SavedVideosService", () => {
 
     await expect(
       service.cleanup({ protectedPaths: [] }),
-    ).resolves.toMatchObject({ deletedCount: 1 });
+    ).resolves.toMatchObject({ deletedCount: 0 });
 
-    expect(removeFile).toHaveBeenCalledWith(videoPath);
-    expect(scheduleCleanup).toHaveBeenCalledWith({ protectedPaths: [] });
+    expect(removeFile).not.toHaveBeenCalled();
+    expect(scheduleCleanup).toHaveBeenCalledWith({
+      protectedPaths: [],
+      retryCount: 1,
+    });
     expect(createRetentionPlan).toHaveBeenCalledWith(
       expect.not.objectContaining({
         openDirectory: expect.anything(),
@@ -909,7 +1044,7 @@ describe("SavedVideosService", () => {
       createRetentionPlan: vi.fn().mockImplementation(async () => {
         settings = {
           ...settings,
-          editorExportStoragePath: join(root, "changed-exports"),
+          recordingStoragePath: join(root, "changed-recordings"),
         };
         settingsListener?.(settings);
         return {
@@ -937,7 +1072,7 @@ describe("SavedVideosService", () => {
       .mockImplementation(() => {});
 
     await expect(service.cleanup()).resolves.toMatchObject({ deletedCount: 0 });
-    expect(scheduleCleanup).toHaveBeenCalledOnce();
+    expect(scheduleCleanup).toHaveBeenCalledTimes(2);
   });
 
   it("clears a pending cleanup timer when reset", () => {
@@ -982,6 +1117,32 @@ describe("SavedVideosService", () => {
     vi.useRealTimers();
   });
 
+  it("schedules cleanup when the export root changes under a storage limit", async () => {
+    vi.useFakeTimers();
+    settings = { ...settings, editorExportMaxStorageGb: 10 };
+    const service = SavedVideosService.getInstance();
+    const cleanup = vi.spyOn(service, "cleanup").mockResolvedValue({
+      deletedCount: 0,
+      failedCount: 0,
+      freedBytes: 0,
+      limitBytes: 10 * GIGABYTE,
+      usageBytes: 0,
+    });
+
+    try {
+      settings = {
+        ...settings,
+        editorExportStoragePath: join(videosPath, "Hinekora", "Exports"),
+      };
+      settingsListener?.(settings);
+      await vi.advanceTimersByTimeAsync(1_000);
+
+      expect(cleanup).toHaveBeenCalledWith({ protectedPaths: [] });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("rejects stale action targets and filesystem races", async () => {
     const videoPath = join(exportRoot, "Saved.mp4");
     await writeFile(videoPath, "video");
@@ -1001,8 +1162,8 @@ describe("SavedVideosService", () => {
       .map(createStoragePathKey)
       .join("\0");
     await expect(service.open(id)).resolves.toEqual({
-      error: "Saved edit video is not available",
-      ok: false,
+      error: null,
+      ok: true,
     });
 
     settings = { ...settings, editorExportStoragePath: exportRoot };

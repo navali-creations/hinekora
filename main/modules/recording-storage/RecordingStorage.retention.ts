@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 
+import { yieldToEventLoop } from "~/main/utils/async";
 import { isPathInsideOrEqual } from "~/main/utils/storage-files";
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
@@ -286,10 +287,6 @@ function isProtectedPath(
       isPathInsideOrEqual(directory, resolvedPath),
     )
   );
-}
-
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolvePromise) => setImmediate(resolvePromise));
 }
 
 export type {

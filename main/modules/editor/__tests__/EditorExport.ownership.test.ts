@@ -53,6 +53,26 @@ describe("editor export ownership", () => {
     );
   });
 
+  it("keeps registered files and implicit roots owned", () => {
+    const policy = createEditorExportOwnershipPolicy(
+      [
+        {
+          deviceId: 10,
+          inode: 20,
+          modifiedAtMs: 1_000,
+          path: file.path,
+          sizeBytes: 30,
+        },
+      ],
+      ["C:\\Legacy"],
+    );
+
+    expect(policy.isOwned(file)).toBe(true);
+    expect(
+      policy.isOwned({ ...file, path: "C:\\Legacy\\historical.mp4" }),
+    ).toBe(true);
+  });
+
   it("rejects files replaced between inventory and deletion", () => {
     expect(
       hasSameEditorExportIdentity(file, {
@@ -89,39 +109,11 @@ describe("editor export ownership", () => {
     expect(hasSameEditorExportIdentity(file, { size: 30 })).toBe(true);
   });
 
-  it("adopts unregistered custom-root exports created before tracking began", () => {
-    const compatibility = {
-      root: "C:\\Custom",
-      trackingStartedAtMs: 2_000,
-    };
-    const policy = createEditorExportOwnershipPolicy([], [], compatibility);
+  it("does not adopt unregistered custom-root videos", () => {
+    const policy = createEditorExportOwnershipPolicy([], []);
 
     expect(
       policy.isOwned({
-        ...file,
-        modifiedAt: new Date(2_000),
-        path: "C:\\Custom\\existing.mp4",
-      }),
-    ).toBe(true);
-    expect(
-      policy.isOwned({
-        ...file,
-        modifiedAt: new Date(2_001),
-        path: "C:\\Custom\\new.mp4",
-      }),
-    ).toBe(false);
-    expect(
-      policy.isOwned({
-        ...file,
-        modifiedAt: new Date(1_000),
-        path: "C:\\Elsewhere\\existing.mp4",
-      }),
-    ).toBe(false);
-    expect(
-      createEditorExportOwnershipPolicy([], [], {
-        root: "C:\\Custom",
-        trackingStartedAtMs: null,
-      }).isOwned({
         ...file,
         path: "C:\\Custom\\existing.mp4",
       }),

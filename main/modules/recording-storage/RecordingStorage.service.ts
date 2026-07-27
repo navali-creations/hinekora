@@ -26,6 +26,7 @@ import {
   logInfo,
   logWarn,
 } from "~/main/utils/app-log";
+import { yieldToEventLoop } from "~/main/utils/async";
 import * as FileClipboard from "~/main/utils/file-clipboard";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
 import { getIpcWindowRole } from "~/main/utils/ipc-window-roles";
@@ -325,10 +326,7 @@ class RecordingStorageService {
             RecordingStorageService.performanceSensitiveActivityGeneration;
         totals = await calculateRecordingStorageUsage({
           exportRoots: this.resolveExportLibraryRoots(root, settings),
-          isExportVideoOwned: this.createExportOwnershipPolicy(
-            root,
-            settings.editorExportStoragePath,
-          ).isOwned,
+          isExportVideoOwned: this.createExportOwnershipPolicy(root).isOwned,
           recordingRepository: this.repository,
           replayClipsRepository: this.replayClipsRepository,
           root,
@@ -943,6 +941,7 @@ class RecordingStorageService {
       new Map(
         [
           ...(options.protectedDirectories ?? []),
+          this.resolveExportStorageRoot(settings.editorExportStoragePath),
           ...this.resolveExportLibraryRoots(root, settings),
         ]
           .flatMap((path) => resolveStoragePathAliases(path))
@@ -1320,15 +1319,15 @@ class RecordingStorageService {
   ): string[] {
     return resolveEditorExportLibraryRoots({
       configuredExportPath: settings.editorExportStoragePath,
+      registeredExportPaths: this.exportOwnershipRepository
+        .list()
+        .map((record) => record.path),
       recordingStorageRoot,
       videosPath: app.getPath("videos"),
     });
   }
 
-  private createExportOwnershipPolicy(
-    recordingStorageRoot: string,
-    configuredExportPath: string | null,
-  ) {
+  private createExportOwnershipPolicy(recordingStorageRoot: string) {
     const videosPath = app.getPath("videos");
     const policy = createEditorExportOwnershipPolicy(
       this.exportOwnershipRepository.list(),
@@ -1336,11 +1335,6 @@ class RecordingStorageService {
         recordingStorageRoot,
         videosPath,
       }),
-      {
-        root: resolveEditorExportStorageRoot(configuredExportPath, videosPath),
-        trackingStartedAtMs:
-          this.exportOwnershipRepository.getTrackingStartedAtMs(),
-      },
     );
     return policy;
   }
@@ -1930,10 +1924,6 @@ class RecordingStorageService {
 }
 
 export { RecordingStorageService };
-
-function yieldToEventLoop(): Promise<void> {
-  return new Promise((resolvePromise) => setImmediate(resolvePromise));
-}
 
 function createCleanupRequestKey(
   options: RecordingStorageCleanupOptions,

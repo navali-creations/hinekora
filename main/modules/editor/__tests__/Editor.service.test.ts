@@ -313,6 +313,42 @@ describe("EditorService IPC", () => {
     expect(recordingOverwrite).toHaveBeenCalledWith("recording-1", 2, 1);
     expect(clipOverwrite).toHaveBeenCalledWith("clip-1", 4);
   });
+
+  it("routes overwrite accounting recovery to storage reconciliation", async () => {
+    const refreshLibrary = vi.fn();
+    const refreshClipSize = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+      refreshLibrary,
+    } as unknown as RecordingStorageService);
+    vi.spyOn(ReplayClipsService, "getInstance").mockReturnValue({
+      refreshClipSize,
+    } as unknown as ReplayClipsService);
+    const service = Object.create(EditorService.prototype) as EditorService;
+    const reconcileOverwriteUsage = (
+      service as unknown as {
+        reconcileOverwriteUsage: (commit: {
+          modifiedAtMs: number;
+          sizeBytes: number;
+          source: { id: string; kind: "clip" | "recording" };
+        }) => Promise<void> | void;
+      }
+    ).reconcileOverwriteUsage.bind(service);
+
+    reconcileOverwriteUsage({
+      modifiedAtMs: 1,
+      sizeBytes: 2,
+      source: { id: "recording-1", kind: "recording" },
+    });
+    await reconcileOverwriteUsage({
+      modifiedAtMs: 3,
+      sizeBytes: 4,
+      source: { id: "clip-1", kind: "clip" },
+    });
+
+    expect(refreshLibrary).toHaveBeenCalledOnce();
+    expect(refreshClipSize).toHaveBeenCalledWith("clip-1");
+  });
+
   beforeEach(() => {
     DatabaseService.resetForTests();
     clearIpcWindowRolesForTests();

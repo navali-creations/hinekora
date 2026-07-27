@@ -142,7 +142,7 @@ describe("StorageService", () => {
     await third;
   });
 
-  it("starts a new inventory when export roots change during a scan", async () => {
+  it("starts a new inventory when storage roots change during a scan", async () => {
     let settings = {
       ...createDefaultSettings(),
       recordingStoragePath: storageRoot,
@@ -166,15 +166,34 @@ describe("StorageService", () => {
 
     const initialRequest = service.getInfo();
     await new Promise<void>((resolvePromise) => setImmediate(resolvePromise));
-    const nextExportRoot = join(root, "next-exports");
-    settings = { ...settings, editorExportStoragePath: nextExportRoot };
+    const nextStorageRoot = join(root, "next-recordings");
+    settings = { ...settings, recordingStoragePath: nextStorageRoot };
     const changedRequest = service.getInfo();
     const changed = await changedRequest;
     resolveFirstScan(null);
 
     await expect(initialRequest).resolves.toBe(changed);
     expect(scanExportFiles).toHaveBeenCalledTimes(2);
-    expect(changed.exportStorageVolumes[0]?.path).toContain("next-exports");
+    expect(changed.storagePath).toContain("next-recordings");
+  });
+
+  it("clears an aborted public inventory request before retrying", async () => {
+    const scanExportFiles = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValue({
+        fileCount: 0,
+        inspectedEntryCount: 0,
+        isTruncated: false,
+      });
+    const service = new StorageService({ scanExportFiles });
+
+    await expect(service.getInfo()).resolves.toEqual(
+      expect.objectContaining({
+        exportVideosUsageTruncated: false,
+      }),
+    );
+    expect(scanExportFiles).toHaveBeenCalledTimes(2);
   });
 
   it("reports exports on configured, recording, and legacy volumes", async () => {

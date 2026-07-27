@@ -156,6 +156,40 @@ describe("ExportStoragePathField", () => {
     expect(storeMocks.updateSettings).not.toHaveBeenCalled();
   });
 
+  it("does not overwrite a typed draft when the default export folder resolves late", async () => {
+    storeMocks.path = "";
+    let resolveRevealPaths!: (value: {
+      databasePath: string;
+      exportStoragePath: string;
+      exportStorageVolumes: [];
+      storagePath: string;
+    }) => void;
+    storeMocks.revealPaths.mockReturnValueOnce(
+      new Promise((resolvePromise) => {
+        resolveRevealPaths = resolvePromise;
+      }),
+    );
+    await act(async () => {
+      root.render(<ExportStoragePathField />);
+    });
+    const input = container.querySelector("input")!;
+
+    await act(async () => {
+      setNativeInputValue(input, "D:\\Draft Exports");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await act(async () => {
+      resolveRevealPaths({
+        databasePath: "C:\\Data\\hinekora.sqlite",
+        exportStoragePath: "C:\\Users\\seb\\Videos\\Hinekora Exports",
+        exportStorageVolumes: [],
+        storagePath: "C:\\Users\\seb\\Videos\\Hinekora Recordings",
+      });
+    });
+
+    expect(input.value).toBe("D:\\Draft Exports");
+  });
+
   it("reports a failure to resolve the default export folder", async () => {
     storeMocks.path = "";
     storeMocks.revealPaths.mockRejectedValueOnce(new Error("Drive offline"));

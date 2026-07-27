@@ -18,7 +18,6 @@ import {
 } from "~/main/modules/editor/EditorExport.ownership";
 import {
   resolveEditorExportLibraryRoots,
-  resolveEditorExportStorageRoot,
   resolveImplicitlyOwnedEditorExportRoots,
 } from "~/main/modules/editor/EditorExport.paths";
 import { EditorExportInventoryService } from "~/main/modules/editor/EditorExportInventory.service";
@@ -37,6 +36,7 @@ import {
 } from "~/main/utils/app-log";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
 import { getIpcWindowRole } from "~/main/utils/ipc-window-roles";
+import { createStoragePathAliasKeys } from "~/main/utils/storage-files";
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 import { storageBytesPerGigabyte } from "~/types";
@@ -160,14 +160,26 @@ class SavedVideosService {
       path: commit.path,
       sizeBytes: commit.sizeBytes,
     });
-    service.invalidateLibrary();
-    RecordingStorageService.getInstance().noteUsageDelta(
-      "export-videos",
-      commit.sizeDeltaBytes,
-    );
-    service.scheduleCleanup({
-      protectedPaths: [commit.path],
+    service.runCommitSideEffect("Saved edit video invalidation failed", () => {
+      service.invalidateLibrary();
     });
+    service.runCommitSideEffect(
+      "Saved edit video usage accounting failed",
+      () => {
+        RecordingStorageService.getInstance().noteUsageDelta(
+          "export-videos",
+          commit.sizeDeltaBytes,
+        );
+      },
+    );
+    service.runCommitSideEffect(
+      "Saved edit video cleanup scheduling failed",
+      () => {
+        service.scheduleCleanup({
+          protectedPaths: [commit.path],
+        });
+      },
+    );
   }
 
   static resetForTests(): void {
@@ -196,27 +208,24 @@ class SavedVideosService {
     const settingsStore = SettingsStoreService.getInstance();
     const settings = settingsStore.get();
     this.exportLimitGigabytes = settings.editorExportMaxStorageGb;
-    this.libraryRootsKey = createLibraryRootsKey(
-      this.resolveLibraryRoots(settings),
-    );
+    this.libraryRootsKey = this.resolveLibraryRootsKey(settings);
     this.settingsUnsubscribe =
       typeof settingsStore.onDidChange === "function"
         ? settingsStore.onDidChange((settings) => {
             const previousLimitGigabytes = this.exportLimitGigabytes;
             this.exportLimitGigabytes = settings.editorExportMaxStorageGb;
-            const nextRootsKey = createLibraryRootsKey(
-              this.resolveLibraryRoots(settings),
-            );
+            const nextRootsKey = this.resolveLibraryRootsKey(settings);
             const rootsChanged = nextRootsKey !== this.libraryRootsKey;
             if (rootsChanged) {
               this.libraryRootsKey = nextRootsKey;
-              this.invalidateLibrary();
+              this.invalidateLibrary({ refreshRootsKey: false });
             }
-            const limitReduced =
+            const shouldCleanup =
               this.exportLimitGigabytes > 0 &&
-              (previousLimitGigabytes === 0 ||
+              (rootsChanged ||
+                previousLimitGigabytes === 0 ||
                 this.exportLimitGigabytes < previousLimitGigabytes);
-            if (limitReduced) {
+            if (shouldCleanup) {
               this.scheduleCleanup();
             }
           })
@@ -358,10 +367,11 @@ class SavedVideosService {
     const roots = this.resolveLibraryRoots(settings);
     const ownership = this.createOwnershipPolicy(settings);
     const rootsKey = createLibraryRootsKey(roots);
+    this.libraryRootsKey = rootsKey;
     const generation = this.cacheGeneration;
     const shouldAbort = () =>
       generation !== this.cacheGeneration ||
-      rootsKey !== createLibraryRootsKey(this.resolveLibraryRoots()) ||
+      rootsKey !== this.libraryRootsKey ||
       RecordingStorageService.isPerformanceSensitiveActivityActive() ||
       activityGeneration !==
         RecordingStorageService.getPerformanceSensitiveActivityGeneration();
@@ -397,7 +407,7 @@ class SavedVideosService {
       resolveEditorExportInventoryRoots(roots).map(createStoragePathKey),
     );
     const protectedPathKeys = new Set(
-      (options.protectedPaths ?? []).map(createStoragePathKey),
+      (options.protectedPaths ?? []).flatMap(createStoragePathAliasKeys),
     );
     let deletedCount = 0;
     let failedCount = 0;
@@ -405,6 +415,7 @@ class SavedVideosService {
     let staleCandidateCount = 0;
     let usageReductionBytes = 0;
     let wasAborted = false;
+    const shouldDeleteCandidates = plan.usageBytes > limitBytes;
     let remainingUsageBytes = Math.max(
       plan.usageBytes,
       usageSnapshot.exportVideosSizeBytes,
@@ -416,10 +427,15 @@ class SavedVideosService {
         break;
       }
       if (
-        (!plan.isTruncated && remainingUsageBytes <= plan.targetUsageBytes) ||
-        protectedPathKeys.has(createStoragePathKey(file.path)) ||
-        !rootKeys.has(createStoragePathKey(dirname(file.path)))
+        !shouldDeleteCandidates ||
+        (!plan.isTruncated && remainingUsageBytes <= plan.targetUsageBytes)
       ) {
+        continue;
+      }
+      if (protectedPathKeys.has(createStoragePathKey(file.path))) {
+        continue;
+      }
+      if (!rootKeys.has(createStoragePathKey(dirname(file.path)))) {
         continue;
       }
 
@@ -511,6 +527,7 @@ class SavedVideosService {
   private async loadLibrary(): Promise<SavedVideoCache> {
     const roots = this.resolveLibraryRoots();
     const rootsKey = createLibraryRootsKey(roots);
+    this.libraryRootsKey = rootsKey;
     if (
       this.cache?.rootsKey === rootsKey &&
       Date.now() - this.cache.calculatedAtMs < libraryCacheMs
@@ -554,12 +571,14 @@ class SavedVideosService {
   ): Promise<SavedVideoCache | null> {
     const items: SavedVideoItem[] = [];
     const filesById = new Map<string, EditorExportFile>();
+    const scannedFiles: EditorExportFile[] = [];
     const ownership = this.createOwnershipPolicy();
     const result = await this.scanExportFiles({
       batchSize: this.scanBatchSize,
       maxEntries: this.maxLibraryEntries,
       maxFiles: this.maxLibraryFiles,
       onFiles: (files) => {
+        scannedFiles.push(...files);
         for (const file of files) {
           if (!ownership.isOwned(file)) {
             continue;
@@ -586,6 +605,13 @@ class SavedVideosService {
     if (!result) {
       return null;
     }
+    if (!result.isTruncated) {
+      const prunedCount = this.ownershipRepository.pruneStale(scannedFiles);
+      if (prunedCount > 0) {
+        this.invalidateLibrary();
+        return null;
+      }
+    }
     return {
       calculatedAtMs: Date.now(),
       filesById,
@@ -596,19 +622,44 @@ class SavedVideosService {
     };
   }
 
-  private invalidateLibrary(): void {
+  private invalidateLibrary(options: { refreshRootsKey?: boolean } = {}): void {
+    if (options.refreshRootsKey !== false) {
+      this.libraryRootsKey = this.resolveLibraryRootsKey();
+    }
     EditorExportInventoryService.getInstance().invalidate();
     StorageService.noteExportInventoryChanged();
     this.cacheGeneration += 1;
     this.cache = null;
     this.libraryRequest = null;
     for (const window of BrowserWindow.getAllWindows()) {
+      const webContentsDestroyed =
+        typeof window.webContents.isDestroyed === "function" &&
+        window.webContents.isDestroyed();
       if (
         !window.isDestroyed() &&
+        !webContentsDestroyed &&
         getIpcWindowRole({ sender: window.webContents }) === WindowName.Main
       ) {
-        window.webContents.send(SavedVideosChannel.LibraryChanged);
+        try {
+          window.webContents.send(SavedVideosChannel.LibraryChanged);
+        } catch (error) {
+          logWarn(
+            savedVideosLogScope,
+            "Saved edit video library notification failed",
+            { error: safeErrorMessage(error) },
+          );
+        }
       }
+    }
+  }
+
+  private runCommitSideEffect(message: string, action: () => void): void {
+    try {
+      action();
+    } catch (error) {
+      logWarn(savedVideosLogScope, message, {
+        error: safeErrorMessage(error),
+      });
     }
   }
 
@@ -680,9 +731,18 @@ class SavedVideosService {
     );
     return resolveEditorExportLibraryRoots({
       configuredExportPath: settings.editorExportStoragePath,
+      registeredExportPaths: this.ownershipRepository
+        .list()
+        .map((record) => record.path),
       recordingStorageRoot,
       videosPath,
     });
+  }
+
+  private resolveLibraryRootsKey(
+    settings = SettingsStoreService.getInstance().get(),
+  ): string {
+    return createLibraryRootsKey(this.resolveLibraryRoots(settings));
   }
 
   private createOwnershipPolicy(
@@ -699,13 +759,6 @@ class SavedVideosService {
         recordingStorageRoot,
         videosPath,
       }),
-      {
-        root: resolveEditorExportStorageRoot(
-          settings.editorExportStoragePath,
-          videosPath,
-        ),
-        trackingStartedAtMs: this.ownershipRepository.getTrackingStartedAtMs(),
-      },
     );
   }
 }

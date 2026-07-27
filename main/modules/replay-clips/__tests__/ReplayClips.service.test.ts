@@ -102,6 +102,32 @@ describe("ReplayClipsService file actions", () => {
     expect(repository.get(clip.id)?.sizeBytes).toBe(0);
   });
 
+  it("refreshes a clip size from disk for overwrite accounting recovery", async () => {
+    const directory = join(root, "Death Clips");
+    mkdirSync(directory, { recursive: true });
+    const clipPath = join(directory, "recovered-overwrite.mp4");
+    writeFileSync(clipPath, "recovered");
+    const clip = createReplayClip({
+      id: "recovered-overwrite",
+      processedClipPath: clipPath,
+      sizeBytes: 1,
+    });
+    repository.upsert(clip);
+    const recordingStorage = RecordingStorageService.getInstance();
+    const noteReplayClipUsageChange = vi.spyOn(
+      recordingStorage,
+      "noteReplayClipUsageChange",
+    );
+
+    await service.refreshClipSize(clip.id);
+
+    expect(repository.get(clip.id)?.sizeBytes).toBe(9);
+    expect(noteReplayClipUsageChange).toHaveBeenCalledWith(
+      clip,
+      expect.objectContaining({ sizeBytes: 9 }),
+    );
+  });
+
   it("bridges retention cleanup results back to recording storage", async () => {
     const deletedIds = Array.from(
       { length: 1_001 },

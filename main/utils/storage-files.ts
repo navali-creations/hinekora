@@ -160,6 +160,10 @@ function resolveStoragePathAliases(path: string): string[] {
   }
 }
 
+function createStoragePathAliasKeys(path: string): string[] {
+  return resolveStoragePathAliases(path).map(createStoragePathKey);
+}
+
 function storagePathsOverlap(first: string, second: string): boolean {
   const firstAliases = resolveStoragePathAliases(first);
   const secondAliases = resolveStoragePathAliases(second);
@@ -178,6 +182,7 @@ export {
   calculateDatabaseSize,
   calculateDiskUsage,
   collectManagedFiles,
+  createStoragePathAliasKeys,
   getExistingFileSize,
   isPathInsideOrEqual,
   isRealPathInsideOrEqual,
