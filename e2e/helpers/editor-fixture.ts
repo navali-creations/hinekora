@@ -1353,10 +1353,10 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
             },
           },
         ),
-        storage: createBridgeDomain<EditorE2EElectron["storage"]>(
-          "storage",
-          {},
-        ),
+        storage: createBridgeDomain<EditorE2EElectron["storage"]>("storage", {
+          getAnalysisAvailability: async () => "ready",
+          onAnalysisAvailabilityChanged: () => unsubscribe,
+        }),
         stateTransfer: createBridgeDomain<EditorE2EElectron["stateTransfer"]>(
           "stateTransfer",
           {},
