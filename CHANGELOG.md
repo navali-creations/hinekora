@@ -1,3 +1,58 @@
+## 0.14.0
+
+### Minor Changes
+
+- [`e03964b`](https://github.com/navali-creations/hinekora/commit/e03964b08b740ec974d32d19562dd8665b7af526) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Changed:** Drafts and finished edits now have clearer names, libraries, and storage controls.
+
+  Reopenable editor timelines are now called **Draft Edits**, while completed videos have their own **Saved Edits** library in the sidebar.
+
+  - **Separate folders:** Recordings and exports have independent locations and storage limits in Data & Storage settings.
+  - **Safer storage limits:** Lowering either storage limit below current usage now asks for confirmation and clearly explains automatic cleanup before it runs.
+  - **Clear storage totals:** The sidebar and disk usage view show recording and export usage separately, including videos in earlier Hinekora export folders.
+  - **Automatic export cleanup:** Hinekora removes the oldest Saved Edits when export storage reaches its limit, without deleting recordings or clips.
+
+- [`04a0afd`](https://github.com/navali-creations/hinekora/commit/04a0afdf91b9215f8982df3cab23efaa34e7ab58) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Return to the source Draft Edit from Saved Edits.
+
+  Newly saved videos remember the Draft Edit they came from, adding an action on the Saved Edits page that reopens the original editable timeline when it is still available.
+
+- [`04a0afd`](https://github.com/navali-creations/hinekora/commit/04a0afdf91b9215f8982df3cab23efaa34e7ab58) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Faster bookmark discovery and clearer long-session timing.
+
+  Bookmarks are easier to search and understand across the Bookmarks page, recording and rewind details, and the editor.
+
+  - **Bookmark counts:** All and category chips show how many matching bookmarks they contain.
+  - **Zone search:** Search bookmark lists by zone name without leaving the current recording, rewind, or editor workflow.
+  - **Long recordings:** Bookmark durations, playback timers, and timeline rails use hours once a recording passes 60 minutes.
+  - **Reliable details:** Switching recordings no longer lets an older bookmark request replace the new recording, and active rewind locations keep accurate durations in long sessions.
+
+- [`04a0afd`](https://github.com/navali-creations/hinekora/commit/04a0afdf91b9215f8982df3cab23efaa34e7ab58) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** More control over rewinds and clip previews.
+
+  Rewind capture settings and the manual replay/death clip overlay now offer separate controls for how clips are created, previewed, and saved.
+
+  - **Separate durations:** Choose independent lengths for automatic death clips and manual replays. Existing profiles keep their previous rewind length for both settings after updating.
+  - **Optional death clips:** Disable automatic death clips while keeping manual replays available; death clips remain enabled by default.
+  - **Recording overlay:** Choose whether the recording controls overlay starts minimized.
+  - **Playback speed:** Preview clips from 0.25x to 2x and optionally preserve the selected speed when saving or copying.
+  - **Fullscreen playback:** Use true fullscreen without stretching the video, exit back to the previous overlay size from either fullscreen control, and click the video to play or pause.
+
+### Patch Changes
+
+- [`d19d59c`](https://github.com/navali-creations/hinekora/commit/d19d59c0e0a664f2104cf73bae70fd977381012a) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Data & Storage no longer appears stuck during gameplay or capture.
+
+  Storage analysis now clearly pauses while Path of Exile or recording is active and resumes automatically afterward, avoiding competing disk work during capture.
+
+  - **Clear status:** Data & Storage explains when analysis is intentionally paused instead of showing an endless loading state.
+  - **Reliable refreshes:** Storage path changes and league data cleanup receive a fresh analysis even when another refresh is already running.
+
 ## 0.13.0
 
 ### Minor Changes
