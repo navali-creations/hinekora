@@ -211,6 +211,48 @@ describe("RecordingStorageService", () => {
     expect(listClips).toHaveBeenCalled();
   });
 
+  it("notifies performance-sensitive activity listeners only on changes", () => {
+    const listener = vi.fn();
+    const unsubscribe =
+      RecordingStorageService.onPerformanceSensitiveActivityChanged(listener);
+
+    RecordingStorageService.setPerformanceSensitiveActivityActive(true);
+    RecordingStorageService.setPerformanceSensitiveActivityActive(true);
+    RecordingStorageService.setPerformanceSensitiveActivityActive(false);
+
+    expect(listener.mock.calls).toEqual([[true], [false]]);
+
+    unsubscribe();
+    RecordingStorageService.setPerformanceSensitiveActivityActive(true);
+    expect(listener).toHaveBeenCalledTimes(2);
+  });
+
+  it("isolates failing performance-sensitive activity listeners", () => {
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+    const failingListener = vi.fn(() => {
+      throw new Error("listener failed");
+    });
+    const succeedingListener = vi.fn();
+    RecordingStorageService.onPerformanceSensitiveActivityChanged(
+      failingListener,
+    );
+    RecordingStorageService.onPerformanceSensitiveActivityChanged(
+      succeedingListener,
+    );
+
+    expect(() =>
+      RecordingStorageService.setPerformanceSensitiveActivityActive(true),
+    ).not.toThrow();
+
+    expect(failingListener).toHaveBeenCalledWith(true);
+    expect(succeedingListener).toHaveBeenCalledWith(true);
+    expect(logWarn).toHaveBeenCalledWith(
+      "recording-storage",
+      "Performance-sensitive activity listener failed",
+      { error: "listener failed" },
+    );
+  });
+
   it("uses newer cached usage when invalidated while waiting for activity", async () => {
     const calculateUsage = vi.spyOn(
       await import("../RecordingStorage.usage"),
@@ -869,6 +911,53 @@ describe("RecordingStorageService", () => {
         ["recording-1"],
       );
     });
+  });
+
+  it("tolerates Electron window enumeration failures", () => {
+    electronMocks.getAllWindows.mockImplementation(() => {
+      throw new Error("window enumeration failed");
+    });
+
+    expect(() =>
+      service.publishRecordingsChanged(["recording-1"]),
+    ).not.toThrow();
+  });
+
+  it("includes registered export paths in storage inventory roots", () => {
+    const registeredPath = join(root, "custom-exports", "saved.mp4");
+    const internals = service as unknown as {
+      exportOwnershipRepository: {
+        list: () => Array<{
+          deviceId: number;
+          inode: number;
+          modifiedAtMs: number;
+          path: string;
+          projectId: string | null;
+          sizeBytes: number;
+        }>;
+      };
+      resolveExportLibraryRoots: (
+        recordingStorageRoot: string,
+        settings: ReturnType<SettingsStoreService["get"]>,
+      ) => string[];
+    };
+    vi.spyOn(internals.exportOwnershipRepository, "list").mockReturnValue([
+      {
+        deviceId: 1,
+        inode: 1,
+        modifiedAtMs: 1,
+        path: registeredPath,
+        projectId: null,
+        sizeBytes: 1,
+      },
+    ]);
+
+    expect(
+      internals.resolveExportLibraryRoots(
+        root,
+        SettingsStoreService.getInstance().get(),
+      ),
+    ).toContain(resolve(registeredPath, ".."));
   });
 
   it("refreshes mismatched usage snapshots and reports refresh failures", async () => {

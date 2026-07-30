@@ -126,6 +126,17 @@ describe("ReplayClipsService file actions", () => {
       clip,
       expect.objectContaining({ sizeBytes: 9 }),
     );
+
+    noteReplayClipUsageChange.mockClear();
+    await service.refreshClipSize(clip.id);
+    expect(noteReplayClipUsageChange).not.toHaveBeenCalled();
+
+    const publishUsageChanged = vi.spyOn(
+      recordingStorage,
+      "publishUsageChanged",
+    );
+    await service.refreshClipSize("missing-clip");
+    expect(publishUsageChanged).toHaveBeenCalledOnce();
   });
 
   it("bridges retention cleanup results back to recording storage", async () => {

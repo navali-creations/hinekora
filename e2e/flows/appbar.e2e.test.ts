@@ -8,6 +8,7 @@ import {
   emitAppBarRecorderStatus,
   emitAppBarRecordingStorageUsageChanged,
   emitAppBarRecordingStorageUsageRefreshFailed,
+  emitAppBarStorageAnalysisAvailability,
   expectNoUnexpectedAppBarBridgeCalls,
   getAppBarE2ECalls,
   getAppBarGameButton,
@@ -27,7 +28,7 @@ test.afterEach(async ({ page }) => {
 test("shows separate sidebar storage budgets and opens storage settings", async ({
   page,
 }) => {
-  await setupAppBarE2E(page);
+  await setupAppBarE2E(page, { storageAnalysisAvailability: "deferred" });
 
   const storageMeter = page.getByRole("link", {
     name: "Open data and storage settings",
@@ -49,6 +50,15 @@ test("shows separate sidebar storage budgets and opens storage settings", async 
 
   await storageMeter.click();
   await expectDataStorageSettings(page);
+  await expect(
+    page.getByText("Storage analysis is paused while Path of Exile"),
+  ).toBeVisible();
+
+  await emitAppBarStorageAnalysisAvailability(page, "ready");
+  await expect(
+    page.getByText("Storage analysis is paused while Path of Exile"),
+  ).toBeHidden();
+  await expect(page.getByText("Disk Usage", { exact: true })).toBeVisible();
 });
 
 test("keeps sidebar storage anchored while recording status expands", async ({

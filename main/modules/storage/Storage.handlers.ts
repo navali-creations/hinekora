@@ -9,6 +9,7 @@ import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 import { StorageChannel } from "./Storage.channels";
 import type {
   DeleteGameLeagueDataResult,
+  StorageAnalysisAvailability,
   StorageGameLeagueInput,
   StorageGameLeagueUsage,
   StorageInfo,
@@ -20,11 +21,17 @@ interface StorageIpcActions {
     input: StorageGameLeagueInput,
   ) => Promise<DeleteGameLeagueDataResult>;
   getGameLeagueUsage: () => Promise<StorageGameLeagueUsage[]>;
+  getAnalysisAvailability: () => StorageAnalysisAvailability;
   getInfo: () => Promise<StorageInfo>;
   revealPaths: () => StorageRevealPathsResult;
 }
 
 function setupStorageIpcHandlers(actions: StorageIpcActions): void {
+  registerGuardedIpcHandler(
+    StorageChannel.GetAnalysisAvailability,
+    [WindowName.Main],
+    () => actions.getAnalysisAvailability(),
+  );
   registerGuardedIpcHandler(StorageChannel.GetInfo, [WindowName.Main], () =>
     actions.getInfo(),
   );

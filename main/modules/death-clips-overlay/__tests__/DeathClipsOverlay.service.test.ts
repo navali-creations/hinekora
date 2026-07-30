@@ -235,10 +235,42 @@ describe("DeathClipsOverlayService", () => {
     expect(clipWindow.setFullScreen).toHaveBeenNthCalledWith(3, true);
   });
 
+  it("cancels and guards deferred fullscreen bounds restoration", async () => {
+    vi.useFakeTimers();
+    const clipWindow = createFakeWindow();
+    const windowedBounds = {
+      x: 100,
+      y: 204,
+      width: 560,
+      height: 520,
+    };
+    clipWindow.getBounds.mockReturnValue(windowedBounds);
+    electronMocks.browserWindowFactory.mockReturnValue(clipWindow);
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+    await service.showClip(createClip());
+
+    try {
+      service.toggleFullscreen();
+      service.toggleFullscreen();
+      service.toggleFullscreen();
+      await vi.advanceTimersByTimeAsync(100);
+      expect(clipWindow.setBounds).not.toHaveBeenCalled();
+
+      service.toggleFullscreen();
+      clipWindow.isDestroyed.mockReturnValue(true);
+      await vi.advanceTimersByTimeAsync(100);
+      expect(clipWindow.setBounds).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("handles clip preview guard paths and existing preview windows", async () => {
     const { coordinator, service } = createService();
     coordinator.setPoeFocusActive(true);
 
+    expect(service.toggleFullscreen()).toBe(false);
     expect(service.hide()).toBe(false);
     const pendingPreviewWindow = createFakeWindow();
     electronMocks.browserWindowFactory.mockReturnValueOnce(
@@ -287,6 +319,7 @@ describe("DeathClipsOverlayService", () => {
         processedClipPath: null,
       }),
     );
+    expect(service.toggleFullscreen()).toBe(false);
     expect(destroyedPreviewWindow.loadFile).not.toHaveBeenCalled();
   });
 

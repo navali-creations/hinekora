@@ -338,6 +338,66 @@ describe("EditorExportService", () => {
     }
   });
 
+  it("handles optional, failed, and cancelled overwrite accounting callbacks", async () => {
+    const commit: EditorOverwriteCommit = {
+      modifiedAtMs: 1,
+      sizeBytes: 2,
+      source: { id: "clip-1", kind: "clip" },
+    };
+    const optionalService = createService();
+    const optionalInternals = optionalService as unknown as {
+      noteOverwriteAccountingFailed: (value: EditorOverwriteCommit) => void;
+      noteOverwriteCommitted: (value: EditorOverwriteCommit) => void;
+    };
+
+    expect(() =>
+      optionalInternals.noteOverwriteCommitted(commit),
+    ).not.toThrow();
+    expect(() =>
+      optionalInternals.noteOverwriteAccountingFailed(commit),
+    ).not.toThrow();
+
+    const logWarn = vi.spyOn(appLog, "logWarn").mockImplementation(() => {});
+    const failingRecoveryService = createService({
+      onOverwriteAccountingFailed: () => {
+        throw new Error("recovery unavailable");
+      },
+    });
+    (
+      failingRecoveryService as unknown as {
+        noteOverwriteAccountingFailed: (value: EditorOverwriteCommit) => void;
+      }
+    ).noteOverwriteAccountingFailed(commit);
+    await vi.waitFor(() => {
+      expect(logWarn).toHaveBeenCalledWith(
+        "editor",
+        "Editor overwrite accounting recovery failed",
+        { error: "recovery unavailable", sourceKind: "clip" },
+      );
+    });
+
+    vi.useFakeTimers();
+    const pendingService = createService({
+      onOverwriteCommitted: () => {
+        throw new Error("database unavailable");
+      },
+    });
+    try {
+      (
+        pendingService as unknown as {
+          noteOverwriteCommitted: (value: EditorOverwriteCommit) => void;
+        }
+      ).noteOverwriteCommitted(commit);
+      expect(vi.getTimerCount()).toBe(1);
+
+      await pendingService.shutdown();
+
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("preserves render cleanup failures in the export lifecycle", async () => {
     const storageRoot = await mkdtemp(
       join(tmpdir(), "hinekora-export-service-"),

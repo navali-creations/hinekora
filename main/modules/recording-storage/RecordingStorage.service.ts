@@ -138,10 +138,14 @@ interface RecordingFileDurationState extends ExistingFileStats {
   path: string;
 }
 
+type PerformanceSensitiveActivityListener = (active: boolean) => void;
+
 class RecordingStorageService {
   private static instance: RecordingStorageService | null = null;
   private static performanceSensitiveActivityActive = false;
   private static performanceSensitiveActivityGeneration = 0;
+  private static readonly performanceSensitiveActivityListeners =
+    new Set<PerformanceSensitiveActivityListener>();
 
   private readonly durationProbeFailureLoggedPaths = new Set<string>();
   private readonly durationVerifiedFileStateByPath = new Map<string, string>();
@@ -204,6 +208,17 @@ class RecordingStorageService {
     RecordingStorageService.instance?.handlePerformanceSensitiveActivity(
       active,
     );
+    for (const listener of RecordingStorageService.performanceSensitiveActivityListeners) {
+      try {
+        listener(active);
+      } catch (error) {
+        logWarn(
+          RECORDING_STORAGE_LOG_SCOPE,
+          "Performance-sensitive activity listener failed",
+          { error: safeErrorMessage(error) },
+        );
+      }
+    }
   }
 
   static getPerformanceSensitiveActivityGeneration(): number {
@@ -212,6 +227,18 @@ class RecordingStorageService {
 
   static isPerformanceSensitiveActivityActive(): boolean {
     return RecordingStorageService.performanceSensitiveActivityActive;
+  }
+
+  static onPerformanceSensitiveActivityChanged(
+    listener: PerformanceSensitiveActivityListener,
+  ): () => void {
+    RecordingStorageService.performanceSensitiveActivityListeners.add(listener);
+
+    return () => {
+      RecordingStorageService.performanceSensitiveActivityListeners.delete(
+        listener,
+      );
+    };
   }
 
   static waitForPerformanceSensitiveActivityToEnd(): Promise<void> {
@@ -241,6 +268,7 @@ class RecordingStorageService {
     RecordingStorageService.instance = null;
     RecordingStorageService.performanceSensitiveActivityActive = false;
     RecordingStorageService.performanceSensitiveActivityGeneration = 0;
+    RecordingStorageService.performanceSensitiveActivityListeners.clear();
   }
 
   constructor() {

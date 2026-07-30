@@ -1,5 +1,6 @@
 import type {
   DeleteGameLeagueDataResult,
+  StorageAnalysisAvailability,
   StorageGameLeagueInput,
   StorageGameLeagueUsage,
   StorageInfo,
@@ -8,6 +9,7 @@ import type { BoundStoreStateCreator } from "~/renderer/store/store.types";
 
 export interface StorageSlice {
   storage: {
+    analysisAvailability: StorageAnalysisAvailability | null;
     info: StorageInfo | null;
     gameLeagueUsage: StorageGameLeagueUsage[];
     isLoading: boolean;
@@ -15,8 +17,11 @@ export interface StorageSlice {
     deletingGameLeagueId: string | null;
     fetchStorageInfo: () => Promise<void>;
     fetchGameLeagueUsage: () => Promise<void>;
+    hydrateAnalysisAvailability: () => Promise<void>;
     refresh: () => Promise<void>;
+    refreshAfterMutation: () => Promise<void>;
     setError: (error: string | null) => void;
+    startListening: () => () => void;
     deleteGameLeagueData: (
       input: StorageGameLeagueInput,
     ) => Promise<DeleteGameLeagueDataResult>;
@@ -28,12 +33,19 @@ export const createStorageSlice: BoundStoreStateCreator<StorageSlice> = (
   get,
 ) => {
   let activeLoadCount = 0;
+  let analysisAvailabilityChangeVersion = 0;
+  let analysisAvailabilityRequest: Promise<void> | null = null;
+  let pendingRefresh = false;
+  let pendingRefreshShouldClearError = false;
+  let refreshRequest: Promise<void> | null = null;
 
-  const beginLoad = () => {
+  const beginLoad = (clearError: boolean) => {
     activeLoadCount += 1;
     set((state) => {
       state.storage.isLoading = true;
-      state.storage.error = null;
+      if (clearError) {
+        state.storage.error = null;
+      }
     });
   };
 
@@ -44,8 +56,8 @@ export const createStorageSlice: BoundStoreStateCreator<StorageSlice> = (
     });
   };
 
-  const fetchStorageInfo = async () => {
-    beginLoad();
+  const runStorageInfoRequest = async (clearError: boolean) => {
+    beginLoad(clearError);
 
     try {
       const info = await window.electron.storage.getInfo();
@@ -62,8 +74,8 @@ export const createStorageSlice: BoundStoreStateCreator<StorageSlice> = (
     }
   };
 
-  const fetchGameLeagueUsage = async () => {
-    beginLoad();
+  const runGameLeagueUsageRequest = async (clearError: boolean) => {
+    beginLoad(clearError);
 
     try {
       const gameLeagueUsage =
@@ -83,8 +95,126 @@ export const createStorageSlice: BoundStoreStateCreator<StorageSlice> = (
     }
   };
 
+  const applyAnalysisAvailability = (
+    availability: StorageAnalysisAvailability,
+  ) => {
+    set((state) => {
+      state.storage.analysisAvailability = availability;
+    });
+
+    if (availability !== "ready" || !pendingRefresh) {
+      return;
+    }
+
+    const clearError = pendingRefreshShouldClearError;
+    pendingRefresh = false;
+    pendingRefreshShouldClearError = false;
+    void requestRefresh(clearError);
+  };
+
+  const hydrateAnalysisAvailability = (force = false): Promise<void> => {
+    if (!force && get().storage.analysisAvailability !== null) {
+      return Promise.resolve();
+    }
+    if (analysisAvailabilityRequest) {
+      return analysisAvailabilityRequest;
+    }
+
+    const changeVersion = analysisAvailabilityChangeVersion;
+    const request = (async () => {
+      try {
+        const availability =
+          await window.electron.storage.getAnalysisAvailability();
+        if (changeVersion === analysisAvailabilityChangeVersion) {
+          applyAnalysisAvailability(availability);
+        }
+      } catch (error) {
+        set((state) => {
+          state.storage.error =
+            error instanceof Error
+              ? error.message
+              : "Failed to check storage availability";
+        });
+      }
+    })();
+    analysisAvailabilityRequest = request;
+    void request.finally(() => {
+      if (analysisAvailabilityRequest === request) {
+        analysisAvailabilityRequest = null;
+      }
+    });
+
+    return request;
+  };
+
+  const queueRefresh = (clearError: boolean) => {
+    pendingRefresh = true;
+    pendingRefreshShouldClearError ||= clearError;
+  };
+
+  const canRunAnalysis = async (clearError: boolean): Promise<boolean> => {
+    await hydrateAnalysisAvailability();
+    if (get().storage.analysisAvailability === "ready") {
+      return true;
+    }
+
+    queueRefresh(clearError);
+    return false;
+  };
+
+  const fetchStorageInfo = async () => {
+    if (!(await canRunAnalysis(true))) {
+      return;
+    }
+    await runStorageInfoRequest(true);
+  };
+
+  const fetchGameLeagueUsage = async () => {
+    if (!(await canRunAnalysis(true))) {
+      return;
+    }
+    await runGameLeagueUsageRequest(true);
+  };
+
+  const requestRefresh = async (
+    clearError: boolean,
+    ensureAfterCurrent = false,
+  ): Promise<void> => {
+    if (refreshRequest) {
+      await refreshRequest;
+      if (ensureAfterCurrent) {
+        await requestRefresh(clearError);
+      }
+      return;
+    }
+    if (!(await canRunAnalysis(clearError))) {
+      return;
+    }
+    if (refreshRequest) {
+      await refreshRequest;
+      if (ensureAfterCurrent) {
+        await requestRefresh(clearError);
+      }
+      return;
+    }
+
+    const request = Promise.all([
+      runStorageInfoRequest(clearError),
+      runGameLeagueUsageRequest(clearError),
+    ]).then(() => undefined);
+    refreshRequest = request;
+    try {
+      await request;
+    } finally {
+      if (refreshRequest === request) {
+        refreshRequest = null;
+      }
+    }
+  };
+
   return {
     storage: {
+      analysisAvailability: null,
       info: null,
       gameLeagueUsage: [],
       isLoading: false,
@@ -92,13 +222,30 @@ export const createStorageSlice: BoundStoreStateCreator<StorageSlice> = (
       deletingGameLeagueId: null,
       fetchStorageInfo,
       fetchGameLeagueUsage,
-      refresh: async () => {
-        await Promise.all([fetchStorageInfo(), fetchGameLeagueUsage()]);
-      },
+      hydrateAnalysisAvailability: () => hydrateAnalysisAvailability(),
+      refresh: () => requestRefresh(true),
+      refreshAfterMutation: () => requestRefresh(true, true),
       setError: (error) => {
         set((state) => {
           state.storage.error = error;
         });
+      },
+      startListening: () => {
+        const unsubscribe =
+          window.electron.storage.onAnalysisAvailabilityChanged(
+            (availability) => {
+              analysisAvailabilityChangeVersion += 1;
+              applyAnalysisAvailability(availability);
+            },
+          );
+        void (async () => {
+          if (analysisAvailabilityRequest) {
+            await analysisAvailabilityRequest;
+          }
+          await hydrateAnalysisAvailability(true);
+        })();
+
+        return unsubscribe;
       },
       deleteGameLeagueData: async (input) => {
         const deletingGameLeagueId = `${input.game}:${input.leagueName}`;
@@ -119,11 +266,15 @@ export const createStorageSlice: BoundStoreStateCreator<StorageSlice> = (
             return result;
           }
 
-          await get().storage.refresh();
           set((state) => {
             state.storage.deletingGameLeagueId = null;
             state.storage.error = result.cleanupError ?? null;
+            state.storage.gameLeagueUsage =
+              state.storage.gameLeagueUsage.filter(
+                (item) => item.id !== deletingGameLeagueId,
+              );
           });
+          void requestRefresh(false, true);
 
           return result;
         } catch (error) {

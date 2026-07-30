@@ -50,13 +50,20 @@ function createTestStore() {
 }
 
 describe("Storage slice", () => {
+  const getAnalysisAvailability = vi.fn();
   const getInfo = vi.fn();
   const getGameLeagueUsage = vi.fn();
   const deleteGameLeagueData = vi.fn();
+  const onAnalysisAvailabilityChanged = vi.fn();
   const revealPaths = vi.fn();
+  let analysisAvailabilityListener:
+    | ((availability: "deferred" | "ready") => void)
+    | null;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    analysisAvailabilityListener = null;
+    getAnalysisAvailability.mockResolvedValue("ready");
     getInfo.mockResolvedValue(createStorageInfo());
     getGameLeagueUsage.mockResolvedValue([createGameLeagueUsage()]);
     deleteGameLeagueData.mockResolvedValue({
@@ -73,14 +80,20 @@ describe("Storage slice", () => {
       exportStorageVolumes: [],
       databasePath: "C:\\Data\\hinekora.sqlite",
     });
+    onAnalysisAvailabilityChanged.mockImplementation((listener) => {
+      analysisAvailabilityListener = listener;
+      return vi.fn();
+    });
 
     Object.defineProperty(window, "electron", {
       configurable: true,
       value: {
         storage: {
+          getAnalysisAvailability,
           getInfo,
           getGameLeagueUsage,
           deleteGameLeagueData,
+          onAnalysisAvailabilityChanged,
           revealPaths,
         },
       },
@@ -95,12 +108,14 @@ describe("Storage slice", () => {
       leagueName: "Standard",
     });
 
-    expect(getInfo).toHaveBeenCalledTimes(1);
-    expect(getGameLeagueUsage).toHaveBeenCalledTimes(1);
     expect(store.getState().storage.deletingGameLeagueId).toBeNull();
     expect(store.getState().storage.error).toBe(
       "Failed to delete one or more files",
     );
+    await vi.waitFor(() => {
+      expect(getInfo).toHaveBeenCalledTimes(1);
+      expect(getGameLeagueUsage).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("clears errors after successful league cleanup without warnings", async () => {
@@ -133,6 +148,118 @@ describe("Storage slice", () => {
       info: createStorageInfo(),
       isLoading: false,
     });
+    expect(getAnalysisAvailability).toHaveBeenCalledOnce();
+  });
+
+  it("runs one fresh analysis after a mutation overlaps an active refresh", async () => {
+    let resolveInitialInfo!: (info: StorageInfo) => void;
+    getInfo
+      .mockReturnValueOnce(
+        new Promise<StorageInfo>((resolvePromise) => {
+          resolveInitialInfo = resolvePromise;
+        }),
+      )
+      .mockResolvedValueOnce({
+        ...createStorageInfo(),
+        storagePath: "D:\\Hinekora Recordings",
+      });
+    const store = createTestStore();
+
+    const initialRefresh = store.getState().storage.refresh();
+    await vi.waitFor(() => {
+      expect(getInfo).toHaveBeenCalledOnce();
+    });
+    const mutationRefresh = store.getState().storage.refreshAfterMutation();
+
+    resolveInitialInfo(createStorageInfo());
+    await Promise.all([initialRefresh, mutationRefresh]);
+
+    expect(getInfo).toHaveBeenCalledTimes(2);
+    expect(getGameLeagueUsage).toHaveBeenCalledTimes(2);
+    expect(store.getState().storage.info?.storagePath).toBe(
+      "D:\\Hinekora Recordings",
+    );
+  });
+
+  it("defers refreshes and resumes them from authoritative availability", async () => {
+    getAnalysisAvailability.mockResolvedValueOnce("deferred");
+    const store = createTestStore();
+    const unsubscribe = store.getState().storage.startListening();
+
+    await store.getState().storage.refresh();
+
+    expect(store.getState().storage.analysisAvailability).toBe("deferred");
+    expect(getInfo).not.toHaveBeenCalled();
+    expect(getGameLeagueUsage).not.toHaveBeenCalled();
+
+    analysisAvailabilityListener?.("ready");
+
+    await vi.waitFor(() => {
+      expect(getInfo).toHaveBeenCalledOnce();
+      expect(getGameLeagueUsage).toHaveBeenCalledOnce();
+    });
+    expect(store.getState().storage.analysisAvailability).toBe("ready");
+    unsubscribe();
+  });
+
+  it("reconciles a refresh requested before listener hydration", async () => {
+    let resolveInitialAvailability!: (
+      availability: "deferred" | "ready",
+    ) => void;
+    getAnalysisAvailability
+      .mockReturnValueOnce(
+        new Promise<"deferred" | "ready">((resolvePromise) => {
+          resolveInitialAvailability = resolvePromise;
+        }),
+      )
+      .mockResolvedValueOnce("ready");
+    const store = createTestStore();
+
+    const refresh = store.getState().storage.refresh();
+    store.getState().storage.startListening();
+    resolveInitialAvailability("deferred");
+    await refresh;
+
+    await vi.waitFor(() => {
+      expect(getAnalysisAvailability).toHaveBeenCalledTimes(2);
+      expect(getInfo).toHaveBeenCalledOnce();
+      expect(getGameLeagueUsage).toHaveBeenCalledOnce();
+    });
+    expect(store.getState().storage.analysisAvailability).toBe("ready");
+  });
+
+  it("clears successful delete state before a deferred refresh can run", async () => {
+    deleteGameLeagueData.mockResolvedValueOnce({
+      success: true,
+      freedBytes: 10,
+      deletedClipCount: 1,
+      deletedRecordingCount: 1,
+    });
+    const store = createTestStore();
+    store.getState().storage.startListening();
+    await store.getState().storage.refresh();
+    expect(store.getState().storage.gameLeagueUsage).toHaveLength(1);
+    analysisAvailabilityListener?.("deferred");
+    getInfo.mockClear();
+    getGameLeagueUsage.mockClear();
+
+    const result = await store.getState().storage.deleteGameLeagueData({
+      game: "poe2",
+      leagueName: "Standard",
+    });
+
+    expect(result.success).toBe(true);
+    expect(store.getState().storage.deletingGameLeagueId).toBeNull();
+    expect(store.getState().storage.analysisAvailability).toBe("deferred");
+    expect(store.getState().storage.gameLeagueUsage).toEqual([]);
+    expect(getInfo).not.toHaveBeenCalled();
+    expect(getGameLeagueUsage).not.toHaveBeenCalled();
+
+    analysisAvailabilityListener?.("ready");
+    await vi.waitFor(() => {
+      expect(getInfo).toHaveBeenCalledOnce();
+      expect(getGameLeagueUsage).toHaveBeenCalledOnce();
+    });
   });
 
   it("stays loading until every concurrent storage request finishes", async () => {
@@ -151,7 +278,9 @@ describe("Storage slice", () => {
     const store = createTestStore();
 
     const refresh = store.getState().storage.refresh();
-    expect(store.getState().storage.isLoading).toBe(true);
+    await vi.waitFor(() => {
+      expect(store.getState().storage.isLoading).toBe(true);
+    });
 
     resolveUsage([createGameLeagueUsage()]);
     await vi.waitFor(() => {
@@ -184,6 +313,43 @@ describe("Storage slice", () => {
     getGameLeagueUsage.mockRejectedValueOnce(new Error("usage failed"));
     await store.getState().storage.fetchGameLeagueUsage();
     expect(store.getState().storage.error).toBe("usage failed");
+  });
+
+  it("queues individual storage-info refreshes while analysis is deferred", async () => {
+    getAnalysisAvailability.mockResolvedValueOnce("deferred");
+    const store = createTestStore();
+    store.getState().storage.startListening();
+
+    await store.getState().storage.fetchStorageInfo();
+    expect(getInfo).not.toHaveBeenCalled();
+
+    analysisAvailabilityListener?.("ready");
+    await vi.waitFor(() => {
+      expect(getInfo).toHaveBeenCalledOnce();
+      expect(getGameLeagueUsage).toHaveBeenCalledOnce();
+    });
+  });
+
+  it("reports availability failures and retries before starting analysis", async () => {
+    getAnalysisAvailability
+      .mockRejectedValueOnce(new Error("Availability failed"))
+      .mockRejectedValueOnce("Availability failed");
+    const store = createTestStore();
+
+    await store.getState().storage.refresh();
+    expect(store.getState().storage.error).toBe("Availability failed");
+    expect(getInfo).not.toHaveBeenCalled();
+
+    await store.getState().storage.refresh();
+    expect(store.getState().storage.error).toBe(
+      "Failed to check storage availability",
+    );
+    expect(getInfo).not.toHaveBeenCalled();
+
+    await store.getState().storage.refresh();
+    expect(getInfo).toHaveBeenCalledOnce();
+    expect(getGameLeagueUsage).toHaveBeenCalledOnce();
+    expect(store.getState().storage.analysisAvailability).toBe("ready");
   });
 
   it("returns failed delete results and clears deleting state", async () => {

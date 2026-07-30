@@ -127,6 +127,7 @@ describe("ReplayClips.render", () => {
     await copyTrimmedReplayClipToClipboard({
       muteAudio: true,
       onProgress,
+      playbackRate: 2,
       sourcePath: "C:\\clips\\source.mp4",
       trim: { inSeconds: 2, outSeconds: 5 },
     });
@@ -138,6 +139,11 @@ describe("ReplayClips.render", () => {
     expect(mocks.renderEditorExportWithFfmpeg).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ muteAudio: true, onProgress }),
+    );
+    expect(mocks.createEditorExportSegments).toHaveBeenNthCalledWith(
+      1,
+      [expect.objectContaining({ playbackRate: 2 })],
+      expect.any(Number),
     );
     expect(mocks.renderEditorExportWithFfmpeg).toHaveBeenNthCalledWith(2, {
       outputPath: "C:\\temp\\clip.mp4",

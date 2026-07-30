@@ -45,6 +45,7 @@ vi.mock("electron", () => ({
 interface ReplayClipQuickTrimRenderInput {
   onProgress?: (progress: number) => void;
   outputPath: string;
+  playbackRate?: number;
   sourcePath: string;
   trim: { inSeconds: number; outSeconds: number };
   muteAudio?: boolean;
@@ -115,6 +116,7 @@ describe("Replay clip copy and update operations", () => {
     await expect(
       service.copyClipToClipboard({
         id: "clip-1",
+        playbackRate: 0.5,
         trim: { inSeconds: 14.76, outSeconds: 36.46 },
       }),
     ).resolves.toEqual({
@@ -124,6 +126,7 @@ describe("Replay clip copy and update operations", () => {
 
     expect(renderReplayClipQuickTrim).toHaveBeenCalledWith({
       outputPath: expect.stringContaining("2026-06-12_10-30-00-"),
+      playbackRate: 0.5,
       sourcePath: resolve(path),
       trim: { inSeconds: 14.76, outSeconds: 36.46 },
     });
@@ -795,6 +798,7 @@ describe("Replay clip copy and update operations", () => {
       service.updateClipFile({
         id: "clip-1",
         muteAudio: true,
+        playbackRate: 2,
       }),
     ).resolves.toMatchObject({
       ok: true,
@@ -803,6 +807,7 @@ describe("Replay clip copy and update operations", () => {
     expect(renderReplayClipQuickTrim).toHaveBeenCalledWith({
       outputPath: expect.stringContaining(".hinekora-"),
       muteAudio: true,
+      playbackRate: 2,
       sourcePath: resolve(path),
       trim: { inSeconds: 0, outSeconds: 20 },
     });

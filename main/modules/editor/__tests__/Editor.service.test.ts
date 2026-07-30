@@ -349,6 +349,45 @@ describe("EditorService IPC", () => {
     expect(refreshClipSize).toHaveBeenCalledWith("clip-1");
   });
 
+  it("wires default overwrite accounting recovery into the export service", async () => {
+    const refreshLibrary = vi.fn();
+    const refreshClipSize = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+      refreshLibrary,
+    } as unknown as RecordingStorageService);
+    vi.spyOn(ReplayClipsService, "getInstance").mockReturnValue({
+      refreshClipSize,
+    } as unknown as ReplayClipsService);
+    const service = new EditorService();
+    const onOverwriteAccountingFailed = (
+      service as unknown as {
+        editorExportService: {
+          dependencies: {
+            onOverwriteAccountingFailed: (commit: {
+              modifiedAtMs: number;
+              sizeBytes: number;
+              source: { id: string; kind: "clip" | "recording" };
+            }) => Promise<void> | void;
+          };
+        };
+      }
+    ).editorExportService.dependencies.onOverwriteAccountingFailed;
+
+    await onOverwriteAccountingFailed({
+      modifiedAtMs: 1,
+      sizeBytes: 2,
+      source: { id: "recording-1", kind: "recording" },
+    });
+    await onOverwriteAccountingFailed({
+      modifiedAtMs: 3,
+      sizeBytes: 4,
+      source: { id: "clip-1", kind: "clip" },
+    });
+
+    expect(refreshLibrary).toHaveBeenCalledOnce();
+    expect(refreshClipSize).toHaveBeenCalledWith("clip-1");
+  });
+
   beforeEach(() => {
     DatabaseService.resetForTests();
     clearIpcWindowRolesForTests();

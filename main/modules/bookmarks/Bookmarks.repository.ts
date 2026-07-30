@@ -810,19 +810,17 @@ class BookmarksRepository {
               )
               .where("activity_session_clips.bookmark_id", "in", bookmarkIds),
           ) as Array<{
-            bookmark_id: string | null;
+            bookmark_id: string;
             duration_seconds: number | null;
             target_duration_seconds: number;
           }>);
     const clipDurationSecondsByBookmarkId = new Map<string, number>();
     for (const clipDurationRow of clipDurationRows) {
-      if (clipDurationRow.bookmark_id) {
-        clipDurationSecondsByBookmarkId.set(
-          clipDurationRow.bookmark_id,
-          clipDurationRow.duration_seconds ??
-            clipDurationRow.target_duration_seconds,
-        );
-      }
+      clipDurationSecondsByBookmarkId.set(
+        clipDurationRow.bookmark_id,
+        clipDurationRow.duration_seconds ??
+          clipDurationRow.target_duration_seconds,
+      );
     }
     const locationDurationSecondsByBookmarkId = new Map<string, number>();
     const needsLocationDurationFallback = rows.some(

@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 
-import { app } from "electron";
+import { app, BrowserWindow } from "electron";
 
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { DatabaseService } from "~/main/modules/database";
@@ -19,6 +19,7 @@ import {
 } from "~/main/modules/editor/EditorExport.paths";
 import { EditorExportInventoryService } from "~/main/modules/editor/EditorExportInventory.service";
 import { EditorExportOwnershipRepository } from "~/main/modules/editor/EditorExportOwnership.repository";
+import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { recordingQualityBaseBitrates } from "~/main/modules/managed-recorder/ManagedRecorder.utils";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
@@ -30,9 +31,10 @@ import {
 } from "~/main/modules/recording-storage/RecordingStorage.utils";
 import { ReplayClipsRepository } from "~/main/modules/replay-clips/ReplayClips.repository";
 import { SettingsStoreService } from "~/main/modules/settings-store";
-import { logInfo } from "~/main/utils/app-log";
+import { logInfo, logWarn } from "~/main/utils/app-log";
 import { yieldToEventLoop } from "~/main/utils/async";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
+import { getIpcWindowRole } from "~/main/utils/ipc-window-roles";
 import { maskPath } from "~/main/utils/mask-path";
 import {
   isPathInsideOrEqual,
@@ -41,9 +43,11 @@ import {
 import { createStoragePathKey } from "~/main/utils/storage-path-key";
 
 import { type GameId, rewindBufferSeconds } from "~/types";
+import { StorageChannel } from "./Storage.channels";
 import { deleteGameLeagueStorage } from "./Storage.deletion";
 import type {
   DeleteGameLeagueDataResult,
+  StorageAnalysisAvailability,
   StorageGameLeagueInput,
   StorageGameLeagueUsage,
   StorageInfo,
@@ -108,6 +112,7 @@ interface StorageInfoRoots {
 class StorageService {
   private static instance: StorageService | null = null;
 
+  private analysisAvailabilityUnsubscribe: (() => void) | null = null;
   private appInstallationSizeCache: { path: string; sizeBytes: number } | null =
     null;
   private infoCache: {
@@ -144,13 +149,16 @@ class StorageService {
 
   static getInstance(): StorageService {
     if (!StorageService.instance) {
-      StorageService.instance = new StorageService();
+      const instance = new StorageService();
+      StorageService.instance = instance;
+      instance.startAnalysisAvailabilityListening();
     }
 
     return StorageService.instance;
   }
 
   static resetForTests(): void {
+    StorageService.instance?.analysisAvailabilityUnsubscribe?.();
     StorageService.instance = null;
   }
 
@@ -193,10 +201,17 @@ class StorageService {
       ((options) => EditorExportInventoryService.getInstance().scan(options));
     setupStorageIpcHandlers({
       deleteGameLeagueData: (input) => this.deleteGameLeagueData(input),
+      getAnalysisAvailability: () => this.getAnalysisAvailability(),
       getGameLeagueUsage: () => this.getGameLeagueUsage(),
       getInfo: () => this.getInfo(),
       revealPaths: () => this.revealPaths(),
     });
+  }
+
+  getAnalysisAvailability(): StorageAnalysisAvailability {
+    return RecordingStorageService.isPerformanceSensitiveActivityActive()
+      ? "deferred"
+      : "ready";
   }
 
   getInfo(): Promise<StorageInfo> {
@@ -253,6 +268,55 @@ class StorageService {
     };
     void request.then(clearRequest, clearRequest);
     return request;
+  }
+
+  private startAnalysisAvailabilityListening(): void {
+    this.analysisAvailabilityUnsubscribe ??=
+      RecordingStorageService.onPerformanceSensitiveActivityChanged(
+        (active) => {
+          this.publishAnalysisAvailabilityChanged(
+            active ? "deferred" : "ready",
+          );
+        },
+      );
+  }
+
+  private publishAnalysisAvailabilityChanged(
+    availability: StorageAnalysisAvailability,
+  ): void {
+    let windows: Electron.BrowserWindow[];
+    try {
+      const getAllWindows = BrowserWindow?.getAllWindows;
+      /* v8 ignore next -- Electron provides getAllWindows; this guards partial test/runtime shims. */
+      if (typeof getAllWindows !== "function") {
+        return;
+      }
+      windows = getAllWindows.call(BrowserWindow);
+    } catch {
+      return;
+    }
+
+    for (const window of windows) {
+      if (
+        window.isDestroyed() ||
+        window.webContents.isDestroyed() ||
+        getIpcWindowRole({ sender: window.webContents }) !== WindowName.Main
+      ) {
+        continue;
+      }
+      try {
+        window.webContents.send(
+          StorageChannel.AnalysisAvailabilityChanged,
+          availability,
+        );
+      } catch (error) {
+        logWarn(
+          STORAGE_LOG_SCOPE,
+          "Storage analysis availability notification failed",
+          { error: safeErrorMessage(error) },
+        );
+      }
+    }
   }
 
   private async calculateInfo(
@@ -424,7 +488,29 @@ class StorageService {
   }
 
   async getGameLeagueUsage(): Promise<StorageGameLeagueUsage[]> {
+    for (;;) {
+      await RecordingStorageService.waitForPerformanceSensitiveActivityToEnd();
+      const activityGeneration =
+        RecordingStorageService.getPerformanceSensitiveActivityGeneration();
+      const usage = await this.calculateGameLeagueUsage(
+        () =>
+          RecordingStorageService.isPerformanceSensitiveActivityActive() ||
+          activityGeneration !==
+            RecordingStorageService.getPerformanceSensitiveActivityGeneration(),
+      );
+      if (usage) {
+        return usage;
+      }
+    }
+  }
+
+  private async calculateGameLeagueUsage(
+    shouldAbort: () => boolean,
+  ): Promise<StorageGameLeagueUsage[] | null> {
     await this.getInfo();
+    if (shouldAbort()) {
+      return null;
+    }
     const buckets = new Map<string, UsageBucket>();
 
     for (const clip of this.replayClipsRepository.listStorageUsage()) {
@@ -435,8 +521,13 @@ class StorageService {
 
     const settings = SettingsStoreService.getInstance().get();
     const storageRoot = this.resolveStorageRoot();
-    const clipPathKeys =
-      (await this.collectClipPathKeys(storageRoot)) ?? new Set<string>();
+    const clipPathKeys = await this.collectClipPathKeys(
+      storageRoot,
+      shouldAbort,
+    );
+    if (!clipPathKeys) {
+      return null;
+    }
     const inventoryFiles =
       this.recordingInventoryCache?.root === storageRoot
         ? this.recordingInventoryCache.files
@@ -620,7 +711,7 @@ class StorageService {
 
   private async collectClipPathKeys(
     storageRoot: string,
-    shouldAbort: () => boolean = () => false,
+    shouldAbort: () => boolean,
   ): Promise<Set<string> | null> {
     const paths = new Set<string>();
     let cursor: { createdAt: string; id: string } | null = null;

@@ -1168,6 +1168,16 @@ describe("OverlayWindowsService", () => {
       .spyOn(service, "setRecorderOverlayMode")
       .mockReturnValue("minimized");
     const hideClipPreviewOverlay = vi.spyOn(service, "hideClipPreviewOverlay");
+    const toggleClipPreviewFullscreen = vi
+      .spyOn(
+        (
+          service as unknown as {
+            deathClipsOverlay: { toggleFullscreen: () => boolean };
+          }
+        ).deathClipsOverlay,
+        "toggleFullscreen",
+      )
+      .mockReturnValue(true);
     const showAuraOverlay = vi
       .spyOn(service, "showAuraOverlay")
       .mockResolvedValue(undefined);
@@ -1186,6 +1196,8 @@ describe("OverlayWindowsService", () => {
     );
     registerIpcWindowRole({ id: 42 }, WindowName.AuraOverlay);
     const auraOverlayEvent = createIpcEvent(42);
+    registerIpcWindowRole({ id: 43 }, WindowName.ClipPreviewOverlay);
+    const clipPreviewEvent = createIpcEvent(43);
 
     await handlers.get(OverlayWindowsChannel.ShowRecorder)?.({});
     handlers.get(OverlayWindowsChannel.HideRecorder)?.({});
@@ -1206,6 +1218,11 @@ describe("OverlayWindowsService", () => {
       ),
     ).toBe("minimized");
     handlers.get(OverlayWindowsChannel.HideClipPreview)?.({});
+    expect(
+      handlers.get(OverlayWindowsChannel.ToggleClipPreviewFullscreen)?.(
+        clipPreviewEvent,
+      ),
+    ).toBe(true);
     await handlers.get(OverlayWindowsChannel.ShowAura)?.({});
     await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, "profile-1");
     await handlers.get(OverlayWindowsChannel.ShowAura)?.({}, "profile-1", {
@@ -1247,6 +1264,7 @@ describe("OverlayWindowsService", () => {
     expect(getRecorderOverlayMode).toHaveBeenCalled();
     expect(setRecorderOverlayMode).toHaveBeenCalledWith("minimized");
     expect(hideClipPreviewOverlay).toHaveBeenCalled();
+    expect(toggleClipPreviewFullscreen).toHaveBeenCalled();
     expect(showAuraOverlay).toHaveBeenCalledWith(undefined);
     expect(showAuraOverlay).toHaveBeenCalledWith("profile-1");
     expect(showAuraOverlay).toHaveBeenCalledWith("profile-1", {

@@ -8,10 +8,12 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { BrowserWindow } from "electron";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DatabaseService } from "~/main/modules/database";
 import { EditorExportOwnershipRepository } from "~/main/modules/editor/EditorExportOwnership.repository";
+import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { RecordingStorageRepository } from "~/main/modules/recording-storage/RecordingStorage.repository";
@@ -19,6 +21,11 @@ import { ReplayClipsRepository } from "~/main/modules/replay-clips/ReplayClips.r
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { createReplayClip } from "~/main/test/factories/replayClip";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
+import * as appLog from "~/main/utils/app-log";
+import {
+  clearIpcWindowRolesForTests,
+  registerIpcWindowRole,
+} from "~/main/utils/ipc-window-roles";
 
 import type { ManagedRecorderStatus } from "~/types";
 import { createDefaultSettings } from "~/types";
@@ -31,6 +38,7 @@ import {
 import { StorageService } from "../Storage.service";
 
 const electronMocks = vi.hoisted(() => ({
+  getAllWindows: vi.fn(),
   getAppPath: vi.fn(),
   getPath: vi.fn(),
   isPackaged: false,
@@ -43,6 +51,9 @@ vi.mock("electron", () => ({
     get isPackaged() {
       return electronMocks.isPackaged;
     },
+  },
+  BrowserWindow: {
+    getAllWindows: electronMocks.getAllWindows,
   },
 }));
 
@@ -95,6 +106,7 @@ beforeEach(() => {
   recordingStorageRepository = new RecordingStorageRepository(database);
   electronMocks.getAppPath.mockReturnValue(appInstallRoot);
   electronMocks.getPath.mockReturnValue(join(root, "videos"));
+  electronMocks.getAllWindows.mockReturnValue([]);
   vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
     get: () => ({
       ...createDefaultSettings(),
@@ -109,10 +121,13 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  StorageService.resetForTests();
   electronMocks.getAppPath.mockReset();
+  electronMocks.getAllWindows.mockReset();
   electronMocks.getPath.mockReset();
   electronMocks.isPackaged = false;
   RecordingStorageService.resetForTests();
+  clearIpcWindowRolesForTests();
   vi.restoreAllMocks();
   DatabaseService.resetForTests();
   rmSync(root, { force: true, recursive: true });
@@ -127,6 +142,132 @@ describe("StorageService", () => {
 
     expect(first).toBe(second);
     StorageService.resetForTests();
+  });
+
+  it("reports and publishes authoritative analysis availability", () => {
+    const mainWindow = {
+      isDestroyed: vi.fn(() => false),
+      webContents: {
+        id: 701,
+        isDestroyed: vi.fn(() => false),
+        send: vi.fn(),
+      },
+    };
+    const destroyedMainWindow = {
+      isDestroyed: vi.fn(() => true),
+      webContents: {
+        id: 702,
+        isDestroyed: vi.fn(() => false),
+        send: vi.fn(),
+      },
+    };
+    const overlayWindow = {
+      isDestroyed: vi.fn(() => false),
+      webContents: {
+        id: 703,
+        isDestroyed: vi.fn(() => false),
+        send: vi.fn(),
+      },
+    };
+    const destroyedContentsWindow = {
+      isDestroyed: vi.fn(() => false),
+      webContents: {
+        id: 704,
+        isDestroyed: vi.fn(() => true),
+        send: vi.fn(),
+      },
+    };
+    const failedMainWindow = {
+      isDestroyed: vi.fn(() => false),
+      webContents: {
+        id: 705,
+        isDestroyed: vi.fn(() => false),
+        send: vi.fn(() => {
+          throw new Error("renderer unavailable");
+        }),
+      },
+    };
+    const trailingMainWindow = {
+      isDestroyed: vi.fn(() => false),
+      webContents: {
+        id: 706,
+        isDestroyed: vi.fn(() => false),
+        send: vi.fn(),
+      },
+    };
+    registerIpcWindowRole(mainWindow.webContents, WindowName.Main);
+    registerIpcWindowRole(destroyedMainWindow.webContents, WindowName.Main);
+    registerIpcWindowRole(
+      overlayWindow.webContents,
+      WindowName.RecorderOverlay,
+    );
+    registerIpcWindowRole(destroyedContentsWindow.webContents, WindowName.Main);
+    registerIpcWindowRole(failedMainWindow.webContents, WindowName.Main);
+    registerIpcWindowRole(trailingMainWindow.webContents, WindowName.Main);
+    electronMocks.getAllWindows.mockReturnValue([
+      mainWindow,
+      destroyedMainWindow,
+      overlayWindow,
+      destroyedContentsWindow,
+      failedMainWindow,
+      trailingMainWindow,
+    ]);
+    const logWarn = vi.spyOn(appLog, "logWarn").mockImplementation(() => {});
+    const service = StorageService.getInstance();
+
+    expect(service.getAnalysisAvailability()).toBe("ready");
+    expect(ipcHandlers.get(StorageChannel.GetAnalysisAvailability)?.({})).toBe(
+      "ready",
+    );
+
+    RecordingStorageService.setPerformanceSensitiveActivityActive(true);
+    expect(service.getAnalysisAvailability()).toBe("deferred");
+    expect(mainWindow.webContents.send).toHaveBeenLastCalledWith(
+      StorageChannel.AnalysisAvailabilityChanged,
+      "deferred",
+    );
+
+    RecordingStorageService.setPerformanceSensitiveActivityActive(false);
+    expect(mainWindow.webContents.send).toHaveBeenLastCalledWith(
+      StorageChannel.AnalysisAvailabilityChanged,
+      "ready",
+    );
+    expect(destroyedMainWindow.webContents.send).not.toHaveBeenCalled();
+    expect(overlayWindow.webContents.send).not.toHaveBeenCalled();
+    expect(destroyedContentsWindow.webContents.send).not.toHaveBeenCalled();
+    expect(trailingMainWindow.webContents.send).toHaveBeenLastCalledWith(
+      StorageChannel.AnalysisAvailabilityChanged,
+      "ready",
+    );
+    expect(logWarn).toHaveBeenCalledWith(
+      "storage",
+      "Storage analysis availability notification failed",
+      { error: "renderer unavailable" },
+    );
+  });
+
+  it("tolerates unavailable Electron window enumeration", () => {
+    StorageService.getInstance();
+    electronMocks.getAllWindows.mockImplementationOnce(() => {
+      throw new Error("window enumeration failed");
+    });
+
+    expect(() =>
+      RecordingStorageService.setPerformanceSensitiveActivityActive(true),
+    ).not.toThrow();
+
+    const browserWindow = BrowserWindow as unknown as {
+      getAllWindows: (() => Electron.BrowserWindow[]) | undefined;
+    };
+    const getAllWindows = browserWindow.getAllWindows;
+    try {
+      browserWindow.getAllWindows = undefined;
+      expect(() =>
+        RecordingStorageService.setPerformanceSensitiveActivityActive(false),
+      ).not.toThrow();
+    } finally {
+      browserWindow.getAllWindows = getAllWindows;
+    }
   });
 
   it("coalesces concurrent storage inventory requests", async () => {
@@ -330,6 +471,69 @@ describe("StorageService", () => {
         return abortCheckCount === 2;
       }),
     ).resolves.toBeNull();
+  });
+
+  it("retries an inventory after pruning stale export ownership records", async () => {
+    const service = new StorageService({
+      calculatePathSize: async () => 0,
+      collectStorageRootInventory: async () => ({
+        isTruncated: false,
+        recordingFiles: [],
+        temporaryFiles: [],
+      }),
+      scanExportFiles: async () => ({
+        fileCount: 0,
+        inspectedEntryCount: 0,
+        isTruncated: false,
+      }),
+    });
+    const internals = service as unknown as {
+      exportOwnershipRepository: {
+        pruneStale: (files: unknown[]) => number;
+      };
+    };
+    const pruneStale = vi
+      .spyOn(internals.exportOwnershipRepository, "pruneStale")
+      .mockReturnValueOnce(1)
+      .mockReturnValue(0);
+
+    await expect(service.getInfo()).resolves.toBeTruthy();
+    expect(pruneStale).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries when sensitive activity starts during final inventory aggregation", async () => {
+    let diskUsageCallCount = 0;
+    const service = new StorageService({
+      calculateDiskUsage: () => {
+        diskUsageCallCount += 1;
+        if (diskUsageCallCount === 1) {
+          RecordingStorageService.setPerformanceSensitiveActivityActive(true);
+        }
+        return { freeBytes: 1, totalBytes: 2 };
+      },
+      calculatePathSize: async () => 0,
+      collectStorageRootInventory: async () => ({
+        isTruncated: false,
+        recordingFiles: [],
+        temporaryFiles: [],
+      }),
+      scanExportFiles: async () => ({
+        fileCount: 0,
+        inspectedEntryCount: 0,
+        isTruncated: false,
+      }),
+    });
+
+    const infoRequest = service.getInfo();
+    await vi.waitFor(() => {
+      expect(
+        RecordingStorageService.isPerformanceSensitiveActivityActive(),
+      ).toBe(true);
+    });
+    RecordingStorageService.setPerformanceSensitiveActivityActive(false);
+
+    await expect(infoRequest).resolves.toBeTruthy();
+    expect(diskUsageCallCount).toBeGreaterThan(1);
   });
 
   it("prefers the configured export path for roots on one volume", () => {
@@ -561,6 +765,67 @@ describe("StorageService", () => {
         estimatedSizeBytes: 19,
       }),
     ]);
+  });
+
+  it("retries league usage when activity starts after inventory resolves", async () => {
+    const service = new StorageService();
+    const info = await service.getInfo();
+    const listStorageUsage = vi.spyOn(
+      ReplayClipsRepository.prototype,
+      "listStorageUsage",
+    );
+    vi.spyOn(service, "getInfo")
+      .mockImplementationOnce(async () => {
+        RecordingStorageService.setPerformanceSensitiveActivityActive(true);
+        return info;
+      })
+      .mockResolvedValue(info);
+
+    const usageRequest = service.getGameLeagueUsage();
+    await vi.waitFor(() => {
+      expect(
+        RecordingStorageService.isPerformanceSensitiveActivityActive(),
+      ).toBe(true);
+    });
+    expect(listStorageUsage).not.toHaveBeenCalled();
+
+    RecordingStorageService.setPerformanceSensitiveActivityActive(false);
+
+    await expect(usageRequest).resolves.toEqual([]);
+    expect(listStorageUsage).toHaveBeenCalledOnce();
+  });
+
+  it("retries league usage when activity starts during clip pagination", async () => {
+    const service = new StorageService();
+    const info = await service.getInfo();
+    vi.spyOn(service, "getInfo").mockResolvedValue(info);
+    const storagePage = Array.from({ length: 500 }, (_, index) => ({
+      createdAt: "2026-06-12T10:00:00.000Z",
+      id: `clip-${index}`,
+      originalObsPath: null,
+      processedClipPath: null,
+      sizeBytes: 0,
+    }));
+    const listStorageEntriesPage = vi
+      .spyOn(ReplayClipsRepository.prototype, "listStorageEntriesPage")
+      .mockImplementationOnce(() => {
+        RecordingStorageService.setPerformanceSensitiveActivityActive(true);
+        return storagePage;
+      })
+      .mockReturnValue([]);
+
+    const usageRequest = service.getGameLeagueUsage();
+    await vi.waitFor(() => {
+      expect(listStorageEntriesPage).toHaveBeenCalledOnce();
+      expect(
+        RecordingStorageService.isPerformanceSensitiveActivityActive(),
+      ).toBe(true);
+    });
+
+    RecordingStorageService.setPerformanceSensitiveActivityActive(false);
+
+    await expect(usageRequest).resolves.toEqual([]);
+    expect(listStorageEntriesPage).toHaveBeenCalledTimes(2);
   });
 
   it("rebases replay clip rows before reporting migrated manual replay storage", async () => {

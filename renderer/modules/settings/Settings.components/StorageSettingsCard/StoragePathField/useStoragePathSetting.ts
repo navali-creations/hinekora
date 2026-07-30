@@ -25,7 +25,7 @@ function useStoragePathSetting({
 }: UseStoragePathSettingOptions) {
   const updateSettings = useSettingsShallow((settings) => settings.update);
   const { refreshStorage, setError } = useStorageShallow((storage) => ({
-    refreshStorage: storage.refresh,
+    refreshStorage: storage.refreshAfterMutation,
     setError: storage.setError,
   }));
   const refreshUsage = useRecordingStorageShallow(
@@ -55,11 +55,9 @@ function useStoragePathSetting({
       setError(getStorageSettingsError(error));
       return;
     }
-    try {
-      await Promise.all([refreshStorage(), refreshUsage()]);
-    } catch (error) {
+    void Promise.all([refreshStorage(), refreshUsage()]).catch((error) => {
       setError(getStorageSettingsError(error));
-    }
+    });
   };
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {

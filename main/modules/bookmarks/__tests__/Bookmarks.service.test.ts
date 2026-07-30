@@ -794,11 +794,27 @@ describe("BookmarksService", () => {
       sourceLeague: "Standard",
       startedAt: "2026-07-03T12:00:00.000Z",
     });
+    const nullOffsetOccurredAt = "2026-07-03T12:00:05.000Z";
     const firstOccurredAt = "2026-07-03T12:00:10.000Z";
     const secondOccurredAt = "2026-07-03T12:00:40.000Z";
 
     database.runQuery(
       database.kysely.insertInto("bookmarks").values([
+        {
+          category: "map",
+          created_at: nullOffsetOccurredAt,
+          dedupe_key: null,
+          id: "active-session-null-offset",
+          label: "Map without offset",
+          note: null,
+          occurred_at: nullOffsetOccurredAt,
+          scene_name: "Map without offset",
+          source: "client-log",
+          source_game: "poe2",
+          source_league: "Standard",
+          subcategory: null,
+          updated_at: nullOffsetOccurredAt,
+        },
         {
           category: "map",
           created_at: firstOccurredAt,
@@ -833,6 +849,19 @@ describe("BookmarksService", () => {
     );
     database.runQuery(
       database.kysely.insertInto("bookmark_links").values([
+        {
+          archived: 0,
+          archived_target_duration_seconds: null,
+          archived_target_title: null,
+          bookmark_id: "active-session-null-offset",
+          created_at: nullOffsetOccurredAt,
+          duration_seconds: null,
+          id: "active-session-null-offset-link",
+          offset_seconds: null,
+          target_id: session.id,
+          target_kind: "activity-session",
+          updated_at: nullOffsetOccurredAt,
+        },
         {
           archived: 0,
           archived_target_duration_seconds: null,
@@ -887,6 +916,58 @@ describe("BookmarksService", () => {
           id: "active-session-hideout",
         }),
       ]);
+      expect(
+        repository
+          .listActivitySessionBookmarks(session.id, {
+            category: "map",
+            pageSize: 10,
+          })
+          .items.find(
+            (bookmark) => bookmark.id === "active-session-null-offset",
+          ),
+      ).toEqual(
+        expect.objectContaining({
+          durationSeconds: null,
+          id: "active-session-null-offset",
+        }),
+      );
+
+      const getActivitySession = vi
+        .spyOn(repository, "getActivitySession")
+        .mockReturnValueOnce(null);
+      expect(
+        repository.listActivitySessionBookmarks(session.id, {
+          category: "hideout",
+          pageSize: 1,
+        }).items,
+      ).toEqual([
+        expect.objectContaining({
+          durationSeconds: null,
+          id: "active-session-hideout",
+        }),
+      ]);
+      getActivitySession.mockRestore();
+
+      const internals = repository as unknown as {
+        listActivitySessionLocationOffsetsBySessionIds: (
+          activitySessionIds: string[],
+        ) => Map<string, unknown[]>;
+      };
+      const listLocationOffsets = vi
+        .spyOn(internals, "listActivitySessionLocationOffsetsBySessionIds")
+        .mockReturnValue(new Map());
+      expect(
+        repository.listActivitySessionBookmarks(session.id, {
+          category: "map",
+          pageSize: 1,
+        }).items,
+      ).toEqual([
+        expect.objectContaining({
+          durationSeconds: 90,
+          id: "active-session-map",
+        }),
+      ]);
+      listLocationOffsets.mockRestore();
     } finally {
       vi.useRealTimers();
     }
@@ -1832,6 +1913,7 @@ describe("BookmarksService", () => {
           league: "Standard",
           pageIndex: 0,
           pageSize: 10,
+          search: "updated",
           sortBy: "label",
           sortDirection: "asc",
         },
@@ -1902,11 +1984,26 @@ describe("BookmarksService", () => {
       }),
     );
     expect(
+      await handlers.get(BookmarksChannel.ListActivitySessionBookmarks)?.(
+        {},
+        "missing-session",
+        undefined,
+      ),
+    ).toEqual(expect.objectContaining({ pageIndex: 0, pageSize: 20 }));
+    expect(
+      await handlers.get(BookmarksChannel.ListActivitySessionBookmarks)?.(
+        {},
+        "missing-session",
+        {},
+      ),
+    ).toEqual(expect.objectContaining({ totalCount: 0 }));
+    expect(
       await handlers.get(BookmarksChannel.ListRecording)?.({}, "recording-1", {
         category: "manual",
         includeTimeline: true,
         pageIndex: 0,
         pageSize: 5,
+        search: "updated",
       }),
     ).toEqual(expect.objectContaining({ pageIndex: 0, pageSize: 5 }));
     expect(

@@ -1,3 +1,5 @@
+import { join, resolve } from "node:path";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -5,11 +7,15 @@ import {
   hasSameEditorExportIdentity,
 } from "../EditorExport.ownership";
 
+const testRoot = resolve("test-editor-export-ownership");
+const exportsRoot = join(testRoot, "exports");
+const legacyRoot = join(testRoot, "legacy");
+const customRoot = join(testRoot, "custom");
 const file = {
   deviceId: 10,
   inode: 20,
   modifiedAt: new Date(1_000),
-  path: "C:\\Exports\\saved.mp4",
+  path: join(exportsRoot, "saved.mp4"),
   sizeBytes: 30,
 };
 
@@ -29,23 +35,23 @@ describe("editor export ownership", () => {
           deviceId: 0,
           inode: 0,
           modifiedAtMs: 1_000,
-          path: "C:\\Custom\\portable.mp4",
+          path: join(customRoot, "portable.mp4"),
           projectId: null,
           sizeBytes: 30,
         },
       ],
-      ["C:\\Legacy"],
+      [legacyRoot],
     );
 
     expect(
-      policy.isOwned({ ...file, path: "C:\\Legacy\\historical.mp4" }),
+      policy.isOwned({ ...file, path: join(legacyRoot, "historical.mp4") }),
     ).toBe(true);
     expect(policy.isOwned(file)).toBe(true);
     expect(policy.getRegistration(file)?.projectId).toBe("project-1");
     expect(
       policy.getRegistration({
         ...file,
-        path: "C:\\Legacy\\historical.mp4",
+        path: join(legacyRoot, "historical.mp4"),
       }),
     ).toBeNull();
     expect(
@@ -53,13 +59,13 @@ describe("editor export ownership", () => {
         ...file,
         deviceId: 99,
         inode: 99,
-        path: "C:\\Custom\\portable.mp4",
+        path: join(customRoot, "portable.mp4"),
       }),
     ).toBe(true);
     expect(policy.isOwned({ ...file, sizeBytes: 31 })).toBe(false);
-    expect(policy.isOwned({ ...file, path: "C:\\Custom\\unknown.mp4" })).toBe(
-      false,
-    );
+    expect(
+      policy.isOwned({ ...file, path: join(customRoot, "unknown.mp4") }),
+    ).toBe(false);
   });
 
   it("keeps registered files and implicit roots owned", () => {
@@ -74,12 +80,12 @@ describe("editor export ownership", () => {
           sizeBytes: 30,
         },
       ],
-      ["C:\\Legacy"],
+      [legacyRoot],
     );
 
     expect(policy.isOwned(file)).toBe(true);
     expect(
-      policy.isOwned({ ...file, path: "C:\\Legacy\\historical.mp4" }),
+      policy.isOwned({ ...file, path: join(legacyRoot, "historical.mp4") }),
     ).toBe(true);
   });
 
@@ -125,7 +131,7 @@ describe("editor export ownership", () => {
     expect(
       policy.isOwned({
         ...file,
-        path: "C:\\Custom\\existing.mp4",
+        path: join(customRoot, "existing.mp4"),
       }),
     ).toBe(false);
   });

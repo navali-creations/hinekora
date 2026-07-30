@@ -1,6 +1,7 @@
 import type { Locator, Page } from "@playwright/test";
 
 import type { RecordingStorageUsage } from "../../main/modules/recording-storage/RecordingStorage.dto";
+import type { StorageAnalysisAvailability } from "../../main/modules/storage/Storage.dto";
 import type { GameId } from "../../types";
 import {
   emitDashboardAuraLockChanged,
@@ -10,6 +11,7 @@ import {
   emitDashboardRecorderStatus,
   emitDashboardRecordingStorageUsageChanged,
   emitDashboardRecordingStorageUsageRefreshFailed,
+  emitDashboardStorageAnalysisAvailability,
   expectNoUnexpectedDashboardBridgeCalls,
   getDashboardE2ECalls,
   setupDashboardE2E,
@@ -28,6 +30,7 @@ interface AppBarE2EOptions {
   recorderOverlayIgnoreGameFocus?: boolean;
   recorderOverlayRequested?: boolean;
   recorderOverlayVisible?: boolean;
+  storageAnalysisAvailability?: StorageAnalysisAvailability;
 }
 
 const appBarGameLabels: Record<GameId, string> = {
@@ -63,6 +66,7 @@ export {
   emitDashboardRecorderStatus as emitAppBarRecorderStatus,
   emitDashboardRecordingStorageUsageChanged as emitAppBarRecordingStorageUsageChanged,
   emitDashboardRecordingStorageUsageRefreshFailed as emitAppBarRecordingStorageUsageRefreshFailed,
+  emitDashboardStorageAnalysisAvailability as emitAppBarStorageAnalysisAvailability,
   expectNoUnexpectedDashboardBridgeCalls as expectNoUnexpectedAppBarBridgeCalls,
   getAppBarGameButton,
   getDashboardE2ECalls as getAppBarE2ECalls,

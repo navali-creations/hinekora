@@ -106,6 +106,7 @@ export const useBoundStore = create<BoundStore>()(
             editorSlice.editor.hydrateExportState(),
             settingsSlice.settings.hydrate(),
             poeLeaguesSlice.poeLeagues.hydrate(),
+            storageSlice.storage.hydrateAnalysisAvailability(),
           ]);
           await profilesSlice.profiles.hydrate();
           await captureProfilesSlice.captureProfiles.hydrate();
@@ -134,6 +135,7 @@ export const useBoundStore = create<BoundStore>()(
             poeLeaguesSlice.poeLeagues.startListening(),
             poeProcessSlice.poeProcess.startListening(),
             settingsSlice.settings.startListening(),
+            storageSlice.storage.startListening(),
             clientLogSlice.clientLog.startListening(),
             replayClipsSlice.replayClips.startListening(),
             recordingStorageSlice.recordingStorage.startListening(),

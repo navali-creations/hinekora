@@ -44,7 +44,10 @@ import type {
   ReplayClipUpdateInput,
 } from "../../main/modules/replay-clips";
 import { normalizeLeagueSettingsUpdate } from "../../main/modules/settings-store/SettingsStore.normalization";
-import type { StorageInfo } from "../../main/modules/storage/Storage.dto";
+import type {
+  StorageAnalysisAvailability,
+  StorageInfo,
+} from "../../main/modules/storage/Storage.dto";
 import type { DownloadProgress, UpdateInfo } from "../../main/modules/updater";
 import {
   type AppSettings,
@@ -151,6 +154,9 @@ interface DashboardE2EApi {
   }) => void;
   emitRecorderOverlayVisibility: (visible: boolean) => void;
   emitRecorderStatus: (status: Partial<ManagedRecorderStatus>) => void;
+  emitStorageAnalysisAvailability: (
+    availability: StorageAnalysisAvailability,
+  ) => void;
   setAppSetupValidation: (validation: StepValidationResult) => void;
   setCaptureSources: (sources: CapturePreviewSource[]) => void;
 }
@@ -194,6 +200,7 @@ interface DashboardE2EFixture {
   selectedPaths: Array<string | null>;
   setupState: SetupState;
   sources: CapturePreviewSource[];
+  storageAnalysisAvailability: StorageAnalysisAvailability;
   storageInfo: StorageInfo;
   recorderOverlayVisible: boolean;
   recorderOverlayRequested: boolean;
@@ -229,6 +236,7 @@ interface DashboardE2EOptions {
   profile?: Profile;
   setupState?: SetupState;
   skipDashboardShellChecks?: boolean;
+  storageAnalysisAvailability?: StorageAnalysisAvailability;
   initialHash?: string;
 }
 
@@ -477,6 +485,7 @@ function createDashboardE2EFixture(
     settings,
     setupState,
     sources,
+    storageAnalysisAvailability: options.storageAnalysisAvailability ?? "ready",
     storageInfo,
   };
 }
@@ -567,6 +576,7 @@ async function setupDashboardE2E(
       let bookmarks = clone(fixture.bookmarks);
       const replayClipDetails = clone(fixture.replayClipDetails);
       let recorderStatus = clone(fixture.recorderStatus);
+      let storageAnalysisAvailability = fixture.storageAnalysisAvailability;
       let captureMode: ManagedRecorderCaptureMode = "rewind";
       let recorderOverlayRequested = fixture.recorderOverlayRequested;
       let recorderOverlayVisible = fixture.recorderOverlayVisible;
@@ -640,6 +650,9 @@ async function setupDashboardE2E(
         recorderStatus?: (status: ManagedRecorderStatus) => void;
         recorderVisibility?: (visible: boolean) => void;
         settingsChanged?: (settings: AppSettings) => void;
+        storageAnalysisAvailability?: (
+          availability: StorageAnalysisAvailability,
+        ) => void;
         replayClipOperationProgress?: (progress: {
           operationRequestId: string;
           progress: number;
@@ -1887,8 +1900,14 @@ async function setupDashboardE2E(
         storage: createBridgeDomain<DashboardE2EElectron["storage"]>(
           "storage",
           {
+            getAnalysisAvailability: async () => storageAnalysisAvailability,
             getGameLeagueUsage: async () => [],
             getInfo: async () => clone(fixture.storageInfo),
+            onAnalysisAvailabilityChanged: (callback) => {
+              listeners.storageAnalysisAvailability = callback;
+
+              return unsubscribe;
+            },
             revealPaths: async () => ({
               databasePath:
                 "C:\\Users\\E2E\\AppData\\Roaming\\Hinekora\\hinekora.sqlite",
@@ -1980,6 +1999,10 @@ async function setupDashboardE2E(
         },
         emitRecorderStatus: (status) => {
           updateRecorderStatus(status);
+        },
+        emitStorageAnalysisAvailability: (availability) => {
+          storageAnalysisAvailability = availability;
+          listeners.storageAnalysisAvailability?.(availability);
         },
         setAppSetupValidation: (validation) => {
           appSetupValidation = clone(validation);
@@ -2099,6 +2122,21 @@ async function emitDashboardRecorderStatus(
 
     e2eWindow.__HINEKORA_DASHBOARD_E2E_API__.emitRecorderStatus(nextStatus);
   }, status);
+}
+
+async function emitDashboardStorageAnalysisAvailability(
+  page: Page,
+  availability: StorageAnalysisAvailability,
+) {
+  await page.evaluate((nextAvailability) => {
+    const e2eWindow = window as unknown as {
+      __HINEKORA_DASHBOARD_E2E_API__: DashboardE2EApi;
+    };
+
+    e2eWindow.__HINEKORA_DASHBOARD_E2E_API__.emitStorageAnalysisAvailability(
+      nextAvailability,
+    );
+  }, availability);
 }
 
 async function emitDashboardPoeProcessStart(
@@ -2244,6 +2282,7 @@ export {
   emitDashboardReplayClipPreviewProgress,
   emitDashboardReplayClipProgress,
   emitDashboardReplayClipStatusChanged,
+  emitDashboardStorageAnalysisAvailability,
   expectNoUnexpectedDashboardBridgeCalls,
   getDashboardE2ECalls,
   scheduleDashboardCaptureSources,

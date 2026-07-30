@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const electronMocks = vi.hoisted(() => ({
   invoke: vi.fn(),
+  on: vi.fn(),
+  removeListener: vi.fn(),
 }));
 
 vi.mock("electron", () => ({
@@ -37,6 +39,7 @@ describe("StorageAPI", () => {
 
   it("validates storage IPC responses", async () => {
     electronMocks.invoke
+      .mockResolvedValueOnce("ready")
       .mockResolvedValueOnce(info)
       .mockResolvedValueOnce([
         {
@@ -62,6 +65,7 @@ describe("StorageAPI", () => {
         storagePath: "C:\\Videos\\Hinekora Recordings",
       });
 
+    await expect(StorageAPI.getAnalysisAvailability()).resolves.toBe("ready");
     await expect(StorageAPI.getInfo()).resolves.toEqual(info);
     await expect(StorageAPI.getGameLeagueUsage()).resolves.toHaveLength(1);
     await expect(
@@ -74,6 +78,7 @@ describe("StorageAPI", () => {
       exportStoragePath: "C:\\Videos\\Hinekora Exports",
     });
     expect(electronMocks.invoke.mock.calls).toEqual([
+      [StorageChannel.GetAnalysisAvailability],
       [StorageChannel.GetInfo],
       [StorageChannel.GetGameLeagueUsage],
       [
@@ -85,6 +90,9 @@ describe("StorageAPI", () => {
   });
 
   it("rejects malformed storage IPC responses", async () => {
+    electronMocks.invoke.mockResolvedValue("running");
+    await expect(StorageAPI.getAnalysisAvailability()).rejects.toThrow();
+
     electronMocks.invoke.mockResolvedValue({ ...info, diskFreeBytes: -1 });
     await expect(StorageAPI.getInfo()).rejects.toThrow();
 
@@ -101,5 +109,23 @@ describe("StorageAPI", () => {
 
     electronMocks.invoke.mockResolvedValue({ storagePath: 500 });
     await expect(StorageAPI.revealPaths()).rejects.toThrow();
+  });
+
+  it("validates analysis availability events and unsubscribes", () => {
+    const callback = vi.fn();
+    const unsubscribe = StorageAPI.onAnalysisAvailabilityChanged(callback);
+    const listener = electronMocks.on.mock.calls[0]?.[1];
+
+    listener?.({}, "deferred");
+    listener?.({}, "running");
+
+    expect(callback).toHaveBeenCalledOnce();
+    expect(callback).toHaveBeenCalledWith("deferred");
+
+    unsubscribe();
+    expect(electronMocks.removeListener).toHaveBeenCalledWith(
+      StorageChannel.AnalysisAvailabilityChanged,
+      listener,
+    );
   });
 });

@@ -601,6 +601,41 @@ describe("SavedVideosService", () => {
     await expect(new SavedVideosService().listLibrary()).rejects.toThrow();
   });
 
+  it("rescans after pruning stale export ownership records", async () => {
+    const ownershipRepository = {
+      list: vi.fn(() => []),
+      pruneStale: vi.fn().mockReturnValueOnce(1).mockReturnValue(0),
+      remove: vi.fn(),
+      upsert: vi.fn(),
+    } as unknown as EditorExportOwnershipRepository;
+    const service = new SavedVideosService({ ownershipRepository });
+
+    await expect(service.listLibrary()).resolves.toMatchObject({
+      totalCount: 0,
+    });
+
+    expect(ownershipRepository.pruneStale).toHaveBeenCalledTimes(2);
+  });
+
+  it("isolates failed export commit side effects", () => {
+    const logWarn = vi.spyOn(appLog, "logWarn").mockImplementation(() => {});
+    const service = new SavedVideosService();
+    const internals = service as unknown as {
+      runCommitSideEffect: (message: string, action: () => void) => void;
+    };
+
+    expect(() =>
+      internals.runCommitSideEffect("Export accounting failed", () => {
+        throw new Error("accounting unavailable");
+      }),
+    ).not.toThrow();
+    expect(logWarn).toHaveBeenCalledWith(
+      "saved-videos",
+      "Export accounting failed",
+      { error: "accounting unavailable" },
+    );
+  });
+
   it("opens, reveals, deletes, and rejects unavailable videos", async () => {
     const videoPath = join(exportRoot, "Saved.mp4");
     await writeFile(videoPath, "video");
@@ -712,6 +747,68 @@ describe("SavedVideosService", () => {
     ).resolves.toMatchObject({ deletedCount: 1, failedCount: 0 });
     await expect(stat(paths[0]!)).rejects.toMatchObject({ code: "ENOENT" });
     await expect(stat(paths[1]!)).resolves.toMatchObject({ size: 1 });
+  });
+
+  it("skips protected and out-of-root retention candidates", async () => {
+    settings = { ...settings, editorExportMaxStorageGb: 1 };
+    const protectedPath = join(exportRoot, "protected.mp4");
+    const deletablePath = join(exportRoot, "deletable.mp4");
+    const outsidePath = join(root, "outside", "outside.mp4");
+    await Promise.all([
+      writeFile(protectedPath, "protected"),
+      writeFile(deletablePath, "deletable"),
+    ]);
+    const [protectedStats, deletableStats] = await Promise.all([
+      stat(protectedPath),
+      stat(deletablePath),
+    ]);
+    getUsage.mockResolvedValue({
+      clipsSizeBytes: 0,
+      diskFreeBytes: 100 * GIGABYTE,
+      exportVideosSizeBytes: 2 * GIGABYTE,
+      exportVideosUsageTruncated: false,
+      lowDiskSpace: false,
+      recordingsSizeBytes: 0,
+    });
+    const service = new SavedVideosService({
+      createRetentionPlan: vi.fn().mockResolvedValue({
+        files: [
+          {
+            deviceId: protectedStats.dev,
+            inode: protectedStats.ino,
+            modifiedAt: protectedStats.mtime,
+            path: protectedPath,
+            sizeBytes: GIGABYTE,
+          },
+          {
+            deviceId: 1,
+            inode: 1,
+            modifiedAt: new Date(1),
+            path: outsidePath,
+            sizeBytes: GIGABYTE,
+          },
+          {
+            deviceId: deletableStats.dev,
+            inode: deletableStats.ino,
+            modifiedAt: deletableStats.mtime,
+            path: deletablePath,
+            sizeBytes: deletableStats.size,
+          },
+        ],
+        hasMoreCandidates: false,
+        isTruncated: false,
+        targetUsageBytes: 0.95 * GIGABYTE,
+        usageBytes: 2 * GIGABYTE,
+      }),
+      statFile: stat,
+    });
+
+    await expect(
+      service.cleanup({ protectedPaths: [protectedPath] }),
+    ).resolves.toMatchObject({ deletedCount: 1 });
+
+    await expect(stat(protectedPath)).resolves.toBeDefined();
+    await expect(stat(deletablePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("skips cleanup for unlimited and under-limit export storage", async () => {
@@ -1220,6 +1317,26 @@ describe("SavedVideosService", () => {
       ok: false,
     });
     await removePath(videoPath, { recursive: true });
+    await expect(service.open(id)).resolves.toEqual({
+      error: "Saved edit video is not available",
+      ok: false,
+    });
+  });
+
+  it("rejects a cached action target whose export ownership changed", async () => {
+    const videoPath = join(exportRoot, "Saved.mp4");
+    await writeFile(videoPath, "video");
+    const service = new SavedVideosService();
+    const id = (await service.listLibrary()).items[0]!.id;
+    const internals = service as unknown as {
+      createOwnershipPolicy: () => {
+        isOwned: () => boolean;
+      };
+    };
+    vi.spyOn(internals, "createOwnershipPolicy").mockReturnValue({
+      isOwned: () => false,
+    });
+
     await expect(service.open(id)).resolves.toEqual({
       error: "Saved edit video is not available",
       ok: false,

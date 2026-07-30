@@ -3,6 +3,7 @@ import { ipcRenderer } from "electron";
 import { StorageChannel } from "./Storage.channels";
 import type {
   DeleteGameLeagueDataResult,
+  StorageAnalysisAvailability,
   StorageGameLeagueInput,
   StorageGameLeagueUsage,
   StorageInfo,
@@ -10,12 +11,17 @@ import type {
 } from "./Storage.dto";
 import {
   DeleteGameLeagueDataResultSchema,
+  StorageAnalysisAvailabilitySchema,
   StorageGameLeagueUsageListSchema,
   StorageInfoSchema,
   StorageRevealPathsResultSchema,
 } from "./Storage.dto";
 
 const StorageAPI = {
+  getAnalysisAvailability: (): Promise<StorageAnalysisAvailability> =>
+    ipcRenderer
+      .invoke(StorageChannel.GetAnalysisAvailability)
+      .then((value) => StorageAnalysisAvailabilitySchema.parse(value)),
   getInfo: (): Promise<StorageInfo> =>
     ipcRenderer
       .invoke(StorageChannel.GetInfo)
@@ -34,6 +40,24 @@ const StorageAPI = {
     ipcRenderer
       .invoke(StorageChannel.RevealPaths)
       .then((value) => StorageRevealPathsResultSchema.parse(value)),
+  onAnalysisAvailabilityChanged: (
+    callback: (availability: StorageAnalysisAvailability) => void,
+  ): (() => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, value: unknown) => {
+      const availability = StorageAnalysisAvailabilitySchema.safeParse(value);
+      if (availability.success) {
+        callback(availability.data);
+      }
+    };
+
+    ipcRenderer.on(StorageChannel.AnalysisAvailabilityChanged, listener);
+
+    return () =>
+      ipcRenderer.removeListener(
+        StorageChannel.AnalysisAvailabilityChanged,
+        listener,
+      );
+  },
 };
 
 export { StorageAPI };

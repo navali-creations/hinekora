@@ -2,6 +2,11 @@ import { z } from "zod";
 
 import { type GameId, GameIdSchema } from "~/types";
 
+export type StorageAnalysisAvailability = "deferred" | "ready";
+
+const StorageAnalysisAvailabilitySchema: z.ZodType<StorageAnalysisAvailability> =
+  z.enum(["deferred", "ready"]);
+
 export interface StorageBreakdownItem {
   category:
     | "death-clips"
@@ -110,6 +115,7 @@ const StorageRevealPathsResultSchema: z.ZodType<StorageRevealPathsResult> =
 
 export {
   DeleteGameLeagueDataResultSchema,
+  StorageAnalysisAvailabilitySchema,
   StorageGameLeagueUsageListSchema,
   StorageInfoSchema,
   StorageRevealPathsResultSchema,

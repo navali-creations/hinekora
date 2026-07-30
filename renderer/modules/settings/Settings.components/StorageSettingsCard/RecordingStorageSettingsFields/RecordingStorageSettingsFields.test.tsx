@@ -70,12 +70,12 @@ vi.mock("~/renderer/store", () => ({
     }),
   useStorageShallow: (
     selector: (storage: {
-      refresh: typeof storeMocks.refreshStorage;
+      refreshAfterMutation: typeof storeMocks.refreshStorage;
       setError: typeof storeMocks.setError;
     }) => unknown,
   ) =>
     selector({
-      refresh: storeMocks.refreshStorage,
+      refreshAfterMutation: storeMocks.refreshStorage,
       setError: storeMocks.setError,
     }),
 }));

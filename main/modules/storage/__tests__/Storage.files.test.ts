@@ -6,7 +6,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, relative, resolve } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -250,24 +250,40 @@ describe("Storage.files", () => {
       writeFileSync(join(boundedRoot, `${index}.tmp`), "x");
     }
 
-    await expect(
-      collectStorageRootInventory(boundedRoot, new Set(), [], () => false, {
-        maxFiles: 1,
-      }),
-    ).resolves.toMatchObject({
+    const oneFileInventory = await collectStorageRootInventory(
+      boundedRoot,
+      new Set(),
+      [],
+      () => false,
+      { maxFiles: 1 },
+    );
+    expect(oneFileInventory).toMatchObject({
       isTruncated: true,
-      temporaryFiles: [{ path: join(boundedRoot, "0.tmp"), size: 1 }],
+      temporaryFiles: [{ size: 1 }],
     });
-    await expect(
-      collectStorageRootInventory(boundedRoot, new Set(), [], () => false, {
-        maxFiles: 64,
-      }),
-    ).resolves.toMatchObject({
+    expect(
+      relative(boundedRoot, oneFileInventory?.temporaryFiles[0]?.path ?? ""),
+    ).toMatch(/^\d+\.tmp$/);
+
+    const batchInventory = await collectStorageRootInventory(
+      boundedRoot,
+      new Set(),
+      [],
+      () => false,
+      { maxFiles: 64 },
+    );
+    expect(batchInventory).toMatchObject({
       isTruncated: true,
       temporaryFiles: expect.arrayContaining([
-        { path: join(boundedRoot, "0.tmp"), size: 1 },
+        expect.objectContaining({ size: 1 }),
       ]),
     });
+    expect(batchInventory?.temporaryFiles).toHaveLength(64);
+    expect(
+      batchInventory?.temporaryFiles.every((file) =>
+        /^\d+\.tmp$/.test(relative(boundedRoot, file.path)),
+      ),
+    ).toBe(true);
     await expect(
       collectStorageRootInventory(boundedRoot, new Set(), [], () => false, {
         maxEntries: 0,

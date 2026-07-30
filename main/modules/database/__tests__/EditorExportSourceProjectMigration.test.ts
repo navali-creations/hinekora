@@ -84,5 +84,9 @@ describe("Editor export source project migration", () => {
 
     expect(columnNames(db, "editor_export_videos")).not.toContain("project_id");
     expect(indexExists(db, "editor_export_videos_project_id_idx")).toBe(false);
+
+    expect(() =>
+      migration_20260729_000000_editor_export_source_project.down(db),
+    ).not.toThrow();
   });
 });
