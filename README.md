@@ -32,14 +32,19 @@ Hinekora is a gameplay recorder tailored for Path of Exile 1 and Path of Exile 2
 > [!NOTE]
 > Aura overlays do NOT read in game memory. It's an OBS mirrored scene, using OBS bindings. See https://github.com/aza547/noobs
 
+### Feature overview
 https://github.com/user-attachments/assets/a4b70f85-0d7f-4602-ad0a-2e07cd6988f0
 
+### Aura showcase
 https://github.com/user-attachments/assets/33c93dfc-f807-4c8f-8be3-2250461b84dc
 
+### Editor showcase
 https://github.com/user-attachments/assets/6c8fd31c-34cc-45a1-8a19-c1712730248a
 
+### Death clip showcase
 https://github.com/user-attachments/assets/6f033449-ba8f-4a0b-91c3-e66250101088
 
+### Manual replay showcase
 https://github.com/user-attachments/assets/3dcf79c6-7f53-4573-86b8-d4d75ed9ef63
 
 
