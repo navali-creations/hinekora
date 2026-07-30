@@ -5,6 +5,7 @@ import {
   calculateTimelineMinorMarkers,
   calculateTimelinePercent,
   clampTimelineSeconds,
+  formatMediaTime,
   formatTimelineRailLeft,
   formatTimelineRailWidth,
   resolveMediaClipTargetSegment,
@@ -26,6 +27,12 @@ describe("MediaTimeline utils", () => {
       "calc(24px + (100% - 48px) * 0.25)",
     );
     expect(formatTimelineRailWidth(40, 24)).toBe("calc((100% - 48px) * 0.4)");
+  });
+
+  it("formats media times with consistent hour and centisecond segments", () => {
+    expect(formatMediaTime(12_403.24)).toBe("3:26:43");
+    expect(formatMediaTime(12_403.24, true)).toBe("3:26:43.24");
+    expect(formatMediaTime(null)).toBe("0:00");
   });
 
   it("clamps seconds and percentages", () => {

@@ -82,6 +82,7 @@ describe("ReplayClipsService replay-trigger workflow", () => {
         activeGame: "poe1",
         activeLeague: "Standard",
         deathClipSeconds: 10,
+        manualReplaySeconds: 27,
         recordingStoragePath: root,
       }),
     } as unknown as SettingsStoreService);
@@ -160,7 +161,29 @@ describe("ReplayClipsService replay-trigger workflow", () => {
     });
     expect(updateResult.ok).toBe(true);
     expect(repository.list()).toHaveLength(1);
-    expect(saveReplay).toHaveBeenCalledTimes(1);
+    expect(saveReplay).toHaveBeenCalledOnce();
+    expect(saveReplay).toHaveBeenCalledWith(27, "manual");
+    expect(manualClip?.targetDurationSeconds).toBe(27);
+  });
+
+  it("does not trigger automatic replay creation when death clips are disabled", async () => {
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        deathClipsEnabled: false,
+      }),
+    } as unknown as SettingsStoreService);
+    const handleReplayTrigger = vi.spyOn(service, "handleReplayTrigger");
+
+    await expect(
+      service.handleDeathEvent({
+        game: "poe1",
+        line: "You have died.",
+        lineHash: "disabled-death-hash",
+        detectedAt: "2026-06-12T10:00:00.000Z",
+      }),
+    ).resolves.toBeNull();
+    expect(handleReplayTrigger).not.toHaveBeenCalled();
   });
 
   it("skips death replay saves when the managed replay buffer is inactive", async () => {

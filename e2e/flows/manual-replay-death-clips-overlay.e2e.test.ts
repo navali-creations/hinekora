@@ -88,7 +88,6 @@ async function installClipPreviewVideoMocks(page: Page) {
   await page.evaluate(() => {
     const state = {
       fastSeekCalls: [] as number[],
-      fullscreenCalls: 0,
       pauseCalls: 0,
       playCalls: 0,
     };
@@ -129,14 +128,6 @@ async function installClipPreviewVideoMocks(page: Page) {
         this.dispatchEvent(new Event("seeked", { bubbles: true }));
       },
     });
-    Object.defineProperty(HTMLVideoElement.prototype, "requestFullscreen", {
-      configurable: true,
-      value() {
-        state.fullscreenCalls += 1;
-
-        return Promise.resolve();
-      },
-    });
   });
 }
 
@@ -147,7 +138,6 @@ async function getClipPreviewVideoState(page: Page) {
       window as unknown as {
         __CLIP_PREVIEW_VIDEO_E2E__: {
           fastSeekCalls: number[];
-          fullscreenCalls: number;
           pauseCalls: number;
           playCalls: number;
         };
@@ -330,6 +320,7 @@ test("covers manual replay and death clip overlay actions", async ({
   const revealButton = page.getByLabel("Show clip in Explorer");
   const fullscreenButton = page.getByLabel("Open clip fullscreen");
   const muteButton = page.getByLabel("Mute replay");
+  const speedButton = page.getByRole("button", { name: "Replay speed: 1x" });
   const playButton = page.getByLabel("Play replay");
   const continueButton = page.getByRole("button", {
     name: "Continue in editor",
@@ -338,7 +329,27 @@ test("covers manual replay and death clip overlay actions", async ({
   await expect(revealButton).toBeEnabled();
   await expect(fullscreenButton).toBeEnabled();
   await expect(muteButton).toBeEnabled();
+  await expect(speedButton).toBeEnabled();
   await expect(playButton).toBeEnabled();
+  await expect(page.locator("video")).toHaveCSS("object-fit", "contain");
+  await expect(page.locator("video")).toHaveCSS("position", "absolute");
+  expect(
+    await muteButton.evaluate(
+      (button) => getComputedStyle(button).backdropFilter,
+    ),
+  ).toContain("blur(10px)");
+  const [muteBox, speedBox, playBox] = await Promise.all([
+    muteButton.boundingBox(),
+    speedButton.boundingBox(),
+    playButton.boundingBox(),
+  ]);
+  expect(muteBox).not.toBeNull();
+  expect(speedBox).not.toBeNull();
+  expect(playBox).not.toBeNull();
+  expect(muteBox?.y).toBeLessThan(speedBox?.y ?? 0);
+  expect(speedBox?.y).toBeLessThan(playBox?.y ?? 0);
+  expect(Math.abs((muteBox?.x ?? 0) - (speedBox?.x ?? 0))).toBeLessThan(1);
+  expect(Math.abs((speedBox?.x ?? 0) - (playBox?.x ?? 0))).toBeLessThan(1);
 
   await revealButton.click();
   await muteButton.click();
@@ -351,7 +362,7 @@ test("covers manual replay and death clip overlay actions", async ({
     })
     .toBe(true);
 
-  await playButton.click();
+  await page.locator("video").click({ position: { x: 100, y: 80 } });
   await expect(page.getByLabel("Pause replay")).toBeVisible();
   await expect
     .poll(async () => {
@@ -375,7 +386,7 @@ test("covers manual replay and death clip overlay actions", async ({
     })
     .toEqual({ pauseCalls: 1, playCalls: 1 });
 
-  await page.getByLabel("Pause replay").click();
+  await page.locator("video").click({ position: { x: 100, y: 80 } });
   await expect(page.getByLabel("Play replay")).toBeVisible();
   await expect
     .poll(async () => {
@@ -386,13 +397,28 @@ test("covers manual replay and death clip overlay actions", async ({
     .toBeGreaterThanOrEqual(1);
 
   await fullscreenButton.click();
+  await expect(page.getByLabel("Close fullscreen")).toHaveCount(2);
   await expect
     .poll(async () => {
-      const state = await getClipPreviewVideoState(page);
+      const calls = await getDashboardE2ECalls(page);
 
-      return state.fullscreenCalls;
+      return calls.clipPreviewOverlayWindowActions;
     })
-    .toBe(1);
+    .toContain("toggleClipPreviewFullscreen");
+  await page.getByLabel("Close fullscreen").first().click();
+  await expect(page.getByLabel("Open clip fullscreen")).toBeVisible();
+  await expect
+    .poll(async () => {
+      const calls = await getDashboardE2ECalls(page);
+
+      return calls.clipPreviewOverlayWindowActions.filter(
+        (action) => action === "toggleClipPreviewFullscreen",
+      ).length;
+    })
+    .toBe(2);
+  await expect(nameInput).toBeVisible();
+  await expect(continueButton).toBeVisible();
+  await expect(fullscreenButton).toBeVisible();
 
   await continueButton.click({ force: true });
   const calls = await getDashboardE2ECalls(page);
@@ -417,6 +443,19 @@ test("shows save processing progress and persists clip changes", async ({
     clipId,
     replayClipOperationDelayMs: 750,
   });
+  await page.getByRole("button", { name: "Replay speed: 1x" }).click();
+  await page.getByRole("menuitemradio", { name: "0.5x" }).click();
+  await expect(page.getByText("Save/copy at 0.5x")).toBeVisible();
+  await page.getByLabel("Save or copy clip at 0.5x").check();
+  await expect
+    .poll(() =>
+      page
+        .locator("video")
+        .evaluate((video) =>
+          video instanceof HTMLVideoElement ? video.playbackRate : null,
+        ),
+    )
+    .toBe(0.5);
   const nameInput = page.getByRole("textbox");
   await nameInput.fill("Saved replay");
 
@@ -441,6 +480,7 @@ test("shows save processing progress and persists clip changes", async ({
     .toMatchObject({
       id: clipId,
       name: "Saved replay",
+      playbackRate: 0.5,
     });
 
   const calls = await getDashboardE2ECalls(page);

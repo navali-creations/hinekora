@@ -275,6 +275,15 @@ test("covers rewind detail playback, timeline filters, linked clips, bookmark pa
     page.getByRole("button", { name: /Manual replay.*1:35/ }),
   ).toBeVisible();
   await expect(openingBookmark).toBeHidden();
+  await expect
+    .poll(async () => {
+      const box = await page
+        .getByLabel("Search bookmark zones")
+        .locator("..")
+        .boundingBox();
+      return box ? [Math.round(box.width), Math.round(box.height)] : null;
+    })
+    .toEqual([144, 28]);
 
   await page.getByRole("button", { name: "Next bookmark page" }).click();
   await expect(page.getByText("2 / 2")).toBeVisible();
@@ -293,14 +302,14 @@ test("covers rewind detail playback, timeline filters, linked clips, bookmark pa
     page.locator('[title="Map - Sanctuary at 0:00.00"]'),
   ).toHaveCount(0);
 
-  await page.getByRole("button", { exact: true, name: "Map" }).click();
+  await page.locator("[data-bookmark-category-chip='map']").click();
   await expect(
     page.locator('[title="Map - Sanctuary at 0:00.00"]'),
   ).toBeVisible();
   await expect(page.locator('[title="Death - Death at 0:35.00"]')).toHaveCount(
     0,
   );
-  await page.getByRole("button", { exact: true, name: "All" }).click();
+  await page.locator("[data-bookmark-category-chip='__all__']").click();
   await expect(
     page.locator('[title="Map - Sanctuary at 0:00.00"]'),
   ).toBeVisible();

@@ -17,10 +17,12 @@ function useClipPreviewOverlayOperations(
 ) {
   const {
     hasSavedClip,
+    applyPlaybackRateToExport,
     isCopying,
     isMuted,
     isSaving,
     operationProgress,
+    playbackRate,
     saveMessage,
     setHasSavedClip,
     setSaveMessage,
@@ -28,11 +30,13 @@ function useClipPreviewOverlayOperations(
     titleDraft,
     trim,
   } = useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
+    applyPlaybackRateToExport: clipPreviewOverlay.applyPlaybackRateToExport,
     hasSavedClip: clipPreviewOverlay.hasSavedClip,
     isCopying: clipPreviewOverlay.isCopying,
     isMuted: clipPreviewOverlay.isMuted,
     isSaving: clipPreviewOverlay.isSaving,
     operationProgress: clipPreviewOverlay.operationProgress,
+    playbackRate: clipPreviewOverlay.playbackRate,
     saveMessage: clipPreviewOverlay.saveMessage,
     setHasSavedClip: clipPreviewOverlay.setHasSavedClip,
     setSaveMessage: clipPreviewOverlay.setSaveMessage,
@@ -40,6 +44,8 @@ function useClipPreviewOverlayOperations(
     titleDraft: clipPreviewOverlay.titleDraft,
     trim: clipPreviewOverlay.trim,
   }));
+  const exportPlaybackRate =
+    applyPlaybackRateToExport && playbackRate !== 1 ? playbackRate : undefined;
   const {
     canCopy,
     canEdit,
@@ -61,6 +67,7 @@ function useClipPreviewOverlayOperations(
     isSaving,
     titleDraft,
     trim,
+    ...(exportPlaybackRate ? { playbackRate: exportPlaybackRate } : {}),
   });
   const { handleCopyClip, hasCopied, resetCopiedState } =
     useClipPreviewOverlayCopyOperation({
@@ -68,6 +75,7 @@ function useClipPreviewOverlayOperations(
       clip,
       hasTrimChanges,
       isMuted,
+      ...(exportPlaybackRate ? { playbackRate: exportPlaybackRate } : {}),
       trim,
     });
   const { handleSaveClip } = useClipPreviewOverlaySaveOperation({
@@ -77,6 +85,7 @@ function useClipPreviewOverlayOperations(
     hasTitleChange,
     hasTrimChanges,
     isMuted,
+    ...(exportPlaybackRate ? { playbackRate: exportPlaybackRate } : {}),
     prepareForFileMutation: mediaLifecycle.prepareForFileMutation,
     reloadAfterFileMutation: mediaLifecycle.reloadAfterFileMutation,
     resetCopiedState,

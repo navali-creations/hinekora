@@ -69,9 +69,17 @@ class ReplayClipCreationService {
       triggerLineHash: event.lineHash,
     });
     const settings = SettingsStoreService.getInstance().get();
-    const clip = this.createClip(event);
+    const requestedDurationSeconds =
+      event.kind === "manual"
+        ? settings.manualReplaySeconds
+        : settings.deathClipSeconds;
+    const clip = this.createClip(
+      event,
+      settings.activeLeague,
+      requestedDurationSeconds,
+    );
     return this.dependencies.runClipOperation(clip.id, () =>
-      this.createStoredClip(clip, event, settings.deathClipSeconds),
+      this.createStoredClip(clip, event, requestedDurationSeconds),
     );
   }
 
@@ -139,9 +147,12 @@ class ReplayClipCreationService {
     }
   }
 
-  private createClip(event: ReplayTriggerEvent): ReplayClip {
+  private createClip(
+    event: ReplayTriggerEvent,
+    sourceLeague: string,
+    targetDurationSeconds: number,
+  ): ReplayClip {
     const now = new Date().toISOString();
-    const settings = SettingsStoreService.getInstance().get();
     return {
       createdAt: now,
       deathTimestamp: event.detectedAt,
@@ -153,9 +164,9 @@ class ReplayClipCreationService {
       processedClipPath: null,
       sizeBytes: 0,
       sourceGame: event.game,
-      sourceLeague: settings.activeLeague,
+      sourceLeague,
       status: "death_detected",
-      targetDurationSeconds: settings.deathClipSeconds,
+      targetDurationSeconds,
       triggerLineHash: event.lineHash,
       updatedAt: now,
     };

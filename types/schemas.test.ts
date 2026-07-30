@@ -43,6 +43,7 @@ describe("shared schemas", () => {
       mainWindowBounds: null,
       recorderOverlayBounds: null,
       recorderOverlayShowOnStartup: true,
+      recorderOverlayStartMinimized: false,
       recorderOverlayIgnoreGameFocus: false,
       auraOverlayIgnoreGameFocus: false,
       auraOverlayShowEditingFrame: true,
@@ -89,7 +90,9 @@ describe("shared schemas", () => {
       editorMediaFilter: "death-clip",
       editorAutoPruneProjects: true,
       editorLogEnabled: false,
+      deathClipsEnabled: true,
       deathClipSeconds: 10,
+      manualReplaySeconds: 10,
       telemetryCrashReporting: true,
       lastSeenAppVersion: null,
       onboardingDismissedBeacons: [],
@@ -104,6 +107,7 @@ describe("shared schemas", () => {
     expect(appSettingsKeys).toContain("keybindManualBookmark");
     expect(appSettingsKeys).toContain("replayClipPreviewResolution");
     expect(appSettingsKeys).toContain("recorderOverlayShowOnStartup");
+    expect(appSettingsKeys).toContain("recorderOverlayStartMinimized");
     expect(appSettingsKeys).toContain("recorderOverlayIgnoreGameFocus");
     expect(appSettingsKeys).toContain("auraOverlayIgnoreGameFocus");
     expect(appSettingsKeys).toContain("auraOverlayShowEditingFrame");
@@ -166,7 +170,9 @@ describe("shared schemas", () => {
       new Set(Object.keys(CaptureProfileSettingsSchema.shape)),
     );
     expect(captureProfileSettingKeys).toContain("recordingAutoStartMode");
+    expect(captureProfileSettingKeys).toContain("deathClipsEnabled");
     expect(captureProfileSettingKeys).toContain("deathClipSeconds");
+    expect(captureProfileSettingKeys).toContain("manualReplaySeconds");
   });
 
   it("accepts the compact recorder overlay width", () => {
@@ -299,10 +305,19 @@ describe("shared schemas", () => {
   });
 
   it("limits rewind save duration to 60 seconds", () => {
-    expect(AppSettingsSchema.parse({ deathClipSeconds: 60 })).toMatchObject({
+    expect(
+      AppSettingsSchema.parse({
+        deathClipSeconds: 60,
+        manualReplaySeconds: 1,
+      }),
+    ).toMatchObject({
       deathClipSeconds: 60,
+      manualReplaySeconds: 1,
     });
     expect(() => AppSettingsSchema.parse({ deathClipSeconds: 61 })).toThrow();
+    expect(() =>
+      AppSettingsSchema.parse({ manualReplaySeconds: 61 }),
+    ).toThrow();
   });
 
   it("accepts bounded recording auto-start modes", () => {

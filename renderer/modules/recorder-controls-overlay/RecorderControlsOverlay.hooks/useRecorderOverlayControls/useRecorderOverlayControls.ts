@@ -34,7 +34,7 @@ function useRecorderOverlayControls() {
   }));
   const rewindSaveSeconds = useSettingsShallow((settings) =>
     clampRewindSaveSeconds(
-      settings.value?.deathClipSeconds ?? defaultRewindSaveSeconds,
+      settings.value?.manualReplaySeconds ?? defaultRewindSaveSeconds,
     ),
   );
   const isProcessing =

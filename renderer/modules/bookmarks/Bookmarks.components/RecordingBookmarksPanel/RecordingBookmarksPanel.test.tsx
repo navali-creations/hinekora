@@ -3,9 +3,9 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { RecordingBookmark } from "~/main/modules/bookmarks";
+import { useBoundStore } from "~/renderer/store";
 
 import { RecordingBookmarksPanel } from "./RecordingBookmarksPanel";
-import { allRecordingBookmarkCategoriesValue } from "./RecordingBookmarksPanel.utils";
 
 function createBookmark(
   overrides: Partial<RecordingBookmark> = {},
@@ -37,6 +37,7 @@ describe("RecordingBookmarksPanel", () => {
     container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
+    useBoundStore.getState().bookmarks.resetRecordingDetail();
   });
 
   afterEach(() => {
@@ -52,15 +53,12 @@ describe("RecordingBookmarksPanel", () => {
         <RecordingBookmarksPanel
           bookmarks={[]}
           categories={[]}
-          categoryFilter={allRecordingBookmarkCategoriesValue}
+          categoryCounts={[]}
           emptyMessage="No bookmarks are attached to this rewind yet."
           heightPixels={null}
+          owner="recordingDetail"
           pageCount={1}
-          pageIndex={0}
           totalCount={0}
-          onCategoryChange={vi.fn()}
-          onNextPage={vi.fn()}
-          onPreviousPage={vi.fn()}
           onSelectBookmark={vi.fn()}
         />,
       );
@@ -71,21 +69,52 @@ describe("RecordingBookmarksPanel", () => {
     );
   });
 
+  it("renders loading and error states from the owning panel store", () => {
+    act(() => {
+      useBoundStore.getState().bookmarks.setRecordingDetailPanelStatus({
+        errorMessage: null,
+        isLoading: true,
+      });
+      root.render(
+        <RecordingBookmarksPanel
+          bookmarks={[]}
+          categories={[]}
+          categoryCounts={[]}
+          heightPixels={null}
+          owner="recordingDetail"
+          pageCount={1}
+          totalCount={0}
+          onSelectBookmark={vi.fn()}
+        />,
+      );
+    });
+
+    expect(container.querySelector(".loading-spinner")).not.toBeNull();
+
+    act(() => {
+      useBoundStore.getState().bookmarks.setRecordingDetailPanelStatus({
+        errorMessage: "Bookmark query failed",
+        isLoading: false,
+      });
+    });
+
+    expect(container.textContent).toContain("Bookmark query failed");
+    expect(container.textContent).not.toContain(
+      "No bookmarks are attached yet.",
+    );
+  });
+
   it("allows category chips to render with no active chip", () => {
     act(() => {
       root.render(
         <RecordingBookmarksPanel
-          activeCategoryFilter={null}
           bookmarks={[]}
           categories={["map"]}
-          categoryFilter={allRecordingBookmarkCategoriesValue}
+          categoryCounts={[]}
           heightPixels={null}
+          owner="recordingDetail"
           pageCount={1}
-          pageIndex={0}
           totalCount={0}
-          onCategoryChange={vi.fn()}
-          onNextPage={vi.fn()}
-          onPreviousPage={vi.fn()}
           onSelectBookmark={vi.fn()}
         />,
       );
@@ -93,34 +122,31 @@ describe("RecordingBookmarksPanel", () => {
 
     const allCategoryButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent === "All");
+    ).find((button) => button.dataset.bookmarkCategoryChip === "__all__");
 
     expect(allCategoryButton?.className).not.toContain("shadow-sm");
   });
 
   it("fires category, pagination, selection, and hover interactions", () => {
     const bookmark = createBookmark();
-    const onCategoryChange = vi.fn();
-    const onHoverBookmark = vi.fn();
-    const onNextPage = vi.fn();
-    const onPreviousPage = vi.fn();
     const onSelectBookmark = vi.fn();
+    useBoundStore
+      .getState()
+      .bookmarks.setRecordingDetailSelectedBookmarkId(bookmark.id);
 
     act(() => {
       root.render(
         <RecordingBookmarksPanel
           bookmarks={[bookmark]}
           categories={["map", "death"]}
-          categoryFilter={allRecordingBookmarkCategoriesValue}
+          categoryCounts={[
+            { category: "map", count: 4 },
+            { category: "death", count: 2 },
+          ]}
           heightPixels={null}
+          owner="recordingDetail"
           pageCount={2}
-          pageIndex={0}
-          selectedBookmarkId={bookmark.id}
           totalCount={6}
-          onCategoryChange={onCategoryChange}
-          onHoverBookmark={onHoverBookmark}
-          onNextPage={onNextPage}
-          onPreviousPage={onPreviousPage}
           onSelectBookmark={onSelectBookmark}
         />,
       );
@@ -128,12 +154,19 @@ describe("RecordingBookmarksPanel", () => {
 
     const mapCategoryButton = Array.from(
       container.querySelectorAll("button"),
-    ).find((button) => button.textContent === "Map");
+    ).find((button) => button.dataset.bookmarkCategoryChip === "map");
+    const allCategoryButton = Array.from(
+      container.querySelectorAll("button"),
+    ).find((button) => button.dataset.bookmarkCategoryChip === "__all__");
 
+    expect(allCategoryButton?.textContent).toContain("All (6)");
+    expect(mapCategoryButton?.textContent).toContain("Map (4)");
     act(() => {
       mapCategoryButton?.click();
     });
-    expect(onCategoryChange).toHaveBeenCalledWith("map");
+    expect(
+      useBoundStore.getState().bookmarks.recordingDetail.categoryFilter,
+    ).toBe("map");
 
     const bookmarkButton = Array.from(
       container.querySelectorAll("button"),
@@ -150,9 +183,31 @@ describe("RecordingBookmarksPanel", () => {
         new MouseEvent("pointerout", { bubbles: true }),
       );
     });
-    expect(onHoverBookmark).toHaveBeenCalledWith(bookmark);
     expect(onSelectBookmark).toHaveBeenCalledWith(bookmark);
-    expect(onHoverBookmark).toHaveBeenCalledWith(null);
+    expect(
+      useBoundStore.getState().bookmarks.recordingDetail.hoveredBookmarkId,
+    ).toBeNull();
+
+    const searchInput = container.querySelector<HTMLInputElement>(
+      "input[aria-label='Search bookmark zones']",
+    );
+    expect(searchInput?.parentElement?.className).toContain("input-xs");
+    expect(searchInput?.parentElement?.parentElement).not.toBe(
+      allCategoryButton?.parentElement?.parentElement,
+    );
+    const valueSetter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )?.set;
+    act(() => {
+      if (searchInput) {
+        valueSetter?.call(searchInput, "atlas");
+        searchInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+    });
+    expect(useBoundStore.getState().bookmarks.recordingDetail.searchText).toBe(
+      "atlas",
+    );
 
     act(() => {
       container
@@ -160,14 +215,45 @@ describe("RecordingBookmarksPanel", () => {
           "button[aria-label='Next bookmark page']",
         )
         ?.click();
+    });
+    expect(useBoundStore.getState().bookmarks.recordingDetail.pageIndex).toBe(
+      1,
+    );
+    act(() => {
       container
         .querySelector<HTMLButtonElement>(
           "button[aria-label='Previous bookmark page']",
         )
         ?.click();
     });
+    expect(useBoundStore.getState().bookmarks.recordingDetail.pageIndex).toBe(
+      0,
+    );
+  });
 
-    expect(onNextPage).toHaveBeenCalledTimes(1);
-    expect(onPreviousPage).not.toHaveBeenCalled();
+  it("places a compact search input in the header when requested", () => {
+    act(() => {
+      root.render(
+        <RecordingBookmarksPanel
+          bookmarks={[]}
+          categories={[]}
+          categoryCounts={[]}
+          heightPixels={null}
+          owner="recordingDetail"
+          pageCount={1}
+          searchPlacement="header"
+          totalCount={0}
+          onSelectBookmark={vi.fn()}
+        />,
+      );
+    });
+
+    const panelHeader = container.querySelector("aside")?.firstElementChild;
+    const searchInput = container.querySelector<HTMLInputElement>(
+      "input[aria-label='Search bookmark zones']",
+    );
+
+    expect(panelHeader?.contains(searchInput ?? null)).toBe(true);
+    expect(searchInput?.parentElement?.className).toContain("w-36");
   });
 });

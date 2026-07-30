@@ -22,6 +22,7 @@ describe("editor export ownership", () => {
           inode: 20,
           modifiedAtMs: 1_000,
           path: file.path,
+          projectId: "project-1",
           sizeBytes: 30,
         },
         {
@@ -29,6 +30,7 @@ describe("editor export ownership", () => {
           inode: 0,
           modifiedAtMs: 1_000,
           path: "C:\\Custom\\portable.mp4",
+          projectId: null,
           sizeBytes: 30,
         },
       ],
@@ -39,6 +41,13 @@ describe("editor export ownership", () => {
       policy.isOwned({ ...file, path: "C:\\Legacy\\historical.mp4" }),
     ).toBe(true);
     expect(policy.isOwned(file)).toBe(true);
+    expect(policy.getRegistration(file)?.projectId).toBe("project-1");
+    expect(
+      policy.getRegistration({
+        ...file,
+        path: "C:\\Legacy\\historical.mp4",
+      }),
+    ).toBeNull();
     expect(
       policy.isOwned({
         ...file,
@@ -61,6 +70,7 @@ describe("editor export ownership", () => {
           inode: 20,
           modifiedAtMs: 1_000,
           path: file.path,
+          projectId: null,
           sizeBytes: 30,
         },
       ],

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 
 import type {
   BookmarkCategory,
@@ -14,21 +14,14 @@ function useRecordingBookmarkFilters(
   bookmarks: RecordingBookmark[],
   availableCategories: BookmarkCategory[] = [],
 ) {
-  const {
-    categoryFilter,
-    hasInteracted,
-    pageIndex,
-    reset,
-    selectCategory,
-    setPageIndex,
-  } = useBookmarksShallow((bookmarksState) => ({
-    categoryFilter: bookmarksState.recordingDetail.categoryFilter,
-    hasInteracted: bookmarksState.recordingDetail.hasInteracted,
-    pageIndex: bookmarksState.recordingDetail.pageIndex,
-    reset: bookmarksState.resetRecordingDetail,
-    selectCategory: bookmarksState.selectRecordingDetailCategory,
-    setPageIndex: bookmarksState.setRecordingDetailPageIndex,
-  }));
+  const { categoryFilter, hasInteracted, pageIndex, reset, searchText } =
+    useBookmarksShallow((bookmarksState) => ({
+      categoryFilter: bookmarksState.recordingDetail.categoryFilter,
+      hasInteracted: bookmarksState.recordingDetail.hasInteracted,
+      pageIndex: bookmarksState.recordingDetail.pageIndex,
+      reset: bookmarksState.resetRecordingDetail,
+      searchText: bookmarksState.recordingDetail.searchText,
+    }));
   const markerBookmarks = useMemo(
     () =>
       categoryFilter === allRecordingBookmarkCategoriesValue
@@ -44,24 +37,14 @@ function useRecordingBookmarkFilters(
     [availableCategories, bookmarks],
   );
 
-  const previousPage = useCallback(() => {
-    setPageIndex(pageIndex - 1);
-  }, [pageIndex, setPageIndex]);
-
-  const nextPage = useCallback(() => {
-    setPageIndex(pageIndex + 1);
-  }, [pageIndex, setPageIndex]);
-
   return {
     categories,
     categoryFilter,
     hasInteracted,
     markerBookmarks,
-    nextPage,
     pageIndex,
-    previousPage,
     reset,
-    selectCategory,
+    searchText,
   };
 }
 

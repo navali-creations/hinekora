@@ -6,8 +6,10 @@ import {
   IpcValidationError,
 } from "~/main/utils/ipc-validation";
 
+import type { ReplayClipPlaybackRate } from "~/types";
 import {
   GameIdSchema,
+  isReplayClipPlaybackRate,
   quickClipTrimMaximumSeconds,
   quickClipTrimMinimumSeconds,
   ReplayClipKindSchema,
@@ -138,6 +140,13 @@ function validateReplayClipUpdateInput(value: unknown): ReplayClipUpdateInput {
     );
     input.muteAudio = value.muteAudio;
   }
+  const playbackRate = validateOptionalReplayClipPlaybackRate(
+    value.playbackRate,
+    ReplayClipsChannel.Update,
+  );
+  if (playbackRate !== undefined) {
+    input.playbackRate = playbackRate;
+  }
 
   return input;
 }
@@ -180,6 +189,13 @@ function validateReplayClipCopyInput(value: unknown): ReplayClipCopyInput {
       ReplayClipsChannel.Copy,
     );
     input.muteAudio = value.muteAudio;
+  }
+  const playbackRate = validateOptionalReplayClipPlaybackRate(
+    value.playbackRate,
+    ReplayClipsChannel.Copy,
+  );
+  if (playbackRate !== undefined) {
+    input.playbackRate = playbackRate;
   }
 
   return input;
@@ -231,6 +247,23 @@ function validateTrimInput(
   }
 
   return { inSeconds: trim.inSeconds, outSeconds: trim.outSeconds };
+}
+
+function validateOptionalReplayClipPlaybackRate(
+  value: unknown,
+  channel: ReplayClipsChannel,
+): ReplayClipPlaybackRate | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  assertNumber(value, "playback rate", channel, {
+    min: 0.25,
+    max: 2,
+  });
+  if (!isReplayClipPlaybackRate(value)) {
+    throw new IpcValidationError(channel, "playback rate is invalid");
+  }
+  return value;
 }
 
 function validateListFilterForChannel(

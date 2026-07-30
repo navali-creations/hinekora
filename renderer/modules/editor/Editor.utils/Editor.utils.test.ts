@@ -55,7 +55,9 @@ describe("Editor utils", () => {
   it("formats and normalizes timeline durations", () => {
     expect(formatEditorTime(null)).toBe("0:00");
     expect(formatEditorTime(65)).toBe("1:05");
+    expect(formatEditorTime(12_403.24)).toBe("3:26:43");
     expect(formatEditorTimestamp(9.63)).toBe("0:09.63");
+    expect(formatEditorTimestamp(12_403.24)).toBe("3:26:43.24");
     expect(normalizeEditorDuration(null)).toBe(10);
     expect(normalizeEditorDuration(2.4)).toBe(2.4);
     expect(calculateTimelinePercent(5, 20)).toBe(25);

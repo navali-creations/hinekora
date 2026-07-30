@@ -1,8 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import { useCallback, useMemo } from "react";
+import { useMemo } from "react";
 import { FiArrowLeft, FiEdit2 } from "react-icons/fi";
 
-import type { RecordingBookmark } from "~/main/modules/bookmarks";
 import { PageContainer } from "~/renderer/components/PageContainer/PageContainer";
 import { PageContent } from "~/renderer/components/PageContent/PageContent";
 import { PageHeader } from "~/renderer/components/PageHeader/PageHeader";
@@ -30,12 +29,9 @@ function RewindDetailPage({
     initialPlaybackSeconds,
     rewindId,
   });
-  const { hoveredBookmarkId, setHoveredBookmarkId } = useRewindsShallow(
-    (rewinds) => ({
-      hoveredBookmarkId: rewinds.detail.hoveredBookmarkId,
-      setHoveredBookmarkId: rewinds.setDetailHoveredBookmarkId,
-    }),
-  );
+  const { hoveredBookmarkId } = useRewindsShallow((rewinds) => ({
+    hoveredBookmarkId: rewinds.detail.hoveredBookmarkId,
+  }));
   const hoveredBookmark = useMemo(
     () =>
       hoveredBookmarkId
@@ -44,12 +40,6 @@ function RewindDetailPage({
           ) ?? null)
         : null,
     [detail.bookmarks, hoveredBookmarkId],
-  );
-  const handleHoverBookmark = useCallback(
-    (bookmark: RecordingBookmark | null) => {
-      setHoveredBookmarkId(bookmark?.id ?? null);
-    },
-    [setHoveredBookmarkId],
   );
   const session = detail.state.timeline?.session ?? null;
 
@@ -89,17 +79,14 @@ function RewindDetailPage({
             <RecordingBookmarksPanel
               bookmarks={detail.bookmarkPanelItems}
               categories={detail.bookmarkCategories}
-              categoryFilter={detail.bookmarkCategoryFilter}
+              categoryCounts={detail.categoryCounts}
               emptyMessage="No bookmarks are attached to this rewind yet."
               heightPixels={360}
               isTimelineTruncated={detail.isTimelineTruncated}
               pageCount={detail.bookmarkPageCount}
-              pageIndex={detail.bookmarkPageIndex}
+              owner="rewindDetail"
+              searchPlacement="header"
               totalCount={detail.bookmarkTotalCount}
-              onCategoryChange={detail.handleBookmarkCategoryChange}
-              onHoverBookmark={handleHoverBookmark}
-              onNextPage={detail.handleNextBookmarkPage}
-              onPreviousPage={detail.handlePreviousBookmarkPage}
               onSelectBookmark={detail.handleSelectBookmark}
             />
             <section className="flex h-[360px] min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-300">

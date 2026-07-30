@@ -10,7 +10,9 @@ const storeMocks = vi.hoisted(() => ({
   isStoppingRecording: false,
   selectedProfileId: "capture-profile-1" as string | null,
   settingsValue: {
+    deathClipsEnabled: true,
     deathClipSeconds: 15,
+    manualReplaySeconds: 30,
     recordingAutoStartMode: "off",
     recordingHideOverlaysFromRewind: true,
   },
@@ -48,9 +50,9 @@ async function renderFields(): Promise<void> {
   });
 }
 
-function getDurationInput(): HTMLInputElement {
+function getDurationInput(label = "Death clip duration"): HTMLInputElement {
   const input = container.querySelector<HTMLInputElement>(
-    'input[aria-label="Rewind duration seconds"]',
+    `input[aria-label="${label} seconds"]`,
   );
   if (!input) {
     throw new Error("Expected rewind duration input to render");
@@ -59,21 +61,24 @@ function getDurationInput(): HTMLInputElement {
   return input;
 }
 
-function getPresetButton(label: string): HTMLButtonElement {
+function getPresetButton(
+  seconds: string,
+  label = "Death clip duration",
+): HTMLButtonElement {
   const button = container.querySelector<HTMLButtonElement>(
-    `button[aria-label="${label} second rewind duration"]`,
+    `button[aria-label="${seconds} second ${label.toLowerCase()}"]`,
   );
   if (!(button instanceof HTMLButtonElement)) {
-    throw new Error(`Expected ${label} preset button to render`);
+    throw new Error(`Expected ${seconds} preset button to render`);
   }
 
   return button;
 }
 
-function getDurationButtons(): string[] {
+function getDurationButtons(label = "Death clip duration"): string[] {
   return [
     ...container.querySelectorAll<HTMLButtonElement>(
-      'button[aria-label$="second rewind duration"]',
+      `button[aria-label$="second ${label.toLowerCase()}"]`,
     ),
   ].map((button) => button.textContent?.trim() ?? "");
 }
@@ -105,7 +110,9 @@ describe("ManagedRecorderRewindSettingsFields", () => {
     storeMocks.isStoppingRecording = false;
     storeMocks.selectedProfileId = "capture-profile-1";
     storeMocks.settingsValue = {
+      deathClipsEnabled: true,
       deathClipSeconds: 15,
+      manualReplaySeconds: 30,
       recordingAutoStartMode: "off",
       recordingHideOverlaysFromRewind: true,
     };
@@ -128,12 +135,18 @@ describe("ManagedRecorderRewindSettingsFields", () => {
   it("renders the saved rewind duration and preset controls", async () => {
     await renderFields();
 
-    expect(container.textContent).toContain("Rewind duration");
+    expect(container.textContent).toContain("Death clip duration");
+    expect(container.textContent).toContain("Manual replay duration");
     expect(getDurationButtons().slice(0, 3)).toEqual(["5", "10", "15"]);
     expect(getDurationInput().disabled).toBe(false);
     expect(getDurationInput().placeholder).toBe("60");
     expect(getDurationInput().value).toBe("");
     expect(getPresetButton("15").getAttribute("aria-pressed")).toBe("true");
+    expect(
+      getPresetButton("30", "Manual replay duration").getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
     expect(container.textContent).toContain("seconds");
     expect(container.textContent).toContain("Preview quality");
     expect(
@@ -141,7 +154,11 @@ describe("ManagedRecorderRewindSettingsFields", () => {
         .querySelector('button[aria-label="Use 720p preview quality"]')
         ?.getAttribute("aria-pressed"),
     ).toBe("true");
+    expect(container.textContent?.indexOf("Preview quality")).toBeLessThan(
+      container.textContent?.indexOf("Enable death clips") ?? -1,
+    );
     expect(container.textContent).toContain("Start rewind automatically");
+    expect(getCheckbox("Enable death clips").checked).toBe(true);
     expect(container.textContent).toContain("Hide overlays from rewind");
     expect(getOverlayCheckbox().checked).toBe(true);
   });
@@ -155,6 +172,12 @@ describe("ManagedRecorderRewindSettingsFields", () => {
 
     expect(storeMocks.updateSettings).toHaveBeenCalledWith({
       deathClipSeconds: 45,
+    });
+    await act(async () => {
+      getPresetButton("60", "Manual replay duration").click();
+    });
+    expect(storeMocks.updateSettings).toHaveBeenCalledWith({
+      manualReplaySeconds: 60,
     });
 
     const input = getDurationInput();
@@ -201,7 +224,9 @@ describe("ManagedRecorderRewindSettingsFields", () => {
 
   it("shows the custom input when the saved duration is not a preset", async () => {
     storeMocks.settingsValue = {
+      deathClipsEnabled: true,
       deathClipSeconds: 12,
+      manualReplaySeconds: 30,
       recordingAutoStartMode: "off",
       recordingHideOverlaysFromRewind: true,
     };
@@ -224,6 +249,18 @@ describe("ManagedRecorderRewindSettingsFields", () => {
     });
   });
 
+  it("allows automatic death clips to be disabled", async () => {
+    await renderFields();
+
+    await act(async () => {
+      getCheckbox("Enable death clips").click();
+    });
+
+    expect(storeMocks.updateSettings).toHaveBeenCalledWith({
+      deathClipsEnabled: false,
+    });
+  });
+
   it("updates rewind auto-start from the rewind tab", async () => {
     await renderFields();
 
@@ -238,7 +275,9 @@ describe("ManagedRecorderRewindSettingsFields", () => {
 
   it("disables active rewind auto-start from the rewind tab", async () => {
     storeMocks.settingsValue = {
+      deathClipsEnabled: true,
       deathClipSeconds: 15,
+      manualReplaySeconds: 30,
       recordingAutoStartMode: "rewind",
       recordingHideOverlaysFromRewind: true,
     };
@@ -262,6 +301,7 @@ describe("ManagedRecorderRewindSettingsFields", () => {
 
     expect(getDurationInput().disabled).toBe(true);
     expect(getPresetButton("45").disabled).toBe(true);
+    expect(getCheckbox("Enable death clips").disabled).toBe(true);
     expect(getCheckbox("Start rewind automatically").disabled).toBe(true);
     expect(getOverlayCheckbox().disabled).toBe(true);
 

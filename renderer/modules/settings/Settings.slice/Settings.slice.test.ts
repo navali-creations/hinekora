@@ -55,7 +55,6 @@ function createTestStore(
         managedRecorder: {
           captureMode: "rewind",
           hydrate: vi.fn(),
-          saveReplay: vi.fn(),
           setCaptureMode: vi.fn(),
           startBuffer: vi.fn(),
           startListening: vi.fn(),

@@ -22,6 +22,8 @@ import type { GameId, ReplayClip } from "~/types";
 import { BookmarksChannel } from "./Bookmarks.channels";
 import { classifyBookmarkLocation } from "./Bookmarks.classifier";
 import type {
+  ActivitySessionBookmarksPage,
+  ActivitySessionBookmarksQuery,
   ActivitySessionLibraryQuery,
   ActivitySessionTimeline,
   Bookmark,
@@ -325,6 +327,16 @@ class BookmarksService {
 
   listActivitySessions(query: ActivitySessionLibraryQuery = {}) {
     return this.repository.listActivitySessionsPage(query);
+  }
+
+  listActivitySessionBookmarks(
+    activitySessionId: string,
+    query: ActivitySessionBookmarksQuery = {},
+  ): ActivitySessionBookmarksPage {
+    return this.repository.listActivitySessionBookmarks(
+      activitySessionId,
+      query,
+    );
   }
 
   listLibrary(query: BookmarkLibraryQuery = {}) {
@@ -732,6 +744,32 @@ class BookmarksService {
       },
     );
     registerGuardedIpcHandler(
+      BookmarksChannel.ListActivitySessionBookmarks,
+      [WindowName.Main],
+      (
+        _event: IpcMainInvokeEvent,
+        activitySessionId: unknown,
+        query: unknown,
+      ) => {
+        try {
+          assertString(
+            activitySessionId,
+            "activity session id",
+            BookmarksChannel.ListActivitySessionBookmarks,
+            { min: 1, max: 128 },
+          );
+          return this.listActivitySessionBookmarks(
+            activitySessionId,
+            query && typeof query === "object" && !Array.isArray(query)
+              ? this.parseActivitySessionBookmarksQuery(query)
+              : {},
+          );
+        } catch (error) {
+          return handleValidationError(error);
+        }
+      },
+    );
+    registerGuardedIpcHandler(
       BookmarksChannel.ListRecording,
       [WindowName.Main],
       (_event: IpcMainInvokeEvent, recordingId: unknown, query: unknown) => {
@@ -809,6 +847,13 @@ class BookmarksService {
     if (query.category !== undefined) {
       assertBookmarkCategory(query.category, BookmarksChannel.ListLibrary);
       parsed.category = query.category;
+    }
+    if (query.search !== undefined) {
+      assertString(query.search, "zone search", BookmarksChannel.ListLibrary, {
+        min: 1,
+        max: 120,
+      });
+      parsed.search = query.search.trim();
     }
     if (query.pageIndex !== undefined) {
       assertNumber(
@@ -926,6 +971,18 @@ class BookmarksService {
       }
       parsed.includeTimeline = query.includeTimeline;
     }
+    if (query.search !== undefined) {
+      assertString(
+        query.search,
+        "zone search",
+        BookmarksChannel.ListRecording,
+        {
+          min: 1,
+          max: 120,
+        },
+      );
+      parsed.search = query.search.trim();
+    }
     if (query.pageIndex !== undefined) {
       assertNumber(
         query.pageIndex,
@@ -949,6 +1006,78 @@ class BookmarksService {
           min: 1,
           max: 100,
         },
+      );
+      parsed.pageSize = query.pageSize;
+    }
+    if (query.rangeStartSeconds !== undefined) {
+      assertNumber(
+        query.rangeStartSeconds,
+        "range start",
+        BookmarksChannel.ListRecording,
+        { min: 0, max: 604_800 },
+      );
+      parsed.rangeStartSeconds = query.rangeStartSeconds;
+    }
+    if (query.rangeEndSeconds !== undefined) {
+      assertNumber(
+        query.rangeEndSeconds,
+        "range end",
+        BookmarksChannel.ListRecording,
+        { min: 0, max: 604_800 },
+      );
+      parsed.rangeEndSeconds = query.rangeEndSeconds;
+    }
+    if (
+      parsed.rangeStartSeconds !== undefined &&
+      parsed.rangeEndSeconds !== undefined &&
+      parsed.rangeEndSeconds < parsed.rangeStartSeconds
+    ) {
+      throw new IpcValidationError(
+        BookmarksChannel.ListRecording,
+        "range end must not be before range start",
+      );
+    }
+
+    return parsed;
+  }
+
+  private parseActivitySessionBookmarksQuery(
+    input: object,
+  ): ActivitySessionBookmarksQuery {
+    const query = input as Record<string, unknown>;
+    const parsed: ActivitySessionBookmarksQuery = {};
+
+    if (query.category !== undefined) {
+      assertBookmarkCategory(
+        query.category,
+        BookmarksChannel.ListActivitySessionBookmarks,
+      );
+      parsed.category = query.category;
+    }
+    if (query.search !== undefined) {
+      assertString(
+        query.search,
+        "zone search",
+        BookmarksChannel.ListActivitySessionBookmarks,
+        { min: 1, max: 120 },
+      );
+      parsed.search = query.search.trim();
+    }
+    if (query.pageIndex !== undefined) {
+      assertNumber(
+        query.pageIndex,
+        "page index",
+        BookmarksChannel.ListActivitySessionBookmarks,
+        { integer: true, min: 0, max: 10_000 },
+      );
+      parsed.pageIndex = query.pageIndex;
+    }
+    if (query.pageSize !== undefined) {
+      assertNumber(
+        query.pageSize,
+        "page size",
+        BookmarksChannel.ListActivitySessionBookmarks,
+        { integer: true, min: 1, max: 100 },
       );
       parsed.pageSize = query.pageSize;
     }

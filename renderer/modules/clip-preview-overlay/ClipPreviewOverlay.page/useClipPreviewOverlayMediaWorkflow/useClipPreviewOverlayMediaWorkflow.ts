@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
 import { useClipPreviewOverlayDiagnostics } from "../useClipPreviewOverlayDiagnostics/useClipPreviewOverlayDiagnostics";
+import { useClipPreviewOverlayNativeMediaState } from "../useClipPreviewOverlayNativeMediaState/useClipPreviewOverlayNativeMediaState";
 import { useClipPreviewOverlayPlayback } from "../useClipPreviewOverlayPlayback/useClipPreviewOverlayPlayback";
 import { useClipPreviewOverlayPlaybackPresentation } from "../useClipPreviewOverlayPlaybackPresentation/useClipPreviewOverlayPlaybackPresentation";
 import { useClipPreviewOverlayTrimWorkflow } from "../useClipPreviewOverlayTrimWorkflow/useClipPreviewOverlayTrimWorkflow";
@@ -21,9 +22,11 @@ function useClipPreviewOverlayMediaWorkflow() {
     incrementMediaVersion,
     mediaError,
     mediaVersion,
+    playbackRate,
     setCopied,
     setHasSavedClip,
     setDurationOverrideSeconds,
+    setFullscreen,
     setMediaReady,
     setMediaError,
     setSaveMessage,
@@ -42,9 +45,11 @@ function useClipPreviewOverlayMediaWorkflow() {
     incrementMediaVersion: clipPreviewOverlay.incrementMediaVersion,
     mediaError: clipPreviewOverlay.mediaError,
     mediaVersion: clipPreviewOverlay.mediaVersion,
+    playbackRate: clipPreviewOverlay.playbackRate,
     setCopied: clipPreviewOverlay.setCopied,
     setHasSavedClip: clipPreviewOverlay.setHasSavedClip,
     setDurationOverrideSeconds: clipPreviewOverlay.setDurationOverrideSeconds,
+    setFullscreen: clipPreviewOverlay.setFullscreen,
     setMediaReady: clipPreviewOverlay.setMediaReady,
     setMediaError: clipPreviewOverlay.setMediaError,
     setMuted: clipPreviewOverlay.setMuted,
@@ -88,7 +93,7 @@ function useClipPreviewOverlayMediaWorkflow() {
     consumePlaybackPresentationMetrics,
     handleCanPlay,
     handleCanPlayThrough,
-    handleEnterFullscreen,
+    handleToggleFullscreen,
     handleLoadedData,
     handleLoadedMetadata,
     handleLoadStart,
@@ -97,6 +102,7 @@ function useClipPreviewOverlayMediaWorkflow() {
     handleTimeUpdate,
     handleToggleMuted: handlePlaybackToggleMuted,
     handleTogglePlayback,
+    handleVideoKeyDown,
     handleSeeked,
     handleSeeking,
     handleVideoError,
@@ -137,6 +143,13 @@ function useClipPreviewOverlayMediaWorkflow() {
   });
 
   const handleToggleMuted = handlePlaybackToggleMuted;
+
+  useClipPreviewOverlayNativeMediaState({
+    playbackRate,
+    setFullscreen,
+    videoRef,
+    videoSrc,
+  });
 
   useEffect(() => {
     if (!videoSrc) {
@@ -203,7 +216,7 @@ function useClipPreviewOverlayMediaWorkflow() {
   return {
     handleCanPlay,
     handleCanPlayThrough,
-    handleEnterFullscreen,
+    handleToggleFullscreen,
     handleLoadedData,
     handleLoadedMetadata,
     handleLoadStart,
@@ -216,6 +229,7 @@ function useClipPreviewOverlayMediaWorkflow() {
     handleTimeUpdate,
     handleToggleMuted,
     handleTogglePlayback,
+    handleVideoKeyDown,
     handleTrimCommit,
     handleTrimPreview,
     handleVideoError,

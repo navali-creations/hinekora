@@ -100,6 +100,36 @@ function formatTimelineRailWidth(
   return `calc((100% - ${railPaddingPixels * 2}px) * ${percent / 100})`;
 }
 
+function formatMediaTime(
+  seconds: number | null | undefined,
+  includeCentiseconds = false,
+): string {
+  if (
+    typeof seconds !== "number" ||
+    !Number.isFinite(seconds) ||
+    seconds <= 0
+  ) {
+    return includeCentiseconds ? "0:00.00" : "0:00";
+  }
+
+  const unitsPerSecond = includeCentiseconds ? 100 : 1;
+  const roundedUnits = Math.round(seconds * unitsPerSecond);
+  const unitsPerMinute = 60 * unitsPerSecond;
+  const unitsPerHour = 60 * unitsPerMinute;
+  const hours = Math.floor(roundedUnits / unitsPerHour);
+  const minutes = Math.floor((roundedUnits % unitsPerHour) / unitsPerMinute);
+  const remainingUnits = roundedUnits % unitsPerMinute;
+  const wholeSeconds = Math.floor(remainingUnits / unitsPerSecond);
+  const secondsText = wholeSeconds.toString().padStart(2, "0");
+  const fractionText = includeCentiseconds
+    ? `.${(remainingUnits % unitsPerSecond).toString().padStart(2, "0")}`
+    : "";
+
+  return hours > 0
+    ? `${hours}:${minutes.toString().padStart(2, "0")}:${secondsText}${fractionText}`
+    : `${minutes}:${secondsText}${fractionText}`;
+}
+
 function resolveTimelineSecondsFromClientX({
   clientX,
   durationSeconds,
@@ -188,6 +218,7 @@ export {
   calculateTimelineMinorMarkers,
   calculateTimelinePercent,
   clampTimelineSeconds,
+  formatMediaTime,
   formatTimelineRailLeft,
   formatTimelineRailWidth,
   resolveMediaClipTargetSegment,

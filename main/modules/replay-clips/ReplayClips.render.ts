@@ -16,7 +16,10 @@ import { createSafePathLogFields, logWarn } from "~/main/utils/app-log";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
 import { copyRenderedFileToClipboard } from "~/main/utils/rendered-file-clipboard";
 
-import { defaultEditorTimelinePlaybackRate } from "~/types";
+import {
+  defaultReplayClipPlaybackRate,
+  type ReplayClipPlaybackRate,
+} from "~/types";
 import type {
   ReplayClipFileActionResult,
   ReplayClipTrimInput,
@@ -27,6 +30,7 @@ interface ReplayClipQuickTrimRenderInput {
   muteAudio?: boolean;
   onProgress?: (progress: number) => void;
   outputPath: string;
+  playbackRate?: ReplayClipPlaybackRate;
   queuePolicy?: "preview";
   resolution?: EditorExportResolution;
   sourcePath: string;
@@ -39,17 +43,21 @@ async function renderReplayClipQuickTrim(
   const trimDurationSeconds = roundReplayClipSeconds(
     input.trim.outSeconds - input.trim.inSeconds,
   );
+  const playbackRate = input.playbackRate ?? defaultReplayClipPlaybackRate;
+  const outputDurationSeconds = roundReplayClipSeconds(
+    trimDurationSeconds / playbackRate,
+  );
   const exportClip: EditorResolvedExportClip = {
-    durationSeconds: trimDurationSeconds,
+    durationSeconds: outputDurationSeconds,
     inSeconds: input.trim.inSeconds,
     outSeconds: input.trim.outSeconds,
-    playbackRate: defaultEditorTimelinePlaybackRate,
+    playbackRate,
     source: { path: input.sourcePath },
     startSeconds: 0,
   };
   const segments = createEditorExportSegments(
     [exportClip],
-    trimDurationSeconds,
+    outputDurationSeconds,
   );
 
   await renderEditorExportWithFfmpeg({
@@ -67,6 +75,7 @@ async function renderReplayClipQuickTrim(
 async function copyTrimmedReplayClipToClipboard(input: {
   muteAudio?: boolean;
   onProgress?: (progress: number) => void;
+  playbackRate?: ReplayClipPlaybackRate;
   render?: (outputPath: string) => Promise<void>;
   sourcePath: string;
   trim: ReplayClipTrimInput;
@@ -97,6 +106,7 @@ async function copyTrimmedReplayClipToClipboard(input: {
         : renderReplayClipQuickTrim({
             ...(input.onProgress ? { onProgress: input.onProgress } : {}),
             ...(input.muteAudio ? { muteAudio: true } : {}),
+            ...(input.playbackRate ? { playbackRate: input.playbackRate } : {}),
             outputPath,
             sourcePath: input.sourcePath,
             trim: input.trim,

@@ -151,7 +151,7 @@ function CaptureModePageHeader({
               data-onboarding="start-recording"
             >
               <button
-                className="btn btn-primary btn-sm disabled:cursor-not-allowed disabled:opacity-50"
+                className="btn btn-primary btn-xs h-7 min-h-7 disabled:cursor-not-allowed disabled:opacity-50"
                 type="button"
                 disabled={primaryDisabled}
                 onClick={handlePrimaryAction}

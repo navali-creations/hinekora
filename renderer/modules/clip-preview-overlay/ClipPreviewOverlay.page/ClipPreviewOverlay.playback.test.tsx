@@ -20,13 +20,14 @@ const storeMocks = vi.hoisted(() => ({
   copyClip: vi.fn(),
   dismissClipPreviewInfoAlert: vi.fn(),
   getClip: vi.fn(),
+  onFullscreenChanged: vi.fn(),
   onOperationProgress: vi.fn(),
   onPreviewProgress: vi.fn(),
   onStatusChanged: vi.fn(),
   openEditorClip: vi.fn(),
   openClip: vi.fn(),
   revealClip: vi.fn(),
-  requestFullscreen: vi.fn(),
+  toggleClipPreviewFullscreen: vi.fn(),
   settingsValue: null as AppSettings | null,
   updateClip: vi.fn(),
   useSettingsShallow: vi.fn(),
@@ -45,6 +46,45 @@ vi.mock("~/renderer/store", async (importOriginal) => {
 setupClipPreviewOverlayTestHarness(storeMocks);
 
 describe("ClipPreviewOverlayPage playback", () => {
+  it("toggles playback by clicking or keyboard-activating the video", async () => {
+    await renderPage();
+    await flushPromises();
+    const video = await markPreviewVideoReady();
+    let paused = true;
+    const play = vi.fn(async () => {
+      paused = false;
+      video.dispatchEvent(new Event("play", { bubbles: true }));
+    });
+    const pause = vi.fn(() => {
+      paused = true;
+      video.dispatchEvent(new Event("pause", { bubbles: true }));
+    });
+    Object.defineProperties(video, {
+      pause: { configurable: true, value: pause },
+      paused: { configurable: true, get: () => paused },
+      play: { configurable: true, value: play },
+    });
+
+    await act(async () => {
+      video.click();
+    });
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(findButtonByLabel("Pause replay")).toBeDefined();
+
+    await act(async () => {
+      video.click();
+    });
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(findButtonByLabel("Play replay")).toBeDefined();
+
+    await act(async () => {
+      video.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "Enter" }),
+      );
+    });
+    expect(play).toHaveBeenCalledTimes(2);
+  });
+
   it("updates timer and playhead only when a video frame is presented", async () => {
     let videoFrameCallback: VideoFrameRequestCallback | null = null;
     let videoFrameCallbackId = 0;

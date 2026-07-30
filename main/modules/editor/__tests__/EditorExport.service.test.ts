@@ -134,6 +134,7 @@ describe("EditorExportService", () => {
       expect(onExportVideoCommitted).toHaveBeenCalledWith(
         expect.objectContaining({
           path: join(outputDirectory, result.fileName),
+          projectId: "project-1",
           sizeBytes: result.sizeBytes,
           sizeDeltaBytes: result.sizeBytes,
         }),

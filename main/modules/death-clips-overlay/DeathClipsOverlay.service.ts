@@ -9,6 +9,7 @@ import {
   createOverlayWebPreferences,
   loadOverlayRenderer,
 } from "~/main/modules/overlay-windows/OverlayWindow.shared";
+import { OverlayWindowsChannel } from "~/main/modules/overlay-windows/OverlayWindows.channels";
 import { logInfo } from "~/main/utils/app-log";
 import {
   registerIpcWindowRole,
@@ -20,6 +21,7 @@ import type { ReplayClip } from "~/types";
 const CLIP_PREVIEW_WIDTH = 560;
 const CLIP_PREVIEW_HEIGHT = 520;
 const CLIP_PREVIEW_GAP = 8;
+const CLIP_PREVIEW_FULLSCREEN_RESTORE_DELAY_MS = 100;
 const CLIP_PREVIEW_OVERLAY_FOCUS_ID = "clip-preview";
 const CLIP_PREVIEW_OVERLAY_SCOPE = "death-clips-overlay";
 
@@ -39,6 +41,10 @@ type ClipPreviewOverlayCloseReason =
   | "window-closed";
 
 class DeathClipsOverlayService {
+  private clipPreviewBoundsRestoreTimer: ReturnType<typeof setTimeout> | null =
+    null;
+  private clipPreviewFullscreen = false;
+  private clipPreviewWindowedBounds: Electron.Rectangle | null = null;
   private clipPreviewWindow: BrowserWindow | null = null;
   private clipPreviewOverlayRequested = false;
 
@@ -120,6 +126,28 @@ class DeathClipsOverlayService {
     return this.clipPreviewOverlayRequested;
   }
 
+  toggleFullscreen(): boolean {
+    const window = this.clipPreviewWindow;
+    if (!window || window.isDestroyed()) {
+      return false;
+    }
+
+    const shouldEnterFullscreen = !this.clipPreviewFullscreen;
+    this.clipPreviewFullscreen = shouldEnterFullscreen;
+    if (shouldEnterFullscreen) {
+      this.clearBoundsRestoreTimer();
+      this.clipPreviewWindowedBounds = window.getBounds();
+      window.setFullScreenable(true);
+    }
+    window.setFullScreen(shouldEnterFullscreen);
+    if (!shouldEnterFullscreen) {
+      window.setFullScreenable(false);
+      this.scheduleBoundsRestore(window);
+    }
+
+    return shouldEnterFullscreen;
+  }
+
   suspendRequestedOverlay(): void {
     if (this.clipPreviewOverlayRequested) {
       this.coordinator.suspendGameOverlayWindow(this.clipPreviewWindow);
@@ -198,6 +226,22 @@ class DeathClipsOverlayService {
         false,
       );
     });
+    clipPreviewWindow.on("enter-full-screen", () => {
+      this.clipPreviewFullscreen = true;
+      clipPreviewWebContents.send(
+        OverlayWindowsChannel.ClipPreviewFullscreenChanged,
+        true,
+      );
+    });
+    clipPreviewWindow.on("leave-full-screen", () => {
+      this.clipPreviewFullscreen = false;
+      clipPreviewWindow.setFullScreenable(false);
+      this.scheduleBoundsRestore(clipPreviewWindow);
+      clipPreviewWebContents.send(
+        OverlayWindowsChannel.ClipPreviewFullscreenChanged,
+        false,
+      );
+    });
     clipPreviewWindow.on("closed", () => {
       this.coordinator.setOverlayFocusActive(
         CLIP_PREVIEW_OVERLAY_FOCUS_ID,
@@ -205,9 +249,12 @@ class DeathClipsOverlayService {
       );
       unregisterIpcWindowRole(clipPreviewWebContents);
       if (this.clipPreviewWindow === clipPreviewWindow) {
+        this.clearBoundsRestoreTimer();
         logInfo(CLIP_PREVIEW_OVERLAY_SCOPE, "Replay clip overlay closed", {
           reason: "window-closed",
         });
+        this.clipPreviewFullscreen = false;
+        this.clipPreviewWindowedBounds = null;
         this.clipPreviewOverlayRequested = false;
         this.clipPreviewWindow = null;
         this.onClosed();
@@ -222,6 +269,9 @@ class DeathClipsOverlayService {
     const didCloseRequestedWindow =
       Boolean(window && !window.isDestroyed()) && wasRequested;
     this.clipPreviewOverlayRequested = false;
+    this.clipPreviewFullscreen = false;
+    this.clipPreviewWindowedBounds = null;
+    this.clearBoundsRestoreTimer();
     this.clipPreviewWindow = null;
     this.coordinator.setOverlayFocusActive(
       CLIP_PREVIEW_OVERLAY_FOCUS_ID,
@@ -238,6 +288,33 @@ class DeathClipsOverlayService {
     }
 
     return didCloseRequestedWindow;
+  }
+
+  private clearBoundsRestoreTimer(): void {
+    if (this.clipPreviewBoundsRestoreTimer) {
+      clearTimeout(this.clipPreviewBoundsRestoreTimer);
+      this.clipPreviewBoundsRestoreTimer = null;
+    }
+  }
+
+  private scheduleBoundsRestore(window: BrowserWindow): void {
+    const windowedBounds = this.clipPreviewWindowedBounds;
+    if (!windowedBounds) {
+      return;
+    }
+    this.clipPreviewWindowedBounds = null;
+    this.clearBoundsRestoreTimer();
+    this.clipPreviewBoundsRestoreTimer = setTimeout(() => {
+      this.clipPreviewBoundsRestoreTimer = null;
+      if (
+        this.clipPreviewWindow !== window ||
+        window.isDestroyed() ||
+        this.clipPreviewFullscreen
+      ) {
+        return;
+      }
+      window.setBounds(windowedBounds, false);
+    }, CLIP_PREVIEW_FULLSCREEN_RESTORE_DELAY_MS);
   }
 
   private createWindowBounds(): Electron.Rectangle {

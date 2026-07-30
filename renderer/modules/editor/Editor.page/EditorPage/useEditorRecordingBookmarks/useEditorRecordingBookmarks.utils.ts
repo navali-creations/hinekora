@@ -10,6 +10,8 @@ interface EditorRecordingBookmarkSource {
   clipId: string | null;
   id: string;
   name: string;
+  rangeEndSeconds: number | null;
+  rangeStartSeconds: number | null;
 }
 
 interface ResolveEditorRecordingBookmarkSourceInput {
@@ -33,7 +35,7 @@ function resolveEditorRecordingBookmarkSource({
   if (selectedClip) {
     return toEditorRecordingBookmarkSource(
       assetByKey.get(selectedClip.assetKey),
-      selectedClip.id,
+      selectedClip,
     );
   }
 
@@ -47,7 +49,7 @@ function resolveEditorRecordingBookmarkSource({
     : null;
 
   return (
-    toEditorRecordingBookmarkSource(activeClipAsset, activeClip?.id ?? null) ??
+    toEditorRecordingBookmarkSource(activeClipAsset, activeClip) ??
     resolveSelectedAssetRecordingSource(selectedAsset, clips) ??
     resolveSingleTimelineRecordingAsset(clips, assetByKey)
   );
@@ -267,6 +269,8 @@ function resolveSelectedAssetRecordingSource(
     ? {
         ...source,
         clipId: matchingClip.id,
+        rangeEndSeconds: resolveClipVisibleSourceEndSeconds(matchingClip),
+        rangeStartSeconds: matchingClip.inSeconds,
       }
     : null;
 }
@@ -295,13 +299,13 @@ function resolveSingleTimelineRecordingAsset(
 
   return toEditorRecordingBookmarkSource(
     recordingClip.asset,
-    recordingClip.clip.id,
+    recordingClip.clip,
   );
 }
 
 function toEditorRecordingBookmarkSource(
   asset: EditorMediaAsset | null | undefined,
-  clipId: string | null,
+  clip: EditorTimelineClip | null,
 ): EditorRecordingBookmarkSource | null {
   if (asset?.kind !== "recording") {
     return null;
@@ -309,9 +313,11 @@ function toEditorRecordingBookmarkSource(
 
   return {
     assetKey: asset.assetKey,
-    clipId,
+    clipId: clip?.id ?? null,
     id: asset.id,
     name: asset.name,
+    rangeEndSeconds: clip ? resolveClipVisibleSourceEndSeconds(clip) : null,
+    rangeStartSeconds: clip?.inSeconds ?? null,
   };
 }
 

@@ -31,6 +31,19 @@ class SettingsStoreRepository {
           values.recordingOutputResolution,
         );
     }
+    if (
+      !Object.hasOwn(values, "manualReplaySeconds") &&
+      typeof values.deathClipSeconds === "number"
+    ) {
+      const legacyReplaySeconds = values.deathClipSeconds;
+      values.manualReplaySeconds = legacyReplaySeconds;
+      this.database.transaction(() => {
+        this.upsertMany(
+          { manualReplaySeconds: legacyReplaySeconds },
+          new Date().toISOString(),
+        );
+      });
+    }
 
     const defaults = createDefaultSettings();
     const poe1CurrentLeague =

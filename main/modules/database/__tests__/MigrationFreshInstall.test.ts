@@ -43,6 +43,8 @@ describe("Hinekora fresh-install migrations", () => {
     expect(tableExists(db, "recording_storage_path_migrations")).toBe(true);
     expect(tableExists(db, "storage_file_deletion_operations")).toBe(true);
     expect(tableExists(db, "editor_projects")).toBe(true);
+    expect(columnNames(db, "editor_export_videos")).toContain("project_id");
+    expect(indexExists(db, "editor_export_videos_project_id_idx")).toBe(true);
     expect(tableExists(db, "editor_project_source_leagues")).toBe(true);
     expect(tableExists(db, "poe_leagues")).toBe(true);
     expect(tableExists(db, "poe_league_sync_state")).toBe(true);

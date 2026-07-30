@@ -56,6 +56,10 @@ describe("OverlaySettingsCard", () => {
     const auraEditingFrameToggle = container.querySelector<HTMLInputElement>(
       'input[aria-label="Show aura overlay editing frame"]',
     );
+    const recorderStartMinimizedToggle =
+      container.querySelector<HTMLInputElement>(
+        'input[aria-label="Start recording overlay minimized"]',
+      );
     const recorderFocusToggle = container.querySelector<HTMLInputElement>(
       'input[aria-label="Keep recording controls visible while a game is running"]',
     );
@@ -72,6 +76,7 @@ describe("OverlaySettingsCard", () => {
     await act(async () => {
       if (
         !recorderStartupToggle ||
+        !recorderStartMinimizedToggle ||
         !auraEditingFrameToggle ||
         !recorderFocusToggle ||
         !auraFocusToggle ||
@@ -82,6 +87,7 @@ describe("OverlaySettingsCard", () => {
       }
 
       recorderStartupToggle.click();
+      recorderStartMinimizedToggle.click();
       auraEditingFrameToggle.click();
       recorderFocusToggle.click();
       auraFocusToggle.click();
@@ -92,6 +98,10 @@ describe("OverlaySettingsCard", () => {
     expect(storeMocks.updatePreference).toHaveBeenCalledWith(
       "recorderOverlayShowOnStartup",
       false,
+    );
+    expect(storeMocks.updatePreference).toHaveBeenCalledWith(
+      "recorderOverlayStartMinimized",
+      true,
     );
     expect(storeMocks.updatePreference).toHaveBeenCalledWith(
       "auraOverlayShowEditingFrame",

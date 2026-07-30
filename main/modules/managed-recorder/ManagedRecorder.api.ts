@@ -10,7 +10,6 @@ import type {
   ManagedRecorderListAudioDevicesOptions,
   ManagedRecordingStorageEstimateRequest,
   ManagedRecordingStorageEstimateResponse,
-  ManagedReplaySaveResult,
 } from "./ManagedRecorder.dto";
 
 const ManagedRecorderAPI = {
@@ -43,8 +42,6 @@ const ManagedRecorderAPI = {
     ipcRenderer.invoke(ManagedRecorderChannel.StartRunRecording),
   stopRunRecording: (): Promise<ManagedRecorderStatus> =>
     ipcRenderer.invoke(ManagedRecorderChannel.StopRunRecording),
-  saveReplay: (): Promise<ManagedReplaySaveResult> =>
-    ipcRenderer.invoke(ManagedRecorderChannel.SaveReplay),
   onStatusChanged: (callback: (status: ManagedRecorderStatus) => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,

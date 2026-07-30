@@ -5,6 +5,7 @@ import type {
   QuickClipTrimRange,
   ReplayClip,
   ReplayClipKind,
+  ReplayClipPlaybackRate,
 } from "~/types";
 import type { ManagedReplayKind } from "../managed-recorder/ManagedRecorder.dto";
 
@@ -59,6 +60,7 @@ export interface ReplayClipCopyInput {
   operationRequestId?: string | null;
   trim?: ReplayClipTrimInput | null;
   muteAudio?: boolean;
+  playbackRate?: ReplayClipPlaybackRate;
 }
 
 export interface ReplayClipUpdateInput {
@@ -67,6 +69,7 @@ export interface ReplayClipUpdateInput {
   operationRequestId?: string | null;
   trim?: ReplayClipTrimInput | null;
   muteAudio?: boolean;
+  playbackRate?: ReplayClipPlaybackRate;
 }
 
 export interface ReplayClipOperationProgress {

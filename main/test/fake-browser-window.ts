@@ -42,6 +42,7 @@ function createFakeBrowserWindow(options: FakeBrowserWindowOptions = {}) {
     setContentProtection: vi.fn(),
     setFocusable: vi.fn(),
     setFullScreenable: vi.fn(),
+    setFullScreen: vi.fn(),
     setIgnoreMouseEvents: vi.fn(),
     setOpacity: vi.fn(),
     setVisibleOnAllWorkspaces: vi.fn(),

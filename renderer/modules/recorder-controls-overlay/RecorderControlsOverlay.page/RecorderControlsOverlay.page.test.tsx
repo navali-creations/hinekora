@@ -174,7 +174,6 @@ describe("RecorderControlsOverlayPage", () => {
     managedRecorderState = {
       captureMode: "rewind",
       hydrate: vi.fn().mockResolvedValue(undefined),
-      saveReplay: vi.fn().mockResolvedValue(undefined),
       setCaptureMode: vi.fn().mockResolvedValue(undefined),
       startBuffer: vi.fn().mockResolvedValue(undefined),
       startListening: vi.fn(() => vi.fn()),
@@ -230,6 +229,7 @@ describe("RecorderControlsOverlayPage", () => {
       value: {
         ...createDefaultSettings(),
         deathClipSeconds: 60,
+        manualReplaySeconds: 60,
       },
     };
 
@@ -304,6 +304,7 @@ describe("RecorderControlsOverlayPage", () => {
     settingsState.value = {
       ...createDefaultSettings(),
       deathClipSeconds: 45,
+      manualReplaySeconds: 45,
     };
     managedRecorderState.status = createStatus({
       bufferActive: true,

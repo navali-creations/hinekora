@@ -2,11 +2,15 @@ import type { AppSettings } from "~/types";
 import * as appLog from "./app-log";
 
 interface RecorderOverlayStartupService {
+  setRecorderOverlayMode: (mode: "expanded" | "minimized") => unknown;
   showRecorderOverlay: () => Promise<void>;
 }
 
 async function requestRecorderOverlayOnStartup(
-  settings: Pick<AppSettings, "recorderOverlayShowOnStartup">,
+  settings: Pick<
+    AppSettings,
+    "recorderOverlayShowOnStartup" | "recorderOverlayStartMinimized"
+  >,
   overlayWindows: RecorderOverlayStartupService,
 ): Promise<boolean> {
   if (!settings.recorderOverlayShowOnStartup) {
@@ -15,6 +19,9 @@ async function requestRecorderOverlayOnStartup(
     return false;
   }
 
+  overlayWindows.setRecorderOverlayMode(
+    settings.recorderOverlayStartMinimized ? "minimized" : "expanded",
+  );
   await overlayWindows.showRecorderOverlay();
   appLog.logInfo("startup", "Recorder overlay requested");
 

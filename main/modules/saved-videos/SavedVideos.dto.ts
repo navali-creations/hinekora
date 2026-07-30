@@ -5,6 +5,7 @@ interface SavedVideoItem {
   id: string;
   savedAt: string;
   sizeBytes: number;
+  sourceProjectId: string | null;
 }
 
 type SavedVideosLibrarySortDirection = "asc" | "desc";
@@ -45,6 +46,7 @@ const SavedVideoItemSchema: z.ZodType<SavedVideoItem> = z.object({
   id: z.string().min(1).max(128),
   savedAt: z.string().min(1).max(64),
   sizeBytes: nonnegativeSavedVideosNumber,
+  sourceProjectId: z.string().min(1).max(128).nullable(),
 });
 const SavedVideosLibraryPageSchema: z.ZodType<SavedVideosLibraryPage> =
   z.object({

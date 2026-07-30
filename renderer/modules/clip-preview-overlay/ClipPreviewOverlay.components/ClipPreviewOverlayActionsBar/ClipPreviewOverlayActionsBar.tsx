@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import type { CSSProperties } from "react";
+import type { ChangeEvent, CSSProperties } from "react";
 import {
   FiCheck as Check,
   FiCopy as Copy,
@@ -23,6 +23,7 @@ type ProcessingButtonStyle = CSSProperties & {
 function ClipPreviewOverlayActionsBar() {
   const workflow = useClipPreviewOverlayControlsContext();
   const {
+    applyPlaybackRateToExport,
     detail,
     durationOverrideSeconds,
     hasCopied,
@@ -31,9 +32,12 @@ function ClipPreviewOverlayActionsBar() {
     isMuted,
     isSaving,
     operationProgress,
+    playbackRate,
+    setApplyPlaybackRateToExport,
     titleDraft,
     trim,
   } = useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
+    applyPlaybackRateToExport: clipPreviewOverlay.applyPlaybackRateToExport,
     detail: clipPreviewOverlay.detail,
     durationOverrideSeconds: clipPreviewOverlay.durationOverrideSeconds,
     hasCopied: clipPreviewOverlay.hasCopied,
@@ -42,9 +46,14 @@ function ClipPreviewOverlayActionsBar() {
     isMuted: clipPreviewOverlay.isMuted,
     isSaving: clipPreviewOverlay.isSaving,
     operationProgress: clipPreviewOverlay.operationProgress,
+    playbackRate: clipPreviewOverlay.playbackRate,
+    setApplyPlaybackRateToExport:
+      clipPreviewOverlay.setApplyPlaybackRateToExport,
     titleDraft: clipPreviewOverlay.titleDraft,
     trim: clipPreviewOverlay.trim,
   }));
+  const exportPlaybackRate =
+    applyPlaybackRateToExport && playbackRate !== 1 ? playbackRate : undefined;
   const { clip, clipFileName, durationSeconds } = resolveClipPreviewDetail(
     detail,
     durationOverrideSeconds,
@@ -60,12 +69,18 @@ function ClipPreviewOverlayActionsBar() {
       isSaving,
       titleDraft,
       trim,
+      ...(exportPlaybackRate ? { playbackRate: exportPlaybackRate } : {}),
     });
   const processingProgress = `${Math.round(
     Math.min(Math.max(operationProgress, 0), 1) * 100,
   )}%`;
   const processingStyle: ProcessingButtonStyle = {
     "--clip-processing-progress": processingProgress,
+  };
+  const handleApplyPlaybackRateChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    setApplyPlaybackRateToExport(event.currentTarget.checked);
   };
 
   return (
@@ -86,49 +101,64 @@ function ClipPreviewOverlayActionsBar() {
         </div>
       </label>
 
-      <div className={styles.bottomActions}>
-        <button
-          className={clsx(
-            styles.actionButton,
-            isSaving && styles.processingButton,
-            "btn btn-primary btn-sm",
-          )}
-          disabled={!canSave}
-          style={isSaving ? processingStyle : undefined}
-          type="button"
-          onClick={workflow.handleSaveClip}
-        >
-          {isSaving ? (
-            <span className="loading loading-spinner loading-xs" />
-          ) : (
-            <Save size={15} />
-          )}
-          {isSaving ? "Processing..." : "Save clip"}
-        </button>
-        <button
-          className={clsx(
-            styles.actionButton,
-            isCopying && styles.processingButton,
-            "btn btn-primary btn-sm",
-          )}
-          disabled={!canCopy}
-          style={isCopying ? processingStyle : undefined}
-          type="button"
-          onClick={workflow.handleCopyClip}
-        >
-          {isCopying ? (
-            <span className="loading loading-spinner loading-xs" />
-          ) : hasCopied ? (
-            <Check size={15} />
-          ) : (
-            <Copy size={15} />
-          )}
-          {isCopying
-            ? "Processing..."
-            : hasCopied
-              ? "Copied successfully!"
-              : "Copy to clipboard"}
-        </button>
+      <div className={styles.bottomActionGroup}>
+        {playbackRate !== 1 && (
+          <label className={styles.speedExportOption}>
+            <span>Save/copy at {playbackRate}x</span>
+            <input
+              aria-label={`Save or copy clip at ${playbackRate}x`}
+              checked={applyPlaybackRateToExport}
+              className="toggle toggle-primary toggle-xs"
+              disabled={isProcessing}
+              type="checkbox"
+              onChange={handleApplyPlaybackRateChange}
+            />
+          </label>
+        )}
+        <div className={styles.bottomActions}>
+          <button
+            className={clsx(
+              styles.actionButton,
+              isSaving && styles.processingButton,
+              "btn btn-primary btn-sm",
+            )}
+            disabled={!canSave}
+            style={isSaving ? processingStyle : undefined}
+            type="button"
+            onClick={workflow.handleSaveClip}
+          >
+            {isSaving ? (
+              <span className="loading loading-spinner loading-xs" />
+            ) : (
+              <Save size={15} />
+            )}
+            {isSaving ? "Processing..." : "Save clip"}
+          </button>
+          <button
+            className={clsx(
+              styles.actionButton,
+              isCopying && styles.processingButton,
+              "btn btn-primary btn-sm",
+            )}
+            disabled={!canCopy}
+            style={isCopying ? processingStyle : undefined}
+            type="button"
+            onClick={workflow.handleCopyClip}
+          >
+            {isCopying ? (
+              <span className="loading loading-spinner loading-xs" />
+            ) : hasCopied ? (
+              <Check size={15} />
+            ) : (
+              <Copy size={15} />
+            )}
+            {isCopying
+              ? "Processing..."
+              : hasCopied
+                ? "Copied successfully!"
+                : "Copy to clipboard"}
+          </button>
+        </div>
       </div>
     </div>
   );

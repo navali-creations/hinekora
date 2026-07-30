@@ -15,6 +15,14 @@ function OverlaySettingsCard() {
         />
 
         <OverlayPreferenceToggleRow
+          ariaLabel="Start recording overlay minimized"
+          defaultValue={false}
+          description="Open the recording overlay in its compact controls-only mode when Hinekora starts."
+          label="Start Recording Overlay Minimized"
+          preferenceKey="recorderOverlayStartMinimized"
+        />
+
+        <OverlayPreferenceToggleRow
           ariaLabel="Show aura overlay editing frame"
           defaultValue={true}
           description="Show the border and glow around the screen while the aura overlay is unlocked for editing."

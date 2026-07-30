@@ -62,6 +62,23 @@ describe("CaptureProfilesRepository", () => {
     ).toBe("native");
   });
 
+  it("migrates a missing manual replay timer from a profile's death timer", () => {
+    expect(
+      mapCaptureProfileRow({
+        id: "legacy-profile",
+        name: "Legacy profile",
+        game: "poe1",
+        data_json: JSON.stringify({ deathClipSeconds: 43 }),
+        created_at: "2026-07-01T12:00:00.000Z",
+        updated_at: "2026-07-01T12:00:00.000Z",
+      }),
+    ).toMatchObject({
+      deathClipsEnabled: true,
+      deathClipSeconds: 43,
+      manualReplaySeconds: 43,
+    });
+  });
+
   it("creates, updates, lists, upserts, and deletes capture profiles", () => {
     const database = new DatabaseService(":memory:");
     const repository = new CaptureProfilesRepository(database);

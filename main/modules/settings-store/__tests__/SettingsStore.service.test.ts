@@ -333,7 +333,7 @@ describe("SettingsStoreService", () => {
           activeGame: "poe2",
           auraOverlayShowEditingFrame:
             updatedSettings.auraOverlayShowEditingFrame,
-          deathClipSeconds: updatedSettings.deathClipSeconds,
+          manualReplaySeconds: updatedSettings.manualReplaySeconds,
           replayClipPreviewResolution:
             updatedSettings.replayClipPreviewResolution,
           selectedCaptureProfileId: updatedSettings.selectedCaptureProfileId,
@@ -349,7 +349,7 @@ describe("SettingsStoreService", () => {
           activeGame: "poe2",
           auraOverlayShowEditingFrame:
             updatedSettings.auraOverlayShowEditingFrame,
-          deathClipSeconds: updatedSettings.deathClipSeconds,
+          manualReplaySeconds: updatedSettings.manualReplaySeconds,
           replayClipPreviewResolution:
             updatedSettings.replayClipPreviewResolution,
           selectedCaptureProfileId: updatedSettings.selectedCaptureProfileId,
@@ -459,7 +459,7 @@ describe("SettingsStoreService", () => {
       );
       const expectedOverlaySnapshot = {
         activeGame: fullSettings.activeGame,
-        deathClipSeconds: fullSettings.deathClipSeconds,
+        manualReplaySeconds: fullSettings.manualReplaySeconds,
         replayClipPreviewResolution: fullSettings.replayClipPreviewResolution,
         selectedCaptureProfileId: fullSettings.selectedCaptureProfileId,
         selectedCaptureProfileIdsByGame:

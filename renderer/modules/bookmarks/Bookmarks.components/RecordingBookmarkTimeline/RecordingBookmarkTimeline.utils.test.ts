@@ -1,8 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { resolveRecordingClipTargetRulerSegment } from "./RecordingBookmarkTimeline.utils";
+import {
+  formatRecordingTimelineMarker,
+  formatRecordingTimelineTimestamp,
+  resolveRecordingClipTargetRulerSegment,
+} from "./RecordingBookmarkTimeline.utils";
 
 describe("RecordingBookmarkTimeline utils", () => {
+  it("formats long recordings with an hours segment", () => {
+    expect(formatRecordingTimelineTimestamp(12_403.24)).toBe("3:26:43.24");
+    expect(formatRecordingTimelineMarker(12_403.24)).toBe("3:26:43");
+  });
+
   it("splits early replay clips into event and processing tail spans", () => {
     expect(
       resolveRecordingClipTargetRulerSegment({

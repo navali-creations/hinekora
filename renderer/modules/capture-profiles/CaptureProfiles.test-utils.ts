@@ -6,11 +6,13 @@ function createCaptureProfileTestFixture(
   return {
     captureTarget: null,
     createdAt: "2026-07-01T00:00:00.000Z",
+    deathClipsEnabled: true,
     deathClipSeconds: 10,
     game: "poe1",
     id: "capture-profile-1",
     isDefault: false,
     name: "Default PoE Capture",
+    manualReplaySeconds: 10,
     recordingAudioInputDeviceId: null,
     recordingAudioOutputDeviceId: null,
     recordingAutoStartMode: "off",

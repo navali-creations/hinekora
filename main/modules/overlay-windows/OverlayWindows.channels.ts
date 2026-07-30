@@ -9,6 +9,8 @@ enum OverlayWindowsChannel {
   SetRecorderMode = "overlay-windows:set-recorder-mode",
   RecorderModeChanged = "overlay-windows:recorder-mode-changed",
   HideClipPreview = "overlay-windows:hide-clip-preview",
+  ToggleClipPreviewFullscreen = "overlay-windows:toggle-clip-preview-fullscreen",
+  ClipPreviewFullscreenChanged = "overlay-windows:clip-preview-fullscreen-changed",
   ShowAura = "overlay-windows:show-aura",
   IsAuraLocked = "overlay-windows:is-aura-locked",
   SetAuraLocked = "overlay-windows:set-aura-locked",

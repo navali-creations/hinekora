@@ -82,7 +82,6 @@ describe("ManagedRecorder slice", () => {
           stopBuffer: vi.fn().mockResolvedValue(statuses.idle),
           startRunRecording: vi.fn().mockResolvedValue(statuses.recording),
           stopRunRecording: vi.fn().mockResolvedValue(statuses.idle),
-          saveReplay: vi.fn().mockResolvedValue(undefined),
           onStatusChanged: vi.fn(
             (listener: (status: ManagedRecorderStatus) => void) => {
               statusChangedListener = listener;
@@ -120,7 +119,6 @@ describe("ManagedRecorder slice", () => {
     expect(store.getState().managedRecorder.captureMode).toBe("session");
 
     await store.getState().managedRecorder.stopRunRecording();
-    await store.getState().managedRecorder.saveReplay();
     expect(store.getState().managedRecorder.status).toBe(statuses.idle);
   });
 

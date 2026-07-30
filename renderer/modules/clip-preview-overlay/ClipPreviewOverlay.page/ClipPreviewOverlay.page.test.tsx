@@ -11,13 +11,14 @@ const storeMocks = vi.hoisted(() => ({
   copyClip: vi.fn(),
   dismissClipPreviewInfoAlert: vi.fn(),
   getClip: vi.fn(),
+  onFullscreenChanged: vi.fn(),
   onOperationProgress: vi.fn(),
   onPreviewProgress: vi.fn(),
   onStatusChanged: vi.fn(),
   openEditorClip: vi.fn(),
   openClip: vi.fn(),
   revealClip: vi.fn(),
-  requestFullscreen: vi.fn(),
+  toggleClipPreviewFullscreen: vi.fn(),
   settingsValue: null as AppSettings | null,
   updateClip: vi.fn(),
   useSettingsShallow: vi.fn(),
@@ -36,6 +37,7 @@ vi.mock("~/renderer/store", async (importOriginal) => {
 import {
   container,
   createDeferred,
+  emitFullscreenChanged,
   emitOperationProgress,
   emitPreviewProgress,
   emitStatusChanged,
@@ -145,6 +147,28 @@ describe("ClipPreviewOverlayPage", () => {
     await act(async () => {
       findButtonByLabel("Open clip fullscreen").click();
     });
+    await flushPromises();
+    const closeFullscreenButtons = container.querySelectorAll(
+      'button[aria-label="Close fullscreen"]',
+    );
+    expect(closeFullscreenButtons).toHaveLength(2);
+    await act(async () => {
+      (closeFullscreenButtons[0] as HTMLButtonElement).click();
+    });
+    await flushPromises();
+    expect(
+      container.querySelectorAll('button[aria-label="Close fullscreen"]'),
+    ).toHaveLength(0);
+    expect(findButtonByLabel("Open clip fullscreen")).toBeDefined();
+    act(() => {
+      emitFullscreenChanged(true);
+    });
+    expect(
+      container.querySelectorAll('button[aria-label="Close fullscreen"]'),
+    ).toHaveLength(2);
+    act(() => {
+      emitFullscreenChanged(false);
+    });
     await act(async () => {
       findButtonByLabel("Show clip in Explorer").click();
     });
@@ -175,7 +199,7 @@ describe("ClipPreviewOverlayPage", () => {
     });
     await flushPromises();
 
-    expect(storeMocks.requestFullscreen).toHaveBeenCalledTimes(1);
+    expect(storeMocks.toggleClipPreviewFullscreen).toHaveBeenCalledTimes(2);
     expect(storeMocks.revealClip).toHaveBeenCalledWith("clip-1");
     expect(storeMocks.copyClip).toHaveBeenCalledWith(
       expect.objectContaining({ id: "clip-1" }),
@@ -197,6 +221,23 @@ describe("ClipPreviewOverlayPage", () => {
       trim: { inSeconds: 0, outSeconds: 10 },
     });
     expect(storeMocks.hideClipPreview).toHaveBeenCalledTimes(1);
+  });
+
+  it("can leave native fullscreen while the media is not ready", async () => {
+    await renderPage();
+    await flushPromises();
+    act(() => {
+      emitFullscreenChanged(true);
+    });
+    storeMocks.toggleClipPreviewFullscreen.mockResolvedValueOnce(false);
+
+    await act(async () => {
+      findButtonByLabel("Close fullscreen").click();
+    });
+    await flushPromises();
+
+    expect(storeMocks.toggleClipPreviewFullscreen).toHaveBeenCalledTimes(1);
+    expect(findButtonByLabel("Open clip fullscreen")).toBeDefined();
   });
 
   it("saves a mute-only edit", async () => {
@@ -471,6 +512,72 @@ describe("ClipPreviewOverlayPage", () => {
       id: "clip-1",
       operationRequestId: expect.any(String),
       trim: { inSeconds: 2, outSeconds: 10 },
+    });
+  });
+
+  it("previews replay speeds and optionally applies the speed when copying", async () => {
+    await renderPage();
+    await flushPromises();
+    const video = await markPreviewVideoReady();
+
+    await act(async () => {
+      findButtonByLabel("Replay speed: 1x").click();
+    });
+    await act(async () => {
+      findButton("0.5x").click();
+    });
+
+    expect(video.playbackRate).toBe(0.5);
+    expect(container.textContent).toContain("Save/copy at 0.5x");
+    expect(findButton("Save clip").disabled).toBe(true);
+
+    const applySpeedToggle = container.querySelector<HTMLInputElement>(
+      "input[aria-label='Save or copy clip at 0.5x']",
+    );
+    if (!applySpeedToggle) {
+      throw new Error("Expected the replay speed export toggle");
+    }
+    await act(async () => {
+      applySpeedToggle.click();
+    });
+    expect(findButton("Save clip").disabled).toBe(false);
+
+    await act(async () => {
+      findButton("Copy to clipboard").click();
+    });
+    await flushPromises();
+
+    expect(storeMocks.copyClip).toHaveBeenCalledWith({
+      id: "clip-1",
+      operationRequestId: expect.any(String),
+      playbackRate: 0.5,
+    });
+  });
+
+  it("closes and disables an open speed menu while a clip operation runs", async () => {
+    await renderPage();
+    await flushPromises();
+    await markPreviewVideoReady();
+    const copyDeferred =
+      createDeferred<Awaited<ReturnType<typeof storeMocks.copyClip>>>();
+    storeMocks.copyClip.mockReturnValueOnce(copyDeferred.promise);
+
+    await act(async () => {
+      findButtonByLabel("Replay speed: 1x").click();
+    });
+    expect(container.textContent).toContain("0.5x");
+
+    await act(async () => {
+      findButton("Copy to clipboard").click();
+    });
+
+    expect(
+      container.querySelector('[aria-label="Replay speed options"]'),
+    ).toBeNull();
+    expect(findButtonByLabel("Replay speed: 1x").disabled).toBe(true);
+
+    await act(async () => {
+      copyDeferred.resolve({ error: null, ok: true });
     });
   });
 

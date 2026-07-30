@@ -195,6 +195,7 @@ interface EditorExportVideoTable {
   inode: number;
   size_bytes: number;
   modified_at_ms: number;
+  project_id: string | null;
   created_at: TimestampColumn;
   updated_at: TimestampColumn;
 }

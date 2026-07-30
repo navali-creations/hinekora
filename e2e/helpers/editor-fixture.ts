@@ -1,6 +1,7 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 
 import type {
+  RecordingBookmark,
   RecordingBookmarksPage,
   RecordingBookmarksQuery,
 } from "../../main/modules/bookmarks";
@@ -305,6 +306,7 @@ function createEditorE2EFixture(): EditorE2EFixture {
         id: "a".repeat(64),
         savedAt: editorE2ENow,
         sizeBytes: 12_582_912,
+        sourceProjectId: primaryProject.id,
       },
     ],
     secondaryProject,
@@ -841,6 +843,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
             listLibrary: async () => ({
               availableCategories: [],
               availableLeagues: [],
+              categoryCounts: [],
               items: [],
               pageCount: 1,
               pageIndex: 0,
@@ -859,11 +862,73 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
               });
               const page = recordingBookmarkPages[recordingId];
               if (page) {
-                return clone(page);
+                const ranged = page.timelineItems.filter((bookmark) => {
+                  if (bookmark.offsetSeconds === null) {
+                    return (
+                      query.rangeStartSeconds === undefined &&
+                      query.rangeEndSeconds === undefined
+                    );
+                  }
+                  const endSeconds =
+                    bookmark.offsetSeconds + (bookmark.durationSeconds ?? 0);
+                  return (
+                    (query.rangeStartSeconds === undefined ||
+                      endSeconds >= query.rangeStartSeconds) &&
+                    (query.rangeEndSeconds === undefined ||
+                      bookmark.offsetSeconds <= query.rangeEndSeconds)
+                  );
+                });
+                const normalizedSearch = query.search?.toLocaleLowerCase();
+                const searched = normalizedSearch
+                  ? ranged.filter((bookmark) =>
+                      bookmark.sceneName
+                        ?.toLocaleLowerCase()
+                        .includes(normalizedSearch),
+                    )
+                  : ranged;
+                const filtered = query.category
+                  ? searched.filter(
+                      (bookmark) => bookmark.category === query.category,
+                    )
+                  : searched;
+                const pageIndex = query.pageIndex ?? 0;
+                const pageSize = query.pageSize ?? 10;
+                const pageStart = pageIndex * pageSize;
+                const sorted = [...filtered].sort(
+                  (left, right) =>
+                    right.occurredAt.localeCompare(left.occurredAt) ||
+                    (right.offsetSeconds ?? 0) - (left.offsetSeconds ?? 0),
+                );
+                const categoryCounts = Array.from(
+                  searched.reduce((counts, bookmark) => {
+                    counts.set(
+                      bookmark.category,
+                      (counts.get(bookmark.category) ?? 0) + 1,
+                    );
+                    return counts;
+                  }, new Map<RecordingBookmark["category"], number>()),
+                  ([category, count]) => ({ category, count }),
+                );
+
+                return {
+                  availableCategories: Array.from(
+                    new Set(ranged.map((bookmark) => bookmark.category)),
+                  ),
+                  categoryCounts,
+                  items: clone(sorted.slice(pageStart, pageStart + pageSize)),
+                  pageCount: Math.max(1, Math.ceil(filtered.length / pageSize)),
+                  pageIndex,
+                  pageSize,
+                  timelineItems:
+                    query.includeTimeline === false ? [] : clone(ranged),
+                  timelineItemsTruncated: page.timelineItemsTruncated,
+                  totalCount: filtered.length,
+                };
               }
 
               return {
                 availableCategories: [],
+                categoryCounts: [],
                 items: [],
                 pageCount: 1,
                 pageIndex: query.pageIndex ?? 0,

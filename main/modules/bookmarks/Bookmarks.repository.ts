@@ -9,6 +9,8 @@ import type { GameId } from "~/types";
 import type {
   ActivitySession,
   ActivitySessionBookmark,
+  ActivitySessionBookmarksPage,
+  ActivitySessionBookmarksQuery,
   ActivitySessionClip,
   ActivitySessionClipTargetKind,
   ActivitySessionLibraryItem,
@@ -20,6 +22,7 @@ import type {
   ActivitySessionTimeline,
   Bookmark,
   BookmarkCategory,
+  BookmarkCategoryCount,
   BookmarkLibraryItem,
   BookmarkLibraryQuery,
   BookmarkLibrarySortDirection,
@@ -50,6 +53,13 @@ interface BookmarkRow {
   dedupe_key: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface RecordingBookmarkFilter {
+  category?: BookmarkCategory;
+  rangeEndSeconds?: number;
+  rangeStartSeconds?: number;
+  search?: string;
 }
 
 interface BookmarkLinkRow {
@@ -145,6 +155,7 @@ interface BookmarkFilter {
   category?: BookmarkCategory;
   game?: GameId;
   league?: string;
+  search?: string;
 }
 
 interface ActivitySessionFilter {
@@ -299,6 +310,42 @@ function mapActivitySessionBookmarkRow(
   };
 }
 
+function mapActivitySessionPanelBookmarkRow(
+  row: BookmarkRow & {
+    duration_seconds: number | null;
+    offset_seconds: number | null;
+  },
+  clipDurationSecondsByBookmarkId: ReadonlyMap<string, number>,
+  locationDurationSecondsByBookmarkId: ReadonlyMap<string, number>,
+): RecordingBookmark {
+  return {
+    ...mapActivitySessionBookmarkRow(row),
+    durationSeconds:
+      row.duration_seconds ??
+      clipDurationSecondsByBookmarkId.get(row.id) ??
+      locationDurationSecondsByBookmarkId.get(row.id) ??
+      null,
+  };
+}
+
+function resolveBookmarkTotalCount(
+  categoryCounts: BookmarkCategoryCount[],
+  category?: BookmarkCategory,
+): number {
+  if (category) {
+    return (
+      categoryCounts.find(
+        (categoryCount) => categoryCount.category === category,
+      )?.count ?? 0
+    );
+  }
+
+  return categoryCounts.reduce(
+    (total, categoryCount) => total + categoryCount.count,
+    0,
+  );
+}
+
 function calculateActivitySessionDurationSeconds(
   session: Pick<ActivitySession, "startedAt" | "stoppedAt">,
 ): number | null {
@@ -425,6 +472,7 @@ class BookmarksRepository {
       ...(query.category ? { category: query.category } : {}),
       ...(query.game ? { game: query.game } : {}),
       ...(query.league ? { league: query.league } : {}),
+      ...(query.search ? { search: query.search } : {}),
     };
     const pageIndex = normalizePageIndex(query.pageIndex);
     const pageSize = normalizePageSize(query.pageSize);
@@ -454,7 +502,15 @@ class BookmarksRepository {
         activitySessionLinksByBookmarkId.get(bookmark.id) ?? null,
       ),
     );
-    const totalCount = this.count(filter);
+    const categoryCounts = this.listCategoryCounts({
+      ...(query.game ? { game: query.game } : {}),
+      ...(query.league ? { league: query.league } : {}),
+      ...(query.search ? { search: query.search } : {}),
+    });
+    const totalCount = resolveBookmarkTotalCount(
+      categoryCounts,
+      query.category,
+    );
 
     return {
       items,
@@ -465,6 +521,7 @@ class BookmarksRepository {
       availableLeagues: this.listLeagues({
         ...(query.game ? { game: query.game } : {}),
       }),
+      categoryCounts,
       pageCount: Math.max(1, Math.ceil(totalCount / pageSize)),
       pageIndex,
       pageSize,
@@ -481,8 +538,21 @@ class BookmarksRepository {
     const pageIndex = normalizePageIndex(query.pageIndex);
     const pageSize = normalizePageSize(query.pageSize);
     const category = query.category;
+    const search = query.search;
+    const rangeFilter = {
+      ...(query.rangeEndSeconds !== undefined
+        ? { rangeEndSeconds: query.rangeEndSeconds }
+        : {}),
+      ...(query.rangeStartSeconds !== undefined
+        ? { rangeStartSeconds: query.rangeStartSeconds }
+        : {}),
+    };
     const rows = this.database.queryAll(
-      this.createRecordingBookmarksQuery(recordingId, category)
+      this.createRecordingBookmarksQuery(recordingId, {
+        ...(category ? { category } : {}),
+        ...rangeFilter,
+        ...(search ? { search } : {}),
+      })
         .orderBy("bookmarks.occurred_at", "desc")
         .limit(pageSize)
         .offset(pageIndex * pageSize),
@@ -496,7 +566,7 @@ class BookmarksRepository {
       query.includeTimeline === false
         ? []
         : (this.database.queryAll(
-            this.createRecordingBookmarksQuery(recordingId)
+            this.createRecordingBookmarksQuery(recordingId, rangeFilter)
               .orderBy("bookmark_links.offset_seconds", "asc")
               .limit(maxTimelineItems + 1),
           ) as Array<
@@ -505,10 +575,21 @@ class BookmarksRepository {
               offset_seconds: number | null;
             }
           >);
-    const totalCount = this.countRecordingBookmarks(recordingId, category);
+    const categoryCounts = this.listRecordingBookmarkCategoryCounts(
+      recordingId,
+      {
+        ...rangeFilter,
+        ...(search ? { search } : {}),
+      },
+    );
+    const totalCount = resolveBookmarkTotalCount(categoryCounts, category);
 
     return {
-      availableCategories: this.listRecordingBookmarkCategories(recordingId),
+      availableCategories: this.listRecordingBookmarkCategories(
+        recordingId,
+        rangeFilter,
+      ),
+      categoryCounts,
       items: rows.map(mapRecordingBookmarkRow),
       pageCount: Math.max(1, Math.ceil(totalCount / pageSize)),
       pageIndex,
@@ -679,6 +760,147 @@ class BookmarksRepository {
       clips: clipRows.slice(0, maxTimelineItems).map(mapActivitySessionClipRow),
       clipTimelineItemsTruncated: clipRows.length > maxTimelineItems,
       session,
+    };
+  }
+
+  listActivitySessionBookmarks(
+    activitySessionId: string,
+    query: ActivitySessionBookmarksQuery = {},
+  ): ActivitySessionBookmarksPage {
+    const pageIndex = normalizePageIndex(query.pageIndex);
+    const pageSize = normalizePageSize(query.pageSize);
+    const filter = {
+      ...(query.category ? { category: query.category } : {}),
+      excludeManual: true,
+      ...(query.search ? { search: query.search } : {}),
+    };
+    const rows = this.database.queryAll(
+      this.createActivitySessionBookmarksQuery(activitySessionId, filter)
+        .orderBy("bookmarks.occurred_at", "desc")
+        .orderBy("bookmark_links.offset_seconds", "desc")
+        .limit(pageSize)
+        .offset(pageIndex * pageSize),
+    ) as Array<
+      BookmarkRow & {
+        duration_seconds: number | null;
+        offset_seconds: number | null;
+      }
+    >;
+    const bookmarkIds = rows.map((row) => row.id);
+    const clipDurationRows =
+      bookmarkIds.length === 0
+        ? []
+        : (this.database.queryAll(
+            this.database.kysely
+              .selectFrom("activity_session_clips")
+              .innerJoin(
+                "replay_clips",
+                "replay_clips.id",
+                "activity_session_clips.target_id",
+              )
+              .select([
+                "activity_session_clips.bookmark_id as bookmark_id",
+                "replay_clips.duration_seconds as duration_seconds",
+                "replay_clips.target_duration_seconds as target_duration_seconds",
+              ])
+              .where(
+                "activity_session_clips.activity_session_id",
+                "=",
+                activitySessionId,
+              )
+              .where("activity_session_clips.bookmark_id", "in", bookmarkIds),
+          ) as Array<{
+            bookmark_id: string | null;
+            duration_seconds: number | null;
+            target_duration_seconds: number;
+          }>);
+    const clipDurationSecondsByBookmarkId = new Map<string, number>();
+    for (const clipDurationRow of clipDurationRows) {
+      if (clipDurationRow.bookmark_id) {
+        clipDurationSecondsByBookmarkId.set(
+          clipDurationRow.bookmark_id,
+          clipDurationRow.duration_seconds ??
+            clipDurationRow.target_duration_seconds,
+        );
+      }
+    }
+    const locationDurationSecondsByBookmarkId = new Map<string, number>();
+    const needsLocationDurationFallback = rows.some(
+      (row) =>
+        row.duration_seconds === null &&
+        locationBookmarkCategorySet.has(row.category),
+    );
+    if (needsLocationDurationFallback) {
+      const session = this.getActivitySession(activitySessionId);
+      const targetDurationSeconds = session
+        ? calculateActivitySessionDurationSeconds(session)
+        : null;
+      if (targetDurationSeconds !== null) {
+        const locationOffsets =
+          this.listActivitySessionLocationOffsetsBySessionIds([
+            activitySessionId,
+          ]).get(activitySessionId) ?? [];
+        for (const row of rows) {
+          const durationSeconds =
+            this.calculateActivitySessionBookmarkDurationSeconds({
+              bookmarkId: row.id,
+              category: row.category,
+              locationOffsets,
+              offsetSeconds: row.offset_seconds,
+              targetDurationSeconds,
+            });
+          if (durationSeconds !== null) {
+            locationDurationSecondsByBookmarkId.set(row.id, durationSeconds);
+          }
+        }
+      }
+    }
+    const categoryRows = this.database.queryAll(
+      this.createActivitySessionBookmarksQuery(activitySessionId, {
+        excludeManual: true,
+      })
+        .clearSelect()
+        .select("bookmarks.category as category")
+        .distinct()
+        .orderBy("bookmarks.category", "asc"),
+    ) as Array<{ category: BookmarkCategory }>;
+    const categoryCountRows = this.database.queryAll(
+      this.createActivitySessionBookmarksQuery(activitySessionId, {
+        excludeManual: true,
+        ...(query.search ? { search: query.search } : {}),
+      })
+        .clearSelect()
+        .select([
+          "bookmarks.category as category",
+          (eb) => eb.fn.countAll<number>().as("count"),
+        ])
+        .groupBy("bookmarks.category")
+        .orderBy("bookmarks.category", "asc"),
+    ) as Array<{ category: BookmarkCategory; count: number }>;
+
+    const categoryCounts = categoryCountRows.map((row) => ({
+      category: row.category,
+      count: Number(row.count),
+    }));
+    const totalCount = resolveBookmarkTotalCount(
+      categoryCounts,
+      query.category,
+    );
+
+    return {
+      availableCategories: categoryRows.map((row) => row.category),
+      categoryCounts,
+      items: rows.map((row) =>
+        mapActivitySessionPanelBookmarkRow(
+          row,
+          clipDurationSecondsByBookmarkId,
+          locationDurationSecondsByBookmarkId,
+        ),
+      ),
+      pageCount: Math.max(1, Math.ceil(totalCount / pageSize)),
+      pageIndex,
+      pageSize,
+      totalCount,
     };
   }
 
@@ -1420,16 +1642,6 @@ class BookmarksRepository {
     return Math.max(0, endSeconds - offsetSeconds);
   }
 
-  private count(filter: BookmarkFilter): number {
-    const row = this.database.queryOne(
-      this.createFilteredQuery(filter).select((eb) =>
-        eb.fn.countAll<number>().as("count"),
-      ),
-    ) as { count: number };
-
-    return Number(row.count);
-  }
-
   private listCategories(filter: BookmarkFilter = {}): BookmarkCategory[] {
     const rows = this.database.queryAll(
       this.createFilteredQuery(filter)
@@ -1439,6 +1651,22 @@ class BookmarksRepository {
     ) as Array<{ category: BookmarkCategory }>;
 
     return rows.map((row) => row.category);
+  }
+
+  private listCategoryCounts(
+    filter: BookmarkFilter = {},
+  ): BookmarkCategoryCount[] {
+    const rows = this.database.queryAll(
+      this.createFilteredQuery(filter)
+        .select(["category", (eb) => eb.fn.countAll<number>().as("count")])
+        .groupBy("category")
+        .orderBy("category", "asc"),
+    ) as Array<{ category: BookmarkCategory; count: number }>;
+
+    return rows.map((row) => ({
+      category: row.category,
+      count: Number(row.count),
+    }));
   }
 
   private listLeagues(filter: BookmarkFilter = {}): string[] {
@@ -1466,6 +1694,11 @@ class BookmarksRepository {
     }
     if (filter.category) {
       query = query.where("category", "=", filter.category);
+    }
+    if (filter.search) {
+      query = query.where(
+        sql<boolean>`instr(lower(coalesce(scene_name, '')), lower(${filter.search})) > 0`,
+      );
     }
 
     return query;
@@ -1518,24 +1751,15 @@ class BookmarksRepository {
     }
   }
 
-  private countRecordingBookmarks(
-    recordingId: string,
-    category?: BookmarkCategory,
-  ): number {
-    const row = this.database.queryOne(
-      this.createRecordingBookmarksQuery(recordingId, category)
-        .clearSelect()
-        .select((eb) => eb.fn.countAll<number>().as("count")),
-    ) as { count: number };
-
-    return Number(row.count);
-  }
-
   private listRecordingBookmarkCategories(
     recordingId: string,
+    filter: Pick<
+      RecordingBookmarkFilter,
+      "rangeEndSeconds" | "rangeStartSeconds"
+    > = {},
   ): BookmarkCategory[] {
     const rows = this.database.queryAll(
-      this.createRecordingBookmarksQuery(recordingId)
+      this.createRecordingBookmarksQuery(recordingId, filter)
         .clearSelect()
         .select("bookmarks.category as category")
         .distinct()
@@ -1543,6 +1767,27 @@ class BookmarksRepository {
     ) as Array<{ category: BookmarkCategory }>;
 
     return rows.map((row) => row.category);
+  }
+
+  private listRecordingBookmarkCategoryCounts(
+    recordingId: string,
+    filter: Omit<RecordingBookmarkFilter, "category"> = {},
+  ): BookmarkCategoryCount[] {
+    const rows = this.database.queryAll(
+      this.createRecordingBookmarksQuery(recordingId, filter)
+        .clearSelect()
+        .select([
+          "bookmarks.category as category",
+          (eb) => eb.fn.countAll<number>().as("count"),
+        ])
+        .groupBy("bookmarks.category")
+        .orderBy("bookmarks.category", "asc"),
+    ) as Array<{ category: BookmarkCategory; count: number }>;
+
+    return rows.map((row) => ({
+      category: row.category,
+      count: Number(row.count),
+    }));
   }
 
   private countActivitySessions(filter: ActivitySessionFilter): number {
@@ -1571,7 +1816,7 @@ class BookmarksRepository {
 
   private createRecordingBookmarksQuery(
     recordingId: string,
-    category?: BookmarkCategory,
+    filter: RecordingBookmarkFilter = {},
   ) {
     let query = this.database.kysely
       .selectFrom("bookmark_links")
@@ -1597,15 +1842,39 @@ class BookmarksRepository {
       .where("bookmark_links.target_id", "=", recordingId)
       .where("bookmark_links.archived", "=", 0);
 
-    if (category) {
-      query = query.where("bookmarks.category", "=", category);
+    if (filter.category) {
+      query = query.where("bookmarks.category", "=", filter.category);
+    }
+    if (filter.search) {
+      query = query.where(
+        sql<boolean>`instr(lower(coalesce(bookmarks.scene_name, '')), lower(${filter.search})) > 0`,
+      );
+    }
+    if (filter.rangeStartSeconds !== undefined) {
+      query = query.where(
+        sql<boolean>`bookmark_links.offset_seconds IS NOT NULL AND bookmark_links.offset_seconds + coalesce(bookmark_links.duration_seconds, 0) >= ${filter.rangeStartSeconds}`,
+      );
+    }
+    if (filter.rangeEndSeconds !== undefined) {
+      query = query.where(
+        "bookmark_links.offset_seconds",
+        "<=",
+        filter.rangeEndSeconds,
+      );
     }
 
     return query;
   }
 
-  private createActivitySessionBookmarksQuery(activitySessionId: string) {
-    return this.database.kysely
+  private createActivitySessionBookmarksQuery(
+    activitySessionId: string,
+    filter: {
+      category?: BookmarkCategory;
+      excludeManual?: boolean;
+      search?: string;
+    } = {},
+  ) {
+    let query = this.database.kysely
       .selectFrom("bookmark_links")
       .innerJoin("bookmarks", "bookmarks.id", "bookmark_links.bookmark_id")
       .select([
@@ -1623,10 +1892,25 @@ class BookmarksRepository {
         "bookmarks.created_at as created_at",
         "bookmarks.updated_at as updated_at",
         "bookmark_links.offset_seconds as offset_seconds",
+        "bookmark_links.duration_seconds as duration_seconds",
       ])
       .where("bookmark_links.target_kind", "=", "activity-session")
       .where("bookmark_links.target_id", "=", activitySessionId)
       .where("bookmark_links.archived", "=", 0);
+
+    if (filter.category) {
+      query = query.where("bookmarks.category", "=", filter.category);
+    }
+    if (filter.excludeManual) {
+      query = query.where("bookmarks.category", "!=", "manual");
+    }
+    if (filter.search) {
+      query = query.where(
+        sql<boolean>`instr(lower(coalesce(bookmarks.scene_name, '')), lower(${filter.search})) > 0`,
+      );
+    }
+
+    return query;
   }
 }
 

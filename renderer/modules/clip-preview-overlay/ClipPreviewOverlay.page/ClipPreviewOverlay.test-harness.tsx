@@ -13,12 +13,13 @@ interface ClipPreviewOverlayStoreMocks {
   dismissClipPreviewInfoAlert: Mock;
   getClip: Mock;
   hideClipPreview: Mock;
+  onFullscreenChanged: Mock;
   onOperationProgress: Mock;
   onPreviewProgress: Mock;
   onStatusChanged: Mock;
   openClip: Mock;
   openEditorClip: Mock;
-  requestFullscreen: Mock;
+  toggleClipPreviewFullscreen: Mock;
   revealClip: Mock;
   settingsValue: AppSettings | null;
   updateClip: Mock;
@@ -34,12 +35,18 @@ let originalPauseDescriptor: PropertyDescriptor | undefined;
 let operationProgressListener:
   | Parameters<typeof window.electron.replayClips.onOperationProgress>[0]
   | null = null;
+let fullscreenChangedListener:
+  | Parameters<
+      typeof window.electron.overlayWindows.onClipPreviewFullscreenChanged
+    >[0]
+  | null = null;
 let previewProgressListener:
   | Parameters<typeof window.electron.replayClips.onPreviewProgress>[0]
   | null = null;
 let statusChangedListener:
   | Parameters<typeof window.electron.replayClips.onStatusChanged>[0]
   | null = null;
+let requestedFullscreen = false;
 
 function findButton(label: string): HTMLButtonElement {
   const button = Array.from(container.querySelectorAll("button")).find((item) =>
@@ -129,6 +136,10 @@ function emitStatusChanged(
   statusChangedListener?.(clip);
 }
 
+function emitFullscreenChanged(isFullscreen: boolean): void {
+  fullscreenChangedListener?.(isFullscreen);
+}
+
 function setupClipPreviewOverlayTestHarness(
   storeMocks: ClipPreviewOverlayStoreMocks,
 ): void {
@@ -172,8 +183,21 @@ function setupClipPreviewOverlayTestHarness(
       mediaUrl: "hinekora-media://replay-clip/main-provided-clip-1",
     });
     operationProgressListener = null;
+    fullscreenChangedListener = null;
     previewProgressListener = null;
     statusChangedListener = null;
+    requestedFullscreen = false;
+    storeMocks.onFullscreenChanged.mockImplementation(
+      (
+        listener: Parameters<
+          typeof window.electron.overlayWindows.onClipPreviewFullscreenChanged
+        >[0],
+      ) => {
+        fullscreenChangedListener = listener;
+
+        return vi.fn();
+      },
+    );
     storeMocks.onOperationProgress.mockImplementation(
       (
         listener: Parameters<
@@ -212,7 +236,11 @@ function setupClipPreviewOverlayTestHarness(
     storeMocks.openEditorClip.mockResolvedValue(undefined);
     storeMocks.openClip.mockResolvedValue(undefined);
     storeMocks.revealClip.mockResolvedValue({ error: null, ok: true });
-    storeMocks.requestFullscreen.mockResolvedValue(undefined);
+    storeMocks.toggleClipPreviewFullscreen.mockImplementation(async () => {
+      requestedFullscreen = !requestedFullscreen;
+
+      return requestedFullscreen;
+    });
     storeMocks.settingsValue = createDefaultSettings();
     storeMocks.dismissClipPreviewInfoAlert.mockImplementation(() => {
       storeMocks.settingsValue = {
@@ -246,11 +274,6 @@ function setupClipPreviewOverlayTestHarness(
           value: storeMocks.settingsValue,
         }),
     );
-    Object.defineProperty(HTMLVideoElement.prototype, "requestFullscreen", {
-      configurable: true,
-      value: storeMocks.requestFullscreen,
-    });
-
     Object.defineProperty(window, "electron", {
       configurable: true,
       value: {
@@ -263,6 +286,8 @@ function setupClipPreviewOverlayTestHarness(
         },
         overlayWindows: {
           hideClipPreview: storeMocks.hideClipPreview,
+          onClipPreviewFullscreenChanged: storeMocks.onFullscreenChanged,
+          toggleClipPreviewFullscreen: storeMocks.toggleClipPreviewFullscreen,
         },
         replayClips: {
           copy: storeMocks.copyClip,
@@ -286,6 +311,7 @@ function setupClipPreviewOverlayTestHarness(
     });
     container.remove();
     operationProgressListener = null;
+    fullscreenChangedListener = null;
     previewProgressListener = null;
     statusChangedListener = null;
     window.location.hash = "";
@@ -325,6 +351,7 @@ export type { ClipPreviewOverlayStoreMocks };
 export {
   container,
   createDeferred,
+  emitFullscreenChanged,
   emitOperationProgress,
   emitPreviewProgress,
   emitStatusChanged,

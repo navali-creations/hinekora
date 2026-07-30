@@ -32,6 +32,7 @@ describe("EditorExportOwnershipRepository", () => {
       inode,
       modifiedAtMs: 1_000,
       path: "C:\\Exports\\saved.mp4",
+      projectId: null,
       sizeBytes: 456,
     });
 
@@ -41,6 +42,7 @@ describe("EditorExportOwnershipRepository", () => {
         inode,
         modifiedAtMs: 1_000,
         path: "C:\\Exports\\saved.mp4",
+        projectId: null,
         sizeBytes: 456,
       },
     ]);
@@ -70,6 +72,7 @@ describe("EditorExportOwnershipRepository", () => {
       inode: stats.ino,
       modifiedAtMs: stats.mtimeMs,
       path: aliasedPath,
+      projectId: null,
       sizeBytes: stats.size,
     });
     repository.remove(join(physicalRoot, "saved.mp4"));
@@ -99,6 +102,7 @@ describe("EditorExportOwnershipRepository", () => {
       inode: keptStats.ino,
       modifiedAtMs: keptStats.mtimeMs,
       path: keptPath,
+      projectId: null,
       sizeBytes: keptStats.size,
     });
     repository.upsert({
@@ -106,6 +110,7 @@ describe("EditorExportOwnershipRepository", () => {
       inode: replacedStats.ino,
       modifiedAtMs: replacedStats.mtimeMs,
       path: replacedPath,
+      projectId: null,
       sizeBytes: replacedStats.size + 1,
     });
     repository.upsert({
@@ -113,6 +118,7 @@ describe("EditorExportOwnershipRepository", () => {
       inode: 0,
       modifiedAtMs: 1_000,
       path: join(root, "missing.mp4"),
+      projectId: null,
       sizeBytes: 1,
     });
 

@@ -55,13 +55,6 @@ export const createManagedRecorderSlice: BoundStoreStateCreator<
         state.managedRecorder.status = status;
       });
     },
-    saveReplay: async () => {
-      await window.electron.managedRecorder.saveReplay();
-      const status = await window.electron.managedRecorder.getStatus();
-      set((state) => {
-        state.managedRecorder.status = status;
-      });
-    },
     startListening: () => {
       const stopRecorderStatusListener =
         window.electron.managedRecorder.onStatusChanged((status) => {

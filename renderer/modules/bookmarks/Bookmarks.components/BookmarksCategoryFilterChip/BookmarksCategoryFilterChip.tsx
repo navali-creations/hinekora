@@ -9,12 +9,14 @@ import {
 
 interface BookmarksCategoryFilterChipProps {
   category: BookmarkCategoryFilterValue;
+  count?: number;
   isActive: boolean;
   onSelect: (category: BookmarkCategoryFilterValue) => void;
 }
 
 function BookmarksCategoryFilterChip({
   category,
+  count,
   isActive,
   onSelect,
 }: BookmarksCategoryFilterChipProps) {
@@ -46,7 +48,7 @@ function BookmarksCategoryFilterChip({
       type="button"
       onClick={handleSelect}
     >
-      {label}
+      {count === undefined ? label : `${label} (${count})`}
     </button>
   );
 }

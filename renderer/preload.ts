@@ -106,6 +106,10 @@ function createScopedApi(hash: string) {
       },
       overlayWindows: {
         hideClipPreview: OverlayWindowsAPI.hideClipPreview,
+        onClipPreviewFullscreenChanged:
+          OverlayWindowsAPI.onClipPreviewFullscreenChanged,
+        toggleClipPreviewFullscreen:
+          OverlayWindowsAPI.toggleClipPreviewFullscreen,
       },
       settings: {
         scope: "clip-preview-overlay" as const,

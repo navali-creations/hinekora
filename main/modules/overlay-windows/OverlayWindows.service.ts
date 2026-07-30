@@ -449,6 +449,11 @@ class OverlayWindowsService {
       () => this.hideClipPreviewOverlay(),
     );
     registerGuardedIpcHandler(
+      OverlayWindowsChannel.ToggleClipPreviewFullscreen,
+      [WindowName.ClipPreviewOverlay],
+      () => this.deathClipsOverlay.toggleFullscreen(),
+    );
+    registerGuardedIpcHandler(
       OverlayWindowsChannel.ShowAura,
       [WindowName.Main, WindowName.AuraOverlay, WindowName.RecorderOverlay],
       (_event, profileId, options) => {

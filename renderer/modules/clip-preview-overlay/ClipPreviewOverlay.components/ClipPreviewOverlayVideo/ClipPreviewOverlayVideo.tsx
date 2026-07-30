@@ -1,7 +1,6 @@
 import clsx from "clsx";
 import {
   FiFolder as FolderOpen,
-  FiMaximize2 as Fullscreen,
   FiPause as Pause,
   FiPlay as Play,
   FiRefreshCw as Retry,
@@ -13,7 +12,9 @@ import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
 import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.css";
 import { resolveClipPreviewMediaState } from "../../ClipPreviewOverlay.page/useClipPreviewOverlayMediaWorkflow/useClipPreviewOverlayMediaWorkflow.utils";
+import { ClipPreviewFullscreenButton } from "../ClipPreviewFullscreenButton/ClipPreviewFullscreenButton";
 import { useClipPreviewOverlayMediaContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
+import { ClipPreviewPlaybackSpeedControl } from "../ClipPreviewPlaybackSpeedControl/ClipPreviewPlaybackSpeedControl";
 import { ClipPreviewPreparingState } from "../ClipPreviewPreparingState/ClipPreviewPreparingState";
 
 function ClipPreviewOverlayVideo() {
@@ -81,6 +82,7 @@ function ClipPreviewOverlayVideo() {
       ) : videoSrc ? (
         <>
           <video
+            aria-label="Toggle replay playback"
             autoPlay
             className={styles.video}
             muted={isMuted}
@@ -88,9 +90,12 @@ function ClipPreviewOverlayVideo() {
             preload="auto"
             ref={workflow.videoRef}
             src={videoSrc}
+            tabIndex={canUseClip ? 0 : -1}
             onCanPlay={workflow.handleCanPlay}
             onCanPlayThrough={workflow.handleCanPlayThrough}
+            onClick={workflow.handleTogglePlayback}
             onError={workflow.handleVideoError}
+            onKeyDown={workflow.handleVideoKeyDown}
             onLoadedData={workflow.handleLoadedData}
             onLoadedMetadata={workflow.handleLoadedMetadata}
             onLoadStart={workflow.handleLoadStart}
@@ -117,6 +122,9 @@ function ClipPreviewOverlayVideo() {
             >
               {isMuted ? <VolumeMuted size={16} /> : <Volume size={16} />}
             </button>
+            <ClipPreviewPlaybackSpeedControl
+              disabled={!canUseClip || isProcessing}
+            />
             <div className={styles.playbackRow}>
               <button
                 aria-label={playbackLabel}
@@ -148,20 +156,10 @@ function ClipPreviewOverlayVideo() {
             >
               <FolderOpen size={15} />
             </button>
-            <button
-              aria-label="Open clip fullscreen"
-              className={clsx(
-                styles.videoIconButton,
-                styles.videoSecondaryButton,
-                "tooltip tooltip-left btn btn-circle btn-sm",
-              )}
-              data-tip="Fullscreen"
-              disabled={!canUseClip}
-              type="button"
-              onClick={workflow.handleEnterFullscreen}
-            >
-              <Fullscreen size={15} />
-            </button>
+            <ClipPreviewFullscreenButton
+              canEnterFullscreen={canUseClip}
+              placement="video"
+            />
           </div>
           {isPreparingClip && <ClipPreviewPreparingState />}
         </>

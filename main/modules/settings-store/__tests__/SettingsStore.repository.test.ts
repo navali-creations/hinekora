@@ -14,11 +14,14 @@ describe("SettingsStoreRepository", () => {
       activeGame: "poe1",
       activeLeague: getCurrentLeague("poe1"),
       auraOverlayShowEditingFrame: true,
+      deathClipsEnabled: true,
       deathClipSeconds: 10,
+      manualReplaySeconds: 10,
       groupPlayDeathAlertDismissed: false,
       onboardingDismissedBeacons: [],
       poe1CharacterName: "",
       recorderOverlayShowOnStartup: true,
+      recorderOverlayStartMinimized: false,
       recorderSettingsInfoAlertDismissed: false,
     });
 
@@ -33,6 +36,7 @@ describe("SettingsStoreRepository", () => {
       poe2SelectedLeague: "Mercenaries",
       poe2CharacterName: "Ailumonk",
       recorderOverlayShowOnStartup: false,
+      recorderOverlayStartMinimized: true,
       recorderSettingsInfoAlertDismissed: true,
     });
 
@@ -46,6 +50,7 @@ describe("SettingsStoreRepository", () => {
       poe1CharacterName: "Ailucannon",
       poe2CharacterName: "Ailumonk",
       recorderOverlayShowOnStartup: false,
+      recorderOverlayStartMinimized: true,
       recorderSettingsInfoAlertDismissed: true,
     });
 
@@ -61,6 +66,37 @@ describe("SettingsStoreRepository", () => {
       activeGame: "poe1",
       activeLeague: "Hardcore",
       deathClipSeconds: 8,
+    });
+
+    database.close();
+  });
+
+  it("migrates a missing manual replay timer from the stored death timer", () => {
+    const database = new DatabaseService(":memory:");
+    database.db
+      .prepare("DELETE FROM settings WHERE key = ?")
+      .run("manualReplaySeconds");
+    database.db
+      .prepare(
+        "UPDATE settings SET value_json = ?, updated_at = ? WHERE key = ?",
+      )
+      .run(JSON.stringify(37), "2026-07-29T00:00:00.000Z", "deathClipSeconds");
+    const repository = new SettingsStoreRepository(database);
+
+    expect(repository.get()).toMatchObject({
+      deathClipsEnabled: true,
+      deathClipSeconds: 37,
+      manualReplaySeconds: 37,
+    });
+    expect(
+      database.db
+        .prepare("SELECT value_json FROM settings WHERE key = ?")
+        .get("manualReplaySeconds"),
+    ).toEqual({ value_json: "37" });
+
+    expect(repository.setMany({ deathClipSeconds: 55 })).toMatchObject({
+      deathClipSeconds: 55,
+      manualReplaySeconds: 37,
     });
 
     database.close();

@@ -3,6 +3,7 @@ import {
   calculateTimelineMinorMarkers,
   calculateTimelinePercent,
   clampTimelineSeconds,
+  formatMediaTime,
   formatTimelineRailLeft,
   formatTimelineRailWidth,
   type MediaClipTargetSegment,
@@ -52,41 +53,13 @@ function formatRecordingTimelineMarker(seconds: number): string {
 function formatRecordingTimelineTimestamp(
   seconds: number | null | undefined,
 ): string {
-  if (
-    typeof seconds !== "number" ||
-    !Number.isFinite(seconds) ||
-    seconds <= 0
-  ) {
-    return "0:00.00";
-  }
-
-  const roundedCentiseconds = Math.round(seconds * 100);
-  const minutes = Math.floor(roundedCentiseconds / 6_000);
-  const remainingCentiseconds = roundedCentiseconds % 6_000;
-  const wholeSeconds = Math.floor(remainingCentiseconds / 100);
-  const centiseconds = remainingCentiseconds % 100;
-
-  return `${minutes}:${wholeSeconds.toString().padStart(2, "0")}.${centiseconds
-    .toString()
-    .padStart(2, "0")}`;
+  return formatMediaTime(seconds, true);
 }
 
 function formatRecordingTimelineTime(
   seconds: number | null | undefined,
 ): string {
-  if (
-    typeof seconds !== "number" ||
-    !Number.isFinite(seconds) ||
-    seconds <= 0
-  ) {
-    return "0:00";
-  }
-
-  const roundedSeconds = Math.round(seconds);
-  const minutes = Math.floor(roundedSeconds / 60);
-  const remainingSeconds = roundedSeconds % 60;
-
-  return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+  return formatMediaTime(seconds);
 }
 
 function clampRecordingTimelineSeconds(

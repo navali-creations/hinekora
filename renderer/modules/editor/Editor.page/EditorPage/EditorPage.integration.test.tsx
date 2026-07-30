@@ -21,6 +21,7 @@ const storeMocks = vi.hoisted(() => ({
   setHoveredTimelineGap: vi.fn(),
   setEditorRecordingHoveredBookmarkId: vi.fn(),
   setEditorRecordingPageIndex: vi.fn(),
+  setEditorRecordingPanelStatus: vi.fn(),
   setEditorRecordingSelectedBookmarkId: vi.fn(),
   setMediaFilter: vi.fn(),
   setZoom: vi.fn(),
@@ -232,9 +233,12 @@ describe("EditorPage integration", () => {
       selector({
         editorRecording: {
           categoryFilter: "__all__",
+          errorMessage: null,
           hasInteracted: false,
           hoveredBookmarkId: null,
+          isLoading: false,
           pageIndex: 0,
+          searchText: "",
           selectedBookmarkId: null,
         },
         resetEditorRecordingBookmarks: storeMocks.resetEditorRecordingBookmarks,
@@ -242,6 +246,7 @@ describe("EditorPage integration", () => {
         setEditorRecordingHoveredBookmarkId:
           storeMocks.setEditorRecordingHoveredBookmarkId,
         setEditorRecordingPageIndex: storeMocks.setEditorRecordingPageIndex,
+        setEditorRecordingPanelStatus: storeMocks.setEditorRecordingPanelStatus,
         setEditorRecordingSelectedBookmarkId:
           storeMocks.setEditorRecordingSelectedBookmarkId,
       }),

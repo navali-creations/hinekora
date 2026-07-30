@@ -96,10 +96,12 @@ describe("ReplayClipsService boundaries", () => {
       validateReplayClipCopyInput({
         id: "clip-1",
         muteAudio: true,
+        playbackRate: 0.5,
       }),
     ).toEqual({
       id: "clip-1",
       muteAudio: true,
+      playbackRate: 0.5,
     });
     expect(() =>
       validateReplayClipCopyInput({
@@ -107,6 +109,12 @@ describe("ReplayClipsService boundaries", () => {
         muteAudio: "yes",
       }),
     ).toThrow("mute clip audio must be a boolean");
+    expect(() =>
+      validateReplayClipCopyInput({
+        id: "clip-1",
+        playbackRate: 1.25,
+      }),
+    ).toThrow("playback rate is invalid");
   });
 
   it("covers replay clip service internals for edge branches", async () => {
@@ -347,10 +355,12 @@ describe("ReplayClipsService boundaries", () => {
       validateReplayClipUpdateInput({
         id: "clip-1",
         muteAudio: false,
+        playbackRate: 2,
       }),
     ).toEqual({
       id: "clip-1",
       muteAudio: false,
+      playbackRate: 2,
     });
     expect(() =>
       validateReplayClipUpdateInput({

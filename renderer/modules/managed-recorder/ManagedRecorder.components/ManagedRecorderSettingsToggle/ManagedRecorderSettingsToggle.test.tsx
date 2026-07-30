@@ -77,7 +77,13 @@ describe("ManagedRecorderSettingsToggle", () => {
     const checkbox = container.querySelector<HTMLInputElement>(
       'input[aria-label="Start recording automatically"]',
     );
+    const helpButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Starts recording when the selected game is running"]',
+    );
     expect(checkbox?.disabled).toBe(true);
+    expect(helpButton?.disabled).toBe(true);
+    expect(helpButton?.className).not.toContain("tooltip");
+    expect(helpButton?.hasAttribute("data-tip")).toBe(false);
 
     await act(async () => {
       checkbox?.click();

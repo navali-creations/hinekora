@@ -1,4 +1,10 @@
-import type { RefObject, SyntheticEvent } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  RefObject,
+  SyntheticEvent,
+} from "react";
+
+import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
 import {
   type ClipPreviewTrimRange,
@@ -23,14 +29,23 @@ function useClipPreviewOverlayMediaEvents(input: {
   videoRef: RefObject<HTMLVideoElement | null>;
   videoSrc: string | null;
 }) {
-  const handleEnterFullscreen = () => {
-    const video = input.videoRef.current;
-    if (!video || !input.canUseClip) {
+  const { isFullscreen, setFullscreen } = useClipPreviewOverlayShallow(
+    (clipPreviewOverlay) => ({
+      isFullscreen: clipPreviewOverlay.isFullscreen,
+      setFullscreen: clipPreviewOverlay.setFullscreen,
+    }),
+  );
+
+  const handleToggleFullscreen = () => {
+    if (!isFullscreen && !input.canUseClip) {
       return;
     }
-    void video.requestFullscreen().catch((error: unknown) => {
-      console.warn("[clip-preview] Could not enter fullscreen", { error });
-    });
+    void window.electron.overlayWindows
+      .toggleClipPreviewFullscreen()
+      .then(setFullscreen)
+      .catch((error: unknown) => {
+        console.warn("[clip-preview] Could not toggle fullscreen", { error });
+      });
   };
 
   const handleTogglePlayback = () => {
@@ -65,6 +80,15 @@ function useClipPreviewOverlayMediaEvents(input: {
       console.warn("[clip-preview] Could not play preview", { error });
       input.setPlaying(false);
     });
+  };
+
+  const handleVideoKeyDown = (event: ReactKeyboardEvent<HTMLVideoElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") {
+      return;
+    }
+
+    event.preventDefault();
+    handleTogglePlayback();
   };
 
   const handleToggleMuted = () => {
@@ -162,7 +186,7 @@ function useClipPreviewOverlayMediaEvents(input: {
   return {
     handleCanPlay,
     handleCanPlayThrough,
-    handleEnterFullscreen,
+    handleToggleFullscreen,
     handleLoadedData,
     handleLoadedMetadata,
     handleLoadStart,
@@ -171,6 +195,7 @@ function useClipPreviewOverlayMediaEvents(input: {
     handleTimeUpdate,
     handleToggleMuted,
     handleTogglePlayback,
+    handleVideoKeyDown,
     handleVideoError,
   };
 }

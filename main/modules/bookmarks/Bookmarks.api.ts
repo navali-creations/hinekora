@@ -4,6 +4,8 @@ import { unwrapIpcResult } from "~/main/utils/ipc-api";
 
 import { BookmarksChannel } from "./Bookmarks.channels";
 import type {
+  ActivitySessionBookmarksPage,
+  ActivitySessionBookmarksQuery,
   ActivitySessionLibraryPage,
   ActivitySessionLibraryQuery,
   ActivitySessionTimeline,
@@ -31,6 +33,17 @@ const BookmarksAPI = {
   ): Promise<ActivitySessionLibraryPage> =>
     ipcRenderer
       .invoke(BookmarksChannel.ListActivitySessions, query)
+      .then(unwrapIpcResult),
+  listActivitySessionBookmarks: (
+    activitySessionId: string,
+    query?: ActivitySessionBookmarksQuery,
+  ): Promise<ActivitySessionBookmarksPage> =>
+    ipcRenderer
+      .invoke(
+        BookmarksChannel.ListActivitySessionBookmarks,
+        activitySessionId,
+        query,
+      )
       .then(unwrapIpcResult),
   listLibrary: (query?: BookmarkLibraryQuery): Promise<BookmarkLibraryPage> =>
     ipcRenderer

@@ -41,7 +41,6 @@ function useRewindDetailTimeline({
   }, [resetDetail, rewindId]);
 
   const {
-    bookmarkCategories,
     bookmarks,
     clipTargetsByBookmarkId,
     durationSeconds,
@@ -55,15 +54,12 @@ function useRewindDetailTimeline({
     timelineMarkerCategoryFilter,
   });
   const {
-    bookmarkCategoryFilter,
+    bookmarkCategories,
+    categoryCounts,
     bookmarkPageCount,
-    bookmarkPageIndex,
     bookmarkPanelItems,
     bookmarkTotalCount,
-    handleBookmarkCategoryChange,
-    handleNextBookmarkPage,
-    handlePreviousBookmarkPage,
-  } = useRewindBookmarkPanelState({ bookmarks });
+  } = useRewindBookmarkPanelState(rewindId);
   const isTimelineTruncated =
     (state.timeline?.bookmarkTimelineItemsTruncated ?? false) ||
     (state.timeline?.clipTimelineItemsTruncated ?? false);
@@ -92,20 +88,16 @@ function useRewindDetailTimeline({
 
   return {
     bookmarkCategories,
-    bookmarkCategoryFilter,
+    categoryCounts,
     bookmarkPageCount,
-    bookmarkPageIndex,
     bookmarkPanelItems,
     bookmarkTotalCount,
     bookmarks,
     clipPreviewState,
     clipTargetsByBookmarkId,
     durationSeconds,
-    handleBookmarkCategoryChange,
     handleClipTargetSelect,
     handleJumpToStart,
-    handleNextBookmarkPage,
-    handlePreviousBookmarkPage,
     handleSeek,
     handleSeekBackward,
     handleSeekForward,

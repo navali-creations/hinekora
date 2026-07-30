@@ -59,7 +59,10 @@ export const createRewindsSlice: BoundStoreStateCreator<RewindsSlice> = (
       query: null,
       detail: {
         bookmarkCategoryFilter: allBookmarkCategoriesValue,
+        bookmarkErrorMessage: null,
+        bookmarkIsLoading: false,
         bookmarkPageIndex: 0,
+        bookmarkSearchText: "",
         hoveredBookmarkId: null,
         timelineMarkerCategoryFilter: defaultRewindTimelineMarkerFilterValue,
       },
@@ -71,7 +74,10 @@ export const createRewindsSlice: BoundStoreStateCreator<RewindsSlice> = (
         set((state) => {
           state.rewinds.detail = {
             bookmarkCategoryFilter: allBookmarkCategoriesValue,
+            bookmarkErrorMessage: null,
+            bookmarkIsLoading: false,
             bookmarkPageIndex: 0,
+            bookmarkSearchText: "",
             hoveredBookmarkId: null,
             timelineMarkerCategoryFilter:
               defaultRewindTimelineMarkerFilterValue,
@@ -88,6 +94,18 @@ export const createRewindsSlice: BoundStoreStateCreator<RewindsSlice> = (
       setDetailBookmarkPageIndex: (pageIndex) => {
         set((state) => {
           state.rewinds.detail.bookmarkPageIndex = Math.max(0, pageIndex);
+        });
+      },
+      setDetailBookmarkPanelStatus: (status) => {
+        set((state) => {
+          state.rewinds.detail.bookmarkErrorMessage = status.errorMessage;
+          state.rewinds.detail.bookmarkIsLoading = status.isLoading;
+        });
+      },
+      setDetailBookmarkSearchText: (searchText) => {
+        set((state) => {
+          state.rewinds.detail.bookmarkSearchText = searchText;
+          state.rewinds.detail.bookmarkPageIndex = 0;
         });
       },
       setDetailHoveredBookmarkId: (id) => {

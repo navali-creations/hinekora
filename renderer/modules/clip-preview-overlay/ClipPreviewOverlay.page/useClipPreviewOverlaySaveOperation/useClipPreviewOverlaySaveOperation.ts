@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import type { ReplayClipView } from "~/main/modules/replay-clips";
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
+import type { ReplayClipPlaybackRate } from "~/types";
 import {
   type ClipPreviewTrimRange,
   roundClipPreviewSeconds,
@@ -16,6 +17,7 @@ function useClipPreviewOverlaySaveOperation(input: {
   hasTitleChange: boolean;
   hasTrimChanges: boolean;
   isMuted: boolean;
+  playbackRate?: ReplayClipPlaybackRate;
   prepareForFileMutation: () => void;
   reloadAfterFileMutation: () => void;
   resetCopiedState: () => void;
@@ -57,6 +59,7 @@ function useClipPreviewOverlaySaveOperation(input: {
           id: input.clip?.id ?? "",
           operationRequestId: requestId,
           ...(input.isMuted ? { muteAudio: true } : {}),
+          ...(input.playbackRate ? { playbackRate: input.playbackRate } : {}),
           ...(input.hasTitleChange ? { name: input.trimmedTitle } : {}),
           ...(input.hasTrimChanges
             ? {
@@ -98,6 +101,7 @@ function useClipPreviewOverlaySaveOperation(input: {
     input.hasTrimChanges,
     input.isMuted,
     input.prepareForFileMutation,
+    input.playbackRate,
     input.reloadAfterFileMutation,
     input.resetCopiedState,
     input.trim.inSeconds,

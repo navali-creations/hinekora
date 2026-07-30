@@ -17,7 +17,7 @@ type ClipPreviewOverlayMediaCommands = Pick<
   ClipPreviewOverlayMediaWorkflow,
   | "handleCanPlay"
   | "handleCanPlayThrough"
-  | "handleEnterFullscreen"
+  | "handleToggleFullscreen"
   | "handleLoadedData"
   | "handleLoadedMetadata"
   | "handleLoadStart"
@@ -30,6 +30,7 @@ type ClipPreviewOverlayMediaCommands = Pick<
   | "handleTimeUpdate"
   | "handleToggleMuted"
   | "handleTogglePlayback"
+  | "handleVideoKeyDown"
   | "handleTrimCommit"
   | "handleTrimPreview"
   | "handleVideoError"

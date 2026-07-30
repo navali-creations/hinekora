@@ -80,6 +80,30 @@ function createReplayClip(input: {
   };
 }
 
+function insertReplayClipRow(clip: ReplayClip): void {
+  const database = DatabaseService.getInstance();
+
+  database.runQuery(
+    database.kysely.insertInto("replay_clips").values({
+      created_at: clip.createdAt,
+      death_timestamp: clip.deathTimestamp,
+      duration_seconds: clip.durationSeconds,
+      error: clip.error,
+      id: clip.id,
+      kind: clip.kind,
+      original_obs_path: clip.originalObsPath,
+      processed_clip_path: clip.processedClipPath,
+      size_bytes: clip.sizeBytes,
+      source_game: clip.sourceGame,
+      source_league: clip.sourceLeague,
+      status: clip.status,
+      target_duration_seconds: clip.targetDurationSeconds,
+      trigger_line_hash: clip.triggerLineHash,
+      updated_at: clip.updatedAt,
+    }),
+  );
+}
+
 beforeEach(() => {
   DatabaseService.resetForTests();
   mockIpcMainHandlers();
@@ -177,7 +201,9 @@ describe("BookmarksService", () => {
       },
     ]);
 
-    expect(service.listLibrary({ game: "poe2", pageSize: 10 }).items).toEqual([
+    const page = service.listLibrary({ game: "poe2", pageSize: 10 });
+
+    expect(page.items).toEqual([
       expect.objectContaining({
         category: "town",
         label: "The Glade",
@@ -187,6 +213,14 @@ describe("BookmarksService", () => {
         label: "The Khari Bazaar",
       }),
     ]);
+    expect(page.categoryCounts).toEqual([{ category: "town", count: 2 }]);
+    expect(
+      service.listLibrary({
+        game: "poe2",
+        pageSize: 10,
+        search: "glade",
+      }).items,
+    ).toEqual([expect.objectContaining({ label: "The Glade" })]);
   });
 
   it("classifies hub generated areas as towns", () => {
@@ -302,7 +336,7 @@ describe("BookmarksService", () => {
     const queryOneSpy = vi.spyOn(database, "queryOne");
     const listPage = service.listLibrary({ game: "poe2", pageSize: 10 });
 
-    expect(queryOneSpy).toHaveBeenCalledTimes(1);
+    expect(queryOneSpy).not.toHaveBeenCalled();
     expect(listPage.items[0]).toEqual(
       expect.objectContaining({
         activeRecordingBookmarkDurationSeconds: 110,
@@ -359,6 +393,10 @@ describe("BookmarksService", () => {
     });
 
     expect(page.availableCategories).toEqual(["death", "map"]);
+    expect(page.categoryCounts).toEqual([
+      { category: "death", count: 1 },
+      { category: "map", count: 1 },
+    ]);
     expect(page.items).toEqual([
       expect.objectContaining({
         category: "death",
@@ -369,6 +407,43 @@ describe("BookmarksService", () => {
     expect(page.timelineItems).toEqual([]);
     expect(page.timelineItemsTruncated).toBe(false);
     expect(page.totalCount).toBe(1);
+    expect(
+      service.listRecording(recording.id, {
+        category: "death",
+        includeTimeline: false,
+        search: "conflu",
+      }).items,
+    ).toEqual([expect.objectContaining({ category: "death" })]);
+    expect(
+      service.listRecording(recording.id, {
+        includeTimeline: false,
+        search: "Death",
+      }).items,
+    ).toEqual([]);
+    expect(
+      service.listRecording(recording.id, {
+        includeTimeline: true,
+        rangeEndSeconds: 25,
+        rangeStartSeconds: 15,
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        availableCategories: ["death", "map"],
+        categoryCounts: [
+          { category: "death", count: 1 },
+          { category: "map", count: 1 },
+        ],
+        items: expect.arrayContaining([
+          expect.objectContaining({ category: "death" }),
+          expect.objectContaining({ category: "map" }),
+        ]),
+        timelineItems: expect.arrayContaining([
+          expect.objectContaining({ category: "death" }),
+          expect.objectContaining({ category: "map" }),
+        ]),
+        totalCount: 2,
+      }),
+    );
   });
 
   it("archives recording links with enough context for bookmark statistics", () => {
@@ -489,14 +564,14 @@ describe("BookmarksService", () => {
       game: "poe2",
       triggerLineHash: "manual-replay-hash",
     });
-    service.linkReplayClip(
-      createReplayClip({
-        id: "manual-replay-1",
-        kind: "manual",
-        timestamp: "2026-07-03T12:00:20.000Z",
-        triggerLineHash: "manual-replay-hash",
-      }),
-    );
+    const manualReplayClip = createReplayClip({
+      id: "manual-replay-1",
+      kind: "manual",
+      timestamp: "2026-07-03T12:00:20.000Z",
+      triggerLineHash: "manual-replay-hash",
+    });
+    insertReplayClipRow(manualReplayClip);
+    service.linkReplayClip(manualReplayClip);
     service.endRewindSession();
 
     const sessions = service.listActivitySessions({
@@ -531,6 +606,35 @@ describe("BookmarksService", () => {
     expect(timeline?.bookmarks.map((bookmark) => bookmark.category)).toEqual([
       "town",
       "rewind-manual-replay",
+    ]);
+    expect(
+      service.listActivitySessionBookmarks(session.id, {
+        category: "town",
+        pageIndex: 0,
+        pageSize: 1,
+        search: "khari",
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        categoryCounts: [
+          { category: "rewind-manual-replay", count: 1 },
+          { category: "town", count: 1 },
+        ],
+        items: [expect.objectContaining({ category: "town" })],
+        pageCount: 1,
+        totalCount: 1,
+      }),
+    );
+    expect(
+      service.listActivitySessionBookmarks(session.id, {
+        category: "rewind-manual-replay",
+        pageSize: 1,
+      }).items,
+    ).toEqual([
+      expect.objectContaining({
+        category: "rewind-manual-replay",
+        durationSeconds: 10,
+      }),
     ]);
 
     expect(service.listLibrary({ game: "poe2", pageSize: 10 }).items).toEqual([
@@ -609,6 +713,183 @@ describe("BookmarksService", () => {
       { category: "map", duration: 60 },
       { category: "hideout", duration: 30 },
     ]);
+  });
+
+  it("returns panel durations for bookmarks beyond the timeline cap", () => {
+    const repository = new BookmarksRepository(DatabaseService.getInstance());
+    const database = DatabaseService.getInstance();
+    const session = repository.openActivitySession({
+      mode: "rewind",
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-07-03T12:00:00.000Z",
+    });
+    const insertBookmark = database.db.prepare(`
+      INSERT INTO bookmarks (
+        id, source_game, source_league, source, category, subcategory,
+        label, scene_name, note, occurred_at, dedupe_key, created_at, updated_at
+      ) VALUES (?, 'poe2', 'Standard', 'client-log', 'map', NULL, ?, ?, NULL, ?, NULL, ?, ?)
+    `);
+    const insertLink = database.db.prepare(`
+      INSERT INTO bookmark_links (
+        id, bookmark_id, target_kind, target_id, offset_seconds,
+        duration_seconds, archived, archived_target_title,
+        archived_target_duration_seconds, created_at, updated_at
+      ) VALUES (?, ?, 'activity-session', ?, ?, ?, 0, NULL, NULL, ?, ?)
+    `);
+    const baseTimeMilliseconds = Date.parse("2026-07-03T12:00:00.000Z");
+
+    database.transaction(() => {
+      for (let index = 0; index <= 2_000; index += 1) {
+        const bookmarkId = `capped-bookmark-${index}`;
+        const occurredAt = new Date(
+          baseTimeMilliseconds + index * 1_000,
+        ).toISOString();
+        insertBookmark.run(
+          bookmarkId,
+          `Map ${index}`,
+          `Map ${index}`,
+          occurredAt,
+          occurredAt,
+          occurredAt,
+        );
+        insertLink.run(
+          `capped-link-${index}`,
+          bookmarkId,
+          session.id,
+          index,
+          index === 2_000 ? 42 : 10,
+          occurredAt,
+          occurredAt,
+        );
+      }
+    });
+
+    const timeline = repository.listActivitySessionTimeline(session.id);
+    const page = repository.listActivitySessionBookmarks(session.id, {
+      pageSize: 1,
+    });
+
+    expect(timeline?.bookmarkTimelineItemsTruncated).toBe(true);
+    expect(timeline?.bookmarks).toHaveLength(2_000);
+    expect(
+      timeline?.bookmarks.some(
+        (bookmark) => bookmark.id === "capped-bookmark-2000",
+      ),
+    ).toBe(false);
+    expect(page.items).toEqual([
+      expect.objectContaining({
+        durationSeconds: 42,
+        id: "capped-bookmark-2000",
+      }),
+    ]);
+  });
+
+  it("returns calculated location durations while a rewind session is active", () => {
+    const repository = new BookmarksRepository(DatabaseService.getInstance());
+    const database = DatabaseService.getInstance();
+    const session = repository.openActivitySession({
+      mode: "rewind",
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-07-03T12:00:00.000Z",
+    });
+    const firstOccurredAt = "2026-07-03T12:00:10.000Z";
+    const secondOccurredAt = "2026-07-03T12:00:40.000Z";
+
+    database.runQuery(
+      database.kysely.insertInto("bookmarks").values([
+        {
+          category: "map",
+          created_at: firstOccurredAt,
+          dedupe_key: null,
+          id: "active-session-map",
+          label: "Map",
+          note: null,
+          occurred_at: firstOccurredAt,
+          scene_name: "Map",
+          source: "client-log",
+          source_game: "poe2",
+          source_league: "Standard",
+          subcategory: null,
+          updated_at: firstOccurredAt,
+        },
+        {
+          category: "hideout",
+          created_at: secondOccurredAt,
+          dedupe_key: null,
+          id: "active-session-hideout",
+          label: "Hideout",
+          note: null,
+          occurred_at: secondOccurredAt,
+          scene_name: "Hideout",
+          source: "client-log",
+          source_game: "poe2",
+          source_league: "Standard",
+          subcategory: null,
+          updated_at: secondOccurredAt,
+        },
+      ]),
+    );
+    database.runQuery(
+      database.kysely.insertInto("bookmark_links").values([
+        {
+          archived: 0,
+          archived_target_duration_seconds: null,
+          archived_target_title: null,
+          bookmark_id: "active-session-map",
+          created_at: firstOccurredAt,
+          duration_seconds: null,
+          id: "active-session-map-link",
+          offset_seconds: 10,
+          target_id: session.id,
+          target_kind: "activity-session",
+          updated_at: firstOccurredAt,
+        },
+        {
+          archived: 0,
+          archived_target_duration_seconds: null,
+          archived_target_title: null,
+          bookmark_id: "active-session-hideout",
+          created_at: secondOccurredAt,
+          duration_seconds: null,
+          id: "active-session-hideout-link",
+          offset_seconds: 40,
+          target_id: session.id,
+          target_kind: "activity-session",
+          updated_at: secondOccurredAt,
+        },
+      ]),
+    );
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-03T12:01:40.000Z"));
+    try {
+      expect(
+        repository.listActivitySessionBookmarks(session.id, {
+          category: "map",
+          pageSize: 1,
+        }).items,
+      ).toEqual([
+        expect.objectContaining({
+          durationSeconds: 30,
+          id: "active-session-map",
+        }),
+      ]);
+      expect(
+        repository.listActivitySessionBookmarks(session.id, {
+          category: "hideout",
+          pageSize: 1,
+        }).items,
+      ).toEqual([
+        expect.objectContaining({
+          durationSeconds: 60,
+          id: "active-session-hideout",
+        }),
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("uses the latest activity session link when a bookmark belongs to multiple sessions", () => {
@@ -1474,6 +1755,25 @@ describe("BookmarksService", () => {
       ok: false,
       error: "include timeline must be a boolean",
     });
+    expect(
+      await handlers.get(BookmarksChannel.ListActivitySessionBookmarks)?.(
+        {},
+        "session-1",
+        { pageSize: 101 },
+      ),
+    ).toEqual({
+      ok: false,
+      error: "page size is too large",
+    });
+    expect(
+      await handlers.get(BookmarksChannel.ListRecording)?.({}, "recording-1", {
+        rangeEndSeconds: 5,
+        rangeStartSeconds: 10,
+      }),
+    ).toEqual({
+      ok: false,
+      error: "range end must not be before range start",
+    });
   });
 
   it("accepts full bookmark IPC query payloads and manual mutations", async () => {
@@ -1582,6 +1882,25 @@ describe("BookmarksService", () => {
         { game: "poe2" },
       ),
     ).toEqual(expect.objectContaining({ sortDirection: "desc" }));
+    expect(
+      await handlers.get(BookmarksChannel.ListActivitySessionBookmarks)?.(
+        {},
+        "missing-session",
+        {
+          category: "manual",
+          pageIndex: 0,
+          pageSize: 5,
+          search: "hideout",
+        },
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        categoryCounts: [],
+        pageIndex: 0,
+        pageSize: 5,
+        totalCount: 0,
+      }),
+    );
     expect(
       await handlers.get(BookmarksChannel.ListRecording)?.({}, "recording-1", {
         category: "manual",

@@ -1,6 +1,10 @@
 import type { ReplayClipDetail } from "~/main/modules/replay-clips";
 import type { BoundStoreStateCreator } from "~/renderer/store/store.types";
 
+import {
+  defaultReplayClipPlaybackRate,
+  type ReplayClipPlaybackRate,
+} from "~/types";
 import type { ClipPreviewTrimRange } from "../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 
 interface ClipPreviewOverlaySaveMessage {
@@ -9,6 +13,7 @@ interface ClipPreviewOverlaySaveMessage {
 }
 
 interface ClipPreviewOverlayState {
+  applyPlaybackRateToExport: boolean;
   detail: ReplayClipDetail | null;
   detailError: string | null;
   durationOverrideSeconds: number | null;
@@ -19,9 +24,11 @@ interface ClipPreviewOverlayState {
   hasCopied: boolean;
   hasSavedClip: boolean;
   isCopying: boolean;
+  isFullscreen: boolean;
   isSaving: boolean;
   mediaVersion: number;
   operationProgress: number;
+  playbackRate: ReplayClipPlaybackRate;
   previewProgress: number;
   saveMessage: ClipPreviewOverlaySaveMessage | null;
   titleDraft: string;
@@ -34,10 +41,12 @@ interface ClipPreviewOverlaySlice {
     reset: () => void;
     resetLoadedClipState: (trim: ClipPreviewTrimRange) => void;
     setCopied: (hasCopied: boolean) => void;
+    setApplyPlaybackRateToExport: (apply: boolean) => void;
     setHasSavedClip: (hasSavedClip: boolean) => void;
     setCopying: (isCopying: boolean) => void;
     setDetail: (detail: ReplayClipDetail | null) => void;
     setDetailError: (detailError: string | null) => void;
+    setFullscreen: (isFullscreen: boolean) => void;
     setMediaReady: (isMediaReady: boolean) => void;
     setMediaError: (mediaError: string | null) => void;
     setMuted: (isMuted: boolean) => void;
@@ -46,6 +55,7 @@ interface ClipPreviewOverlaySlice {
       durationOverrideSeconds: number | null,
     ) => void;
     setOperationProgress: (operationProgress: number) => void;
+    setPlaybackRate: (playbackRate: ReplayClipPlaybackRate) => void;
     setPreviewProgress: (previewProgress: number) => void;
     setSaveMessage: (saveMessage: ClipPreviewOverlaySaveMessage | null) => void;
     setSaving: (isSaving: boolean) => void;
@@ -60,6 +70,7 @@ const initialTrimRange: ClipPreviewTrimRange = {
 };
 
 const createInitialClipPreviewOverlayState = (): ClipPreviewOverlayState => ({
+  applyPlaybackRateToExport: false,
   detail: null,
   detailError: null,
   durationOverrideSeconds: null,
@@ -70,9 +81,11 @@ const createInitialClipPreviewOverlayState = (): ClipPreviewOverlayState => ({
   hasCopied: false,
   hasSavedClip: false,
   isCopying: false,
+  isFullscreen: false,
   isSaving: false,
   mediaVersion: 0,
   operationProgress: 0,
+  playbackRate: defaultReplayClipPlaybackRate,
   previewProgress: 0,
   saveMessage: null,
   titleDraft: "",
@@ -107,6 +120,8 @@ const createClipPreviewOverlaySlice: BoundStoreStateCreator<
         state.clipPreviewOverlay.mediaError = null;
         state.clipPreviewOverlay.isMuted = false;
         state.clipPreviewOverlay.isPlaying = false;
+        state.clipPreviewOverlay.applyPlaybackRateToExport = false;
+        state.clipPreviewOverlay.playbackRate = defaultReplayClipPlaybackRate;
         state.clipPreviewOverlay.titleDraft = "";
         state.clipPreviewOverlay.trim = trim;
       });
@@ -114,6 +129,11 @@ const createClipPreviewOverlaySlice: BoundStoreStateCreator<
     setCopied: (hasCopied) => {
       set((state) => {
         state.clipPreviewOverlay.hasCopied = hasCopied;
+      });
+    },
+    setApplyPlaybackRateToExport: (apply) => {
+      set((state) => {
+        state.clipPreviewOverlay.applyPlaybackRateToExport = apply;
       });
     },
     setHasSavedClip: (hasSavedClip) => {
@@ -134,6 +154,11 @@ const createClipPreviewOverlaySlice: BoundStoreStateCreator<
     setDetailError: (detailError) => {
       set((state) => {
         state.clipPreviewOverlay.detailError = detailError;
+      });
+    },
+    setFullscreen: (isFullscreen) => {
+      set((state) => {
+        state.clipPreviewOverlay.isFullscreen = isFullscreen;
       });
     },
     setMediaReady: (isMediaReady) => {
@@ -168,6 +193,14 @@ const createClipPreviewOverlaySlice: BoundStoreStateCreator<
           Math.max(operationProgress, 0),
           1,
         );
+      });
+    },
+    setPlaybackRate: (playbackRate) => {
+      set((state) => {
+        state.clipPreviewOverlay.playbackRate = playbackRate;
+        if (playbackRate === defaultReplayClipPlaybackRate) {
+          state.clipPreviewOverlay.applyPlaybackRateToExport = false;
+        }
       });
     },
     setPreviewProgress: (previewProgress) => {

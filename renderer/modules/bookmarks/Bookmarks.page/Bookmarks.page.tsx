@@ -2,6 +2,7 @@ import { PageContainer } from "~/renderer/components/PageContainer/PageContainer
 import { PageContent } from "~/renderer/components/PageContent/PageContent";
 import { PageHeader } from "~/renderer/components/PageHeader/PageHeader";
 import { BookmarkRenameDialog } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarkRenameDialog/BookmarkRenameDialog";
+import { BookmarksSearchInput } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksSearchInput/BookmarksSearchInput";
 import { BookmarksTable } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksTable/BookmarksTable";
 import { MediaLibraryLeagueControl } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryLeagueControl/MediaLibraryLeagueControl";
 import { MediaLibraryPageActions } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryPageActions/MediaLibraryPageActions";
@@ -10,13 +11,16 @@ import { useBookmarksShallow } from "~/renderer/store";
 
 function BookmarksPage() {
   const { isReady: isMediaScopeReady, scope } = useMediaLibraryScope();
-  const { availableLeagues, refresh } = useBookmarksShallow((bookmarks) => ({
-    availableLeagues: bookmarks.availableLeagues,
-    refresh: bookmarks.refresh,
-  }));
+  const { availableLeagues, searchText, setSearchText } = useBookmarksShallow(
+    (bookmarks) => ({
+      availableLeagues: bookmarks.availableLeagues,
+      searchText: bookmarks.searchText,
+      setSearchText: bookmarks.setSearchText,
+    }),
+  );
 
-  const handleRefresh = () => {
-    void refresh();
+  const handleSearchTextChange = (nextSearchText: string) => {
+    setSearchText(nextSearchText);
   };
 
   return (
@@ -26,10 +30,16 @@ function BookmarksPage() {
         subtitle="Gameplay markers for locations, deaths, manual bookmarks, and manual replays."
         actions={
           <MediaLibraryPageActions
+            bulkAction={
+              <BookmarksSearchInput
+                className="w-36"
+                searchText={searchText}
+                onSearchTextChange={handleSearchTextChange}
+              />
+            }
             leagueControl={
               <MediaLibraryLeagueControl savedLeagues={availableLeagues} />
             }
-            onRefresh={handleRefresh}
           />
         }
       />

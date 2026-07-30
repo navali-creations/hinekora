@@ -1552,6 +1552,7 @@ describe("EditorService IPC", () => {
       expect(onExportVideoCommitted).toHaveBeenCalledWith(
         expect.objectContaining({
           path: outputPath,
+          projectId: "project-1",
           sizeBytes: result.sizeBytes,
           sizeDeltaBytes: result.sizeBytes,
         }),

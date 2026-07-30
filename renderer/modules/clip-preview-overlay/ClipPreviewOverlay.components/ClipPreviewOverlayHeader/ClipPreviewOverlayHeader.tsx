@@ -8,18 +8,26 @@ import {
   resolveClipPreviewDetail,
   resolveClipPreviewHeaderState,
 } from "../../ClipPreviewOverlay.page/useClipPreviewOverlayDetail/useClipPreviewOverlayDetail.utils";
+import { ClipPreviewFullscreenButton } from "../ClipPreviewFullscreenButton/ClipPreviewFullscreenButton";
 import { useClipPreviewOverlayControlsContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
 
 function ClipPreviewOverlayHeader() {
   const workflow = useClipPreviewOverlayControlsContext();
-  const { detail, detailError, durationOverrideSeconds, isCopying, isSaving } =
-    useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
-      detail: clipPreviewOverlay.detail,
-      detailError: clipPreviewOverlay.detailError,
-      durationOverrideSeconds: clipPreviewOverlay.durationOverrideSeconds,
-      isCopying: clipPreviewOverlay.isCopying,
-      isSaving: clipPreviewOverlay.isSaving,
-    }));
+  const {
+    detail,
+    detailError,
+    durationOverrideSeconds,
+    isCopying,
+    isFullscreen,
+    isSaving,
+  } = useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
+    detail: clipPreviewOverlay.detail,
+    detailError: clipPreviewOverlay.detailError,
+    durationOverrideSeconds: clipPreviewOverlay.durationOverrideSeconds,
+    isCopying: clipPreviewOverlay.isCopying,
+    isFullscreen: clipPreviewOverlay.isFullscreen,
+    isSaving: clipPreviewOverlay.isSaving,
+  }));
   const { clip, durationSeconds } = resolveClipPreviewDetail(
     detail,
     durationOverrideSeconds,
@@ -53,6 +61,12 @@ function ClipPreviewOverlayHeader() {
           <Edit size={15} />
           Continue in editor
         </button>
+        {isFullscreen && (
+          <ClipPreviewFullscreenButton
+            canEnterFullscreen={canEdit}
+            placement="header"
+          />
+        )}
         <button
           aria-label="Close replay preview"
           className={`${styles.closeButton} btn btn-primary btn-square btn-sm`}

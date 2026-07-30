@@ -16,6 +16,7 @@ interface EditorExportOwnershipRecord {
   inode: number;
   modifiedAtMs: number;
   path: string;
+  projectId: string | null;
   sizeBytes: number;
 }
 
@@ -24,6 +25,7 @@ interface EditorExportOwnershipRow {
   inode: string;
   modified_at_ms: number;
   path: string;
+  project_id: string | null;
   size_bytes: number;
 }
 
@@ -40,6 +42,7 @@ class EditorExportOwnershipRepository {
             sql<string>`CAST(inode AS TEXT)`.as("inode"),
             "modified_at_ms",
             "path",
+            "project_id",
             "size_bytes",
           ])
           .orderBy("updated_at", "desc")
@@ -103,6 +106,7 @@ class EditorExportOwnershipRepository {
           inode: record.inode,
           modified_at_ms: record.modifiedAtMs,
           path: record.path,
+          project_id: record.projectId,
           size_bytes: record.sizeBytes,
           updated_at: timestamp,
         })
@@ -111,6 +115,7 @@ class EditorExportOwnershipRepository {
             device_id: record.deviceId,
             inode: record.inode,
             modified_at_ms: record.modifiedAtMs,
+            project_id: record.projectId,
             size_bytes: record.sizeBytes,
             updated_at: timestamp,
           }),
@@ -127,6 +132,7 @@ function mapEditorExportOwnershipRow(
     inode: Number(row.inode),
     modifiedAtMs: row.modified_at_ms,
     path: row.path,
+    projectId: row.project_id,
     sizeBytes: row.size_bytes,
   };
 }

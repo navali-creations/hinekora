@@ -7,6 +7,8 @@ import type {
   StepValidationResult,
 } from "../../main/modules/app-setup/AppSetup.types";
 import type {
+  ActivitySessionBookmarksPage,
+  ActivitySessionBookmarksQuery,
   ActivitySessionLibraryItem,
   ActivitySessionLibraryPage,
   ActivitySessionLibraryQuery,
@@ -336,11 +338,13 @@ function createDashboardE2EFixture(
   const captureProfile: CaptureProfile = {
     captureTarget: profile.captureTarget,
     createdAt: dashboardE2ENow,
+    deathClipsEnabled: settings.deathClipsEnabled,
     deathClipSeconds: settings.deathClipSeconds,
     game: "poe2",
     id: "capture-profile-1",
     isDefault: false,
     name: "PoE 2 Capture",
+    manualReplaySeconds: settings.manualReplaySeconds,
     recordingAudioInputDeviceId: settings.recordingAudioInputDeviceId,
     recordingAudioOutputDeviceId: settings.recordingAudioOutputDeviceId,
     recordingAutoStartMode: settings.recordingAutoStartMode,
@@ -500,6 +504,19 @@ async function setupDashboardE2E(
       const { fixture } = input;
       const unsubscribe = () => undefined;
       const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+      const createBookmarkCategoryCounts = (
+        bookmarks: Array<{ category: BookmarkCategory }>,
+      ): BookmarkLibraryPage["categoryCounts"] =>
+        Array.from(
+          bookmarks.reduce((counts, bookmark) => {
+            counts.set(
+              bookmark.category,
+              (counts.get(bookmark.category) ?? 0) + 1,
+            );
+            return counts;
+          }, new Map<BookmarkCategory, number>()),
+          ([category, count]) => ({ category, count }),
+        );
       const normalizeLeagueSettingsUpdate = (
         window as unknown as {
           __HINEKORA_NORMALIZE_LEAGUE_SETTINGS_UPDATE__: (
@@ -614,6 +631,7 @@ async function setupDashboardE2E(
         captureMode?: (mode: ManagedRecorderCaptureMode) => void;
         captureProfileChanged?: (profiles: CaptureProfile[]) => void;
         captureRefreshRequested?: () => void;
+        clipPreviewFullscreen?: (isFullscreen: boolean) => void;
         poeError?: (error: { error: string }) => void;
         poeStart?: (state: PoeProcessSnapshot) => void;
         poeSnapshot?: (state: PoeProcessSnapshot) => void;
@@ -636,6 +654,7 @@ async function setupDashboardE2E(
         updateAvailable?: (info: UpdateInfo) => void;
         updateProgress?: (progress: DownloadProgress) => void;
       } = {};
+      let clipPreviewFullscreen = false;
       const calls: DashboardE2ECalls = {
         audioDeviceRequests: [],
         auraLockEvents: [],
@@ -779,19 +798,28 @@ async function setupDashboardE2E(
         query: BookmarkLibraryQuery = {},
       ): BookmarkLibraryPage => {
         calls.bookmarkLibraryQueries.push(clone(query));
-        const filtered = bookmarks.filter((bookmark) => {
+        const scoped = bookmarks.filter((bookmark) => {
           if (query.game && bookmark.sourceGame !== query.game) {
             return false;
           }
           if (query.league && bookmark.sourceLeague !== query.league) {
             return false;
           }
-          if (query.category && bookmark.category !== query.category) {
-            return false;
-          }
 
           return true;
         });
+        const normalizedSearch = query.search?.toLocaleLowerCase();
+        const searched = normalizedSearch
+          ? scoped.filter((bookmark) =>
+              bookmark.sceneName
+                ?.toLocaleLowerCase()
+                .includes(normalizedSearch),
+            )
+          : scoped;
+        const filtered = query.category
+          ? searched.filter((bookmark) => bookmark.category === query.category)
+          : searched;
+        const categoryCounts = createBookmarkCategoryCounts(searched);
         const pageIndex = query.pageIndex ?? 0;
         const pageSize = query.pageSize ?? 20;
         const pageStart = pageIndex * pageSize;
@@ -799,7 +827,7 @@ async function setupDashboardE2E(
 
         return {
           availableCategories: Array.from(
-            new Set(filtered.map((bookmark) => bookmark.category)),
+            new Set(scoped.map((bookmark) => bookmark.category)),
           ),
           availableLeagues: Array.from(
             new Set(
@@ -810,6 +838,7 @@ async function setupDashboardE2E(
                 .map((bookmark) => bookmark.sourceLeague),
             ),
           ),
+          categoryCounts,
           items: clone(sorted.slice(pageStart, pageStart + pageSize)),
           pageCount: Math.max(1, Math.ceil(filtered.length / pageSize)),
           pageIndex,
@@ -832,9 +861,34 @@ async function setupDashboardE2E(
               offsetSeconds: bookmark.activeRecordingOffsetSeconds,
             }),
           );
+        const ranged = linked.filter((bookmark) => {
+          if (bookmark.offsetSeconds === null) {
+            return (
+              query.rangeStartSeconds === undefined &&
+              query.rangeEndSeconds === undefined
+            );
+          }
+          const endSeconds =
+            bookmark.offsetSeconds + (bookmark.durationSeconds ?? 0);
+          return (
+            (query.rangeStartSeconds === undefined ||
+              endSeconds >= query.rangeStartSeconds) &&
+            (query.rangeEndSeconds === undefined ||
+              bookmark.offsetSeconds <= query.rangeEndSeconds)
+          );
+        });
+        const normalizedSearch = query.search?.toLocaleLowerCase();
+        const searched = normalizedSearch
+          ? ranged.filter((bookmark) =>
+              bookmark.sceneName
+                ?.toLocaleLowerCase()
+                .includes(normalizedSearch),
+            )
+          : ranged;
         const filtered = query.category
-          ? linked.filter((bookmark) => bookmark.category === query.category)
-          : linked;
+          ? searched.filter((bookmark) => bookmark.category === query.category)
+          : searched;
+        const categoryCounts = createBookmarkCategoryCounts(searched);
         const pageIndex = query.pageIndex ?? 0;
         const pageSize = query.pageSize ?? 20;
         const pageStart = pageIndex * pageSize;
@@ -846,21 +900,122 @@ async function setupDashboardE2E(
         const timelineItems =
           query.includeTimeline === false
             ? []
-            : [...linked].sort(
+            : [...ranged].sort(
                 (left, right) =>
                   (left.offsetSeconds ?? 0) - (right.offsetSeconds ?? 0),
               );
 
         return {
           availableCategories: Array.from(
-            new Set(linked.map((bookmark) => bookmark.category)),
+            new Set(ranged.map((bookmark) => bookmark.category)),
           ) as BookmarkCategory[],
+          categoryCounts,
           items: clone(sortedItems.slice(pageStart, pageStart + pageSize)),
           pageCount: Math.max(1, Math.ceil(filtered.length / pageSize)),
           pageIndex,
           pageSize,
           timelineItems: clone(timelineItems),
           timelineItemsTruncated: false,
+          totalCount: filtered.length,
+        };
+      };
+      const listActivitySessionBookmarks = (
+        activitySessionId: string,
+        query: ActivitySessionBookmarksQuery = {},
+      ): ActivitySessionBookmarksPage => {
+        const activitySessionTimeline =
+          activitySessionTimelines[activitySessionId];
+        const clipDurationsByBookmarkId = new Map(
+          (activitySessionTimeline?.clips ?? [])
+            .filter((clip) => clip.bookmarkId)
+            .map((clip) => [
+              clip.bookmarkId as string,
+              clip.durationSeconds ?? clip.targetDurationSeconds,
+            ]),
+        );
+        const sessionStartedAtMilliseconds = Date.parse(
+          activitySessionTimeline?.session.startedAt ?? "",
+        );
+        const sessionStoppedAtMilliseconds = Date.parse(
+          activitySessionTimeline?.session.stoppedAt ?? "",
+        );
+        const sessionDurationSeconds =
+          Number.isFinite(sessionStartedAtMilliseconds) &&
+          Number.isFinite(sessionStoppedAtMilliseconds)
+            ? Math.max(
+                0,
+                (sessionStoppedAtMilliseconds - sessionStartedAtMilliseconds) /
+                  1_000,
+              )
+            : null;
+        const locationCategories = new Set([
+          "boss",
+          "hideout",
+          "map",
+          "pinnacle",
+          "town",
+        ]);
+        const locationBookmarks = (activitySessionTimeline?.bookmarks ?? [])
+          .filter(
+            (bookmark) =>
+              bookmark.offsetSeconds !== null &&
+              locationCategories.has(bookmark.category),
+          )
+          .sort(
+            (left, right) =>
+              (left.offsetSeconds ?? 0) - (right.offsetSeconds ?? 0),
+          );
+        const locationDurationsByBookmarkId = new Map(
+          locationBookmarks.map((bookmark, index) => {
+            const nextOffsetSeconds =
+              locationBookmarks[index + 1]?.offsetSeconds ??
+              sessionDurationSeconds;
+            return [
+              bookmark.id,
+              nextOffsetSeconds === null || bookmark.offsetSeconds === null
+                ? null
+                : Math.max(0, nextOffsetSeconds - bookmark.offsetSeconds),
+            ] as const;
+          }),
+        );
+        const linked = (activitySessionTimeline?.bookmarks ?? [])
+          .filter((bookmark) => bookmark.category !== "manual")
+          .map((bookmark) => ({
+            ...bookmark,
+            durationSeconds:
+              clipDurationsByBookmarkId.get(bookmark.id) ??
+              locationDurationsByBookmarkId.get(bookmark.id) ??
+              null,
+          }));
+        const normalizedSearch = query.search?.toLocaleLowerCase();
+        const searched = normalizedSearch
+          ? linked.filter((bookmark) =>
+              bookmark.sceneName
+                ?.toLocaleLowerCase()
+                .includes(normalizedSearch),
+            )
+          : linked;
+        const filtered = query.category
+          ? searched.filter((bookmark) => bookmark.category === query.category)
+          : searched;
+        const pageIndex = query.pageIndex ?? 0;
+        const pageSize = query.pageSize ?? 20;
+        const pageStart = pageIndex * pageSize;
+        const sorted = [...filtered].sort(
+          (left, right) =>
+            right.occurredAt.localeCompare(left.occurredAt) ||
+            (right.offsetSeconds ?? 0) - (left.offsetSeconds ?? 0),
+        );
+
+        return {
+          availableCategories: Array.from(
+            new Set(linked.map((bookmark) => bookmark.category)),
+          ),
+          categoryCounts: createBookmarkCategoryCounts(searched),
+          items: clone(sorted.slice(pageStart, pageStart + pageSize)),
+          pageCount: Math.max(1, Math.ceil(filtered.length / pageSize)),
+          pageIndex,
+          pageSize,
           totalCount: filtered.length,
         };
       };
@@ -1013,6 +1168,8 @@ async function setupDashboardE2E(
             },
             listLibrary: async (query) => listBookmarks(query),
             listActivitySessions: async (query) => listActivitySessions(query),
+            listActivitySessionBookmarks: async (activitySessionId, query) =>
+              listActivitySessionBookmarks(activitySessionId, query),
             getActivitySessionTimeline: async (activitySessionId) =>
               clone(activitySessionTimelines[activitySessionId] ?? null),
             listRecording: async (recordingId, query) =>
@@ -1311,6 +1468,20 @@ async function setupDashboardE2E(
           },
           hideClipPreview: async () => {
             calls.clipPreviewOverlayWindowActions.push("hideClipPreview");
+          },
+          onClipPreviewFullscreenChanged: (callback) => {
+            listeners.clipPreviewFullscreen = callback;
+
+            return unsubscribe;
+          },
+          toggleClipPreviewFullscreen: async () => {
+            calls.clipPreviewOverlayWindowActions.push(
+              "toggleClipPreviewFullscreen",
+            );
+            clipPreviewFullscreen = !clipPreviewFullscreen;
+            listeners.clipPreviewFullscreen?.(clipPreviewFullscreen);
+
+            return clipPreviewFullscreen;
           },
           isAuraLocked: async () => auraLocked,
           isRecorderRequested: async () => recorderOverlayRequested,

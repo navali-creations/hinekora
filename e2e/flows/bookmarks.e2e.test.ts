@@ -193,12 +193,39 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
   await expect(page.getByRole("heading", { name: "Bookmarks" })).toBeVisible();
   await expect(page.getByText("Showing 1 to 20 of 22 results")).toBeVisible();
   await expect(page.getByText("Page 1 of 2")).toBeVisible();
+  await expect(
+    page.locator("[data-bookmark-category-chip='__all__']"),
+  ).toContainText("All (22)");
+  await expect(page.getByRole("button", { name: "Refresh" })).toHaveCount(0);
   await expect(page.getByText("Start of new Rewind").first()).toBeVisible();
   await expect(page.getByText("End of previous Rewind").first()).toBeVisible();
   await expect(
     page.getByText("End of previous Recording").first(),
   ).toBeVisible();
   await expect(page.getByText("Start of new Recording").first()).toBeVisible();
+  await expect
+    .poll(async () => {
+      const box = await page
+        .getByLabel("Search bookmark zones")
+        .locator("..")
+        .boundingBox();
+      return box ? [Math.round(box.width), Math.round(box.height)] : null;
+    })
+    .toEqual([144, 32]);
+
+  await page.getByLabel("Search bookmark zones").fill("Atlas Hideout");
+  await expect(page.getByText("Showing 1 to 1 of 1 results")).toBeVisible();
+  await expect
+    .poll(
+      async () =>
+        (await getDashboardE2ECalls(page)).bookmarkLibraryQueries.at(-1)
+          ?.search,
+    )
+    .toBe("Atlas Hideout");
+  await page
+    .getByRole("button", { name: "Clear bookmark zone search" })
+    .click();
+  await expect(page.getByText("Showing 1 to 20 of 22 results")).toBeVisible();
 
   const gradientRow = page
     .locator("tbody tr")
@@ -304,7 +331,7 @@ test("covers bookmark table pagination, sorting, filters, separators, and row ac
   await expect(page).toHaveURL(/\/recording\/recording-new\?t=60$/);
   await page.getByRole("link", { name: "Bookmarks" }).click();
 
-  await page.getByRole("button", { exact: true, name: "Manual" }).click();
+  await page.locator("[data-bookmark-category-chip='manual']").click();
   await page.getByRole("button", { name: "Rename bookmark" }).click();
   await expect(
     page.getByRole("heading", { name: "Rename bookmark" }),
@@ -366,6 +393,24 @@ test("covers recording detail playback, timeline seeking, bookmark pagination, a
     page.getByRole("button", { name: /The Khari Bazaar/ }),
   ).toBeVisible();
   await expect(openingBookmark).toBeHidden();
+  await expect
+    .poll(async () => {
+      const box = await page
+        .getByLabel("Search bookmark zones")
+        .locator("..")
+        .boundingBox();
+      return box ? [Math.round(box.width), Math.round(box.height)] : null;
+    })
+    .toEqual([144, 28]);
+
+  await page.getByLabel("Search bookmark zones").fill("Death");
+  await expect(
+    page.getByText("No bookmarks are attached to this recording yet."),
+  ).toBeVisible();
+  await page
+    .getByRole("button", { name: "Clear bookmark zone search" })
+    .click();
+  await expect(page.getByText("6 items")).toBeVisible();
 
   await page.getByRole("button", { name: "Next bookmark page" }).click();
   await expect(page.getByText("2 / 2")).toBeVisible();
@@ -375,12 +420,12 @@ test("covers recording detail playback, timeline seeking, bookmark pagination, a
   await page.getByRole("button", { name: "Previous bookmark page" }).click();
   await expect(page.getByText("1 / 2")).toBeVisible();
 
-  await page.getByRole("button", { exact: true, name: "Death" }).click();
+  await page.locator("[data-bookmark-category-chip='death']").click();
   await expect(page.getByText("1 items")).toBeVisible();
   await expect(
     page.getByRole("button", { name: /Qimah Reservoir.*0:12/ }),
   ).toBeVisible();
-  await page.getByRole("button", { exact: true, name: "All" }).click();
+  await page.locator("[data-bookmark-category-chip='__all__']").click();
 
   await page.getByRole("button", { name: /Trialmaster.*0:48/ }).click();
   await expect(page.getByText("0:48.00 / 1:30.00")).toBeVisible();

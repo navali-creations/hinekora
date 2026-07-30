@@ -3591,11 +3591,6 @@ describe("ManagedRecorderService", () => {
     const stopRunRecording = vi
       .spyOn(service, "stopRunRecording")
       .mockResolvedValue(status);
-    const saveReplay = vi.spyOn(service, "saveReplay").mockResolvedValue({
-      ok: true,
-      path: "clip.mp4",
-      error: null,
-    });
     const listAudioDevices = vi
       .spyOn(service, "listAudioDevices")
       .mockResolvedValue({
@@ -3718,14 +3713,12 @@ describe("ManagedRecorderService", () => {
     await handlers.get(ManagedRecorderChannel.StopBuffer)?.({});
     await handlers.get(ManagedRecorderChannel.StartRunRecording)?.({});
     await handlers.get(ManagedRecorderChannel.StopRunRecording)?.({});
-    await handlers.get(ManagedRecorderChannel.SaveReplay)?.({});
 
     expect(setCaptureMode).toHaveBeenCalledWith("session");
     expect(startBuffer).toHaveBeenCalled();
     expect(stopBuffer).toHaveBeenCalled();
     expect(startRunRecording).toHaveBeenCalled();
     expect(stopRunRecording).toHaveBeenCalled();
-    expect(saveReplay).toHaveBeenCalledWith(10, "manual");
     expect(listAudioDevices).toHaveBeenNthCalledWith(1, {});
     expect(listAudioDevices).toHaveBeenNthCalledWith(2, {
       forceRefresh: true,

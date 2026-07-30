@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { ReplayClipView } from "~/main/modules/replay-clips";
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
+import type { ReplayClipPlaybackRate } from "~/types";
 import type { ClipPreviewTrimRange } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { useClipPreviewOverlayOperation } from "../useClipPreviewOverlayOperation/useClipPreviewOverlayOperation";
 
@@ -11,6 +12,7 @@ function useClipPreviewOverlayCopyOperation(input: {
   clip: ReplayClipView | null;
   hasTrimChanges: boolean;
   isMuted: boolean;
+  playbackRate?: ReplayClipPlaybackRate;
   trim: ClipPreviewTrimRange;
 }) {
   const copiedTimeoutRef = useRef<number | null>(null);
@@ -62,6 +64,7 @@ function useClipPreviewOverlayCopyOperation(input: {
           id: input.clip?.id ?? "",
           operationRequestId: requestId,
           ...(input.isMuted ? { muteAudio: true } : {}),
+          ...(input.playbackRate ? { playbackRate: input.playbackRate } : {}),
           ...(input.hasTrimChanges
             ? {
                 trim: {
@@ -86,6 +89,7 @@ function useClipPreviewOverlayCopyOperation(input: {
     input.clip,
     input.hasTrimChanges,
     input.isMuted,
+    input.playbackRate,
     input.trim.inSeconds,
     input.trim.outSeconds,
     resetCopiedState,

@@ -33,10 +33,16 @@ function mapCaptureProfileRow(row: CaptureProfileRow): CaptureProfile {
         Reflect.get(parsedData, "recordingOutputResolution"),
       )
     : defaults.recordingOutputResolution;
+  const manualReplaySeconds = Object.hasOwn(parsedData, "manualReplaySeconds")
+    ? Reflect.get(parsedData, "manualReplaySeconds")
+    : Object.hasOwn(parsedData, "deathClipSeconds")
+      ? Reflect.get(parsedData, "deathClipSeconds")
+      : defaults.manualReplaySeconds;
 
   return CaptureProfileSchema.parse({
     ...defaults,
     ...parsedData,
+    manualReplaySeconds,
     recordingOutputResolution,
     id: row.id,
     name: row.name,

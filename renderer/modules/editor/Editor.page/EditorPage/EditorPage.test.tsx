@@ -37,9 +37,12 @@ const bookmarkStoreMocks = vi.hoisted(() => {
   const listeners = new Set<() => void>();
   const createInitialEditorRecording = () => ({
     categoryFilter: allCategory,
+    errorMessage: null as string | null,
     hasInteracted: false,
     hoveredBookmarkId: null as string | null,
+    isLoading: false,
     pageIndex: 0,
+    searchText: "",
     selectedBookmarkId: null as string | null,
   });
   let editorRecording = createInitialEditorRecording();
@@ -84,8 +87,17 @@ const bookmarkStoreMocks = vi.hoisted(() => {
         pageIndex: Math.max(0, nextPageIndex),
       });
     },
+    setEditorRecordingPanelStatus: (status: {
+      errorMessage: string | null;
+      isLoading: boolean;
+    }) => {
+      setEditorRecording({ ...editorRecording, ...status });
+    },
     setEditorRecordingSelectedBookmarkId: (id: string | null) => {
       setEditorRecording({ ...editorRecording, selectedBookmarkId: id });
+    },
+    setEditorRecordingSearchText: (searchText: string) => {
+      setEditorRecording({ ...editorRecording, pageIndex: 0, searchText });
     },
   };
   const createSnapshot = () => ({
@@ -136,6 +148,15 @@ vi.mock("~/renderer/store", async () => {
     await import("~/types/test-fixtures/poe-leagues");
 
   return {
+    useBoundStore: (selector: (state: unknown) => unknown) => {
+      const bookmarks = React.useSyncExternalStore(
+        bookmarkStoreMocks.subscribe,
+        bookmarkStoreMocks.getSnapshot,
+        bookmarkStoreMocks.getSnapshot,
+      );
+
+      return selector({ bookmarks });
+    },
     useBookmarksShallow: (selector: (bookmarks: unknown) => unknown) => {
       const bookmarks = React.useSyncExternalStore(
         bookmarkStoreMocks.subscribe,
@@ -323,23 +344,6 @@ const trimmedOverlapBookmark = createEditorTestRecordingBookmark({
   occurredAt: "2026-07-03T10:02:00.000Z",
   offsetSeconds: 7,
   sceneName: "Caer Blaidd",
-});
-const trimmedBeforeBookmark = createEditorTestRecordingBookmark({
-  category: "hideout",
-  durationSeconds: 4,
-  id: "bookmark-before-trim",
-  label: "Atlas Hideout",
-  occurredAt: "2026-07-03T10:03:00.000Z",
-  offsetSeconds: 0,
-  sceneName: "Atlas Hideout",
-});
-const trimmedAfterBookmark = createEditorTestRecordingBookmark({
-  durationSeconds: 3,
-  id: "bookmark-after-trim",
-  label: "The Well of Souls",
-  occurredAt: "2026-07-03T10:01:00.000Z",
-  offsetSeconds: 22,
-  sceneName: "The Well of Souls",
 });
 const trimmedManualBookmark = createEditorTestRecordingBookmark({
   category: "manual",
@@ -615,6 +619,7 @@ describe("EditorPage shortcuts", () => {
     );
     bookmarkApiMocks.listRecording.mockResolvedValue({
       availableCategories: ["map"],
+      categoryCounts: [{ category: "map", count: 1 }],
       items: [recordingBookmark],
       pageCount: 1,
       pageIndex: 0,
@@ -802,6 +807,8 @@ describe("EditorPage shortcuts", () => {
           includeTimeline: true,
           pageIndex: 0,
           pageSize: 5,
+          rangeEndSeconds: 11,
+          rangeStartSeconds: 3,
         },
       );
     });
@@ -858,7 +865,7 @@ describe("EditorPage shortcuts", () => {
 
     const findMapButton = () =>
       Array.from(container.querySelectorAll("button")).find(
-        (button) => button.textContent === "Map",
+        (button) => button.dataset.bookmarkCategoryChip === "map",
       );
 
     await act(async () => {
@@ -956,11 +963,14 @@ describe("EditorPage shortcuts", () => {
 
   it("filters editor bookmarks to the selected clip trim range", async () => {
     bookmarkApiMocks.listRecording.mockResolvedValue({
-      availableCategories: ["death", "hideout", "manual", "map"],
+      availableCategories: ["death", "manual", "map"],
+      categoryCounts: [
+        { category: "death", count: 1 },
+        { category: "manual", count: 1 },
+        { category: "map", count: 1 },
+      ],
       items: [
-        trimmedBeforeBookmark,
         trimmedOverlapBookmark,
-        trimmedAfterBookmark,
         trimmedManualBookmark,
         trimmedDeathBookmark,
       ],
@@ -968,14 +978,12 @@ describe("EditorPage shortcuts", () => {
       pageIndex: 0,
       pageSize: 5,
       timelineItems: [
-        trimmedBeforeBookmark,
         trimmedOverlapBookmark,
-        trimmedAfterBookmark,
         trimmedManualBookmark,
         trimmedDeathBookmark,
       ],
       timelineItemsTruncated: false,
-      totalCount: 5,
+      totalCount: 3,
     });
     configureEditorState({
       project: trimmedRecordingProject,
@@ -1027,6 +1035,7 @@ describe("EditorPage shortcuts", () => {
 
       return Promise.resolve({
         availableCategories: ["map"],
+        categoryCounts: [{ category: "map", count: 1 }],
         items: [recordingBookmark],
         pageCount: 1,
         pageIndex: 0,
@@ -1056,7 +1065,7 @@ describe("EditorPage shortcuts", () => {
     });
 
     const mapButton = Array.from(container.querySelectorAll("button")).find(
-      (button) => button.textContent === "Map",
+      (button) => button.dataset.bookmarkCategoryChip === "map",
     );
     await act(async () => {
       mapButton?.click();
@@ -1092,6 +1101,7 @@ describe("EditorPage shortcuts", () => {
 
     secondBookmarksRequest.resolve({
       availableCategories: [],
+      categoryCounts: [],
       items: [],
       pageCount: 1,
       pageIndex: 0,

@@ -23,18 +23,29 @@ describe("Rewinds slice", () => {
 
     expect(store.getState().rewinds.detail).toEqual({
       bookmarkCategoryFilter: allBookmarkCategoriesValue,
+      bookmarkErrorMessage: null,
+      bookmarkIsLoading: false,
       bookmarkPageIndex: 0,
+      bookmarkSearchText: "",
       hoveredBookmarkId: null,
       timelineMarkerCategoryFilter: defaultRewindTimelineMarkerFilterValue,
     });
 
     store.getState().rewinds.setDetailBookmarkPageIndex(4);
     store.getState().rewinds.setDetailHoveredBookmarkId("bookmark-2");
+    store.getState().rewinds.setDetailBookmarkPanelStatus({
+      errorMessage: "Failed",
+      isLoading: true,
+    });
+    store.getState().rewinds.setDetailBookmarkSearchText("atlas");
     store.getState().rewinds.selectDetailBookmarkCategory("map");
 
     expect(store.getState().rewinds.detail).toEqual({
       bookmarkCategoryFilter: "map",
+      bookmarkErrorMessage: "Failed",
+      bookmarkIsLoading: true,
       bookmarkPageIndex: 0,
+      bookmarkSearchText: "atlas",
       hoveredBookmarkId: "bookmark-2",
       timelineMarkerCategoryFilter: "map",
     });
@@ -50,7 +61,10 @@ describe("Rewinds slice", () => {
     store.getState().rewinds.resetDetail();
     expect(store.getState().rewinds.detail).toEqual({
       bookmarkCategoryFilter: allBookmarkCategoriesValue,
+      bookmarkErrorMessage: null,
+      bookmarkIsLoading: false,
       bookmarkPageIndex: 0,
+      bookmarkSearchText: "",
       hoveredBookmarkId: null,
       timelineMarkerCategoryFilter: defaultRewindTimelineMarkerFilterValue,
     });

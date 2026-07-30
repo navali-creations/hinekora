@@ -14,6 +14,7 @@ import { migration_20260710_000000_replay_clip_effective_duration_index } from "
 import { migration_20260711_000000_poe_leagues } from "./20260711_000000_poe_leagues";
 import { migration_20260717_000000_storage_file_deletion_operations } from "./20260717_000000_storage_file_deletion_operations";
 import { migration_20260723_000000_editor_export_videos } from "./20260723_000000_editor_export_videos";
+import { migration_20260729_000000_editor_export_source_project } from "./20260729_000000_editor_export_source_project";
 import type { Migration } from "./Migration.interface";
 
 const migrations: Migration[] = [
@@ -33,6 +34,7 @@ const migrations: Migration[] = [
   migration_20260711_000000_poe_leagues,
   migration_20260717_000000_storage_file_deletion_operations,
   migration_20260723_000000_editor_export_videos,
+  migration_20260729_000000_editor_export_source_project,
 ];
 
 export type { Migration } from "./Migration.interface";

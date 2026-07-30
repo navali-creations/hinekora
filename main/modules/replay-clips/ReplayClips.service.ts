@@ -313,6 +313,14 @@ class ReplayClipsService {
   }
 
   async handleDeathEvent(event: DeathEvent): Promise<ReplayClip | null> {
+    if (!SettingsStoreService.getInstance().get().deathClipsEnabled) {
+      logInfo(REPLAY_CLIPS_LOG_SCOPE, "Death clip skipped: disabled", {
+        game: event.game,
+        lineHash: event.lineHash,
+      });
+      return null;
+    }
+
     return this.handleReplayTrigger({ ...event, kind: "death" });
   }
 

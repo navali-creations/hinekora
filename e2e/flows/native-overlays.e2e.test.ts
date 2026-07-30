@@ -113,6 +113,53 @@ test("loads the recorder overlay through a native sandboxed window", async ({
   }
 });
 
+test("leaves clip-preview fullscreen and restores its native window bounds", async ({
+  baseURL,
+}) => {
+  test.skip(process.platform !== "win32", "Hinekora targets Windows capture");
+
+  const electronApp = await electron.launch({
+    args: [
+      resolve(projectRoot, "e2e/helpers/native-overlays-electron-main.cjs"),
+    ],
+    env: {
+      ...process.env,
+      HINEKORA_E2E_OVERLAY_KIND: "clip-preview",
+      HINEKORA_E2E_PRELOAD_PATH: preloadPath,
+      HINEKORA_E2E_RENDERER_URL: baseURL ?? "http://127.0.0.1:5173",
+    },
+  });
+
+  try {
+    const overlayWindow = await electronApp.firstWindow();
+    const closeFullscreenButton = overlayWindow
+      .getByLabel("Close fullscreen")
+      .first();
+    await expect(closeFullscreenButton).toBeVisible();
+    await closeFullscreenButton.click();
+    await expect(closeFullscreenButton).toHaveCount(0);
+
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ BrowserWindow }) => {
+          const window = BrowserWindow.getAllWindows()[0];
+          return {
+            bounds: window?.getBounds(),
+            isFullScreen: window?.isFullScreen(),
+            isMaximized: window?.isMaximized(),
+          };
+        }),
+      )
+      .toEqual({
+        bounds: { height: 520, width: 560, x: 120, y: 120 },
+        isFullScreen: false,
+        isMaximized: false,
+      });
+  } finally {
+    await electronApp.close();
+  }
+});
+
 test("authorizes native display capture once for the prepared source", async () => {
   test.skip(process.platform !== "win32", "Hinekora targets Windows capture");
 

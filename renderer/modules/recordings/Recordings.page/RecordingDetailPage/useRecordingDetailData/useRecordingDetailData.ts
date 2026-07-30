@@ -12,6 +12,7 @@ interface RecordingDetailState {
   detail: RunRecordingDetail | null;
   error: string | null;
   isLoading: boolean;
+  loadedRecordingId: string | null;
 }
 
 const initialRecordingDetailState: RecordingDetailState = {
@@ -19,50 +20,57 @@ const initialRecordingDetailState: RecordingDetailState = {
   detail: null,
   error: null,
   isLoading: true,
+  loadedRecordingId: null,
 };
 
 function useRecordingDetailData(recordingId: string) {
   const [state, setState] = useState<RecordingDetailState>(
     initialRecordingDetailState,
   );
-  const requestIdRef = useRef(0);
+  const bookmarksRequestIdRef = useRef(0);
+  const detailRequestIdRef = useRef(0);
 
   const refreshBookmarksPage = useCallback(
     async (query: RecordingBookmarksQuery) => {
-      requestIdRef.current += 1;
-      const requestId = requestIdRef.current;
+      bookmarksRequestIdRef.current += 1;
+      const requestId = bookmarksRequestIdRef.current;
       const bookmarksPage = await window.electron.bookmarks.listRecording(
         recordingId,
         query,
       );
-      if (requestId !== requestIdRef.current) {
+      if (requestId !== bookmarksRequestIdRef.current) {
         return;
       }
 
-      setState((current) => ({
-        ...current,
-        bookmarksPage: current.bookmarksPage
+      setState((current) =>
+        current.loadedRecordingId === recordingId
           ? {
-              ...bookmarksPage,
-              timelineItems:
-                query.includeTimeline === false
-                  ? current.bookmarksPage.timelineItems
-                  : bookmarksPage.timelineItems,
-              timelineItemsTruncated:
-                query.includeTimeline === false
-                  ? current.bookmarksPage.timelineItemsTruncated
-                  : bookmarksPage.timelineItemsTruncated,
+              ...current,
+              bookmarksPage: current.bookmarksPage
+                ? {
+                    ...bookmarksPage,
+                    timelineItems:
+                      query.includeTimeline === false
+                        ? current.bookmarksPage.timelineItems
+                        : bookmarksPage.timelineItems,
+                    timelineItemsTruncated:
+                      query.includeTimeline === false
+                        ? current.bookmarksPage.timelineItemsTruncated
+                        : bookmarksPage.timelineItemsTruncated,
+                  }
+                : bookmarksPage,
             }
-          : bookmarksPage,
-      }));
+          : current,
+      );
     },
     [recordingId],
   );
 
   useEffect(() => {
     let isActive = true;
-    requestIdRef.current += 1;
-    const requestId = requestIdRef.current;
+    bookmarksRequestIdRef.current += 1;
+    detailRequestIdRef.current += 1;
+    const requestId = detailRequestIdRef.current;
     setState(initialRecordingDetailState);
 
     Promise.all([
@@ -73,17 +81,24 @@ function useRecordingDetailData(recordingId: string) {
       }),
     ])
       .then(([detail, bookmarksPage]) => {
-        if (isActive && requestId === requestIdRef.current) {
-          setState({ bookmarksPage, detail, error: null, isLoading: false });
+        if (isActive && requestId === detailRequestIdRef.current) {
+          setState({
+            bookmarksPage,
+            detail,
+            error: null,
+            isLoading: false,
+            loadedRecordingId: recordingId,
+          });
         }
       })
       .catch((error: unknown) => {
-        if (isActive && requestId === requestIdRef.current) {
+        if (isActive && requestId === detailRequestIdRef.current) {
           setState({
             detail: null,
             bookmarksPage: null,
             error: error instanceof Error ? error.message : "Recording failed",
             isLoading: false,
+            loadedRecordingId: null,
           });
         }
       });

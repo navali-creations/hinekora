@@ -1,5 +1,6 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { FiFolder, FiPlay, FiTrash2 } from "react-icons/fi";
+import { FiEdit2, FiFolder, FiPlay, FiTrash2 } from "react-icons/fi";
 
 import type { SavedVideoItem } from "~/main/modules/saved-videos";
 import { EditorDeleteConfirmationModal } from "~/renderer/modules/editor/Editor.components/EditorDeleteConfirmationModal/EditorDeleteConfirmationModal";
@@ -10,6 +11,7 @@ interface SavedVideoTableActionsProps {
 }
 
 function SavedVideoTableActions({ video }: SavedVideoTableActionsProps) {
+  const navigate = useNavigate();
   const [isDeleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const { deleteVideo, openVideo, revealVideo } = useSavedVideosShallow(
     (savedVideos) => ({
@@ -25,6 +27,16 @@ function SavedVideoTableActions({ video }: SavedVideoTableActionsProps) {
 
   const handleReveal = () => {
     void revealVideo(video.id);
+  };
+
+  const handleOpenSourceDraft = () => {
+    if (!video.sourceProjectId) {
+      return;
+    }
+    void navigate({
+      to: "/editor",
+      search: { projectId: video.sourceProjectId },
+    });
   };
 
   const handleOpenDeleteConfirm = () => {
@@ -52,6 +64,17 @@ function SavedVideoTableActions({ video }: SavedVideoTableActionsProps) {
         >
           <FiPlay size={14} />
         </button>
+        {video.sourceProjectId && (
+          <button
+            aria-label={`Open source draft edit for ${video.fileName}`}
+            className="btn btn-ghost btn-xs join-item"
+            title="Open source draft edit"
+            type="button"
+            onClick={handleOpenSourceDraft}
+          >
+            <FiEdit2 size={14} />
+          </button>
+        )}
         <button
           aria-label={`Open ${video.fileName} in explorer`}
           className="btn btn-ghost btn-xs join-item"

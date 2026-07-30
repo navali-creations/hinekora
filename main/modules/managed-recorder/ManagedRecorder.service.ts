@@ -2567,14 +2567,6 @@ class ManagedRecorderService {
       [WindowName.Main, WindowName.RecorderOverlay],
       () => this.stopRunRecording(),
     );
-    registerGuardedIpcHandler(
-      ManagedRecorderChannel.SaveReplay,
-      [WindowName.Main],
-      () => {
-        const settings = SettingsStoreService.getInstance().get();
-        return this.saveReplay(settings.deathClipSeconds, "manual");
-      },
-    );
   }
 
   private setStatus(update: Partial<ManagedRecorderStatus>): void {

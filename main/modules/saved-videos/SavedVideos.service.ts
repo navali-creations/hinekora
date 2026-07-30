@@ -93,6 +93,7 @@ interface SavedVideoExportCommit {
   inode: number;
   modifiedAtMs: number;
   path: string;
+  projectId: string | null;
   sizeDeltaBytes: number;
   sizeBytes: number;
 }
@@ -158,6 +159,7 @@ class SavedVideosService {
       inode: commit.inode,
       modifiedAtMs: commit.modifiedAtMs,
       path: commit.path,
+      projectId: commit.projectId,
       sizeBytes: commit.sizeBytes,
     });
     service.runCommitSideEffect("Saved edit video invalidation failed", () => {
@@ -590,6 +592,7 @@ class SavedVideosService {
             id,
             savedAt: file.modifiedAt.toISOString(),
             sizeBytes: file.sizeBytes,
+            sourceProjectId: ownership.getRegistration(file)?.projectId ?? null,
           });
         }
       },

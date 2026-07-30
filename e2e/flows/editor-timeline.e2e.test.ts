@@ -586,6 +586,12 @@ test("covers completed Saved Edits library actions from the sidebar", async ({
   ).toBeVisible();
   await expect(page.getByText("boss-kill.mp4", { exact: true })).toBeVisible();
 
+  await page.getByLabel("Open source draft edit for boss-kill.mp4").click();
+  await expect(page).toHaveURL(
+    new RegExp(`#\\/editor\\?projectId=${encodeURIComponent("project-1")}`),
+  );
+  await page.getByRole("link", { name: "Saved Edits", exact: true }).click();
+
   await page.getByLabel("Play saved edit boss-kill.mp4").click();
   await page.getByLabel("Open boss-kill.mp4 in explorer").click();
   await expect
@@ -1170,7 +1176,13 @@ test("covers editor recording bookmarks, trim filtering, chips, hover, Escape, a
     .poll(async () => (await getEditorE2ECalls(page)).recordingBookmarkQueries)
     .toEqual([
       {
-        query: { includeTimeline: true, pageIndex: 0, pageSize: 5 },
+        query: {
+          includeTimeline: true,
+          pageIndex: 0,
+          pageSize: 5,
+          rangeEndSeconds: 60,
+          rangeStartSeconds: 0,
+        },
         recordingId: recordingA.id,
       },
     ]);
@@ -1281,12 +1293,12 @@ test("covers editor recording bookmarks, trim filtering, chips, hover, Escape, a
   await expect(bookmarksRail.getByText("6 items")).toBeVisible();
   await expect(bookmarksRail.getByText("1 / 2")).toBeVisible();
   await expect
-    .poll(async () =>
-      (await getEditorE2ECalls(page)).recordingBookmarkQueries.map(
-        (call) => call.recordingId,
-      ),
+    .poll(
+      async () =>
+        (await getEditorE2ECalls(page)).recordingBookmarkQueries.at(-1)
+          ?.recordingId,
     )
-    .toEqual([recordingA.id, recordingB.id]);
+    .toBe(recordingB.id);
 
   await allChip.click();
   await expect(
@@ -1433,11 +1445,19 @@ function createEditorRecordingBookmarksPage(
   bookmarks: RecordingBookmark[],
 ): RecordingBookmarksPage {
   const pageSize = 5;
+  const categoryCounts = Array.from(
+    bookmarks.reduce((counts, bookmark) => {
+      counts.set(bookmark.category, (counts.get(bookmark.category) ?? 0) + 1);
+      return counts;
+    }, new Map<RecordingBookmark["category"], number>()),
+    ([category, count]) => ({ category, count }),
+  );
 
   return {
     availableCategories: Array.from(
       new Set(bookmarks.map((bookmark) => bookmark.category)),
     ),
+    categoryCounts,
     items: bookmarks.slice(0, pageSize),
     pageCount: Math.max(1, Math.ceil(bookmarks.length / pageSize)),
     pageIndex: 0,

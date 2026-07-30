@@ -10,9 +10,12 @@ import {
 
 const createInitialBookmarkPanelState = () => ({
   categoryFilter: allBookmarkCategoriesValue,
+  errorMessage: null,
   hasInteracted: false,
   hoveredBookmarkId: null,
+  isLoading: false,
   pageIndex: 0,
+  searchText: "",
   selectedBookmarkId: null,
 });
 
@@ -83,6 +86,7 @@ export const createBookmarksSlice: BoundStoreStateCreator<BookmarksSlice> = (
       manualRenameDraft: null,
       page: null,
       query: null,
+      searchText: "",
       editorRecording: createInitialBookmarkPanelState(),
       recordingDetail: createInitialBookmarkPanelState(),
       closeManualRenameDialog: () => {
@@ -138,6 +142,18 @@ export const createBookmarksSlice: BoundStoreStateCreator<BookmarksSlice> = (
           );
         });
       },
+      setEditorRecordingPanelStatus: (status) => {
+        set((state) => {
+          state.bookmarks.editorRecording.errorMessage = status.errorMessage;
+          state.bookmarks.editorRecording.isLoading = status.isLoading;
+        });
+      },
+      setEditorRecordingSearchText: (searchText) => {
+        set((state) => {
+          state.bookmarks.editorRecording.searchText = searchText;
+          state.bookmarks.editorRecording.pageIndex = 0;
+        });
+      },
       setEditorRecordingSelectedBookmarkId: (id) => {
         set((state) => {
           state.bookmarks.editorRecording.selectedBookmarkId = id;
@@ -174,9 +190,26 @@ export const createBookmarksSlice: BoundStoreStateCreator<BookmarksSlice> = (
           );
         });
       },
+      setRecordingDetailPanelStatus: (status) => {
+        set((state) => {
+          state.bookmarks.recordingDetail.errorMessage = status.errorMessage;
+          state.bookmarks.recordingDetail.isLoading = status.isLoading;
+        });
+      },
+      setRecordingDetailSearchText: (searchText) => {
+        set((state) => {
+          state.bookmarks.recordingDetail.searchText = searchText;
+          state.bookmarks.recordingDetail.pageIndex = 0;
+        });
+      },
       setRecordingDetailSelectedBookmarkId: (id) => {
         set((state) => {
           state.bookmarks.recordingDetail.selectedBookmarkId = id;
+        });
+      },
+      setSearchText: (searchText) => {
+        set((state) => {
+          state.bookmarks.searchText = searchText;
         });
       },
       saveManualRename: async (label) => {

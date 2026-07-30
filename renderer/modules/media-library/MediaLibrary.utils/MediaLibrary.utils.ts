@@ -1,4 +1,5 @@
 import { leagueOptions } from "~/renderer/modules/game/GameScope.constants";
+import { formatMediaTime } from "~/renderer/modules/media-playback/MediaTimeline.utils/MediaTimeline.utils";
 
 import type { GameId } from "~/types";
 
@@ -68,18 +69,7 @@ function formatDurationSeconds(value: number | null | undefined): string {
     return "--";
   }
 
-  const totalSeconds = Math.round(value);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours}:${minutes.toString().padStart(2, "0")}:${seconds
-      .toString()
-      .padStart(2, "0")}`;
-  }
-
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  return formatMediaTime(value);
 }
 
 function getPathFileName(path: string | null | undefined): string {

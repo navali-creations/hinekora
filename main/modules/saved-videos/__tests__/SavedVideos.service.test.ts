@@ -220,6 +220,38 @@ describe("SavedVideosService", () => {
     });
   });
 
+  it("includes the source draft project for a registered export", async () => {
+    const savedPath = join(exportRoot, "From draft.mp4");
+    await writeFile(savedPath, "video");
+    const stats = await stat(savedPath);
+    const ownershipRepository = {
+      list: vi.fn(() => [
+        {
+          deviceId: stats.dev,
+          inode: stats.ino,
+          modifiedAtMs: stats.mtimeMs,
+          path: savedPath,
+          projectId: "project-1",
+          sizeBytes: stats.size,
+        },
+      ]),
+      pruneStale: vi.fn(() => 0),
+      remove: vi.fn(),
+      upsert: vi.fn(),
+    } as unknown as EditorExportOwnershipRepository;
+    const service = new SavedVideosService({ ownershipRepository });
+
+    await expect(service.listLibrary()).resolves.toMatchObject({
+      items: [
+        {
+          fileName: "From draft.mp4",
+          sourceProjectId: "project-1",
+        },
+      ],
+      totalCount: 1,
+    });
+  });
+
   it("ignores unregistered custom-root videos and keeps registered exports visible", async () => {
     const customRoot = join(root, "custom-exports");
     const personalPath = join(customRoot, "Personal.mp4");
@@ -246,6 +278,7 @@ describe("SavedVideosService", () => {
       inode: newStats.ino,
       modifiedAtMs: newStats.mtimeMs,
       path: registeredPath,
+      projectId: null,
       sizeDeltaBytes: newStats.size,
       sizeBytes: newStats.size,
     });
@@ -357,6 +390,7 @@ describe("SavedVideosService", () => {
       inode: stats.ino,
       modifiedAtMs: stats.mtimeMs,
       path: aliasedPath,
+      projectId: null,
       sizeDeltaBytes: stats.size,
       sizeBytes: stats.size,
     });
@@ -1103,6 +1137,7 @@ describe("SavedVideosService", () => {
       inode: 0,
       modifiedAtMs: 1_000,
       path: join(exportRoot, "new.mp4"),
+      projectId: null,
       sizeDeltaBytes: 123,
       sizeBytes: 123,
     });

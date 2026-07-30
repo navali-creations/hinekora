@@ -250,7 +250,9 @@ test("covers capture profile game switching, source sync, field persistence, and
   await page.getByLabel("Hide Hinekora overlays from recording").uncheck();
 
   await openCaptureSettingsTab(page, "Rewind");
-  await page.getByRole("button", { name: "45" }).click();
+  await page
+    .getByRole("button", { name: "45 second death clip duration" })
+    .click();
   await page.getByLabel("Start rewind automatically").check();
   await page.getByLabel("Hide Hinekora overlays from rewind").uncheck();
 

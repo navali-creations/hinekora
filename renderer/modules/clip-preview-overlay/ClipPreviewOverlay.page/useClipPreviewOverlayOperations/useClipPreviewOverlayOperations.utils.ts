@@ -1,5 +1,6 @@
 import type { ReplayClipView } from "~/main/modules/replay-clips";
 
+import type { ReplayClipPlaybackRate } from "~/types";
 import type { ClipPreviewTrimRange } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 
 function resolveClipPreviewOperationState(input: {
@@ -10,6 +11,7 @@ function resolveClipPreviewOperationState(input: {
   isCopying: boolean;
   isMuted: boolean;
   isSaving: boolean;
+  playbackRate?: ReplayClipPlaybackRate;
   titleDraft: string;
   trim: ClipPreviewTrimRange;
 }) {
@@ -32,7 +34,10 @@ function resolveClipPreviewOperationState(input: {
       Boolean(input.clip) && input.hasSavedClip && !isProcessing,
     canSave:
       canUseClip &&
-      (hasTrimChanges || hasTitleChange || input.isMuted) &&
+      (hasTrimChanges ||
+        hasTitleChange ||
+        input.isMuted ||
+        input.playbackRate !== undefined) &&
       !isProcessing,
     canUseClip,
     clip: input.clip,

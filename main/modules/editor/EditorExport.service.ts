@@ -64,6 +64,7 @@ interface EditorExportVideoCommit {
   inode: number;
   modifiedAtMs: number;
   path: string;
+  projectId: string;
   sizeDeltaBytes: number;
   sizeBytes: number;
 }
@@ -377,6 +378,7 @@ class EditorExportService {
             inode: stats.ino ?? 0,
             modifiedAtMs: stats.mtimeMs ?? Date.now(),
             path: outputPath,
+            projectId: project.id,
             sizeBytes: stats.size,
             sizeDeltaBytes: stats.size - previousOutputSizeBytes,
           });

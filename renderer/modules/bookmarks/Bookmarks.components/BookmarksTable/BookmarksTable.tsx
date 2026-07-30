@@ -9,6 +9,7 @@ import type {
 } from "~/main/modules/bookmarks";
 import type { BookmarksCategoryFilterValue } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksCategoryFilterChip/BookmarksCategoryFilterChip";
 import { BookmarksCategoryFilterRow } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksCategoryFilterRow/BookmarksCategoryFilterRow";
+import { useDebouncedBookmarkSearchText } from "~/renderer/modules/bookmarks/Bookmarks.hooks/useDebouncedBookmarkSearchText/useDebouncedBookmarkSearchText";
 import {
   allBookmarkCategoriesValue,
   bookmarkCategoryLabels,
@@ -42,19 +43,28 @@ interface BookmarksTableProps {
 
 function BookmarksTable({ isScopeReady = true, scope }: BookmarksTableProps) {
   const navigate = useNavigate();
-  const { availableCategories, error, isLoading, items, page, refresh } =
-    useBookmarksShallow((bookmarks) => ({
-      availableCategories: bookmarks.availableCategories,
-      error: bookmarks.error,
-      isLoading: bookmarks.isLoading,
-      items: bookmarks.items,
-      page: bookmarks.page,
-      refresh: bookmarks.refresh,
-    }));
+  const {
+    availableCategories,
+    error,
+    isLoading,
+    items,
+    page,
+    refresh,
+    searchText,
+  } = useBookmarksShallow((bookmarks) => ({
+    availableCategories: bookmarks.availableCategories,
+    error: bookmarks.error,
+    isLoading: bookmarks.isLoading,
+    items: bookmarks.items,
+    page: bookmarks.page,
+    refresh: bookmarks.refresh,
+    searchText: bookmarks.searchText,
+  }));
   const [category, setCategory] = useState<BookmarksCategoryFilterValue>(
     allBookmarkCategoriesValue,
   );
   const showLeagueColumn = scope.league === ALL_LEAGUES_VALUE;
+  const debouncedSearchText = useDebouncedBookmarkSearchText(searchText);
   const categoryOptions = useMemo(() => {
     const categories = new Set<BookmarkCategory>(availableCategories);
     if (category !== allBookmarkCategoriesValue) {
@@ -84,10 +94,13 @@ function BookmarksTable({ isScopeReady = true, scope }: BookmarksTableProps) {
       if (category !== allBookmarkCategoriesValue) {
         query.category = category;
       }
+      if (debouncedSearchText) {
+        query.search = debouncedSearchText;
+      }
 
       return query;
     },
-    [category, scope.game, scope.league],
+    [category, debouncedSearchText, scope.game, scope.league],
   );
   const { handlePaginationChange, handleSortingChange, pagination, sorting } =
     useServerMediaLibraryTableState({
@@ -95,7 +108,7 @@ function BookmarksTable({ isScopeReady = true, scope }: BookmarksTableProps) {
       enabled: isScopeReady,
       initialSorting: [{ id: "occurredAt", desc: true }],
       refresh,
-      resetKey: `${scope.game}:${scope.league}:${category}`,
+      resetKey: `${scope.game}:${scope.league}:${category}:${debouncedSearchText}`,
     });
 
   const handleCategorySelect = (nextCategory: BookmarksCategoryFilterValue) => {
@@ -174,6 +187,7 @@ function BookmarksTable({ isScopeReady = true, scope }: BookmarksTableProps) {
       <div className="shrink-0 border-base-content/10 border-b px-4 py-2">
         <BookmarksCategoryFilterRow
           categories={categoryOptions}
+          categoryCounts={page?.categoryCounts ?? []}
           selectedCategory={category}
           onSelectCategory={handleCategorySelect}
         />

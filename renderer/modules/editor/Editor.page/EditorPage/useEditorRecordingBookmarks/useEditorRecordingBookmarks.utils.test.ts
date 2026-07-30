@@ -59,6 +59,8 @@ describe("editor recording bookmarks utilities", () => {
       clipId: "timeline-recording",
       id: "recording-1",
       name: "recording-1.mp4",
+      rangeEndSeconds: 5,
+      rangeStartSeconds: 0,
     });
   });
 
@@ -396,6 +398,8 @@ describe("editor recording bookmarks utilities", () => {
       clipId: "timeline-recording-second",
       id: "recording-1",
       name: "recording-1.mp4",
+      rangeEndSeconds: 8,
+      rangeStartSeconds: 0,
     });
     expect(
       resolveEditorBookmarkTimelineSeconds({

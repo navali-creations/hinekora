@@ -113,6 +113,23 @@ export interface ActivitySessionTimeline {
   session: ActivitySession;
 }
 
+export interface ActivitySessionBookmarksQuery {
+  category?: BookmarkCategory;
+  pageIndex?: number;
+  pageSize?: number;
+  search?: string;
+}
+
+export interface ActivitySessionBookmarksPage {
+  availableCategories: BookmarkCategory[];
+  categoryCounts: BookmarkCategoryCount[];
+  items: RecordingBookmark[];
+  pageCount: number;
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+}
+
 export type ActivitySessionLibrarySortKey =
   | "bookmarkCount"
   | "clipCount"
@@ -177,14 +194,21 @@ export interface BookmarkLibraryQuery {
   league?: string;
   pageIndex?: number;
   pageSize?: number;
+  search?: string;
   sortBy?: BookmarkLibrarySortKey;
   sortDirection?: BookmarkLibrarySortDirection;
+}
+
+export interface BookmarkCategoryCount {
+  category: BookmarkCategory;
+  count: number;
 }
 
 export interface BookmarkLibraryPage {
   items: BookmarkLibraryItem[];
   availableCategories: BookmarkCategory[];
   availableLeagues: string[];
+  categoryCounts: BookmarkCategoryCount[];
   pageCount: number;
   pageIndex: number;
   pageSize: number;
@@ -215,10 +239,14 @@ export interface RecordingBookmarksQuery {
   includeTimeline?: boolean;
   pageIndex?: number;
   pageSize?: number;
+  rangeEndSeconds?: number;
+  rangeStartSeconds?: number;
+  search?: string;
 }
 
 export interface RecordingBookmarksPage {
   availableCategories: BookmarkCategory[];
+  categoryCounts: BookmarkCategoryCount[];
   items: RecordingBookmark[];
   pageCount: number;
   pageIndex: number;

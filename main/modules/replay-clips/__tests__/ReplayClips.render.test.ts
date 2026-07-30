@@ -100,6 +100,27 @@ describe("ReplayClips.render", () => {
     expect(render).toHaveBeenCalledWith("C:\\temp\\clip.mp4");
   });
 
+  it("renders the selected playback rate into the exported clip", async () => {
+    await renderReplayClipQuickTrim({
+      outputPath: "C:\\clips\\slow.mp4",
+      playbackRate: 0.5,
+      sourcePath: "C:\\clips\\source.mp4",
+      trim: { inSeconds: 2, outSeconds: 5 },
+    });
+
+    expect(mocks.createEditorExportSegments).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          durationSeconds: 6,
+          inSeconds: 2,
+          outSeconds: 5,
+          playbackRate: 0.5,
+        }),
+      ],
+      6,
+    );
+  });
+
   it("falls back to quick-trim rendering with optional controls", async () => {
     const onProgress = vi.fn();
 

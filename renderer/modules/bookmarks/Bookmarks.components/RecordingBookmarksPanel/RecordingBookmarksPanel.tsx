@@ -2,63 +2,68 @@ import { FiChevronLeft, FiChevronRight, FiX } from "react-icons/fi";
 
 import type {
   BookmarkCategory,
+  BookmarkCategoryCount,
   RecordingBookmark,
 } from "~/main/modules/bookmarks";
 import { BookmarksCategoryFilterChip } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksCategoryFilterChip/BookmarksCategoryFilterChip";
+import { BookmarksSearchInput } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksSearchInput/BookmarksSearchInput";
+import { resolveBookmarkCategoryCountState } from "~/renderer/modules/bookmarks/Bookmarks.utils";
 
 import { RecordingBookmarksPanelItem } from "../RecordingBookmarksPanelItem/RecordingBookmarksPanelItem";
 import {
   allRecordingBookmarkCategoriesValue,
   type RecordingBookmarkCategoryFilter,
 } from "./RecordingBookmarksPanel.utils";
+import {
+  type RecordingBookmarksPanelOwner,
+  useRecordingBookmarksPanelStore,
+} from "./useRecordingBookmarksPanelStore/useRecordingBookmarksPanelStore";
 
 interface RecordingBookmarksPanelProps {
-  activeCategoryFilter?: RecordingBookmarkCategoryFilter | null;
   bookmarks: RecordingBookmark[];
   categories: BookmarkCategory[];
-  categoryFilter: RecordingBookmarkCategoryFilter;
+  categoryCounts: BookmarkCategoryCount[];
   emptyMessage?: string;
-  errorMessage?: string | null;
   heightPixels: number | null;
   isTimelineTruncated?: boolean;
-  isLoading?: boolean;
   pageCount: number;
-  pageIndex: number;
-  selectedBookmarkId?: string | null;
+  owner: RecordingBookmarksPanelOwner;
+  searchPlacement?: "filters" | "header";
   subtitle?: string;
   title?: string;
   totalCount: number;
   onClose?: () => void;
-  onCategoryChange: (category: RecordingBookmarkCategoryFilter) => void;
-  onHoverBookmark?: (bookmark: RecordingBookmark | null) => void;
-  onNextPage: () => void;
-  onPreviousPage: () => void;
   onSelectBookmark: (bookmark: RecordingBookmark) => void;
 }
 
 function RecordingBookmarksPanel({
   bookmarks,
   categories,
-  categoryFilter,
-  activeCategoryFilter = categoryFilter,
+  categoryCounts,
   emptyMessage = "No bookmarks are attached yet.",
-  errorMessage = null,
   heightPixels,
   isTimelineTruncated = false,
-  isLoading = false,
   pageCount,
-  pageIndex,
-  selectedBookmarkId = null,
+  owner,
+  searchPlacement = "filters",
   subtitle = "Latest markers",
   title = "Bookmarks",
   totalCount,
   onClose,
-  onCategoryChange,
-  onHoverBookmark,
-  onNextPage,
-  onPreviousPage,
   onSelectBookmark,
 }: RecordingBookmarksPanelProps) {
+  const {
+    activeCategoryFilter,
+    errorMessage,
+    isLoading,
+    pageIndex,
+    searchText,
+    selectedBookmarkId,
+    selectCategory,
+    setHoveredBookmarkId,
+    setPageIndex,
+    setSearchText,
+  } = useRecordingBookmarksPanelStore(owner);
   const filterCategories: RecordingBookmarkCategoryFilter[] = [
     allRecordingBookmarkCategoriesValue,
     ...categories,
@@ -67,6 +72,17 @@ function RecordingBookmarksPanel({
     heightPixels && Number.isFinite(heightPixels)
       ? { height: `${heightPixels}px` }
       : undefined;
+  const { allCount, countsByCategory } =
+    resolveBookmarkCategoryCountState(categoryCounts);
+  const handlePreviousPage = () => {
+    setPageIndex(Math.max(0, pageIndex - 1));
+  };
+  const handleNextPage = () => {
+    setPageIndex(Math.min(pageCount - 1, pageIndex + 1));
+  };
+  const handleHoverBookmark = (bookmark: RecordingBookmark | null) => {
+    setHoveredBookmarkId(bookmark?.id ?? null);
+  };
 
   return (
     <aside
@@ -78,6 +94,14 @@ function RecordingBookmarksPanel({
           <h2 className="m-0 font-bold text-sm">{title}</h2>
           <p className="m-0 text-base-content/55 text-xs">{subtitle}</p>
         </div>
+        {searchPlacement === "header" && (
+          <BookmarksSearchInput
+            className="w-36 shrink-0"
+            searchText={searchText}
+            size="xs"
+            onSearchTextChange={setSearchText}
+          />
+        )}
         {onClose && (
           <div
             className="tooltip tooltip-left no-drag"
@@ -94,14 +118,29 @@ function RecordingBookmarksPanel({
           </div>
         )}
       </div>
+      {searchPlacement === "filters" && (
+        <div className="border-base-content/10 border-b p-3">
+          <BookmarksSearchInput
+            className="w-full"
+            searchText={searchText}
+            size="xs"
+            onSearchTextChange={setSearchText}
+          />
+        </div>
+      )}
       <div className="border-base-content/10 border-b p-3">
         <div className="flex flex-wrap gap-1.5">
           {filterCategories.map((category) => (
             <BookmarksCategoryFilterChip
               category={category}
+              count={
+                category === allRecordingBookmarkCategoriesValue
+                  ? allCount
+                  : (countsByCategory.get(category) ?? 0)
+              }
               isActive={activeCategoryFilter === category}
               key={category}
-              onSelect={onCategoryChange}
+              onSelect={selectCategory}
             />
           ))}
         </div>
@@ -130,7 +169,7 @@ function RecordingBookmarksPanel({
               bookmark={bookmark}
               isSelected={bookmark.id === selectedBookmarkId}
               key={bookmark.id}
-              {...(onHoverBookmark ? { onHover: onHoverBookmark } : {})}
+              onHover={handleHoverBookmark}
               onSelect={onSelectBookmark}
             />
           ))}
@@ -146,7 +185,7 @@ function RecordingBookmarksPanel({
             className="btn btn-ghost btn-xs btn-square"
             disabled={pageIndex === 0}
             type="button"
-            onClick={onPreviousPage}
+            onClick={handlePreviousPage}
           >
             <FiChevronLeft size={14} />
           </button>
@@ -158,7 +197,7 @@ function RecordingBookmarksPanel({
             className="btn btn-ghost btn-xs btn-square"
             disabled={pageIndex >= pageCount - 1}
             type="button"
-            onClick={onNextPage}
+            onClick={handleNextPage}
           >
             <FiChevronRight size={14} />
           </button>

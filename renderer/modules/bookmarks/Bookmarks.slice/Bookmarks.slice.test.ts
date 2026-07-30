@@ -20,9 +20,12 @@ describe("Bookmarks slice", () => {
 
     expect(store.getState().bookmarks.editorRecording).toEqual({
       categoryFilter: allBookmarkCategoriesValue,
+      errorMessage: null,
       hasInteracted: false,
       hoveredBookmarkId: null,
+      isLoading: false,
       pageIndex: 0,
+      searchText: "",
       selectedBookmarkId: null,
     });
 
@@ -39,22 +42,33 @@ describe("Bookmarks slice", () => {
     store
       .getState()
       .bookmarks.setEditorRecordingSelectedBookmarkId("bookmark-selected");
+    store.getState().bookmarks.setEditorRecordingPanelStatus({
+      errorMessage: "Failed",
+      isLoading: true,
+    });
+    store.getState().bookmarks.setEditorRecordingSearchText("atlas");
     store.getState().bookmarks.selectEditorRecordingCategory("map");
 
     expect(store.getState().bookmarks.editorRecording).toEqual({
       categoryFilter: "map",
+      errorMessage: "Failed",
       hasInteracted: true,
       hoveredBookmarkId: "bookmark-hovered",
+      isLoading: true,
       pageIndex: 0,
+      searchText: "atlas",
       selectedBookmarkId: "bookmark-selected",
     });
 
     store.getState().bookmarks.selectEditorRecordingCategory("map");
     expect(store.getState().bookmarks.editorRecording).toEqual({
       categoryFilter: allBookmarkCategoriesValue,
+      errorMessage: "Failed",
       hasInteracted: false,
       hoveredBookmarkId: "bookmark-hovered",
+      isLoading: true,
       pageIndex: 0,
+      searchText: "atlas",
       selectedBookmarkId: "bookmark-selected",
     });
 
@@ -64,9 +78,12 @@ describe("Bookmarks slice", () => {
     store.getState().bookmarks.resetEditorRecordingBookmarks();
     expect(store.getState().bookmarks.editorRecording).toEqual({
       categoryFilter: allBookmarkCategoriesValue,
+      errorMessage: null,
       hasInteracted: false,
       hoveredBookmarkId: null,
+      isLoading: false,
       pageIndex: 0,
+      searchText: "",
       selectedBookmarkId: null,
     });
   });
@@ -76,9 +93,12 @@ describe("Bookmarks slice", () => {
 
     expect(store.getState().bookmarks.recordingDetail).toEqual({
       categoryFilter: allBookmarkCategoriesValue,
+      errorMessage: null,
       hasInteracted: false,
       hoveredBookmarkId: null,
+      isLoading: false,
       pageIndex: 0,
+      searchText: "",
       selectedBookmarkId: null,
     });
 
@@ -95,22 +115,33 @@ describe("Bookmarks slice", () => {
     store
       .getState()
       .bookmarks.setRecordingDetailSelectedBookmarkId("bookmark-2");
+    store.getState().bookmarks.setRecordingDetailPanelStatus({
+      errorMessage: "Failed",
+      isLoading: true,
+    });
+    store.getState().bookmarks.setRecordingDetailSearchText("beach");
     store.getState().bookmarks.selectRecordingDetailCategory("death");
 
     expect(store.getState().bookmarks.recordingDetail).toEqual({
       categoryFilter: "death",
+      errorMessage: "Failed",
       hasInteracted: true,
       hoveredBookmarkId: "bookmark-1",
+      isLoading: true,
       pageIndex: 0,
+      searchText: "beach",
       selectedBookmarkId: "bookmark-2",
     });
 
     store.getState().bookmarks.selectRecordingDetailCategory("death");
     expect(store.getState().bookmarks.recordingDetail).toEqual({
       categoryFilter: allBookmarkCategoriesValue,
+      errorMessage: "Failed",
       hasInteracted: false,
       hoveredBookmarkId: "bookmark-1",
+      isLoading: true,
       pageIndex: 0,
+      searchText: "beach",
       selectedBookmarkId: "bookmark-2",
     });
 
@@ -119,9 +150,12 @@ describe("Bookmarks slice", () => {
       .bookmarks.selectRecordingDetailCategory(allBookmarkCategoriesValue);
     expect(store.getState().bookmarks.recordingDetail).toEqual({
       categoryFilter: allBookmarkCategoriesValue,
+      errorMessage: "Failed",
       hasInteracted: true,
       hoveredBookmarkId: "bookmark-1",
+      isLoading: true,
       pageIndex: 0,
+      searchText: "beach",
       selectedBookmarkId: "bookmark-2",
     });
 
@@ -130,9 +164,12 @@ describe("Bookmarks slice", () => {
       .bookmarks.selectRecordingDetailCategory(allBookmarkCategoriesValue);
     expect(store.getState().bookmarks.recordingDetail).toEqual({
       categoryFilter: allBookmarkCategoriesValue,
+      errorMessage: "Failed",
       hasInteracted: false,
       hoveredBookmarkId: "bookmark-1",
+      isLoading: true,
       pageIndex: 0,
+      searchText: "beach",
       selectedBookmarkId: "bookmark-2",
     });
 
@@ -142,9 +179,12 @@ describe("Bookmarks slice", () => {
     store.getState().bookmarks.resetRecordingDetail();
     expect(store.getState().bookmarks.recordingDetail).toEqual({
       categoryFilter: allBookmarkCategoriesValue,
+      errorMessage: null,
       hasInteracted: false,
       hoveredBookmarkId: null,
+      isLoading: false,
       pageIndex: 0,
+      searchText: "",
       selectedBookmarkId: null,
     });
   });

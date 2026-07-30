@@ -1,95 +1,91 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import type { RecordingBookmark } from "~/main/modules/bookmarks";
+import type { ActivitySessionBookmarksPage } from "~/main/modules/bookmarks";
 import {
   allRecordingBookmarkCategoriesValue,
-  type RecordingBookmarkCategoryFilter,
   recordingBookmarksPanelPageSize,
 } from "~/renderer/modules/bookmarks/Bookmarks.components/RecordingBookmarksPanel/RecordingBookmarksPanel.utils";
+import { useDebouncedBookmarkSearchText } from "~/renderer/modules/bookmarks/Bookmarks.hooks/useDebouncedBookmarkSearchText/useDebouncedBookmarkSearchText";
 import { useRewindsShallow } from "~/renderer/store";
 
-interface UseRewindBookmarkPanelStateInput {
-  bookmarks: RecordingBookmark[];
-}
-
-function useRewindBookmarkPanelState({
-  bookmarks,
-}: UseRewindBookmarkPanelStateInput) {
+function useRewindBookmarkPanelState(activitySessionId: string) {
+  const requestIdRef = useRef(0);
+  const [page, setPage] = useState<ActivitySessionBookmarksPage | null>(null);
   const {
     bookmarkCategoryFilter,
     bookmarkPageIndex,
-    selectBookmarkCategory,
+    searchText,
     setBookmarkPageIndex,
+    setPanelStatus,
   } = useRewindsShallow((rewinds) => ({
     bookmarkCategoryFilter: rewinds.detail.bookmarkCategoryFilter,
     bookmarkPageIndex: rewinds.detail.bookmarkPageIndex,
-    selectBookmarkCategory: rewinds.selectDetailBookmarkCategory,
+    searchText: rewinds.detail.bookmarkSearchText,
     setBookmarkPageIndex: rewinds.setDetailBookmarkPageIndex,
+    setPanelStatus: rewinds.setDetailBookmarkPanelStatus,
   }));
-
-  const filteredPanelBookmarks = useMemo(() => {
-    const filteredBookmarks =
-      bookmarkCategoryFilter === allRecordingBookmarkCategoriesValue
-        ? bookmarks
-        : bookmarks.filter(
-            (bookmark) => bookmark.category === bookmarkCategoryFilter,
-          );
-
-    return [...filteredBookmarks].sort(
-      (left, right) => (right.offsetSeconds ?? 0) - (left.offsetSeconds ?? 0),
-    );
-  }, [bookmarkCategoryFilter, bookmarks]);
-
-  const bookmarkPageCount = Math.max(
-    1,
-    Math.ceil(filteredPanelBookmarks.length / recordingBookmarksPanelPageSize),
+  const debouncedSearchText = useDebouncedBookmarkSearchText(
+    searchText,
+    activitySessionId,
   );
-  const clampedBookmarkPageIndex = Math.min(
-    bookmarkPageIndex,
-    bookmarkPageCount - 1,
-  );
-
-  const bookmarkPanelItems = useMemo(() => {
-    const startIndex =
-      clampedBookmarkPageIndex * recordingBookmarksPanelPageSize;
-
-    return filteredPanelBookmarks.slice(
-      startIndex,
-      startIndex + recordingBookmarksPanelPageSize,
-    );
-  }, [clampedBookmarkPageIndex, filteredPanelBookmarks]);
 
   useEffect(() => {
-    if (bookmarkPageIndex !== clampedBookmarkPageIndex) {
-      setBookmarkPageIndex(clampedBookmarkPageIndex);
+    if (!activitySessionId) {
+      requestIdRef.current += 1;
+      setPage(null);
+      setPanelStatus({ errorMessage: null, isLoading: false });
+      return;
     }
-  }, [bookmarkPageIndex, clampedBookmarkPageIndex, setBookmarkPageIndex]);
 
-  const handleBookmarkCategoryChange = (
-    category: RecordingBookmarkCategoryFilter,
-  ) => {
-    selectBookmarkCategory(category);
-  };
-
-  const handlePreviousBookmarkPage = () => {
-    setBookmarkPageIndex(clampedBookmarkPageIndex - 1);
-  };
-
-  const handleNextBookmarkPage = () => {
-    setBookmarkPageIndex(
-      Math.min(bookmarkPageCount - 1, clampedBookmarkPageIndex + 1),
-    );
-  };
+    requestIdRef.current += 1;
+    const requestId = requestIdRef.current;
+    setPanelStatus({ errorMessage: null, isLoading: true });
+    void window.electron.bookmarks
+      .listActivitySessionBookmarks(activitySessionId, {
+        ...(bookmarkCategoryFilter !== allRecordingBookmarkCategoriesValue
+          ? { category: bookmarkCategoryFilter }
+          : {}),
+        pageIndex: bookmarkPageIndex,
+        pageSize: recordingBookmarksPanelPageSize,
+        ...(debouncedSearchText ? { search: debouncedSearchText } : {}),
+      })
+      .then((nextPage) => {
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+        setPage(nextPage);
+        setPanelStatus({ errorMessage: null, isLoading: false });
+        if (nextPage.pageIndex >= nextPage.pageCount) {
+          setBookmarkPageIndex(nextPage.pageCount - 1);
+        }
+      })
+      .catch((queryError: unknown) => {
+        if (requestId !== requestIdRef.current) {
+          return;
+        }
+        setPanelStatus({
+          errorMessage:
+            queryError instanceof Error
+              ? queryError.message
+              : "Rewind bookmarks failed",
+          isLoading: false,
+        });
+      });
+  }, [
+    activitySessionId,
+    bookmarkCategoryFilter,
+    bookmarkPageIndex,
+    debouncedSearchText,
+    setBookmarkPageIndex,
+    setPanelStatus,
+  ]);
 
   return {
-    bookmarkCategoryFilter,
-    bookmarkPageCount,
-    bookmarkPageIndex: clampedBookmarkPageIndex,
-    bookmarkPanelItems,
-    bookmarkTotalCount: filteredPanelBookmarks.length,
-    handleBookmarkCategoryChange,
-    handleNextBookmarkPage,
-    handlePreviousBookmarkPage,
+    bookmarkCategories: page?.availableCategories ?? [],
+    categoryCounts: page?.categoryCounts ?? [],
+    bookmarkPageCount: page?.pageCount ?? 1,
+    bookmarkPanelItems: page?.items ?? [],
+    bookmarkTotalCount: page?.totalCount ?? 0,
   };
 }
 

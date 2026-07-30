@@ -535,7 +535,7 @@ test("covers recorder mode, capture settings, and audio settings interactions", 
         .boundingBox();
       return box?.height ?? Number.POSITIVE_INFINITY;
     })
-    .toBeLessThanOrEqual(36);
+    .toBe(28);
 
   await unlockCaptureProfile(page);
   await sessionOption.click();
@@ -624,7 +624,9 @@ test("covers recorder mode, capture settings, and audio settings interactions", 
   await expect(
     page.getByRole("heading", { name: "Rewind Settings" }),
   ).toBeVisible();
-  await page.getByRole("button", { name: "45" }).click();
+  await page
+    .getByRole("button", { name: "45 second death clip duration" })
+    .click();
   await expect(page.getByLabel("Start rewind automatically")).not.toBeChecked();
   await page.getByLabel("Start rewind automatically").check();
   await expect(
@@ -765,6 +767,9 @@ test("persists per-overlay game focus preferences", async ({ page }) => {
   const recorderToggle = page.getByLabel(
     "Keep recording controls visible while a game is running",
   );
+  const recorderStartMinimizedToggle = page.getByLabel(
+    "Start recording overlay minimized",
+  );
   const auraToggle = page.getByLabel(
     "Keep aura overlay visible while a game is running",
   );
@@ -776,6 +781,7 @@ test("persists per-overlay game focus preferences", async ({ page }) => {
   );
 
   await expect(recorderToggle).not.toBeChecked();
+  await expect(recorderStartMinimizedToggle).not.toBeChecked();
   await expect(auraToggle).not.toBeChecked();
   await expect(clipPreviewToggle).not.toBeChecked();
   await expect(gridLinesToggle).not.toBeChecked();
@@ -785,6 +791,9 @@ test("persists per-overlay game focus preferences", async ({ page }) => {
   await expect(
     page.getByText("These settings work best with two or more monitors."),
   ).toBeVisible();
+
+  await recorderStartMinimizedToggle.click();
+  await expect(recorderStartMinimizedToggle).toBeChecked();
 
   for (const toggle of [
     recorderToggle,
@@ -802,6 +811,7 @@ test("persists per-overlay game focus preferences", async ({ page }) => {
     .poll(async () => (await getDashboardE2ECalls(page)).settingsUpdates)
     .toEqual(
       expect.arrayContaining([
+        { recorderOverlayStartMinimized: true },
         { recorderOverlayIgnoreGameFocus: true },
         { auraOverlayIgnoreGameFocus: true },
         { clipPreviewOverlayIgnoreGameFocus: true },

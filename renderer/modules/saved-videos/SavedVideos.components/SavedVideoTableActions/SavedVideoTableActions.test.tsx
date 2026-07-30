@@ -4,12 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SavedVideoItem } from "~/main/modules/saved-videos";
 
+const routerMocks = vi.hoisted(() => ({
+  navigate: vi.fn(),
+}));
 const storeMocks = vi.hoisted(() => ({
   deleteVideo: vi.fn(),
   openVideo: vi.fn(),
   revealVideo: vi.fn(),
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  useNavigate: () => routerMocks.navigate,
+}));
 vi.mock("~/renderer/store", () => ({
   useSavedVideosShallow: (selector: (state: typeof storeMocks) => unknown) =>
     selector(storeMocks),
@@ -22,6 +28,7 @@ const video: SavedVideoItem = {
   id: "a".repeat(64),
   savedAt: "2026-07-21T00:00:00.000Z",
   sizeBytes: 1024,
+  sourceProjectId: "project-1",
 };
 let container: HTMLDivElement;
 let root: Root;
@@ -72,5 +79,36 @@ describe("SavedVideoTableActions", () => {
         ?.click();
     });
     expect(storeMocks.deleteVideo).toHaveBeenCalledWith(video.id);
+  });
+
+  it("opens the source draft edit when the export retains one", async () => {
+    await act(async () => {
+      root.render(<SavedVideoTableActions video={video} />);
+    });
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          "[aria-label^='Open source draft edit']",
+        )
+        ?.click();
+    });
+
+    expect(routerMocks.navigate).toHaveBeenCalledWith({
+      search: { projectId: "project-1" },
+      to: "/editor",
+    });
+  });
+
+  it("hides the source draft action for unlinked exports", async () => {
+    await act(async () => {
+      root.render(
+        <SavedVideoTableActions video={{ ...video, sourceProjectId: null }} />,
+      );
+    });
+
+    expect(
+      container.querySelector("[aria-label^='Open source draft edit']"),
+    ).toBeNull();
   });
 });

@@ -19,11 +19,13 @@ function createCaptureProfile(game: GameId): CaptureProfile {
   return {
     captureTarget: null,
     createdAt: "2026-07-01T00:00:00.000Z",
+    deathClipsEnabled: true,
     deathClipSeconds: 10,
     game,
     id: `capture-profile-${game}`,
     isDefault: false,
     name: `${game} Capture`,
+    manualReplaySeconds: 10,
     recordingAudioInputDeviceId: null,
     recordingAudioOutputDeviceId: null,
     recordingAutoStartMode: "off",

@@ -14,9 +14,11 @@ import * as FileClipboard from "~/main/utils/file-clipboard";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
 
 import {
+  defaultReplayClipPlaybackRate,
   quickClipTrimMaximumSeconds,
   quickClipTrimMinimumSeconds,
   type ReplayClip,
+  type ReplayClipPlaybackRate,
 } from "~/types";
 import type {
   ReplayClipBatchFileActionResult,
@@ -203,6 +205,8 @@ class ReplayClipFileActionsService {
         clip.durationSeconds ??
         clip.targetDurationSeconds;
       const muteAudio = copyInput.muteAudio === true;
+      const playbackRate =
+        copyInput.playbackRate ?? defaultReplayClipPlaybackRate;
       const trim = copyInput.trim
         ? resolveReplayClipQuickTrim(copyInput.trim, durationSeconds)
         : null;
@@ -213,8 +217,9 @@ class ReplayClipFileActionsService {
       const didTrim = trim
         ? !isReplayClipFullRangeTrim(trim, durationSeconds)
         : false;
+      const didChangeSpeed = playbackRate !== defaultReplayClipPlaybackRate;
 
-      if ((didTrim || muteAudio) && trim) {
+      if (didTrim || muteAudio || didChangeSpeed) {
         const onProgress = createReplayClipOperationProgressHandler(
           copyInput.operationRequestId,
           options,
@@ -222,21 +227,9 @@ class ReplayClipFileActionsService {
         return await this.copyTrimmedClipToClipboard({
           ...(onProgress ? { onProgress } : {}),
           sourcePath: clipPath,
-          trim,
-          ...(muteAudio ? { muteAudio } : {}),
-        });
-      }
-
-      if (muteAudio) {
-        const onProgress = createReplayClipOperationProgressHandler(
-          copyInput.operationRequestId,
-          options,
-        );
-        return await this.copyTrimmedClipToClipboard({
-          ...(onProgress ? { onProgress } : {}),
-          sourcePath: clipPath,
-          trim: fullRangeTrim,
-          muteAudio: true,
+          trim: trim ?? fullRangeTrim,
+          ...(muteAudio ? { muteAudio: true } : {}),
+          ...(didChangeSpeed ? { playbackRate } : {}),
         });
       }
 
@@ -271,6 +264,7 @@ class ReplayClipFileActionsService {
       const durationSeconds =
         knownDurationSeconds ?? clip.targetDurationSeconds;
       const muteAudio = input.muteAudio === true;
+      const playbackRate = input.playbackRate ?? defaultReplayClipPlaybackRate;
       const trim = input.trim
         ? resolveReplayClipQuickTrim(input.trim, durationSeconds)
         : null;
@@ -288,7 +282,8 @@ class ReplayClipFileActionsService {
       const didTrim = trim
         ? !isReplayClipFullRangeTrim(trim, durationSeconds)
         : false;
-      const shouldRender = didTrim || muteAudio;
+      const didChangeSpeed = playbackRate !== defaultReplayClipPlaybackRate;
+      const shouldRender = didTrim || muteAudio || didChangeSpeed;
       const renderTrim = trim ?? fullRangeTrim;
 
       if (!shouldRender && !didRename) {
@@ -317,8 +312,11 @@ class ReplayClipFileActionsService {
             clip,
             durationSeconds:
               this.dependencies.readDuration(committedPath) ??
-              (didTrim && trim
-                ? roundReplayClipSeconds(trim.outSeconds - trim.inSeconds)
+              (shouldRender
+                ? roundReplayClipSeconds(
+                    (renderTrim.outSeconds - renderTrim.inSeconds) /
+                      playbackRate,
+                  )
                 : clip.durationSeconds),
             path: committedPath,
             sizeBytes: fileStats.size,
@@ -340,6 +338,7 @@ class ReplayClipFileActionsService {
                   sourcePath,
                   trim: renderTrim,
                   ...(muteAudio ? { muteAudio } : {}),
+                  ...(didChangeSpeed ? { playbackRate } : {}),
                 }),
             }
           : {}),
@@ -359,6 +358,7 @@ class ReplayClipFileActionsService {
       logInfo(REPLAY_CLIPS_LOG_SCOPE, "Replay clip updated from overlay", {
         clipId: updatedClip.id,
         didRename,
+        didChangeSpeed,
         didTrim,
         durationSeconds: updatedClip.durationSeconds,
         sizeBytes: updatedClip.sizeBytes,
@@ -692,6 +692,7 @@ class ReplayClipFileActionsService {
     muteAudio?: boolean;
     onProgress?: (progress: number) => void;
     outputPath: string;
+    playbackRate?: ReplayClipPlaybackRate;
     sourcePath: string;
     trim: ReplayClipTrimInput;
   }): Promise<void> {
@@ -701,6 +702,7 @@ class ReplayClipFileActionsService {
   private async copyTrimmedClipToClipboard(input: {
     muteAudio?: boolean;
     onProgress?: (progress: number) => void;
+    playbackRate?: ReplayClipPlaybackRate;
     sourcePath: string;
     trim: ReplayClipTrimInput;
   }): Promise<ReplayClipFileActionResult> {

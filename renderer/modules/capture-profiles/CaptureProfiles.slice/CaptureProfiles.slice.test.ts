@@ -168,7 +168,6 @@ describe("CaptureProfiles slice", () => {
         managedRecorder: {
           captureMode: "rewind",
           hydrate: vi.fn(),
-          saveReplay: vi.fn(),
           setCaptureMode: vi.fn(),
           startBuffer: vi.fn(),
           startListening: vi.fn(),
@@ -1182,7 +1181,9 @@ describe("CaptureProfiles slice", () => {
           label: "PoE 1 Screen",
           width: 1920,
         },
+        deathClipsEnabled: true,
         deathClipSeconds: 10,
+        manualReplaySeconds: 10,
         recordingAudioInputDeviceId: null,
         recordingAudioOutputDeviceId: null,
         recordingAutoStartMode: "off",

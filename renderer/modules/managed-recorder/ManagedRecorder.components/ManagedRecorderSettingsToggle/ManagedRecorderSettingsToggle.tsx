@@ -1,3 +1,4 @@
+import clsx from "clsx";
 import type { ChangeEvent } from "react";
 import { useId } from "react";
 import { FiInfo } from "react-icons/fi";
@@ -29,15 +30,28 @@ function ManagedRecorderSettingsToggle({
   };
 
   return (
-    <div className="flex min-w-0 items-center justify-between gap-3 py-1 text-primary text-[0.8125rem]">
+    <div
+      className={clsx(
+        "flex min-w-0 items-center justify-between gap-3 py-1 text-primary text-[0.8125rem]",
+        { "overflow-hidden": disabled },
+      )}
+    >
       <span className="inline-flex min-w-0 items-center gap-1">
         <label className="font-semibold" htmlFor={inputId}>
           {label}
         </label>
         <button
           aria-label={helpText}
-          className="tooltip tooltip-bottom inline-flex cursor-help border-0 bg-transparent p-0 text-base-content/45 transition-colors hover:text-base-content/70"
-          data-tip={helpText}
+          className={clsx(
+            "inline-flex border-0 bg-transparent p-0 text-base-content/45 transition-colors",
+            {
+              "cursor-default": disabled,
+              "tooltip tooltip-bottom cursor-help hover:text-base-content/70":
+                !disabled,
+            },
+          )}
+          data-tip={disabled ? undefined : helpText}
+          disabled={disabled}
           type="button"
         >
           <FiInfo className="h-3.5 w-3.5" />

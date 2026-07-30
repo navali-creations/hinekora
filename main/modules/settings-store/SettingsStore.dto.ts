@@ -4,7 +4,7 @@ type SettingsStoreOverlaySnapshot = Pick<
   AppSettings,
   | "activeGame"
   | "auraOverlayShowEditingFrame"
-  | "deathClipSeconds"
+  | "manualReplaySeconds"
   | "replayClipPreviewResolution"
   | "selectedCaptureProfileId"
   | "selectedCaptureProfileIdsByGame"
@@ -32,7 +32,7 @@ export function createSettingsStoreOverlaySnapshot(
   return {
     activeGame: settings.activeGame,
     auraOverlayShowEditingFrame: settings.auraOverlayShowEditingFrame,
-    deathClipSeconds: settings.deathClipSeconds,
+    manualReplaySeconds: settings.manualReplaySeconds,
     replayClipPreviewResolution: settings.replayClipPreviewResolution,
     selectedCaptureProfileId: settings.selectedCaptureProfileId,
     selectedCaptureProfileIdsByGame: settings.selectedCaptureProfileIdsByGame,

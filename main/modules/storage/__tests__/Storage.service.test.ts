@@ -266,6 +266,7 @@ describe("StorageService", () => {
       inode: 2,
       modifiedAtMs: 0,
       path: join(configuredExports, "configured.mp4"),
+      projectId: null,
       sizeBytes: 10,
     });
     const service = new StorageService({

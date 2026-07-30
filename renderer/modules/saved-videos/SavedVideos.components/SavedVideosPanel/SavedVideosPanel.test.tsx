@@ -31,6 +31,7 @@ const video: SavedVideoItem = {
   id: "a".repeat(64),
   savedAt: "2026-07-21T00:00:00.000Z",
   sizeBytes: 1024,
+  sourceProjectId: null,
 };
 let container: HTMLDivElement;
 let root: Root;

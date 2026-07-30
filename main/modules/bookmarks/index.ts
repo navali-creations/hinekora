@@ -3,6 +3,8 @@ export { BookmarksChannel } from "./Bookmarks.channels";
 export type {
   ActivitySession,
   ActivitySessionBookmark,
+  ActivitySessionBookmarksPage,
+  ActivitySessionBookmarksQuery,
   ActivitySessionClip,
   ActivitySessionClipTargetKind,
   ActivitySessionLibraryItem,
@@ -14,6 +16,7 @@ export type {
   ActivitySessionTimeline,
   Bookmark,
   BookmarkCategory,
+  BookmarkCategoryCount,
   BookmarkLibraryItem,
   BookmarkLibraryPage,
   BookmarkLibraryQuery,

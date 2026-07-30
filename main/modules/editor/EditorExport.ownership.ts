@@ -7,6 +7,7 @@ import type { EditorExportFile } from "./EditorExport.inventory";
 import type { EditorExportOwnershipRecord } from "./EditorExportOwnership.repository";
 
 interface EditorExportOwnershipPolicy {
+  getRegistration(file: EditorExportFile): EditorExportOwnershipRecord | null;
   isOwned(file: EditorExportFile): boolean;
 }
 
@@ -16,20 +17,22 @@ function createEditorExportOwnershipPolicy(
 ): EditorExportOwnershipPolicy {
   const implicitRootKeys = createAliasKeySet(implicitlyOwnedRoots);
   const registeredByPathKey = createRegisteredOwnershipMap(registeredExports);
+  const getRegistration = (
+    file: EditorExportFile,
+  ): EditorExportOwnershipRecord | null => {
+    const registered = registeredByPathKey.get(createStoragePathKey(file.path));
+    return registered && hasSameRegisteredEditorExportIdentity(registered, file)
+      ? registered
+      : null;
+  };
 
   return {
+    getRegistration,
     isOwned: (file) => {
       if (implicitRootKeys.has(createStoragePathKey(dirname(file.path)))) {
         return true;
       }
-      const registered = registeredByPathKey.get(
-        createStoragePathKey(file.path),
-      );
-      if (registered) {
-        return hasSameRegisteredEditorExportIdentity(registered, file);
-      }
-
-      return false;
+      return getRegistration(file) !== null;
     },
   };
 }

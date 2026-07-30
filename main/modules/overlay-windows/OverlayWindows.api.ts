@@ -56,6 +56,28 @@ const OverlayWindowsAPI = {
   },
   hideClipPreview: (): Promise<void> =>
     ipcRenderer.invoke(OverlayWindowsChannel.HideClipPreview),
+  toggleClipPreviewFullscreen: (): Promise<boolean> =>
+    ipcRenderer.invoke(OverlayWindowsChannel.ToggleClipPreviewFullscreen),
+  onClipPreviewFullscreenChanged: (
+    callback: (isFullscreen: boolean) => void,
+  ) => {
+    const listener = (
+      _event: Electron.IpcRendererEvent,
+      isFullscreen: boolean,
+    ) => {
+      callback(isFullscreen);
+    };
+    ipcRenderer.on(
+      OverlayWindowsChannel.ClipPreviewFullscreenChanged,
+      listener,
+    );
+
+    return () =>
+      ipcRenderer.removeListener(
+        OverlayWindowsChannel.ClipPreviewFullscreenChanged,
+        listener,
+      );
+  },
   showAura: (
     profileId?: string,
     options?: ShowAuraOverlayOptions,

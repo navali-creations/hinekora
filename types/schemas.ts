@@ -490,7 +490,13 @@ const captureProfileSettingsShape = {
   recordingHideOverlaysFromRewind: z.boolean(),
   recordingTrackBookmarksInRewind: z.boolean(),
   recordingAutoStartMode: RecordingAutoStartModeSchema,
+  deathClipsEnabled: z.boolean(),
   deathClipSeconds: z
+    .number()
+    .int()
+    .min(minRewindSaveSeconds)
+    .max(maxRewindSaveSeconds),
+  manualReplaySeconds: z
     .number()
     .int()
     .min(minRewindSaveSeconds)
@@ -520,7 +526,12 @@ const captureProfileSettingsDefaultShape = {
     captureProfileSettingsShape.recordingTrackBookmarksInRewind.default(true),
   recordingAutoStartMode:
     captureProfileSettingsShape.recordingAutoStartMode.default("off"),
+  deathClipsEnabled:
+    captureProfileSettingsShape.deathClipsEnabled.default(true),
   deathClipSeconds: captureProfileSettingsShape.deathClipSeconds.default(
+    defaultRewindSaveSeconds,
+  ),
+  manualReplaySeconds: captureProfileSettingsShape.manualReplaySeconds.default(
     defaultRewindSaveSeconds,
   ),
 } as const;
@@ -608,6 +619,7 @@ export const AppSettingsSchema = z.object({
   mainWindowBounds: MainWindowBoundsSchema.nullable().default(null),
   recorderOverlayBounds: RecorderOverlayBoundsSchema.nullable().default(null),
   recorderOverlayShowOnStartup: z.boolean().default(true),
+  recorderOverlayStartMinimized: z.boolean().default(false),
   recorderOverlayIgnoreGameFocus: z.boolean().default(false),
   auraOverlayIgnoreGameFocus: z.boolean().default(false),
   auraOverlayShowEditingFrame: z.boolean().default(true),

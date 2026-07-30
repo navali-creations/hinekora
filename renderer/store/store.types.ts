@@ -185,7 +185,6 @@ export interface ManagedRecorderSlice {
     stopBuffer: () => Promise<void>;
     startRunRecording: () => Promise<void>;
     stopRunRecording: () => Promise<void>;
-    saveReplay: () => Promise<void>;
     startListening: () => () => void;
   };
 }
@@ -313,6 +312,7 @@ export interface BookmarksSlice {
     manualRenameDraft: { id: string; label: string } | null;
     page: BookmarkLibraryPage | null;
     query: BookmarkLibraryQuery | null;
+    searchText: string;
     editorRecording: BookmarkPanelState;
     recordingDetail: BookmarkPanelState;
     closeManualRenameDialog: () => void;
@@ -326,6 +326,8 @@ export interface BookmarksSlice {
     ) => void;
     setEditorRecordingHoveredBookmarkId: (id: string | null) => void;
     setEditorRecordingPageIndex: (pageIndex: BookmarkPageIndexInput) => void;
+    setEditorRecordingPanelStatus: (status: BookmarkPanelStatus) => void;
+    setEditorRecordingSearchText: (searchText: string) => void;
     setEditorRecordingSelectedBookmarkId: (id: string | null) => void;
     resetRecordingDetail: () => void;
     selectRecordingDetailCategory: (
@@ -333,7 +335,10 @@ export interface BookmarksSlice {
     ) => void;
     setRecordingDetailHoveredBookmarkId: (id: string | null) => void;
     setRecordingDetailPageIndex: (pageIndex: BookmarkPageIndexInput) => void;
+    setRecordingDetailPanelStatus: (status: BookmarkPanelStatus) => void;
+    setRecordingDetailSearchText: (searchText: string) => void;
     setRecordingDetailSelectedBookmarkId: (id: string | null) => void;
+    setSearchText: (searchText: string) => void;
     saveManualRename: (label: string) => Promise<void>;
     updateManual: (
       id: string,
@@ -345,10 +350,18 @@ export interface BookmarksSlice {
 
 export interface BookmarkPanelState {
   categoryFilter: BookmarkCategory | typeof allBookmarkCategoriesValue;
+  errorMessage: string | null;
   hasInteracted: boolean;
   hoveredBookmarkId: string | null;
+  isLoading: boolean;
   pageIndex: number;
+  searchText: string;
   selectedBookmarkId: string | null;
+}
+
+export interface BookmarkPanelStatus {
+  errorMessage: string | null;
+  isLoading: boolean;
 }
 
 export type BookmarkPageIndexInput =
@@ -372,7 +385,10 @@ export interface RewindsSlice {
       bookmarkCategoryFilter:
         | BookmarkCategory
         | typeof allBookmarkCategoriesValue;
+      bookmarkErrorMessage: string | null;
+      bookmarkIsLoading: boolean;
       bookmarkPageIndex: number;
+      bookmarkSearchText: string;
       hoveredBookmarkId: string | null;
       timelineMarkerCategoryFilter: RewindDetailTimelineMarkerCategoryFilter;
     };
@@ -383,6 +399,8 @@ export interface RewindsSlice {
       category: BookmarkCategory | typeof allBookmarkCategoriesValue,
     ) => void;
     setDetailBookmarkPageIndex: (pageIndex: number) => void;
+    setDetailBookmarkPanelStatus: (status: BookmarkPanelStatus) => void;
+    setDetailBookmarkSearchText: (searchText: string) => void;
     setDetailHoveredBookmarkId: (id: string | null) => void;
     setDetailTimelineMarkerCategory: (
       category: RewindDetailTimelineMarkerCategoryFilter,

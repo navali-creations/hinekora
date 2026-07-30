@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { GameOverlayCoordinator } from "~/main/modules/overlay-windows/GameOverlayCoordinator";
+import { OverlayWindowsChannel } from "~/main/modules/overlay-windows/OverlayWindows.channels";
 import {
   createFakeBrowserWindow,
   type FakeBrowserWindowOptions,
@@ -98,6 +99,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   electronMocks.BrowserWindow.mockClear();
   electronMocks.browserWindowFactory.mockReset();
   electronMocks.getDisplayMatching.mockReset();
@@ -179,6 +181,58 @@ describe("DeathClipsOverlayService", () => {
       expect.stringContaining("Replay clip overlay closed"),
       { reason: "hide-requested" },
     );
+  });
+
+  it("toggles the native overlay window fullscreen state", async () => {
+    const clipWindow = createFakeWindow();
+    const windowedBounds = {
+      x: 100,
+      y: 204,
+      width: 560,
+      height: 520,
+    };
+    clipWindow.getBounds.mockReturnValue(windowedBounds);
+    electronMocks.browserWindowFactory.mockReturnValue(clipWindow);
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+    await service.showClip(createClip());
+
+    expect(service.toggleFullscreen()).toBe(true);
+    expect(clipWindow.getBounds).toHaveBeenCalled();
+    expect(clipWindow.setFullScreenable).toHaveBeenCalledWith(true);
+    expect(clipWindow.setFullScreen).toHaveBeenNthCalledWith(1, true);
+    const enterFullscreenListener = clipWindow.on.mock.calls.find(
+      ([eventName]) => eventName === "enter-full-screen",
+    )?.[1];
+    enterFullscreenListener?.();
+    expect(clipWindow.webContents.send).toHaveBeenCalledWith(
+      OverlayWindowsChannel.ClipPreviewFullscreenChanged,
+      true,
+    );
+
+    vi.useFakeTimers();
+    expect(service.toggleFullscreen()).toBe(false);
+    expect(clipWindow.setFullScreen).toHaveBeenNthCalledWith(2, false);
+    expect(clipWindow.setFullScreenable).toHaveBeenLastCalledWith(false);
+    const leaveFullscreenListener = clipWindow.on.mock.calls.find(
+      ([eventName]) => eventName === "leave-full-screen",
+    )?.[1];
+    leaveFullscreenListener?.();
+    expect(clipWindow.setFullScreenable).toHaveBeenLastCalledWith(false);
+    expect(clipWindow.webContents.send).toHaveBeenLastCalledWith(
+      OverlayWindowsChannel.ClipPreviewFullscreenChanged,
+      false,
+    );
+    expect(clipWindow.setBounds).not.toHaveBeenCalledWith(
+      windowedBounds,
+      false,
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    expect(clipWindow.setBounds).toHaveBeenCalledWith(windowedBounds, false);
+    vi.useRealTimers();
+
+    expect(service.toggleFullscreen()).toBe(true);
+    expect(clipWindow.setFullScreen).toHaveBeenNthCalledWith(3, true);
   });
 
   it("handles clip preview guard paths and existing preview windows", async () => {

@@ -14,6 +14,7 @@ type OverlayPreferenceKey = keyof Pick<
   | "gridLinesOverlayIgnoreGameFocus"
   | "recorderOverlayIgnoreGameFocus"
   | "recorderOverlayShowOnStartup"
+  | "recorderOverlayStartMinimized"
 >;
 
 interface OverlayPreferenceToggleRowProps {

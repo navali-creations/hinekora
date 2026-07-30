@@ -1,4 +1,7 @@
-import type { BookmarkCategory } from "~/main/modules/bookmarks";
+import type {
+  BookmarkCategory,
+  BookmarkCategoryCount,
+} from "~/main/modules/bookmarks";
 
 const allBookmarkCategoriesValue = "__all__" as const;
 const defaultRewindTimelineMarkerFilterValue =
@@ -11,6 +14,11 @@ type BookmarkCategoryFilterValue =
 interface BookmarkCategoryToggleState {
   categoryFilter: BookmarkCategoryFilterValue;
   hasInteracted: boolean;
+}
+
+interface BookmarkCategoryCountState {
+  allCount: number;
+  countsByCategory: Map<BookmarkCategory, number>;
 }
 
 const bookmarkCategoryLabels: Record<BookmarkCategory, string> = {
@@ -174,8 +182,19 @@ function resolveBookmarkCategoryToggle(
   };
 }
 
+function resolveBookmarkCategoryCountState(
+  categoryCounts: BookmarkCategoryCount[],
+): BookmarkCategoryCountState {
+  const countsByCategory = new Map(
+    categoryCounts.map(({ category, count }) => [category, count]),
+  );
+  const allCount = categoryCounts.reduce((sum, item) => sum + item.count, 0);
+  return { allCount, countsByCategory };
+}
+
 export {
   allBookmarkCategoriesValue,
+  type BookmarkCategoryCountState,
   type BookmarkCategoryFilterValue,
   type BookmarkCategoryToggleState,
   bookmarkCategoryBadgeClassNames,
@@ -188,5 +207,6 @@ export {
   bookmarkCategoryTimelineLineClassNames,
   bookmarkCategoryTimelineThumbClassNames,
   defaultRewindTimelineMarkerFilterValue,
+  resolveBookmarkCategoryCountState,
   resolveBookmarkCategoryToggle,
 };
