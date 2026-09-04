@@ -352,6 +352,7 @@ function createDashboardE2EFixture(
     id: "capture-profile-1",
     isDefault: false,
     name: "PoE 2 Capture",
+    manualReplayShowPreview: settings.manualReplayShowPreview,
     manualReplaySeconds: settings.manualReplaySeconds,
     recordingAudioInputDeviceId: settings.recordingAudioInputDeviceId,
     recordingAudioOutputDeviceId: settings.recordingAudioOutputDeviceId,
@@ -1865,17 +1866,6 @@ async function setupDashboardE2E(
         settings: createBridgeDomain<DashboardE2EElectron["settings"]>(
           "settings",
           {
-            dismissClipPreviewInfoAlert: async () => {
-              const input = { clipPreviewInfoAlertDismissed: true };
-              calls.settingsUpdates.push(input);
-              settings = { ...settings, ...input };
-              listeners.settingsChanged?.(clone(settings));
-
-              return {
-                clipPreviewInfoAlertDismissed: true,
-                telemetryCrashReporting: settings.telemetryCrashReporting,
-              };
-            },
             get: async () => clone(settings),
             onChanged: (callback) => {
               listeners.settingsChanged = callback;

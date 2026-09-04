@@ -44,6 +44,12 @@ vi.mock(
     RecorderControlsOverlayPage: () => <div>Recorder overlay</div>,
   }),
 );
+vi.mock(
+  "~/renderer/modules/replay-status-overlay/ReplayStatusOverlay.page/ReplayStatusOverlay.page",
+  () => ({
+    ReplayStatusOverlayPage: () => <div>Replay status overlay</div>,
+  }),
+);
 
 import { App } from "./App";
 
@@ -260,5 +266,22 @@ describe("App overlay bootstrap", () => {
     });
 
     expect(stopSettingsListener).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders the replay status overlay without hydrating shared stores", async () => {
+    window.location.hash = "#/replay-status-overlay?clipId=manual-1";
+    const { container, root } = renderApp();
+
+    await act(async () => {
+      root.render(<App />);
+    });
+
+    expect(container.textContent).toContain("Replay status overlay");
+    expect(storeMocks.hydrateSettings).not.toHaveBeenCalled();
+    expect(storeMocks.startReplayClipsListener).not.toHaveBeenCalled();
+
+    await act(async () => {
+      root.unmount();
+    });
   });
 });

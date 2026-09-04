@@ -12,6 +12,7 @@ function createCaptureProfileTestFixture(
     id: "capture-profile-1",
     isDefault: false,
     name: "Default PoE Capture",
+    manualReplayShowPreview: true,
     manualReplaySeconds: 10,
     recordingAudioInputDeviceId: null,
     recordingAudioOutputDeviceId: null,

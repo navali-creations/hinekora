@@ -12,6 +12,7 @@ const storeMocks = vi.hoisted(() => ({
   settingsValue: {
     deathClipsEnabled: true,
     deathClipSeconds: 15,
+    manualReplayShowPreview: true,
     manualReplaySeconds: 30,
     recordingAutoStartMode: "off",
     recordingHideOverlaysFromRewind: true,
@@ -112,6 +113,7 @@ describe("ManagedRecorderRewindSettingsFields", () => {
     storeMocks.settingsValue = {
       deathClipsEnabled: true,
       deathClipSeconds: 15,
+      manualReplayShowPreview: true,
       manualReplaySeconds: 30,
       recordingAutoStartMode: "off",
       recordingHideOverlaysFromRewind: true,
@@ -159,8 +161,14 @@ describe("ManagedRecorderRewindSettingsFields", () => {
     );
     expect(container.textContent).toContain("Start rewind automatically");
     expect(getCheckbox("Enable death clips").checked).toBe(true);
+    expect(getCheckbox("Show manual replay preview").checked).toBe(true);
     expect(container.textContent).toContain("Hide overlays from rewind");
     expect(getOverlayCheckbox().checked).toBe(true);
+    const overlayHelpButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label^="Uses window capture protection"]',
+    );
+    expect(overlayHelpButton?.classList.contains("tooltip-top")).toBe(true);
+    expect(overlayHelpButton?.classList.contains("tooltip-bottom")).toBe(false);
   });
 
   it("updates rewind duration from presets and clamps custom typed values", async () => {
@@ -226,6 +234,7 @@ describe("ManagedRecorderRewindSettingsFields", () => {
     storeMocks.settingsValue = {
       deathClipsEnabled: true,
       deathClipSeconds: 12,
+      manualReplayShowPreview: true,
       manualReplaySeconds: 30,
       recordingAutoStartMode: "off",
       recordingHideOverlaysFromRewind: true,
@@ -261,6 +270,18 @@ describe("ManagedRecorderRewindSettingsFields", () => {
     });
   });
 
+  it("allows the manual replay preview to be disabled", async () => {
+    await renderFields();
+
+    await act(async () => {
+      getCheckbox("Show manual replay preview").click();
+    });
+
+    expect(storeMocks.updateSettings).toHaveBeenCalledWith({
+      manualReplayShowPreview: false,
+    });
+  });
+
   it("updates rewind auto-start from the rewind tab", async () => {
     await renderFields();
 
@@ -277,6 +298,7 @@ describe("ManagedRecorderRewindSettingsFields", () => {
     storeMocks.settingsValue = {
       deathClipsEnabled: true,
       deathClipSeconds: 15,
+      manualReplayShowPreview: true,
       manualReplaySeconds: 30,
       recordingAutoStartMode: "rewind",
       recordingHideOverlaysFromRewind: true,
@@ -302,6 +324,7 @@ describe("ManagedRecorderRewindSettingsFields", () => {
     expect(getDurationInput().disabled).toBe(true);
     expect(getPresetButton("45").disabled).toBe(true);
     expect(getCheckbox("Enable death clips").disabled).toBe(true);
+    expect(getCheckbox("Show manual replay preview").disabled).toBe(true);
     expect(getCheckbox("Start rewind automatically").disabled).toBe(true);
     expect(getOverlayCheckbox().disabled).toBe(true);
 

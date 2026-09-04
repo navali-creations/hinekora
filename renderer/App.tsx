@@ -4,10 +4,14 @@ import { AuraOverlayPage } from "~/renderer/modules/aura-overlay/AuraOverlay.pag
 import { ClipPreviewOverlayPage } from "~/renderer/modules/clip-preview-overlay/ClipPreviewOverlay.page/ClipPreviewOverlay.page";
 import { CropSelectorOverlayPage } from "~/renderer/modules/crop-selector-overlay/CropSelectorOverlay.page/CropSelectorOverlay.page";
 import { RecorderControlsOverlayPage } from "~/renderer/modules/recorder-controls-overlay/RecorderControlsOverlay.page/RecorderControlsOverlay.page";
+import { ReplayStatusOverlayPage } from "~/renderer/modules/replay-status-overlay/ReplayStatusOverlay.page/ReplayStatusOverlay.page";
 import { useBoundStore } from "~/renderer/store";
 
 function App() {
   const isRecorderOverlay = window.location.hash.includes("recorder-overlay");
+  const isReplayStatusOverlay = window.location.hash.includes(
+    "replay-status-overlay",
+  );
   const isClipPreviewOverlay = window.location.hash.includes(
     "clip-preview-overlay",
   );
@@ -101,6 +105,10 @@ function App() {
 
   if (isRecorderOverlay) {
     return <RecorderControlsOverlayPage />;
+  }
+
+  if (isReplayStatusOverlay) {
+    return <ReplayStatusOverlayPage />;
   }
 
   if (isClipPreviewOverlay) {

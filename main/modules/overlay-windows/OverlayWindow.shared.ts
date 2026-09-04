@@ -8,6 +8,7 @@ const currentDir = __dirname;
 const OVERLAY_TOPMOST_LEVEL = 1;
 const OVERLAY_ROUTE_NAMES = [
   WindowName.RecorderOverlay,
+  WindowName.ReplayStatusOverlay,
   WindowName.ClipPreviewOverlay,
   WindowName.CropSelectorOverlay,
   WindowName.AuraOverlay,

@@ -1,14 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createStoppedPoeProcessStates } from "~/main/modules/poe-process/PoeProcess.dto";
+import { createCaptureProfileTestFixture } from "~/renderer/modules/capture-profiles/CaptureProfiles.test-utils";
 import type { BoundStore } from "~/renderer/store/store.types";
 import { createBoundStoreForTests } from "~/renderer/test/createBoundStoreForTests";
 
-import {
-  type CapturePreviewSource,
-  type CaptureProfile,
-  createDefaultSettings,
-} from "~/types";
+import { type CapturePreviewSource, createDefaultSettings } from "~/types";
 import { createCapturePreviewSlice } from "./CapturePreview.slice";
 
 const source: CapturePreviewSource = {
@@ -39,7 +36,7 @@ const poe2WindowSource: CapturePreviewSource = {
   width: 2560,
 };
 
-const profile: CaptureProfile = {
+const profile = createCaptureProfileTestFixture({
   captureTarget: {
     height: 1080,
     id: "screen:1",
@@ -47,27 +44,10 @@ const profile: CaptureProfile = {
     label: "Screen 1",
     width: 1920,
   },
-  createdAt: "2026-06-18T00:00:00.000Z",
-  deathClipsEnabled: true,
-  deathClipSeconds: 10,
   game: "poe2",
   id: "capture-profile-1",
-  isDefault: false,
   name: "PoE 2 Capture",
-  manualReplaySeconds: 10,
-  recordingAudioInputDeviceId: null,
-  recordingAudioOutputDeviceId: null,
-  recordingAutoStartMode: "off",
-  recordingClipQuality: "high",
-  recordingEncoder: "hardware_h264",
-  recordingFps: 60,
-  recordingHideOverlaysFromRecording: true,
-  recordingHideOverlaysFromRewind: true,
-  recordingOutputResolution: "native",
-  recordingRunQuality: "moderate",
-  recordingTrackBookmarksInRewind: true,
-  updatedAt: "2026-06-18T00:00:00.000Z",
-};
+});
 
 function createTestStore() {
   return createBoundStoreForTests((set, get, api) => {

@@ -44,6 +44,7 @@ import type { ClipPreviewOverlaySlice } from "~/renderer/modules/clip-preview-ov
 import type { CropEditorSlice } from "~/renderer/modules/crop-editor/CropEditor.slice/CropEditor.slice";
 import type { EditorSlice } from "~/renderer/modules/editor/Editor.slice/Editor.slice.types";
 import type { OnboardingSlice } from "~/renderer/modules/onboarding";
+import type { ReplayStatusOverlaySlice } from "~/renderer/modules/replay-status-overlay/ReplayStatusOverlay.slice/ReplayStatusOverlay.slice";
 import type { SavedEditsSlice } from "~/renderer/modules/saved-edits";
 import type { SavedVideosSlice } from "~/renderer/modules/saved-videos";
 import type { StorageSlice } from "~/renderer/modules/settings/Storage.slice/Storage.slice";
@@ -425,6 +426,7 @@ export type BoundStore = AppMenuSlice &
   PoeLeaguesSlice &
   PoeProcessSlice &
   ReplayClipsSlice &
+  ReplayStatusOverlaySlice &
   RecordingStorageSlice &
   BookmarksSlice &
   RewindsSlice &

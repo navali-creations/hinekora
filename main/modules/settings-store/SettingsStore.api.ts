@@ -7,29 +7,35 @@ import { SettingsStoreChannel } from "./SettingsStore.channels";
 import type {
   SettingsStoreClipPreviewOverlaySnapshot,
   SettingsStoreOverlaySnapshot,
+  SettingsStoreRecorderOverlaySnapshot,
   SettingsUpdateInput,
 } from "./SettingsStore.dto";
+
+function getOverlaySnapshot<
+  TSnapshot extends SettingsStoreOverlaySnapshot,
+>(): Promise<TSnapshot> {
+  return ipcRenderer
+    .invoke(SettingsStoreChannel.GetOverlaySnapshot)
+    .then(unwrapIpcResult);
+}
+
+function onOverlayChanged<TSnapshot extends SettingsStoreOverlaySnapshot>(
+  callback: (settings: TSnapshot) => void,
+): () => void {
+  const listener = (_event: Electron.IpcRendererEvent, settings: TSnapshot) => {
+    callback(settings);
+  };
+
+  ipcRenderer.on(SettingsStoreChannel.OverlayChanged, listener);
+
+  return () =>
+    ipcRenderer.removeListener(SettingsStoreChannel.OverlayChanged, listener);
+}
 
 const SettingsStoreAPI = {
   scope: "full" as const,
   get: (): Promise<AppSettings> =>
     ipcRenderer.invoke(SettingsStoreChannel.Get).then(unwrapIpcResult),
-  getClipPreviewOverlaySnapshot:
-    (): Promise<SettingsStoreClipPreviewOverlaySnapshot> =>
-      ipcRenderer
-        .invoke(SettingsStoreChannel.GetClipPreviewOverlaySnapshot)
-        .then(unwrapIpcResult),
-  dismissClipPreviewInfoAlert:
-    (): Promise<SettingsStoreClipPreviewOverlaySnapshot> =>
-      ipcRenderer
-        .invoke(SettingsStoreChannel.Update, {
-          clipPreviewInfoAlertDismissed: true,
-        })
-        .then(unwrapIpcResult),
-  getOverlaySnapshot: (): Promise<SettingsStoreOverlaySnapshot> =>
-    ipcRenderer
-      .invoke(SettingsStoreChannel.GetOverlaySnapshot)
-      .then(unwrapIpcResult),
   onChanged: (callback: (settings: AppSettings) => void): (() => void) => {
     const listener = (
       _event: Electron.IpcRendererEvent,
@@ -43,7 +49,26 @@ const SettingsStoreAPI = {
     return () =>
       ipcRenderer.removeListener(SettingsStoreChannel.Changed, listener);
   },
-  onClipPreviewOverlayChanged: (
+  update: (input: SettingsUpdateInput): Promise<AppSettings> =>
+    ipcRenderer
+      .invoke(SettingsStoreChannel.Update, input)
+      .then(unwrapIpcResult),
+};
+
+const SettingsStoreClipPreviewOverlayAPI = {
+  scope: "clip-preview-overlay" as const,
+  dismissClipPreviewInfoAlert:
+    (): Promise<SettingsStoreClipPreviewOverlaySnapshot> =>
+      ipcRenderer
+        .invoke(SettingsStoreChannel.Update, {
+          clipPreviewInfoAlertDismissed: true,
+        })
+        .then(unwrapIpcResult),
+  get: (): Promise<SettingsStoreClipPreviewOverlaySnapshot> =>
+    ipcRenderer
+      .invoke(SettingsStoreChannel.GetClipPreviewOverlaySnapshot)
+      .then(unwrapIpcResult),
+  onChanged: (
     callback: (settings: SettingsStoreClipPreviewOverlaySnapshot) => void,
   ): (() => void) => {
     const listener = (
@@ -61,25 +86,28 @@ const SettingsStoreAPI = {
         listener,
       );
   },
-  onOverlayChanged: (
-    callback: (settings: SettingsStoreOverlaySnapshot) => void,
-  ): (() => void) => {
-    const listener = (
-      _event: Electron.IpcRendererEvent,
-      settings: SettingsStoreOverlaySnapshot,
-    ) => {
-      callback(settings);
-    };
-
-    ipcRenderer.on(SettingsStoreChannel.OverlayChanged, listener);
-
-    return () =>
-      ipcRenderer.removeListener(SettingsStoreChannel.OverlayChanged, listener);
-  },
-  update: (input: SettingsUpdateInput): Promise<AppSettings> =>
-    ipcRenderer
-      .invoke(SettingsStoreChannel.Update, input)
-      .then(unwrapIpcResult),
 };
 
-export { SettingsStoreAPI };
+const SettingsStoreOverlayAPI = {
+  scope: "aura-overlay" as const,
+  get: (): Promise<SettingsStoreOverlaySnapshot> => getOverlaySnapshot(),
+  onChanged: (
+    callback: (settings: SettingsStoreOverlaySnapshot) => void,
+  ): (() => void) => onOverlayChanged(callback),
+};
+
+const SettingsStoreRecorderOverlayAPI = {
+  scope: "recorder-overlay" as const,
+  get: (): Promise<SettingsStoreRecorderOverlaySnapshot> =>
+    getOverlaySnapshot(),
+  onChanged: (
+    callback: (settings: SettingsStoreRecorderOverlaySnapshot) => void,
+  ): (() => void) => onOverlayChanged(callback),
+};
+
+export {
+  SettingsStoreAPI,
+  SettingsStoreClipPreviewOverlayAPI,
+  SettingsStoreOverlayAPI,
+  SettingsStoreRecorderOverlayAPI,
+};

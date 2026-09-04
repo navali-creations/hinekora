@@ -13,6 +13,7 @@ interface ManagedRecorderOverlayCaptureToggleProps {
   helpText: string;
   label: string;
   settingKey: OverlayCaptureSettingKey;
+  tooltipPlacement?: "bottom" | "top";
 }
 
 function ManagedRecorderOverlayCaptureToggle({
@@ -20,6 +21,7 @@ function ManagedRecorderOverlayCaptureToggle({
   helpText,
   label,
   settingKey,
+  tooltipPlacement = "bottom",
 }: ManagedRecorderOverlayCaptureToggleProps) {
   const disabled = useManagedRecorderSettingsDisabled();
   const { overlayCaptureProtectionEnabled, updateSettings } =
@@ -45,6 +47,7 @@ function ManagedRecorderOverlayCaptureToggle({
       helpText={helpText}
       label={label}
       onChange={handleOverlayCaptureProtectionChange}
+      tooltipPlacement={tooltipPlacement}
     />
   );
 }

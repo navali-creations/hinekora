@@ -1,0 +1,26 @@
+.notice {
+  --overlay-notice-accent: var(--color-primary);
+
+  position: fixed;
+  left: 50%;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2rem;
+  max-width: calc(100vw - 2rem);
+  translate: -50% 0;
+  border: var(--border) solid
+    color-mix(in oklch, var(--overlay-notice-accent) 40%, transparent);
+  border-radius: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  color: color-mix(in oklch, var(--overlay-notice-accent) 82%, white);
+  background: color-mix(in oklch, var(--color-base-300) 90%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--color-base-300) 52%, transparent),
+    0 0 24px
+    color-mix(in oklch, var(--overlay-notice-accent) 24%, transparent);
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+  -webkit-app-region: no-drag;
+}

@@ -4,6 +4,7 @@ import { stat } from "node:fs/promises";
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
+import type { ReplayStatusOverlayFinalStatus } from "~/main/modules/replay-status-overlay";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import {
   createSafePathLogFields,
@@ -79,7 +80,12 @@ class ReplayClipCreationService {
       requestedDurationSeconds,
     );
     return this.dependencies.runClipOperation(clip.id, () =>
-      this.createStoredClip(clip, event, requestedDurationSeconds),
+      this.createStoredClip(
+        clip,
+        event,
+        requestedDurationSeconds,
+        settings.manualReplayShowPreview,
+      ),
     );
   }
 
@@ -87,13 +93,18 @@ class ReplayClipCreationService {
     initialClip: ReplayClip,
     event: ReplayTriggerEvent,
     requestedDurationSeconds: number,
+    manualReplayShowPreview: boolean,
   ): Promise<ReplayClip> {
     let clip = initialClip;
     this.dependencies.persistAndPublish(clip);
 
     try {
       clip = this.dependencies.updateClip(clip, { status: "saving_replay" });
-      this.showClipPreviewOverlay(clip);
+      if (event.kind === "death" || manualReplayShowPreview) {
+        this.showClipPreviewOverlay(clip);
+      } else {
+        this.showReplayStatusOverlay(clip);
+      }
       logInfo("replay-clips", "Saving replay for trigger", {
         backend: "managed",
         clipId: clip.id,
@@ -133,6 +144,9 @@ class ReplayClipCreationService {
         durationSeconds,
         status: "ready",
       });
+      if (event.kind === "manual" && !manualReplayShowPreview) {
+        this.finishReplayStatusOverlay(readyClip, "saved");
+      }
       logInfo("replay-clips", "Replay clip ready", { clipId: readyClip.id });
       return readyClip;
     } catch (error) {
@@ -140,10 +154,14 @@ class ReplayClipCreationService {
         clipId: clip.id,
         error: safeErrorMessage(error),
       });
-      return this.dependencies.updateClip(clip, {
+      const failedClip = this.dependencies.updateClip(clip, {
         error: safeErrorMessage(error),
         status: "failed",
       });
+      if (event.kind === "manual" && !manualReplayShowPreview) {
+        this.finishReplayStatusOverlay(failedClip, "failed");
+      }
+      return failedClip;
     }
   }
 
@@ -212,17 +230,48 @@ class ReplayClipCreationService {
   }
 
   private showClipPreviewOverlay(clip: ReplayClip): void {
+    this.runOverlayRequest(clip, "Replay clip overlay failed", () =>
+      OverlayWindowsService.getInstance().showClipPreviewOverlay(clip),
+    );
+  }
+
+  private showReplayStatusOverlay(clip: ReplayClip): void {
+    this.runOverlayRequest(clip, "Replay status overlay failed", () =>
+      OverlayWindowsService.getInstance().showReplayStatusOverlay(clip.id),
+    );
+  }
+
+  private runOverlayRequest(
+    clip: ReplayClip,
+    failureMessage: string,
+    request: () => Promise<void>,
+  ): void {
     try {
-      void OverlayWindowsService.getInstance()
-        .showClipPreviewOverlay(clip)
-        .catch((error: unknown) => {
-          logWarn("replay-clips", "Replay clip overlay failed", {
-            clipId: clip.id,
-            error: safeErrorMessage(error),
-          });
+      void request().catch((error: unknown) => {
+        logWarn("replay-clips", failureMessage, {
+          clipId: clip.id,
+          error: safeErrorMessage(error),
         });
+      });
     } catch (error) {
-      logWarn("replay-clips", "Replay clip overlay failed", {
+      logWarn("replay-clips", failureMessage, {
+        clipId: clip.id,
+        error: safeErrorMessage(error),
+      });
+    }
+  }
+
+  private finishReplayStatusOverlay(
+    clip: ReplayClip,
+    status: ReplayStatusOverlayFinalStatus,
+  ): void {
+    try {
+      OverlayWindowsService.getInstance().finishReplayStatusOverlay(
+        clip.id,
+        status,
+      );
+    } catch (error) {
+      logWarn("replay-clips", "Replay status overlay update failed", {
         clipId: clip.id,
         error: safeErrorMessage(error),
       });

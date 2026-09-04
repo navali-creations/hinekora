@@ -18,6 +18,10 @@ document.body.dataset.theme = "hinekora";
 
 const overlayRoutes = [
   { name: "recorder-overlay", routeClassName: null },
+  {
+    name: "replay-status-overlay",
+    routeClassName: "is-replay-status-overlay-route",
+  },
   { name: "clip-preview-overlay", routeClassName: "is-clip-preview-route" },
   { name: "crop-selector-overlay", routeClassName: "is-crop-selector-route" },
   { name: "aura-overlay", routeClassName: "is-aura-overlay-route" },

@@ -27,6 +27,7 @@ import { SettingsStoreChannel } from "./SettingsStore.channels";
 import {
   createSettingsStoreClipPreviewOverlaySnapshot,
   createSettingsStoreOverlaySnapshot,
+  createSettingsStoreRecorderOverlaySnapshot,
 } from "./SettingsStore.dto";
 import { normalizeLeagueSettingsUpdate } from "./SettingsStore.normalization";
 import { SettingsStoreRepository } from "./SettingsStore.repository";
@@ -153,7 +154,10 @@ class SettingsStoreService {
     registerGuardedIpcHandler(
       SettingsStoreChannel.GetOverlaySnapshot,
       [WindowName.AuraOverlay, WindowName.RecorderOverlay],
-      () => createSettingsStoreOverlaySnapshot(this.get()),
+      (event) =>
+        getIpcWindowRole(event) === WindowName.RecorderOverlay
+          ? createSettingsStoreRecorderOverlaySnapshot(this.get())
+          : createSettingsStoreOverlaySnapshot(this.get()),
     );
     registerGuardedIpcHandler(
       SettingsStoreChannel.GetClipPreviewOverlaySnapshot,
@@ -211,7 +215,9 @@ class SettingsStoreService {
       if (role && settingsStoreOverlayChangeWindowRoles.has(role)) {
         window.webContents.send(
           SettingsStoreChannel.OverlayChanged,
-          createSettingsStoreOverlaySnapshot(settings),
+          role === WindowName.RecorderOverlay
+            ? createSettingsStoreRecorderOverlaySnapshot(settings)
+            : createSettingsStoreOverlaySnapshot(settings),
         );
       }
       if (role === WindowName.ClipPreviewOverlay) {

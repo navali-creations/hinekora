@@ -16,6 +16,10 @@ import {
   resolveProfileForGame,
 } from "~/main/modules/profiles";
 import { RecordingControlsOverlayService } from "~/main/modules/recording-controls-overlay";
+import {
+  type ReplayStatusOverlayFinalStatus,
+  ReplayStatusOverlayService,
+} from "~/main/modules/replay-status-overlay";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { logInfo } from "~/main/utils/app-log";
 import {
@@ -134,6 +138,11 @@ class OverlayWindowsService {
     this.getOverlayCaptureProtectionEnabled,
     () => this.restoreClipPreviewResources(),
     this.shouldClipPreviewOverlayIgnoreGameFocus,
+  );
+  private readonly replayStatusOverlay = new ReplayStatusOverlayService(
+    this.coordinator,
+    () => this.recordingControlsOverlay.createAnchorBounds(),
+    this.getOverlayCaptureProtectionEnabled,
   );
   private readonly gridLinesOverlay = new GridLinesOverlayService(
     this.coordinator,
@@ -274,6 +283,17 @@ class OverlayWindowsService {
     }
   }
 
+  showReplayStatusOverlay(clipId: string): Promise<void> {
+    return this.replayStatusOverlay.showProcessing(clipId);
+  }
+
+  finishReplayStatusOverlay(
+    clipId: string,
+    status: ReplayStatusOverlayFinalStatus,
+  ): void {
+    this.replayStatusOverlay.finish(clipId, status);
+  }
+
   hideClipPreviewOverlay(): void {
     if (this.deathClipsOverlay.hide()) {
       this.startActiveGameFocusHandoff("clip-preview-hidden");
@@ -327,6 +347,7 @@ class OverlayWindowsService {
     this.clipPreviewResourceRestoreEnabled = false;
     this.recordingControlsOverlay.destroy();
     this.deathClipsOverlay.destroy();
+    this.replayStatusOverlay.destroy();
     this.gridLinesOverlay.destroy();
     this.auraManagerOverlays.setClipPreviewSuspended(false);
     this.auraManagerOverlays.destroy();
@@ -341,6 +362,7 @@ class OverlayWindowsService {
     this.clipPreviewResourceRestoreEnabled = false;
     this.recordingControlsOverlay.suspendForSystem();
     this.deathClipsOverlay.destroy();
+    this.replayStatusOverlay.destroy();
     this.gridLinesOverlay.destroy();
     this.auraManagerOverlays.setClipPreviewSuspended(false);
     this.auraManagerOverlays.suspendForSystem();
@@ -567,6 +589,7 @@ class OverlayWindowsService {
     this.overlayCaptureProtectionEnabled = enabled;
     this.recordingControlsOverlay.setContentProtectionEnabled(enabled);
     this.deathClipsOverlay.setContentProtectionEnabled(enabled);
+    this.replayStatusOverlay.setContentProtectionEnabled(enabled);
     this.gridLinesOverlay.setContentProtectionEnabled(enabled);
     this.auraManagerOverlays.setContentProtectionEnabled(enabled);
   }

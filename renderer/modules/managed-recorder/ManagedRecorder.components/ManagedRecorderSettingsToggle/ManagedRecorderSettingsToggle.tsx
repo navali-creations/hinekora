@@ -10,6 +10,7 @@ interface ManagedRecorderSettingsToggleProps {
   helpText: string;
   label: string;
   onChange: (checked: boolean) => void;
+  tooltipPlacement?: "bottom" | "top";
 }
 
 function ManagedRecorderSettingsToggle({
@@ -19,6 +20,7 @@ function ManagedRecorderSettingsToggle({
   helpText,
   label,
   onChange,
+  tooltipPlacement = "bottom",
 }: ManagedRecorderSettingsToggleProps) {
   const inputId = useId();
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
@@ -46,8 +48,9 @@ function ManagedRecorderSettingsToggle({
             "inline-flex border-0 bg-transparent p-0 text-base-content/45 transition-colors",
             {
               "cursor-default": disabled,
-              "tooltip tooltip-bottom cursor-help hover:text-base-content/70":
-                !disabled,
+              "tooltip cursor-help hover:text-base-content/70": !disabled,
+              "tooltip-bottom": !disabled && tooltipPlacement === "bottom",
+              "tooltip-top": !disabled && tooltipPlacement === "top",
             },
           )}
           data-tip={disabled ? undefined : helpText}

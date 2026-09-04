@@ -349,6 +349,7 @@ describe("SettingsStoreService", () => {
           activeGame: "poe2",
           auraOverlayShowEditingFrame:
             updatedSettings.auraOverlayShowEditingFrame,
+          manualReplayShowPreview: updatedSettings.manualReplayShowPreview,
           manualReplaySeconds: updatedSettings.manualReplaySeconds,
           replayClipPreviewResolution:
             updatedSettings.replayClipPreviewResolution,
@@ -459,23 +460,28 @@ describe("SettingsStoreService", () => {
       );
       const expectedOverlaySnapshot = {
         activeGame: fullSettings.activeGame,
+        auraOverlayShowEditingFrame: fullSettings.auraOverlayShowEditingFrame,
         manualReplaySeconds: fullSettings.manualReplaySeconds,
         replayClipPreviewResolution: fullSettings.replayClipPreviewResolution,
         selectedCaptureProfileId: fullSettings.selectedCaptureProfileId,
         selectedCaptureProfileIdsByGame:
           fullSettings.selectedCaptureProfileIdsByGame,
         selectedProfileId: fullSettings.selectedProfileId,
+        telemetryCrashReporting: fullSettings.telemetryCrashReporting,
       };
       expect(
         await handlers.get(SettingsStoreChannel.GetOverlaySnapshot)?.(
           auraEvent,
         ),
-      ).toMatchObject(expectedOverlaySnapshot);
+      ).toEqual(expectedOverlaySnapshot);
       expect(
         await handlers.get(SettingsStoreChannel.GetOverlaySnapshot)?.(
           recorderEvent,
         ),
-      ).toMatchObject(expectedOverlaySnapshot);
+      ).toEqual({
+        ...expectedOverlaySnapshot,
+        manualReplayShowPreview: fullSettings.manualReplayShowPreview,
+      });
       expect(() =>
         handlers.get(SettingsStoreChannel.GetOverlaySnapshot)?.(mainEvent),
       ).toThrow(

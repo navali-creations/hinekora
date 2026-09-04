@@ -1183,6 +1183,7 @@ describe("CaptureProfiles slice", () => {
         },
         deathClipsEnabled: true,
         deathClipSeconds: 10,
+        manualReplayShowPreview: true,
         manualReplaySeconds: 10,
         recordingAudioInputDeviceId: null,
         recordingAudioOutputDeviceId: null,

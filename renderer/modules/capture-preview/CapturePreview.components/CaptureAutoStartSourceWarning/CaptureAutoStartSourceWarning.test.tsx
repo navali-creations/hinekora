@@ -2,6 +2,8 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createCaptureProfileTestFixture } from "~/renderer/modules/capture-profiles/CaptureProfiles.test-utils";
+
 import type { CapturePreviewSource, CaptureProfile, GameId } from "~/types";
 
 const source: CapturePreviewSource = {
@@ -22,34 +24,17 @@ const unavailableSource: CapturePreviewSource = {
 };
 
 function createCaptureProfile(game: GameId): CaptureProfile {
-  return {
+  return createCaptureProfileTestFixture({
     captureTarget: {
       game,
       id: game === "poe1" ? "window:poe:previous" : "window:poe2:previous",
       kind: "window",
       label: game === "poe1" ? "Path of Exile 1" : "Path of Exile 2",
     },
-    createdAt: "2026-07-01T00:00:00.000Z",
-    deathClipsEnabled: true,
-    deathClipSeconds: 10,
     game,
     id: `capture-profile-${game}`,
-    isDefault: false,
     name: `${game} Capture`,
-    manualReplaySeconds: 10,
-    recordingAudioInputDeviceId: null,
-    recordingAudioOutputDeviceId: null,
-    recordingAutoStartMode: "off",
-    recordingClipQuality: "high",
-    recordingEncoder: "hardware_h264",
-    recordingFps: 60,
-    recordingHideOverlaysFromRecording: true,
-    recordingHideOverlaysFromRewind: true,
-    recordingOutputResolution: "native",
-    recordingRunQuality: "moderate",
-    recordingTrackBookmarksInRewind: true,
-    updatedAt: "2026-07-01T00:00:00.000Z",
-  };
+  });
 }
 
 const profile = createCaptureProfile("poe1");

@@ -192,6 +192,7 @@ function getInternals(service: OverlayWindowsService) {
     deathClipsOverlay: Record<string, unknown>;
     gridLinesOverlay: Record<string, unknown>;
     recordingControlsOverlay: Record<string, unknown>;
+    replayStatusOverlay: Record<string, unknown>;
     auraManagerOverlays: Record<string, unknown>;
   };
 }
@@ -381,6 +382,39 @@ describe("OverlayWindowsService", () => {
       startAddingAura: true,
     });
     expect(deathClipsOverlay.hide).toHaveBeenCalledTimes(1);
+  });
+
+  it("delegates replay status lifecycle updates through its reusable native overlay", async () => {
+    vi.useFakeTimers();
+    const notificationWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(notificationWindow);
+    const service = new OverlayWindowsService();
+    const internals = getInternals(service);
+    const recordingControlsOverlay = internals.recordingControlsOverlay as {
+      createAnchorBounds(): Electron.Rectangle;
+    };
+    vi.spyOn(recordingControlsOverlay, "createAnchorBounds").mockReturnValue({
+      height: 42,
+      width: 216,
+      x: 1684,
+      y: 24,
+    });
+    service.setRunningGame("poe1");
+    service.setPoeFocusActive(true);
+
+    await service.showReplayStatusOverlay("manual-overlay-facade");
+    service.finishReplayStatusOverlay("manual-overlay-facade", "saved");
+    await vi.advanceTimersByTimeAsync(600);
+
+    expect(notificationWindow.webContents.send).toHaveBeenCalledWith(
+      "replay-status-overlay:status-changed",
+      {
+        clipId: "manual-overlay-facade",
+        dismissing: false,
+        status: "saved",
+      },
+    );
+    service.destroyAll();
   });
 
   it("restores clip preview resources after failures and guards repeated transitions", async () => {

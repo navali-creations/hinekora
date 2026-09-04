@@ -491,6 +491,7 @@ const captureProfileSettingsShape = {
   recordingTrackBookmarksInRewind: z.boolean(),
   recordingAutoStartMode: RecordingAutoStartModeSchema,
   deathClipsEnabled: z.boolean(),
+  manualReplayShowPreview: z.boolean(),
   deathClipSeconds: z
     .number()
     .int()
@@ -528,6 +529,8 @@ const captureProfileSettingsDefaultShape = {
     captureProfileSettingsShape.recordingAutoStartMode.default("off"),
   deathClipsEnabled:
     captureProfileSettingsShape.deathClipsEnabled.default(true),
+  manualReplayShowPreview:
+    captureProfileSettingsShape.manualReplayShowPreview.default(true),
   deathClipSeconds: captureProfileSettingsShape.deathClipSeconds.default(
     defaultRewindSaveSeconds,
   ),

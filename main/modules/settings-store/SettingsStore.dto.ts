@@ -11,19 +11,17 @@ type SettingsStoreOverlaySnapshot = Pick<
   | "selectedProfileId"
   | "telemetryCrashReporting"
 >;
+type SettingsStoreRecorderOverlaySnapshot = SettingsStoreOverlaySnapshot &
+  Pick<AppSettings, "manualReplayShowPreview">;
 type SettingsStoreClipPreviewOverlaySnapshot = Pick<
   AppSettings,
   "clipPreviewInfoAlertDismissed" | "telemetryCrashReporting"
 >;
-type SettingsStoreScopedSnapshot =
-  | SettingsStoreClipPreviewOverlaySnapshot
-  | SettingsStoreOverlaySnapshot;
-
 export type SettingsUpdateInput = AppSettingsUpdate;
 export type {
   SettingsStoreClipPreviewOverlaySnapshot,
   SettingsStoreOverlaySnapshot,
-  SettingsStoreScopedSnapshot,
+  SettingsStoreRecorderOverlaySnapshot,
 };
 
 export function createSettingsStoreOverlaySnapshot(
@@ -38,6 +36,15 @@ export function createSettingsStoreOverlaySnapshot(
     selectedCaptureProfileIdsByGame: settings.selectedCaptureProfileIdsByGame,
     selectedProfileId: settings.selectedProfileId,
     telemetryCrashReporting: settings.telemetryCrashReporting,
+  };
+}
+
+export function createSettingsStoreRecorderOverlaySnapshot(
+  settings: AppSettings,
+): SettingsStoreRecorderOverlaySnapshot {
+  return {
+    ...createSettingsStoreOverlaySnapshot(settings),
+    manualReplayShowPreview: settings.manualReplayShowPreview,
   };
 }
 

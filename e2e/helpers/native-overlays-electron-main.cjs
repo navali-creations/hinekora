@@ -35,6 +35,7 @@ const recorderStatus = {
 const overlaySettings = {
   activeGame: "poe1",
   auraOverlayShowEditingFrame: true,
+  manualReplayShowPreview: true,
   manualReplaySeconds: 30,
   replayClipPreviewResolution: "720p",
   selectedCaptureProfileId: null,
@@ -176,13 +177,12 @@ async function createClipPreviewOverlayWindow() {
   );
 }
 
-app
-  .whenReady()
-  .then(
-    overlayKind === "clip-preview"
-      ? createClipPreviewOverlayWindow
-      : createRecorderOverlayWindow,
-  );
+const createOverlayWindow =
+  overlayKind === "clip-preview"
+    ? createClipPreviewOverlayWindow
+    : createRecorderOverlayWindow;
+
+app.whenReady().then(createOverlayWindow);
 
 app.on("window-all-closed", () => {
   app.quit();

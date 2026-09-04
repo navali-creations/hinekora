@@ -16,6 +16,8 @@ const deathClipDurationHelp = `Controls how many seconds are saved after a death
 const manualReplayDurationHelp = `Controls how many seconds are saved when you trigger a manual replay. Hinekora keeps a ${rewindBufferSeconds} second rewind buffer and saves up to ${maxRewindSaveSeconds} seconds.`;
 const deathClipsEnabledHelp =
   "Automatically saves a replay when Hinekora detects your character's death. Manual replays remain available when this is off.";
+const manualReplayShowPreviewHelp =
+  "Opens the replay preview and editing controls after a manual replay is saved. Turn this off to keep playing and show only a brief save status notification.";
 const rewindOverlayCaptureHelp =
   "Uses window capture protection so Hinekora overlays stay out of death clips, manual replays, screenshots, and external capture tools.";
 
@@ -27,6 +29,9 @@ function ManagedRecorderRewindSettingsFields() {
   }));
   const handleDeathClipsEnabledChange = (checked: boolean) => {
     void updateSettings({ deathClipsEnabled: checked });
+  };
+  const handleManualReplayShowPreviewChange = (checked: boolean) => {
+    void updateSettings({ manualReplayShowPreview: checked });
   };
   const handleBookmarkTrackingChange = (checked: boolean) => {
     void updateSettings({ recordingTrackBookmarksInRewind: checked });
@@ -48,6 +53,17 @@ function ManagedRecorderRewindSettingsFields() {
 
       <div className="border-base-content/10 border-t pt-3">
         <ManagedRecorderPreviewQualityField />
+      </div>
+
+      <div className="border-base-content/10 border-t pt-3">
+        <ManagedRecorderSettingsToggle
+          ariaLabel="Show manual replay preview"
+          checked={settingsValue?.manualReplayShowPreview ?? true}
+          disabled={disabled}
+          helpText={manualReplayShowPreviewHelp}
+          label="Show manual replay preview"
+          onChange={handleManualReplayShowPreviewChange}
+        />
       </div>
 
       <div className="border-base-content/10 border-t pt-3">
@@ -87,6 +103,7 @@ function ManagedRecorderRewindSettingsFields() {
           helpText={rewindOverlayCaptureHelp}
           label="Hide overlays from rewind"
           settingKey="recordingHideOverlaysFromRewind"
+          tooltipPlacement="top"
         />
       </div>
     </div>

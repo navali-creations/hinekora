@@ -13,6 +13,10 @@ const nativeCaptureMainPath = resolve(
   projectRoot,
   ".vite/e2e-native-overlays/native-capture-main.js",
 );
+const nativeReplayStatusMainPath = resolve(
+  projectRoot,
+  ".vite/e2e-native-overlays/native-replay-status-main.js",
+);
 
 test.beforeAll(() => {
   if (process.platform !== "win32") {
@@ -26,6 +30,20 @@ test.beforeAll(() => {
       "build",
       "--config",
       "e2e/helpers/vite.native-overlays-preload.config.mts",
+    ],
+    {
+      cwd: projectRoot,
+      stdio: "pipe",
+      timeout: 60_000,
+    },
+  );
+  execFileSync(
+    process.execPath,
+    [
+      resolve(projectRoot, "node_modules/vite/bin/vite.js"),
+      "build",
+      "--config",
+      "e2e/helpers/vite.native-replay-status-main.config.mts",
     ],
     {
       cwd: projectRoot,
@@ -155,6 +173,93 @@ test("leaves clip-preview fullscreen and restores its native window bounds", asy
         isFullScreen: false,
         isMaximized: false,
       });
+  } finally {
+    await electronApp.close();
+  }
+});
+
+test("runs the replay-status lifecycle in a native sandboxed window", async ({
+  baseURL,
+}) => {
+  test.skip(process.platform !== "win32", "Hinekora targets Windows capture");
+
+  const electronApp = await electron.launch({
+    args: [nativeReplayStatusMainPath],
+    env: {
+      ...process.env,
+      HINEKORA_E2E_RENDERER_URL: baseURL ?? "http://127.0.0.1:5173",
+    },
+  });
+
+  try {
+    const overlayWindow = await electronApp.firstWindow();
+    const notification = overlayWindow.getByRole("status");
+
+    await expect(notification).toContainText("Processing replay");
+    await expect(notification).toHaveAttribute("data-status", "processing");
+    await expect(notification).toContainText("Replay saved");
+    await expect(notification).toHaveAttribute("data-status", "saved");
+    await expect(notification).toHaveAttribute("data-dismissing", "true", {
+      timeout: 5_000,
+    });
+
+    await expect
+      .poll(() =>
+        electronApp.evaluate(() => {
+          return (
+            globalThis as typeof globalThis & {
+              __HINEKORA_REPLAY_STATUS_E2E__?: unknown;
+            }
+          ).__HINEKORA_REPLAY_STATUS_E2E__;
+        }),
+      )
+      .toEqual({
+        clipStatus: "ready",
+        finalStatus: "saved",
+        manualReplayShowPreview: false,
+        previewRequested: false,
+        statusRequested: true,
+      });
+
+    const nativeWindowState = await electronApp.evaluate(
+      ({ BrowserWindow }) => {
+        const window = BrowserWindow.getAllWindows()[0];
+        const preferences = (
+          window?.webContents as unknown as
+            | {
+                getLastWebPreferences(): {
+                  contextIsolation?: boolean;
+                  nodeIntegration?: boolean;
+                  sandbox?: boolean;
+                };
+              }
+            | undefined
+        )?.getLastWebPreferences();
+
+        return {
+          contextIsolation: preferences?.contextIsolation,
+          focusable: window?.isFocusable(),
+          nodeIntegration: preferences?.nodeIntegration,
+          sandbox: preferences?.sandbox,
+          size: window?.getSize(),
+        };
+      },
+    );
+    expect(nativeWindowState).toEqual({
+      contextIsolation: true,
+      focusable: false,
+      nodeIntegration: false,
+      sandbox: true,
+      size: [420, 260],
+    });
+
+    await expect
+      .poll(() =>
+        electronApp.evaluate(({ BrowserWindow }) => {
+          return BrowserWindow.getAllWindows()[0]?.isVisible();
+        }),
+      )
+      .toBe(false);
   } finally {
     await electronApp.close();
   }

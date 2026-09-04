@@ -17,9 +17,15 @@ import { PoeProcessAPI } from "~/main/modules/poe-process/PoeProcess.api";
 import { ProfilesAPI } from "~/main/modules/profiles/Profiles.api";
 import { RecordingStorageAPI } from "~/main/modules/recording-storage/RecordingStorage.api";
 import { ReplayClipsAPI } from "~/main/modules/replay-clips/ReplayClips.api";
+import { ReplayStatusOverlayAPI } from "~/main/modules/replay-status-overlay/ReplayStatusOverlay.api";
 import { SavedEditsAPI } from "~/main/modules/saved-edits/SavedEdits.api";
 import { SavedVideosAPI } from "~/main/modules/saved-videos/SavedVideos.api";
-import { SettingsStoreAPI } from "~/main/modules/settings-store/SettingsStore.api";
+import {
+  SettingsStoreAPI,
+  SettingsStoreClipPreviewOverlayAPI,
+  SettingsStoreOverlayAPI,
+  SettingsStoreRecorderOverlayAPI,
+} from "~/main/modules/settings-store/SettingsStore.api";
 import { StateTransferAPI } from "~/main/modules/state-transfer/StateTransfer.api";
 import { StorageAPI } from "~/main/modules/storage/Storage.api";
 import { UpdaterAPI } from "~/main/modules/updater/Updater.api";
@@ -51,6 +57,12 @@ const fullApi = {
 };
 
 function createScopedApi(hash: string) {
+  if (hash.includes("replay-status-overlay")) {
+    return {
+      replayStatusOverlay: ReplayStatusOverlayAPI,
+    };
+  }
+
   if (hash.includes("recorder-overlay")) {
     return {
       managedRecorder: {
@@ -82,11 +94,7 @@ function createScopedApi(hash: string) {
         select: ProfilesAPI.select,
         onChanged: ProfilesAPI.onChanged,
       },
-      settings: {
-        scope: "recorder-overlay" as const,
-        get: SettingsStoreAPI.getOverlaySnapshot,
-        onChanged: SettingsStoreAPI.onOverlayChanged,
-      },
+      settings: SettingsStoreRecorderOverlayAPI,
       replayClips: {
         saveManualReplay: ReplayClipsAPI.saveManualReplay,
         onDeleted: ReplayClipsAPI.onDeleted,
@@ -111,13 +119,7 @@ function createScopedApi(hash: string) {
         toggleClipPreviewFullscreen:
           OverlayWindowsAPI.toggleClipPreviewFullscreen,
       },
-      settings: {
-        scope: "clip-preview-overlay" as const,
-        dismissClipPreviewInfoAlert:
-          SettingsStoreAPI.dismissClipPreviewInfoAlert,
-        get: SettingsStoreAPI.getClipPreviewOverlaySnapshot,
-        onChanged: SettingsStoreAPI.onClipPreviewOverlayChanged,
-      },
+      settings: SettingsStoreClipPreviewOverlayAPI,
       replayClips: {
         copy: ReplayClipsAPI.copy,
         get: ReplayClipsAPI.get,
@@ -158,11 +160,7 @@ function createScopedApi(hash: string) {
         update: ProfilesAPI.update,
         onChanged: ProfilesAPI.onChanged,
       },
-      settings: {
-        scope: "aura-overlay" as const,
-        get: SettingsStoreAPI.getOverlaySnapshot,
-        onChanged: SettingsStoreAPI.onOverlayChanged,
-      },
+      settings: SettingsStoreOverlayAPI,
     };
   }
 
@@ -190,9 +188,20 @@ type NormalizeExposedMethod<T> = T extends (...args: infer Args) => infer Result
     : T;
 type ElectronAPI = NormalizeExposedMethod<ReturnType<typeof createScopedApi>>;
 type FullElectronAPI = NormalizeExposedMethod<typeof fullApi>;
+type ClipPreviewOverlayElectronAPI = NormalizeExposedMethod<{
+  settings: typeof SettingsStoreClipPreviewOverlayAPI;
+}>;
+type ReplayStatusOverlayElectronAPI = NormalizeExposedMethod<{
+  replayStatusOverlay: typeof ReplayStatusOverlayAPI;
+}>;
 
 const api: ElectronAPI = createScopedApi(globalThis.location?.hash ?? "");
 
 contextBridge.exposeInMainWorld("electron", api);
 
-export type { ElectronAPI, FullElectronAPI };
+export type {
+  ClipPreviewOverlayElectronAPI,
+  ElectronAPI,
+  FullElectronAPI,
+  ReplayStatusOverlayElectronAPI,
+};

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import type { CaptureProfile, GameId } from "~/types";
+import { createCaptureProfileTestFixture } from "~/renderer/modules/capture-profiles/CaptureProfiles.test-utils";
+
+import type { GameId } from "~/types";
 import {
   createCapturePreviewSourceLabel,
   createCapturePreviewSourcesWithGameFallback,
@@ -15,30 +17,12 @@ import {
   sourceMatchesCaptureTarget,
 } from "./CapturePreview.utils";
 
-function createCaptureProfile(game: GameId): CaptureProfile {
-  return {
-    captureTarget: null,
-    createdAt: "2026-07-01T00:00:00.000Z",
-    deathClipsEnabled: true,
-    deathClipSeconds: 10,
+function createCaptureProfile(game: GameId) {
+  return createCaptureProfileTestFixture({
     game,
     id: `capture-profile-${game}`,
-    isDefault: false,
     name: `${game} Capture`,
-    manualReplaySeconds: 10,
-    recordingAudioInputDeviceId: null,
-    recordingAudioOutputDeviceId: null,
-    recordingAutoStartMode: "off",
-    recordingClipQuality: "high",
-    recordingEncoder: "hardware_h264",
-    recordingFps: 60,
-    recordingHideOverlaysFromRecording: true,
-    recordingHideOverlaysFromRewind: true,
-    recordingOutputResolution: "native",
-    recordingRunQuality: "moderate",
-    recordingTrackBookmarksInRewind: true,
-    updatedAt: "2026-07-01T00:00:00.000Z",
-  };
+  });
 }
 
 const sources = [
@@ -66,11 +50,11 @@ const screenSource = sources[0]!;
 const windowSource = sources[1]!;
 const poe1Profile = createCaptureProfile("poe1");
 const poe2Profile = createCaptureProfile("poe2");
-const poe2AltProfile: CaptureProfile = {
-  ...createCaptureProfile("poe2"),
+const poe2AltProfile = createCaptureProfileTestFixture({
+  game: "poe2",
   id: "capture-profile-poe2-alt",
   name: "poe2 Alt Capture",
-};
+});
 
 describe("CapturePreview utils", () => {
   it("persists the stable display id for screen sources", () => {

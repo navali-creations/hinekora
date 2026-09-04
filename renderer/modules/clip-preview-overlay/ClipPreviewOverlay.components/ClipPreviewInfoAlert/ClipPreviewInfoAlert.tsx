@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { FiInfo } from "react-icons/fi";
 
+import type { ClipPreviewOverlayElectronAPI } from "~/renderer/preload";
 import { useSettingsShallow } from "~/renderer/store";
+
+function getClipPreviewOverlayElectronAPI(): ClipPreviewOverlayElectronAPI {
+  return (
+    window as unknown as Window & {
+      electron: ClipPreviewOverlayElectronAPI;
+    }
+  ).electron;
+}
 
 function ClipPreviewInfoAlert() {
   const [dismissError, setDismissError] = useState<string | null>(null);
@@ -10,16 +19,12 @@ function ClipPreviewInfoAlert() {
   })).settingsValue;
 
   const handleDismiss = () => {
-    const dismiss = window.electron.settings.dismissClipPreviewInfoAlert;
-    if (!dismiss) {
-      setDismissError("Could not dismiss this message.");
-      return;
-    }
-
     setDismissError(null);
-    void dismiss().catch(() => {
-      setDismissError("Could not dismiss this message.");
-    });
+    void getClipPreviewOverlayElectronAPI()
+      .settings.dismissClipPreviewInfoAlert()
+      .catch(() => {
+        setDismissError("Could not dismiss this message.");
+      });
   };
 
   if (!settingsValue || settingsValue.clipPreviewInfoAlertDismissed) {

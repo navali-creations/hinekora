@@ -67,6 +67,7 @@ describe("shared schemas", () => {
       recordingHideOverlaysFromRewind: true,
       recordingTrackBookmarksInRewind: true,
       recordingAutoStartMode: "off",
+      manualReplayShowPreview: true,
       selectedCaptureProfileId: null,
       selectedCaptureProfileIdsByGame: {},
       selectedProfileId: null,
@@ -171,6 +172,7 @@ describe("shared schemas", () => {
     );
     expect(captureProfileSettingKeys).toContain("recordingAutoStartMode");
     expect(captureProfileSettingKeys).toContain("deathClipsEnabled");
+    expect(captureProfileSettingKeys).toContain("manualReplayShowPreview");
     expect(captureProfileSettingKeys).toContain("deathClipSeconds");
     expect(captureProfileSettingKeys).toContain("manualReplaySeconds");
   });

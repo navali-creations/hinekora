@@ -9,7 +9,7 @@ import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { createReplayClip } from "~/main/test/factories/replayClip";
 
-import { createDefaultSettings } from "~/types";
+import { createDefaultSettings, type ManagedRecorderStatus } from "~/types";
 import { ReplayClipsChannel } from "../ReplayClips.channels";
 import {
   createDeferred,
@@ -47,6 +47,31 @@ vi.mock("electron", () => ({
 
 setupReplayClipsServiceTestHarness(electronMocks);
 
+function createActiveManagedRecorderStatus(): ManagedRecorderStatus {
+  return {
+    activeSessionDirectory: null,
+    available: true,
+    bufferActive: true,
+    encoder: "hardware_h264",
+    error: null,
+    fps: 60,
+    gameRunning: true,
+    initialized: true,
+    isStartingRecording: false,
+    isStoppingRecording: false,
+    lastRecordingPath: null,
+    outputDirectory: root,
+    outputResolution: "native",
+    recording: true,
+    recordingStartedAt: null,
+    runRecordingActive: false,
+    runRecordingPath: null,
+    runRecordingStartedAt: null,
+    runtime: "packaged_obs",
+    runtimePath: null,
+  };
+}
+
 describe("ReplayClipsService replay-trigger workflow", () => {
   it("saves manual replays using current settings", async () => {
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
@@ -69,6 +94,94 @@ describe("ReplayClipsService replay-trigger workflow", () => {
         line: "Manual replay save",
         lineHash: expect.stringMatching(/^[a-f0-9]{32}$/),
       }),
+    );
+  });
+
+  it("skips the preview overlay when manual replay previews are disabled", async () => {
+    const replayPath = join(root, "2026-06-12_10-29-00.mp4");
+    writeFileSync(replayPath, "video");
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        activeGame: "poe1",
+        activeLeague: "Standard",
+        manualReplayShowPreview: false,
+        recordingStoragePath: root,
+      }),
+    } as unknown as SettingsStoreService);
+    vi.spyOn(ManagedRecorderService, "getInstance").mockReturnValue({
+      getStatus: createActiveManagedRecorderStatus,
+      saveReplay: vi.fn().mockResolvedValue({
+        ok: true,
+        path: replayPath,
+        error: null,
+      }),
+    } as unknown as ManagedRecorderService);
+    const showClipPreviewOverlay = vi.fn();
+    const showReplayStatusOverlay = vi.fn().mockResolvedValue(undefined);
+    const finishReplayStatusOverlay = vi.fn();
+    vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
+      finishReplayStatusOverlay,
+      showClipPreviewOverlay,
+      showReplayStatusOverlay,
+    } as unknown as OverlayWindowsService);
+    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+      noteReplayClipUsageChange: vi.fn(),
+      scheduleCleanup: vi.fn(),
+      publishUsageChanged: vi.fn(),
+    } as unknown as RecordingStorageService);
+
+    await expect(service.saveManualReplay()).resolves.toMatchObject({
+      kind: "manual",
+      status: "ready",
+      processedClipPath: resolve(replayPath),
+    });
+    expect(showClipPreviewOverlay).not.toHaveBeenCalled();
+    expect(showReplayStatusOverlay).toHaveBeenCalledWith(expect.any(String));
+    expect(finishReplayStatusOverlay).toHaveBeenCalledWith(
+      expect.any(String),
+      "saved",
+    );
+  });
+
+  it("finishes the status overlay as failed when a manual replay save fails", async () => {
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        activeGame: "poe1",
+        activeLeague: "Standard",
+        manualReplayShowPreview: false,
+        recordingStoragePath: root,
+      }),
+    } as unknown as SettingsStoreService);
+    vi.spyOn(ManagedRecorderService, "getInstance").mockReturnValue({
+      getStatus: createActiveManagedRecorderStatus,
+      saveReplay: vi.fn().mockResolvedValue({
+        error: "save failed",
+        ok: false,
+        path: null,
+      }),
+    } as unknown as ManagedRecorderService);
+    const finishReplayStatusOverlay = vi.fn(() => {
+      throw new Error("status overlay unavailable");
+    });
+    const showReplayStatusOverlay = vi.fn().mockResolvedValue(undefined);
+    vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
+      finishReplayStatusOverlay,
+      showReplayStatusOverlay,
+    } as unknown as OverlayWindowsService);
+
+    const failed = await service.saveManualReplay();
+
+    expect(failed).toMatchObject({
+      error: "save failed",
+      kind: "manual",
+      status: "failed",
+    });
+    expect(showReplayStatusOverlay).toHaveBeenCalledWith(failed?.id);
+    expect(finishReplayStatusOverlay).toHaveBeenCalledWith(
+      failed?.id,
+      "failed",
     );
   });
 

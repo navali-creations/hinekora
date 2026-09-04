@@ -22,6 +22,7 @@ import { createPoeProcessSlice } from "~/renderer/modules/poe-process/PoeProcess
 import { createProfilesSlice } from "~/renderer/modules/profiles/Profiles.slice/Profiles.slice";
 import { createRecordingStorageSlice } from "~/renderer/modules/recording-storage/RecordingStorage.slice/RecordingStorage.slice";
 import { createReplayClipsSlice } from "~/renderer/modules/replay-clips/ReplayClips.slice/ReplayClips.slice";
+import { createReplayStatusOverlaySlice } from "~/renderer/modules/replay-status-overlay/ReplayStatusOverlay.slice/ReplayStatusOverlay.slice";
 import { createRewindsSlice } from "~/renderer/modules/rewinds/Rewinds.slice/Rewinds.slice";
 import { createSavedEditsSlice } from "~/renderer/modules/saved-edits";
 import { createSavedVideosSlice } from "~/renderer/modules/saved-videos";
@@ -64,6 +65,7 @@ export const useBoundStore = create<BoundStore>()(
       const settingsSlice = createSettingsSlice(...args);
       const clientLogSlice = createClientLogSlice(...args);
       const replayClipsSlice = createReplayClipsSlice(...args);
+      const replayStatusOverlaySlice = createReplayStatusOverlaySlice(...args);
       const stateTransferSlice = createStateTransferSlice(...args);
       const recordingStorageSlice = createRecordingStorageSlice(...args);
       const rewindsSlice = createRewindsSlice(...args);
@@ -92,6 +94,7 @@ export const useBoundStore = create<BoundStore>()(
         ...settingsSlice,
         ...clientLogSlice,
         ...replayClipsSlice,
+        ...replayStatusOverlaySlice,
         ...stateTransferSlice,
         ...recordingStorageSlice,
         ...rewindsSlice,
