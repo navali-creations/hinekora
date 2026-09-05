@@ -4,22 +4,26 @@ import type {
   RecordingTableColumnId,
   RecordingTableRow,
 } from "../RecordingsPanel/RecordingsPanel.utils";
+import {
+  formatRecordingTableStatus,
+  getRecordingTableStatusBadgeClassName,
+} from "../RecordingsPanel/RecordingsPanel.utils";
 import { RecordingTableActions } from "../RecordingTableActions/RecordingTableActions";
 
-interface ProcessingRecordingTableCellProps {
+interface TransientRunRecordingTableCellProps {
   columnId: RecordingTableColumnId;
   recording: RecordingTableRow;
 }
 
-function ProcessingRecordingTableCell({
+function TransientRunRecordingTableCell({
   columnId,
   recording,
-}: ProcessingRecordingTableCellProps) {
+}: TransientRunRecordingTableCellProps) {
   switch (columnId) {
     case "select":
       return (
         <input
-          aria-label="Active recording cannot be selected yet"
+          aria-label="Recording cannot be selected yet"
           className="checkbox checkbox-sm"
           disabled
           type="checkbox"
@@ -34,7 +38,15 @@ function ProcessingRecordingTableCell({
         </div>
       );
     case "tableStatus":
-      return <span className="badge badge-warning badge-xs">Processing</span>;
+      return (
+        <span
+          className={getRecordingTableStatusBadgeClassName(
+            recording.tableStatus,
+          )}
+        >
+          {formatRecordingTableStatus(recording.tableStatus)}
+        </span>
+      );
     case "createdAt":
     case "sizeBytes":
       return "--";
@@ -47,4 +59,4 @@ function ProcessingRecordingTableCell({
   }
 }
 
-export { ProcessingRecordingTableCell };
+export { TransientRunRecordingTableCell };

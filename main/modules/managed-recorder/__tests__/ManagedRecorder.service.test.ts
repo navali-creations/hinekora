@@ -22,11 +22,16 @@ import {
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { CaptureProfilesService } from "~/main/modules/capture-profiles";
 import { DatabaseService } from "~/main/modules/database";
+import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { mockIpcMainHandlers } from "~/main/test/ipc";
 import * as AppLog from "~/main/utils/app-log";
 import { isAsarVirtualPath } from "~/main/utils/asar-path";
+import {
+  clearIpcWindowRolesForTests,
+  registerIpcWindowRole,
+} from "~/main/utils/ipc-window-roles";
 
 import {
   type AppSettings,
@@ -36,8 +41,10 @@ import {
   type GameId,
   getCurrentLeague,
   type ManagedRecorderStatus,
+  type ManagedRunRecordingSession,
 } from "~/types";
 import { ManagedRecorderChannel } from "../ManagedRecorder.channels";
+import { pendingRunRecordingFinalizationFileName } from "../ManagedRecorder.finalization-store";
 import {
   describeNoobsRuntimeLocation,
   ManagedRecorderService,
@@ -112,8 +119,10 @@ beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "hinekora-managed-recorder-"));
   send = vi.fn<(channel: string, payload: unknown) => void>();
   electronMocks.getAllDisplays.mockReturnValue([]);
+  const webContents = { id: 1, send };
+  registerIpcWindowRole(webContents, WindowName.Main);
   electronMocks.getAllWindows.mockReturnValue([
-    { isDestroyed: () => false, webContents: { send } },
+    { isDestroyed: () => false, webContents },
   ]);
   electronMocks.ipcMainHandle.mockReset();
   electronMocks.getPath.mockImplementation((name: string) =>
@@ -168,6 +177,7 @@ afterEach(() => {
   noobsMocks.loadNoobsApi.mockReset();
   noobsMocks.importNoobsModule.mockReset();
   pollerMocks.refreshPoeProcessState.mockReset();
+  clearIpcWindowRolesForTests();
   vi.restoreAllMocks();
   RecordingStorageService.resetForTests();
   DatabaseService.resetForTests();
@@ -177,6 +187,32 @@ afterEach(() => {
 
 function createService(): ManagedRecorderService {
   return new ManagedRecorderService();
+}
+
+function endPerformanceSensitiveActivity(
+  service: ManagedRecorderService,
+): void {
+  const internals = service as unknown as {
+    startupGameCheckActive: boolean;
+    syncRecordingStorageActivity(): void;
+  };
+  internals.startupGameCheckActive = false;
+  internals.syncRecordingStorageActivity();
+}
+
+function createRunRecordingSession(
+  overrides: Partial<ManagedRunRecordingSession> = {},
+): ManagedRunRecordingSession {
+  return {
+    framesPerSecond: 60,
+    path: null,
+    sourceGame: "poe1",
+    sourceLeague: getCurrentLeague("poe1"),
+    startedAt: "2026-09-05T10:00:00.000Z",
+    state: "recording",
+    stoppedAt: null,
+    ...overrides,
+  };
 }
 
 function createNoobsApi() {
@@ -1097,6 +1133,7 @@ describe("ManagedRecorderService", () => {
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
       scheduleCleanup,
       getRecording,
+      isManagedRunRecordingPath: vi.fn(() => true),
       registerRunRecording,
     } as unknown as RecordingStorageService);
     const internals = service as unknown as {
@@ -1120,6 +1157,13 @@ describe("ManagedRecorderService", () => {
       activeSessionDirectory: join(directory, "Full Recordings"),
       outputResolution: "2560x1440",
       encoder: "obs_nvenc_av1_tex",
+      runRecordingSession: {
+        framesPerSecond: 60,
+        sourceGame: "poe1",
+        sourceLeague: getCurrentLeague("poe1"),
+        state: "recording",
+        stoppedAt: null,
+      },
       error: null,
     });
     expect(noobs.ResetVideoContext).toHaveBeenCalledWith(60, 2560, 1440);
@@ -1127,7 +1171,8 @@ describe("ManagedRecorderService", () => {
       "obs_nvenc_av1_tex",
       expect.objectContaining({ rate_control: "CQP" }),
     );
-    const runStartedAt = service.getStatus().runRecordingStartedAt;
+    const runStartedAt = service.getStatus().runRecordingSession?.startedAt;
+    expect(runStartedAt).toBeDefined();
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
       get: () => ({
         ...createDefaultSettings(),
@@ -1163,7 +1208,7 @@ describe("ManagedRecorderService", () => {
       runRecordingActive: false,
       activeGame: null,
       lastRecordingPath: savedPath,
-      runRecordingPath: savedPath,
+      runRecordingSession: null,
       error: null,
     });
 
@@ -1196,28 +1241,22 @@ describe("ManagedRecorderService", () => {
     });
   });
 
-  it("registers saved run recordings with the configured game when session game is missing", async () => {
-    const savedPath = join(directory, "run-fallback.mp4");
-    const startedAt = new Date(Date.now() - 30_000).toISOString();
+  it("captures the stop timestamp before waiting for the recording file", async () => {
+    vi.useFakeTimers({ now: new Date("2026-09-05T10:00:00.000Z") });
+    const savedPath = join(directory, "timestamped-run.mp4");
+    const startedAt = "2026-09-05T09:59:00.000Z";
     const service = createService();
     const noobs = createNoobsApi();
-    const registerRunRecording = vi.fn();
-    const scheduleCleanup = vi.fn();
+    const registerRunRecording = vi.fn(() => ({ id: "timestamped-run" }));
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
-      scheduleCleanup,
+      getRecording: vi.fn(() => ({ recording: { id: "timestamped-run" } })),
+      isManagedRunRecordingPath: vi.fn(() => true),
       registerRunRecording,
+      scheduleCleanup: vi.fn(),
     } as unknown as RecordingStorageService);
-    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
-      get: () => ({
-        ...createDefaultSettings(),
-        activeGame: "poe2",
-        activeLeague: "Runes of Aldur",
-        recordingStoragePath: directory,
-        recordingFps: 60,
-        recordingOutputResolution: "1920x1080",
-        recordingEncoder: "hardware_h264",
-      }),
-    } as unknown as SettingsStoreService);
+    vi.spyOn(BookmarksService, "getInstance").mockReturnValue({
+      finalizeRecordingSession: vi.fn(),
+    } as unknown as BookmarksService);
     const internals = service as unknown as {
       noobs: ReturnType<typeof createNoobsApi>;
       status: ManagedRecorderStatus;
@@ -1227,32 +1266,137 @@ describe("ManagedRecorderService", () => {
     internals.noobs = noobs;
     internals.status = {
       ...service.getStatus(),
-      activeGame: null,
+      activeGame: "poe2",
       activeSessionDirectory: directory,
       initialized: true,
       recording: true,
       runRecordingActive: true,
-      runRecordingStartedAt: startedAt,
+      runRecordingSession: {
+        framesPerSecond: 60,
+        path: null,
+        sourceGame: "poe2",
+        sourceLeague: "Standard",
+        startedAt,
+        state: "recording",
+        stoppedAt: null,
+      },
+    };
+    internals.waitForRecordingStop = vi.fn(async () => {
+      vi.setSystemTime(new Date("2026-09-05T10:00:10.000Z"));
+    });
+    internals.waitForSavedRecording = vi.fn(async () => {
+      expect(service.getStatus().runRecordingSession).toMatchObject({
+        state: "processing",
+        stoppedAt: "2026-09-05T10:00:10.000Z",
+      });
+      vi.setSystemTime(new Date("2026-09-05T10:00:40.000Z"));
+      return savedPath;
+    });
+
+    await service.stopRunRecording();
+
+    expect(registerRunRecording).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startedAt,
+        stoppedAt: "2026-09-05T10:00:10.000Z",
+      }),
+    );
+  });
+
+  it("retries run recording finalization with the original metadata", async () => {
+    vi.useFakeTimers();
+    const savedPath = join(directory, "stopped-run.mp4");
+    const startedAt = new Date(Date.now() - 30_000).toISOString();
+    const service = createService();
+    const noobs = createNoobsApi();
+    const registeredRecording = {
+      createdAt: startedAt,
+      durationSeconds: 30,
+      exists: true,
+      fileName: "stopped-run.mp4",
+      framesPerSecond: 60,
+      id: "recovered-run",
+      path: savedPath,
+      sizeBytes: 1024,
+      sourceGame: "poe1" as const,
+      sourceLeague: getCurrentLeague("poe1"),
+      startedAt,
+      stoppedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const registerRunRecording = vi
+      .fn()
+      .mockImplementationOnce(() => {
+        throw new Error("recording registration failed");
+      })
+      .mockReturnValue({ id: registeredRecording.id });
+    const getRecording = vi.fn(() => ({ recording: registeredRecording }));
+    const scheduleCleanup = vi.fn();
+    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+      getRecording,
+      isManagedRunRecordingPath: vi.fn(() => true),
+      registerRunRecording,
+      scheduleCleanup,
+    } as unknown as RecordingStorageService);
+    const finalizeRecordingSession = vi.fn();
+    const finalizeRecoveredRecordingSession = vi.fn();
+    vi.spyOn(BookmarksService, "getInstance").mockReturnValue({
+      finalizeRecordingSession,
+      finalizeRecoveredRecordingSession,
+      discardRecordingSession: vi.fn(),
+    } as unknown as BookmarksService);
+    const internals = service as unknown as {
+      noobs: ReturnType<typeof createNoobsApi>;
+      status: ManagedRecorderStatus;
+      waitForRecordingStop(): Promise<void>;
+      waitForSavedRecording(): Promise<string | null>;
+    };
+    internals.noobs = noobs;
+    internals.status = {
+      ...service.getStatus(),
+      activeGame: "poe1",
+      activeSessionDirectory: directory,
+      initialized: true,
+      recording: true,
+      runRecordingActive: true,
+      runRecordingSession: createRunRecordingSession({ startedAt }),
     };
     internals.waitForRecordingStop = vi.fn().mockResolvedValue(undefined);
     internals.waitForSavedRecording = vi.fn().mockResolvedValue(savedPath);
 
     await expect(service.stopRunRecording()).resolves.toMatchObject({
       activeGame: null,
+      activeSessionDirectory: null,
+      error: "recording registration failed",
+      isStoppingRecording: false,
+      lastRecordingPath: savedPath,
       recording: false,
       runRecordingActive: false,
-      runRecordingPath: savedPath,
+      runRecordingSession: null,
     });
 
-    expect(registerRunRecording).toHaveBeenCalledWith(
-      expect.objectContaining({
-        framesPerSecond: null,
-        path: savedPath,
-        sourceGame: "poe2",
-        sourceLeague: "Runes of Aldur",
-        startedAt,
-      }),
+    expect(registerRunRecording).toHaveBeenCalledOnce();
+    expect(finalizeRecordingSession).not.toHaveBeenCalled();
+    expect(scheduleCleanup).not.toHaveBeenCalled();
+    expect(
+      existsSync(join(directory, pendingRunRecordingFinalizationFileName)),
+    ).toBe(true);
+
+    endPerformanceSensitiveActivity(service);
+
+    expect(registerRunRecording).toHaveBeenCalledTimes(2);
+    expect(registerRunRecording.mock.calls[1]?.[0]).toEqual(
+      registerRunRecording.mock.calls[0]?.[0],
     );
+    expect(getRecording).toHaveBeenCalledWith(registeredRecording.id);
+    expect(finalizeRecordingSession).not.toHaveBeenCalled();
+    expect(finalizeRecoveredRecordingSession).toHaveBeenCalledWith(
+      registeredRecording,
+    );
+    expect(service.getStatus().error).toBeNull();
+    expect(
+      existsSync(join(directory, pendingRunRecordingFinalizationFileName)),
+    ).toBe(false);
     expect(scheduleCleanup).toHaveBeenCalledWith({
       estimatedAddedBytes: 0,
       force: true,
@@ -1260,6 +1404,311 @@ describe("ManagedRecorderService", () => {
       protectedDirectories: [],
       protectedPaths: [savedPath],
     });
+  });
+
+  it("keeps failed run finalization queued and blocks a new recording", async () => {
+    vi.useFakeTimers();
+    const savedPath = join(directory, "pending-run.mp4");
+    const startedAt = new Date(Date.now() - 30_000).toISOString();
+    const service = createService();
+    const noobs = createNoobsApi();
+    const registerRunRecording = vi.fn(() => {
+      throw new Error("database unavailable");
+    });
+    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+      isManagedRunRecordingPath: vi.fn(() => true),
+      registerRunRecording,
+    } as unknown as RecordingStorageService);
+    vi.spyOn(BookmarksService, "getInstance").mockReturnValue({
+      finalizeRecordingSession: vi.fn(),
+    } as unknown as BookmarksService);
+    const internals = service as unknown as {
+      noobs: ReturnType<typeof createNoobsApi>;
+      status: ManagedRecorderStatus;
+      waitForRecordingStop(): Promise<void>;
+      waitForSavedRecording(): Promise<string | null>;
+    };
+    internals.noobs = noobs;
+    internals.status = {
+      ...service.getStatus(),
+      activeGame: "poe1",
+      activeSessionDirectory: directory,
+      initialized: true,
+      recording: true,
+      runRecordingActive: true,
+      runRecordingSession: createRunRecordingSession({ startedAt }),
+    };
+    internals.waitForRecordingStop = vi.fn().mockResolvedValue(undefined);
+    internals.waitForSavedRecording = vi.fn().mockResolvedValue(savedPath);
+
+    await service.stopRunRecording();
+    const status = await service.startRunRecording();
+
+    expect(status).toMatchObject({
+      error: "database unavailable",
+      recording: false,
+      runRecordingActive: false,
+    });
+    expect(noobs.StartRecording).not.toHaveBeenCalled();
+    expect(registerRunRecording).toHaveBeenCalledTimes(2);
+    expect(service.flushPendingRunRecordingFinalization()).toBe(false);
+    expect(registerRunRecording).toHaveBeenCalledTimes(3);
+    expect(
+      existsSync(join(directory, pendingRunRecordingFinalizationFileName)),
+    ).toBe(true);
+  });
+
+  it("allows rewind tracking after a stopped run is awaiting recovery", async () => {
+    vi.useFakeTimers();
+    const savedPath = join(directory, "pending-before-rewind.mp4");
+    const startedAt = new Date(Date.now() - 30_000).toISOString();
+    const service = createService();
+    const noobs = createNoobsApi();
+    const registerRunRecording = vi.fn(() => {
+      throw new Error("database unavailable");
+    });
+    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+      isManagedRunRecordingPath: vi.fn(() => true),
+      registerRunRecording,
+    } as unknown as RecordingStorageService);
+    const beginRewindSession = vi.fn();
+    const discardRecordingSession = vi.fn();
+    vi.spyOn(BookmarksService, "getInstance").mockReturnValue({
+      beginRewindSession,
+      discardRecordingSession,
+    } as unknown as BookmarksService);
+    const internals = service as unknown as {
+      initialize(): Promise<void>;
+      noobs: ReturnType<typeof createNoobsApi>;
+      status: ManagedRecorderStatus;
+      waitForRecordingStop(): Promise<void>;
+      waitForSavedRecording(): Promise<string | null>;
+    };
+    internals.initialize = vi.fn().mockResolvedValue(undefined);
+    internals.noobs = noobs;
+    internals.status = {
+      ...service.getStatus(),
+      activeGame: "poe1",
+      activeSessionDirectory: directory,
+      initialized: true,
+      recording: true,
+      runRecordingActive: true,
+      runRecordingSession: createRunRecordingSession({ startedAt }),
+    };
+    internals.waitForRecordingStop = vi.fn().mockResolvedValue(undefined);
+    internals.waitForSavedRecording = vi.fn().mockResolvedValue(savedPath);
+
+    await service.stopRunRecording();
+    await service.startBuffer();
+
+    expect(discardRecordingSession).toHaveBeenCalledOnce();
+    expect(beginRewindSession).toHaveBeenCalledOnce();
+    expect(registerRunRecording).toHaveBeenCalledOnce();
+    expect(service.getStatus()).toMatchObject({
+      bufferActive: true,
+      recording: true,
+      runRecordingActive: false,
+    });
+  });
+
+  it("defers failed finalization during sensitive activity and keeps capped backoff", async () => {
+    vi.useFakeTimers();
+    const input = {
+      framesPerSecond: 60,
+      path: join(directory, "retry-run.mp4"),
+      sourceGame: "poe1" as const,
+      sourceLeague: getCurrentLeague("poe1"),
+      startedAt: "2026-09-05T10:00:00.000Z",
+      stoppedAt: "2026-09-05T11:00:00.000Z",
+    };
+    writeFileSync(
+      join(directory, pendingRunRecordingFinalizationFileName),
+      JSON.stringify({ input, version: 1 }),
+      "utf8",
+    );
+    const registerRunRecording = vi.fn(() => {
+      throw new Error("database unavailable");
+    });
+    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+      isManagedRunRecordingPath: vi.fn(() => true),
+      registerRunRecording,
+    } as unknown as RecordingStorageService);
+
+    const service = createService();
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(registerRunRecording).not.toHaveBeenCalled();
+    endPerformanceSensitiveActivity(service);
+    expect(registerRunRecording).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(registerRunRecording).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(registerRunRecording).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(4_000 + 8_000 + 16_000 + 30_000);
+    expect(registerRunRecording).toHaveBeenCalledTimes(6);
+  });
+
+  it("restores and finalizes pending recording metadata after restart", async () => {
+    vi.useFakeTimers();
+    const input = {
+      framesPerSecond: 60,
+      path: join(directory, "restored-run.mp4"),
+      sourceGame: "poe2" as const,
+      sourceLeague: "Standard",
+      startedAt: "2026-09-05T10:00:00.000Z",
+      stoppedAt: "2026-09-05T11:00:00.000Z",
+    };
+    writeFileSync(
+      join(directory, pendingRunRecordingFinalizationFileName),
+      JSON.stringify({ input, version: 1 }),
+      "utf8",
+    );
+    const recording = {
+      ...input,
+      createdAt: input.startedAt,
+      durationSeconds: 3_600,
+      exists: true,
+      fileName: "restored-run.mp4",
+      id: "restored-run",
+      sizeBytes: 1_024,
+      updatedAt: input.stoppedAt,
+    };
+    const registerRunRecording = vi.fn(() => ({ id: recording.id }));
+    const scheduleCleanup = vi.fn();
+    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+      getRecording: vi.fn(() => ({ recording })),
+      isManagedRunRecordingPath: vi.fn(() => true),
+      registerRunRecording,
+      scheduleCleanup,
+    } as unknown as RecordingStorageService);
+    const finalizeRecoveredRecordingSession = vi.fn();
+    vi.spyOn(BookmarksService, "getInstance").mockReturnValue({
+      finalizeRecoveredRecordingSession,
+    } as unknown as BookmarksService);
+
+    const service = createService();
+    endPerformanceSensitiveActivity(service);
+
+    expect(registerRunRecording).toHaveBeenCalledWith(input);
+    expect(finalizeRecoveredRecordingSession).toHaveBeenCalledWith(recording);
+    expect(
+      existsSync(join(directory, pendingRunRecordingFinalizationFileName)),
+    ).toBe(false);
+    expect(scheduleCleanup).toHaveBeenCalledWith(
+      expect.objectContaining({ protectedPaths: [input.path] }),
+    );
+  });
+
+  it("discards invalid persisted finalization metadata on startup", () => {
+    const recoveryPath = join(
+      directory,
+      pendingRunRecordingFinalizationFileName,
+    );
+    writeFileSync(recoveryPath, "not-json", "utf8");
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+
+    createService();
+
+    expect(existsSync(recoveryPath)).toBe(false);
+    expect(logWarn).toHaveBeenCalledWith(
+      "managed-recorder",
+      "Invalid run recording finalization recovery was discarded",
+      expect.objectContaining({ error: expect.any(String) }),
+    );
+  });
+
+  it("flushes successfully when no recording finalization is pending", () => {
+    expect(createService().flushPendingRunRecordingFinalization()).toBe(true);
+  });
+
+  it("retries finalization when registered metadata cannot be read back", async () => {
+    vi.useFakeTimers();
+    const savedPath = join(directory, "missing-metadata-run.mp4");
+    const startedAt = new Date(Date.now() - 30_000).toISOString();
+    const service = createService();
+    const noobs = createNoobsApi();
+    const registerRunRecording = vi.fn(() => ({ id: "missing-metadata" }));
+    const getRecording = vi.fn(() => null);
+    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+      getRecording,
+      isManagedRunRecordingPath: vi.fn(() => true),
+      registerRunRecording,
+    } as unknown as RecordingStorageService);
+    const internals = service as unknown as {
+      noobs: ReturnType<typeof createNoobsApi>;
+      status: ManagedRecorderStatus;
+      waitForRecordingStop(): Promise<void>;
+      waitForSavedRecording(): Promise<string | null>;
+    };
+    internals.noobs = noobs;
+    internals.status = {
+      ...service.getStatus(),
+      activeGame: "poe1",
+      activeSessionDirectory: directory,
+      initialized: true,
+      recording: true,
+      runRecordingActive: true,
+      runRecordingSession: createRunRecordingSession({ startedAt }),
+    };
+    internals.waitForRecordingStop = vi.fn().mockResolvedValue(undefined);
+    internals.waitForSavedRecording = vi.fn().mockResolvedValue(savedPath);
+
+    await expect(service.stopRunRecording()).resolves.toMatchObject({
+      error: "Registered run recording metadata is unavailable",
+      runRecordingActive: false,
+    });
+
+    endPerformanceSensitiveActivity(service);
+    expect(registerRunRecording).toHaveBeenCalledTimes(2);
+    expect(getRecording).toHaveBeenCalledTimes(2);
+  });
+
+  it("cleans up safely when an unsaved run bookmark session cannot be discarded", async () => {
+    const service = createService();
+    const noobs = createNoobsApi();
+    const discardRecordingSession = vi.fn(() => {
+      throw new Error("bookmark cleanup failed");
+    });
+    const scheduleCleanup = vi.fn();
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+    vi.spyOn(BookmarksService, "getInstance").mockReturnValue({
+      discardRecordingSession,
+    } as unknown as BookmarksService);
+    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+      scheduleCleanup,
+    } as unknown as RecordingStorageService);
+    const internals = service as unknown as {
+      noobs: ReturnType<typeof createNoobsApi>;
+      status: ManagedRecorderStatus;
+      waitForRecordingStop(): Promise<void>;
+    };
+    internals.noobs = noobs;
+    internals.status = {
+      ...service.getStatus(),
+      initialized: true,
+      recording: true,
+      runRecordingActive: true,
+    };
+    internals.waitForRecordingStop = vi.fn().mockResolvedValue(undefined);
+
+    await expect(service.stopRunRecording()).resolves.toMatchObject({
+      error: "bookmark cleanup failed",
+      recording: false,
+      runRecordingActive: false,
+    });
+
+    expect(discardRecordingSession).toHaveBeenCalledTimes(2);
+    expect(scheduleCleanup).toHaveBeenCalledWith({
+      estimatedAddedBytes: 0,
+      force: false,
+      protectedDirectories: [],
+      protectedPaths: [],
+    });
+    expect(logWarn).toHaveBeenCalledWith(
+      "managed-recorder",
+      "Recording bookmark session cleanup failed",
+      { error: "bookmark cleanup failed" },
+    );
   });
 
   it("stops replay buffers without saving the active buffer", async () => {
@@ -1333,7 +1782,118 @@ describe("ManagedRecorderService", () => {
     await expect(service.stopBuffer()).resolves.toMatchObject({
       bufferActive: true,
       isStoppingRecording: false,
+      recording: true,
+      recordingStartedAt: internals.status.recordingStartedAt,
       error: "stuck",
+    });
+  });
+
+  it("coalesces concurrent replay-buffer stop requests", async () => {
+    const service = createService();
+    const noobs = createNoobsApi();
+    let releaseStop!: () => void;
+    const stopped = new Promise<void>((resolveStop) => {
+      releaseStop = resolveStop;
+    });
+    const internals = service as unknown as {
+      noobs: ReturnType<typeof createNoobsApi>;
+      status: ManagedRecorderStatus;
+      waitForRecordingStop(): Promise<void>;
+    };
+    internals.noobs = noobs;
+    internals.status = {
+      ...service.getStatus(),
+      bufferActive: true,
+      initialized: true,
+      recording: true,
+    };
+    internals.waitForRecordingStop = vi.fn(() => stopped);
+
+    const firstStop = service.stopBuffer();
+    const secondStop = service.stopBuffer();
+
+    expect(secondStop).toBe(firstStop);
+    expect(noobs.StopRecording).toHaveBeenCalledOnce();
+    releaseStop();
+    await expect(Promise.all([firstStop, secondStop])).resolves.toEqual([
+      expect.objectContaining({ bufferActive: false }),
+      expect.objectContaining({ bufferActive: false }),
+    ]);
+    expect(noobs.StopRecording).toHaveBeenCalledOnce();
+  });
+
+  it("coalesces concurrent full-recording stop requests", async () => {
+    const service = createService();
+    const noobs = createNoobsApi();
+    let releaseStop!: () => void;
+    const stopped = new Promise<void>((resolveStop) => {
+      releaseStop = resolveStop;
+    });
+    const internals = service as unknown as {
+      noobs: ReturnType<typeof createNoobsApi>;
+      status: ManagedRecorderStatus;
+      waitForRecordingStop(): Promise<void>;
+    };
+    internals.noobs = noobs;
+    internals.status = {
+      ...service.getStatus(),
+      initialized: true,
+      recording: true,
+      runRecordingActive: true,
+    };
+    internals.waitForRecordingStop = vi.fn(() => stopped);
+
+    const firstStop = service.stopRunRecording();
+    const secondStop = service.stopRunRecording();
+
+    expect(secondStop).toBe(firstStop);
+    expect(noobs.StopRecording).toHaveBeenCalledOnce();
+    releaseStop();
+    await expect(Promise.all([firstStop, secondStop])).resolves.toEqual([
+      expect.objectContaining({ runRecordingActive: false }),
+      expect.objectContaining({ runRecordingActive: false }),
+    ]);
+    expect(noobs.StopRecording).toHaveBeenCalledOnce();
+  });
+
+  it("clears rewind state when bookmark finalization fails after stopping", async () => {
+    const service = createService();
+    const noobs = createNoobsApi();
+    vi.spyOn(BookmarksService, "getInstance").mockReturnValue({
+      endRewindSession: () => {
+        throw new Error("bookmark finalization failed");
+      },
+    } as unknown as BookmarksService);
+    const startedAt = new Date(Date.now() - 5_000).toISOString();
+    const internals = service as unknown as {
+      noobs: ReturnType<typeof createNoobsApi>;
+      status: ManagedRecorderStatus;
+      waitForRecordingStop(): Promise<void>;
+    };
+    internals.noobs = noobs;
+    internals.status = {
+      ...service.getStatus(),
+      activeGame: "poe1",
+      activeSessionDirectory: directory,
+      bufferActive: true,
+      initialized: true,
+      recording: true,
+      recordingStartedAt: startedAt,
+      runRecordingActive: false,
+      runRecordingSession: null,
+    };
+    internals.waitForRecordingStop = vi.fn().mockResolvedValue(undefined);
+
+    await expect(service.stopBuffer()).resolves.toMatchObject({
+      activeGame: null,
+      activeSessionDirectory: null,
+      bufferActive: false,
+      error: "bookmark finalization failed",
+      isStoppingRecording: false,
+      recording: false,
+      recordingStartedAt: null,
+      runRecordingActive: false,
+      runRecordingSession: null,
     });
   });
 
@@ -1363,6 +1923,42 @@ describe("ManagedRecorderService", () => {
       activeSessionDirectory: null,
       error: null,
     });
+    expect(scheduleCleanup).toHaveBeenCalledWith({
+      estimatedAddedBytes: 0,
+      force: false,
+      protectedDirectories: [],
+      protectedPaths: [],
+    });
+  });
+
+  it("stops full recordings even when no packaged recorder is active", async () => {
+    const service = createService();
+    const discardRecordingSession = vi.fn();
+    const scheduleCleanup = vi.fn();
+    vi.spyOn(BookmarksService, "getInstance").mockReturnValue({
+      discardRecordingSession,
+    } as unknown as BookmarksService);
+    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+      scheduleCleanup,
+    } as unknown as RecordingStorageService);
+    const internals = service as unknown as {
+      noobs: null;
+      status: ManagedRecorderStatus;
+    };
+    internals.noobs = null;
+    internals.status = {
+      ...service.getStatus(),
+      initialized: false,
+      recording: true,
+      runRecordingActive: true,
+    };
+
+    await expect(service.stopRunRecording()).resolves.toMatchObject({
+      recording: false,
+      runRecordingActive: false,
+      error: null,
+    });
+    expect(discardRecordingSession).toHaveBeenCalledOnce();
     expect(scheduleCleanup).toHaveBeenCalledWith({
       estimatedAddedBytes: 0,
       force: false,
@@ -1442,7 +2038,9 @@ describe("ManagedRecorderService", () => {
       initialized: true,
       recording: true,
       runRecordingActive: true,
-      runRecordingStartedAt: new Date().toISOString(),
+      runRecordingSession: createRunRecordingSession({
+        startedAt: new Date().toISOString(),
+      }),
     };
     const stopRunRecording = vi
       .spyOn(service, "stopRunRecording")
@@ -3497,7 +4095,9 @@ describe("ManagedRecorderService", () => {
       initialized: true,
       recording: true,
       runRecordingActive: true,
-      runRecordingStartedAt: new Date().toISOString(),
+      runRecordingSession: createRunRecordingSession({
+        startedAt: new Date().toISOString(),
+      }),
     };
     stopInternals.waitForRecordingStop = vi
       .fn()
@@ -3505,6 +4105,8 @@ describe("ManagedRecorderService", () => {
 
     await expect(stopFailure.stopRunRecording()).resolves.toMatchObject({
       isStoppingRecording: false,
+      recording: true,
+      runRecordingActive: true,
       error: "stop failed",
     });
   });
@@ -3638,6 +4240,24 @@ describe("ManagedRecorderService", () => {
     ).toMatchObject({
       outputDirectory: directory,
     });
+    const recorderOverlayContents = { id: 22 };
+    registerIpcWindowRole(recorderOverlayContents, WindowName.RecorderOverlay);
+    const recorderOverlayEvent = { sender: recorderOverlayContents };
+    for (const channel of [
+      ManagedRecorderChannel.GetStatus,
+      ManagedRecorderChannel.StartBuffer,
+      ManagedRecorderChannel.StopBuffer,
+      ManagedRecorderChannel.StartRunRecording,
+      ManagedRecorderChannel.StopRunRecording,
+    ]) {
+      const result = await handlers.get(channel)?.(recorderOverlayEvent);
+      expect(result).toMatchObject({
+        activeSessionDirectory: null,
+        lastRecordingPath: null,
+        outputDirectory: null,
+        runtimePath: null,
+      });
+    }
     expect(
       await handlers.get(ManagedRecorderChannel.GetCaptureMode)?.({}),
     ).toBe("rewind");
@@ -4262,6 +4882,7 @@ describe("ManagedRecorderService", () => {
       activeRecordingMode: "buffer" | "run" | null;
       handleSignal(signal: unknown): void;
       recordingStopWaiter: (() => void) | null;
+      status: ManagedRecorderStatus;
     };
     const stopped = vi.fn();
 
@@ -4274,18 +4895,45 @@ describe("ManagedRecorderService", () => {
     });
 
     internals.recordingStopWaiter = stopped;
+    internals.status = {
+      ...service.getStatus(),
+      activeGame: "poe1",
+      isStoppingRecording: true,
+      runRecordingSession: {
+        framesPerSecond: 60,
+        path: "C:\\recordings\\run.mp4",
+        sourceGame: "poe1",
+        sourceLeague: "Standard",
+        startedAt: "2026-09-05T10:00:00.000Z",
+        state: "recording",
+        stoppedAt: null,
+      },
+    };
     internals.handleSignal({ type: "output", id: "deactivate", code: 0 });
     expect(stopped).toHaveBeenCalled();
     expect(service.getStatus()).toMatchObject({
       recording: false,
       runRecordingActive: false,
       bufferActive: false,
+      activeGame: "poe1",
+      runRecordingSession: expect.objectContaining({
+        state: "processing",
+        stoppedAt: expect.any(String),
+      }),
       error: null,
     });
     expect(send).toHaveBeenCalledWith(
       ManagedRecorderChannel.StatusChanged,
       expect.objectContaining({ runtime: "packaged_obs" }),
     );
+
+    internals.status = {
+      ...service.getStatus(),
+      isStoppingRecording: false,
+    };
+    internals.handleSignal({ type: "output", id: "deactivate", code: 0 });
+    expect(service.getStatus().activeGame).toBeNull();
+    expect(service.getStatus().runRecordingSession).toBeNull();
 
     internals.activeRecordingMode = "buffer";
     internals.handleSignal({ type: "output", id: "start", code: 0 });
@@ -4298,24 +4946,6 @@ describe("ManagedRecorderService", () => {
     internals.handleSignal({ type: "output", id: "warning", code: 2 });
     internals.handleSignal({ type: "output", id: "missing-code" });
     internals.handleSignal({ type: "other", id: "ignored", code: 0 });
-  });
-
-  it("publishes capture mode changes only to live windows", () => {
-    const service = createService();
-    const liveSend = vi.fn();
-    const destroyedSend = vi.fn();
-    electronMocks.getAllWindows.mockReturnValue([
-      { isDestroyed: () => true, webContents: { send: destroyedSend } },
-      { isDestroyed: () => false, webContents: { send: liveSend } },
-    ]);
-
-    expect(service.setCaptureMode("session")).toBe("session");
-
-    expect(liveSend).toHaveBeenCalledWith(
-      ManagedRecorderChannel.CaptureModeChanged,
-      "session",
-    );
-    expect(destroyedSend).not.toHaveBeenCalled();
   });
 
   it("falls back to maximum duration for invalid recording timestamps", () => {
@@ -4448,8 +5078,7 @@ describe("ManagedRecorderService", () => {
       lastRecordingPath: previousPath,
       recording: true,
       runRecordingActive: true,
-      runRecordingPath: previousPath,
-      runRecordingStartedAt: null,
+      runRecordingSession: createRunRecordingSession(),
     };
     internals.waitForRecordingStop = vi.fn().mockResolvedValue(undefined);
 
@@ -4457,29 +5086,38 @@ describe("ManagedRecorderService", () => {
       recording: false,
       runRecordingActive: false,
       lastRecordingPath: previousPath,
-      runRecordingPath: previousPath,
+      runRecordingSession: null,
       error: null,
     });
   });
 
-  it("publishes recorder status only to live windows", () => {
-    const liveSend = vi.fn();
-    const destroyedSend = vi.fn();
-    electronMocks.getAllWindows.mockReturnValue([
-      { isDestroyed: () => true, webContents: { send: destroyedSend } },
-      { isDestroyed: () => false, webContents: { send: liveSend } },
-    ]);
+  it("isolates status publication and storage activity failures", () => {
+    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
     const service = createService();
+
     const internals = service as unknown as {
       publishStatus(): void;
+      setStatus(update: Partial<ManagedRecorderStatus>): void;
+      syncRecordingStorageActivity(): void;
     };
+    internals.syncRecordingStorageActivity = vi.fn(() => {
+      throw new Error("storage unavailable");
+    });
+    internals.publishStatus = vi.fn(() => {
+      throw new Error("publisher unavailable");
+    });
 
-    internals.publishStatus();
-
-    expect(destroyedSend).not.toHaveBeenCalled();
-    expect(liveSend).toHaveBeenCalledWith(
-      ManagedRecorderChannel.StatusChanged,
-      service.getStatus(),
+    expect(() => internals.setStatus({ recording: true })).not.toThrow();
+    expect(service.getStatus().recording).toBe(true);
+    expect(logWarn).toHaveBeenCalledWith(
+      "managed-recorder",
+      "Recorder storage activity synchronization failed",
+      { error: "storage unavailable" },
+    );
+    expect(logWarn).toHaveBeenCalledWith(
+      "managed-recorder",
+      "Recorder status publication failed",
+      { error: "publisher unavailable" },
     );
   });
 });

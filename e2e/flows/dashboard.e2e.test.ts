@@ -6,6 +6,7 @@ import {
   emitDashboardPoeProcessStart,
   emitDashboardPoeProcessStop,
   emitDashboardRecorderStatus,
+  emitDashboardRecordingsChanged,
   expectNoUnexpectedDashboardBridgeCalls,
   getDashboardE2ECalls,
   scheduleDashboardCaptureSources,
@@ -878,4 +879,106 @@ test("restores clips view and media league across library routes", async ({
         { poe2MediaLibraryLeague: "Standard" },
       ]),
     );
+});
+
+test("shows the full-run recording lifecycle without a rewind phantom row", async ({
+  page,
+}) => {
+  await setupDashboardE2E(page, {
+    initialHash: "/#/recordings",
+    skipDashboardShellChecks: true,
+  });
+  const transientRow = page.getByTestId("transient-run-recording-row");
+  const startedAt = "2026-09-05T10:00:00.000Z";
+
+  await emitDashboardRecorderStatus(page, {
+    activeGame: "poe2",
+    isStoppingRecording: false,
+    recording: true,
+    recordingStartedAt: startedAt,
+    runRecordingActive: true,
+    runRecordingSession: {
+      framesPerSecond: 60,
+      path: "C:/Hinekora/Recordings/2026-09-05_10-00-00.mp4",
+      sourceGame: "poe2",
+      sourceLeague: "Runes of Aldur",
+      startedAt,
+      state: "recording",
+      stoppedAt: null,
+    },
+  });
+  await expect(transientRow).toContainText("Active recording");
+  await expect(transientRow).toContainText("Recording");
+
+  await emitDashboardRecorderStatus(page, {
+    activeGame: "poe2",
+    isStoppingRecording: true,
+    recording: false,
+    runRecordingActive: false,
+    runRecordingSession: {
+      framesPerSecond: 60,
+      path: "C:/Hinekora/Recordings/2026-09-05_10-00-00.mp4",
+      sourceGame: "poe2",
+      sourceLeague: "Runes of Aldur",
+      startedAt,
+      state: "processing",
+      stoppedAt: "2026-09-05T10:01:00.000Z",
+    },
+  });
+  await expect(transientRow).toContainText("Processing recording");
+  await expect(transientRow).toContainText("Processing");
+
+  const recordingId = "saved-recording";
+  await emitDashboardRecordingsChanged(
+    page,
+    {
+      availableLeagues: ["Standard", "Runes of Aldur"],
+      items: [
+        {
+          createdAt: startedAt,
+          durationSeconds: 60,
+          exists: true,
+          fileName: "2026-09-05_10-00-00.mp4",
+          framesPerSecond: 60,
+          id: recordingId,
+          path: "C:/Hinekora/Recordings/2026-09-05_10-00-00.mp4",
+          sizeBytes: 1_024,
+          sourceGame: "poe2",
+          sourceLeague: "Runes of Aldur",
+          startedAt,
+          stoppedAt: "2026-09-05T10:01:00.000Z",
+          updatedAt: "2026-09-05T10:01:00.000Z",
+        },
+      ],
+      pageCount: 1,
+      pageIndex: 0,
+      pageSize: 20,
+      sortBy: "createdAt",
+      sortDirection: "desc",
+      totalCount: 1,
+    },
+    [recordingId],
+  );
+  await expect(page.getByText("2026-09-05_10-00-00.mp4")).toBeVisible();
+  await expect(
+    page.locator(".badge-success").filter({ hasText: /^Saved$/ }),
+  ).toBeVisible();
+
+  await emitDashboardRecorderStatus(page, {
+    activeGame: null,
+    isStoppingRecording: false,
+    recordingStartedAt: null,
+    runRecordingSession: null,
+  });
+  await expect(transientRow).toHaveCount(0);
+
+  await emitDashboardRecorderStatus(page, {
+    activeGame: "poe2",
+    bufferActive: false,
+    isStoppingRecording: true,
+    recordingStartedAt: startedAt,
+    runRecordingActive: false,
+    runRecordingSession: null,
+  });
+  await expect(transientRow).toHaveCount(0);
 });

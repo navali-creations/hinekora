@@ -11,7 +11,7 @@ import {
 
 import type { ManagedRecorderStatus } from "~/types";
 
-type RecordingTableRowStatus = "processing" | "saved";
+type RecordingTableRowStatus = "processing" | "recording" | "saved";
 type RecordingTableColumnId =
   | "actions"
   | "createdAt"
@@ -38,8 +38,7 @@ const trailingRecordingTableColumnIds = [
   "actions",
 ] as const satisfies readonly RecordingTableColumnId[];
 
-interface CreateProcessingRecordingRowInput {
-  activeLeague: string | null;
+interface CreateTransientRunRecordingRowInput {
   now: Date;
   scope: MediaLibraryScope;
   status: ManagedRecorderStatus | null;
@@ -67,6 +66,26 @@ function getCellClassName(columnId: string): string {
   );
 }
 
+function getRecordingTableStatusBadgeClassName(
+  status: RecordingTableRowStatus,
+): string {
+  return clsx("badge badge-xs", {
+    "badge-success": status === "saved",
+    "badge-warning": status !== "saved",
+  });
+}
+
+function formatRecordingTableStatus(status: RecordingTableRowStatus): string {
+  switch (status) {
+    case "processing":
+      return "Processing";
+    case "recording":
+      return "Recording";
+    case "saved":
+      return "Saved";
+  }
+}
+
 function resolveSortBy(
   columnId: string | undefined,
 ): RunRecordingLibrarySortKey {
@@ -82,52 +101,49 @@ function resolveSortBy(
   }
 }
 
-function createProcessingRecordingRow({
-  activeLeague,
+function createTransientRunRecordingRow({
   now,
   scope,
   status,
-}: CreateProcessingRecordingRowInput): RecordingTableRow | null {
-  const startedAt = status?.runRecordingStartedAt ?? status?.recordingStartedAt;
-  const sourceGame = status?.activeGame ?? null;
-  const isProcessing =
-    status?.runRecordingActive === true ||
-    (status?.isStoppingRecording === true && startedAt !== null);
-  if (!isProcessing || !startedAt || sourceGame !== scope.game) {
+}: CreateTransientRunRecordingRowInput): RecordingTableRow | null {
+  const session = status?.runRecordingSession;
+  if (!session || session.sourceGame !== scope.game) {
     return null;
   }
 
-  const sourceLeague =
-    activeLeague ??
-    (scope.league === ALL_LEAGUES_VALUE ? "Standard" : scope.league);
+  const sourceLeague = session.sourceLeague;
   if (scope.league !== ALL_LEAGUES_VALUE && sourceLeague !== scope.league) {
     return null;
   }
 
-  const startedAtMs = Date.parse(startedAt);
-  const durationSeconds = Number.isFinite(startedAtMs)
-    ? Math.max(0, (now.getTime() - startedAtMs) / 1_000)
-    : null;
+  const startedAtMs = Date.parse(session.startedAt);
+  const stoppedAtMs = session.stoppedAt
+    ? Date.parse(session.stoppedAt)
+    : now.getTime();
+  const durationSeconds =
+    Number.isFinite(startedAtMs) && Number.isFinite(stoppedAtMs)
+      ? Math.max(0, (stoppedAtMs - startedAtMs) / 1_000)
+      : null;
   const timestamp = now.toISOString();
 
   return {
     id: "__active-run-recording",
-    path: status?.runRecordingPath ?? "",
-    sourceGame,
+    path: session.path ?? "",
+    sourceGame: session.sourceGame,
     sourceLeague,
-    startedAt,
-    stoppedAt: timestamp,
-    createdAt: startedAt,
+    startedAt: session.startedAt,
+    stoppedAt: session.stoppedAt ?? timestamp,
+    createdAt: session.startedAt,
     updatedAt: timestamp,
     fileName:
-      status?.isStoppingRecording === true
+      session.state === "processing"
         ? "Processing recording"
         : "Active recording",
     durationSeconds,
-    framesPerSecond: status.fps,
+    framesPerSecond: session.framesPerSecond,
     sizeBytes: 0,
     exists: true,
-    tableStatus: "processing",
+    tableStatus: session.state,
   };
 }
 
@@ -151,7 +167,7 @@ function canOpenRecordingRow(row: RecordingTableRow): boolean {
 
 function getRecordingRowClassName(row: RecordingTableRow): string {
   return clsx(
-    row.tableStatus === "processing" &&
+    row.tableStatus !== "saved" &&
       "bg-warning/5 text-base-content/55 hover:bg-warning/10",
   );
 }
@@ -159,10 +175,12 @@ function getRecordingRowClassName(row: RecordingTableRow): string {
 export type { RecordingTableColumnId, RecordingTableRow };
 export {
   canOpenRecordingRow,
-  createProcessingRecordingRow,
+  createTransientRunRecordingRow,
+  formatRecordingTableStatus,
   getCellClassName,
   getHeaderClassName,
   getRecordingRowClassName,
+  getRecordingTableStatusBadgeClassName,
   resolveRecordingTableColumnIds,
   resolveSortBy,
   toRecordingTableRow,

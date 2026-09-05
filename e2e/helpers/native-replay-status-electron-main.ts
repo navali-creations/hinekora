@@ -81,8 +81,7 @@ async function runReplayStatusLifecycle(): Promise<void> {
     recording: true,
     recordingStartedAt: null,
     runRecordingActive: false,
-    runRecordingPath: null,
-    runRecordingStartedAt: null,
+    runRecordingSession: null,
     runtime: "packaged_obs",
     runtimePath: null,
   };

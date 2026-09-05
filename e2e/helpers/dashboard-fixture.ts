@@ -143,6 +143,10 @@ interface DashboardE2EApi {
   emitPoeProcessStop: (state?: PoeProcessState) => void;
   emitRecordingStorageUsageChanged: (usage: RecordingStorageUsage) => void;
   emitRecordingStorageUsageRefreshFailed: (error: string) => void;
+  emitRecordingsChanged: (
+    recordingsPage: RunRecordingLibraryPage,
+    ids: string[],
+  ) => void;
   emitReplayClipStatusChanged: (clip: ReplayClipDetail["clip"]) => void;
   emitReplayClipProgress: (progress: {
     operationRequestId: string;
@@ -394,8 +398,7 @@ function createDashboardE2EFixture(
     recording: false,
     recordingStartedAt: null,
     runRecordingActive: false,
-    runRecordingPath: null,
-    runRecordingStartedAt: null,
+    runRecordingSession: null,
     runtime: "packaged_obs",
     runtimePath: null,
   };
@@ -670,6 +673,7 @@ async function setupDashboardE2E(
           progress: number;
         }) => void;
         replayClipStatusChanged?: (clip: ReplayClipDetail["clip"]) => void;
+        recordingsChanged?: (ids: string[]) => void;
         recordingStorageUsageChanged?: (usage: RecordingStorageUsage) => void;
         recordingStorageUsageRefreshFailed?: (error: string) => void;
         updateAvailable?: (info: UpdateInfo) => void;
@@ -1125,6 +1129,7 @@ async function setupDashboardE2E(
         sortDirection: "desc",
         totalCount: 0,
       };
+      let recordingLibraryPage = clone(emptyRecordingPage);
       Object.defineProperty(navigator, "mediaDevices", {
         configurable: true,
         value: {
@@ -1728,7 +1733,7 @@ async function setupDashboardE2E(
             };
           },
           getUsage: async () => clone(recordingStorageUsage),
-          listRecordingLibrary: async () => clone(emptyRecordingPage),
+          listRecordingLibrary: async () => clone(recordingLibraryPage),
           onUsageChanged: (callback) => {
             listeners.recordingStorageUsageChanged = callback;
 
@@ -1739,7 +1744,11 @@ async function setupDashboardE2E(
 
             return unsubscribe;
           },
-          onRecordingsChanged: () => unsubscribe,
+          onRecordingsChanged: (callback) => {
+            listeners.recordingsChanged = callback;
+
+            return unsubscribe;
+          },
         }),
         replayClips: createBridgeDomain<DashboardE2EElectron["replayClips"]>(
           "replayClips",
@@ -2007,6 +2016,10 @@ async function setupDashboardE2E(
         emitRecordingStorageUsageRefreshFailed: (error) => {
           listeners.recordingStorageUsageRefreshFailed?.(error);
         },
+        emitRecordingsChanged: (recordingsPage, ids) => {
+          recordingLibraryPage = clone(recordingsPage);
+          listeners.recordingsChanged?.(clone(ids));
+        },
         emitRecorderOverlayVisibility: (visible) => {
           emitRecorderVisibility(visible);
         },
@@ -2135,6 +2148,26 @@ async function emitDashboardRecorderStatus(
 
     e2eWindow.__HINEKORA_DASHBOARD_E2E_API__.emitRecorderStatus(nextStatus);
   }, status);
+}
+
+async function emitDashboardRecordingsChanged(
+  page: Page,
+  recordingsPage: RunRecordingLibraryPage,
+  ids: string[],
+) {
+  await page.evaluate(
+    ({ changedIds, nextPage }) => {
+      const e2eWindow = window as unknown as {
+        __HINEKORA_DASHBOARD_E2E_API__: DashboardE2EApi;
+      };
+
+      e2eWindow.__HINEKORA_DASHBOARD_E2E_API__.emitRecordingsChanged(
+        nextPage,
+        changedIds,
+      );
+    },
+    { changedIds: ids, nextPage: recordingsPage },
+  );
 }
 
 async function emitDashboardStorageAnalysisAvailability(
@@ -2292,6 +2325,7 @@ export {
   emitDashboardRecorderStatus,
   emitDashboardRecordingStorageUsageChanged,
   emitDashboardRecordingStorageUsageRefreshFailed,
+  emitDashboardRecordingsChanged,
   emitDashboardReplayClipPreviewProgress,
   emitDashboardReplayClipProgress,
   emitDashboardReplayClipStatusChanged,

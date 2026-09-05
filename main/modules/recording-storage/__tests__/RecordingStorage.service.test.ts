@@ -1254,7 +1254,7 @@ describe("RecordingStorageService", () => {
 
   it("updates cached usage when a run recording is finalized", async () => {
     await service.getUsage();
-    const recordingPath = join(root, "finalized-recording.mp4");
+    const recordingPath = join(root, "2026-07-17_10-00-00.mp4");
     writeFileSync(recordingPath, "recording");
 
     service.registerRunRecording({
@@ -1857,9 +1857,9 @@ describe("RecordingStorageService", () => {
   });
 
   it("registers directory and missing recording paths as unavailable files", () => {
-    const filePath = join(root, "recording.mp4");
-    const directoryPath = join(root, "folder.mp4");
-    const missingPath = join(root, "missing.mp4");
+    const filePath = join(root, "2026-06-12_10-29-00.mp4");
+    const directoryPath = join(root, "2026-06-12_10-30-00.mp4");
+    const missingPath = join(root, "2026-06-12_10-31-00.mp4");
     writeFileSync(filePath, "run");
     mkdirSync(directoryPath);
 
@@ -2367,20 +2367,49 @@ describe("RecordingStorageService", () => {
 
   it("registers run recordings with resolved paths", () => {
     const relativePath = join(root, "2026-06-12_10-30-00.mp4");
+    const send = vi.fn();
+    const webContents = { id: 904, send };
+    registerIpcWindowRole(webContents, WindowName.Main);
+    electronMocks.getAllWindows.mockReturnValue([
+      {
+        isDestroyed: () => false,
+        webContents,
+      } as unknown as Electron.BrowserWindow,
+    ]);
 
-    expect(
+    const recording = service.registerRunRecording({
+      path: relativePath,
+      sourceGame: "poe1",
+      sourceLeague: "Standard",
+      startedAt: "2026-06-12T10:00:00.000Z",
+      stoppedAt: "2026-06-12T11:00:00.000Z",
+    });
+
+    expect(recording).toMatchObject({
+      path: resolve(relativePath),
+      sourceGame: "poe1",
+      sourceLeague: "Standard",
+    });
+    expect(send).toHaveBeenCalledWith(
+      RecordingStorageChannel.RecordingsChanged,
+      [recording.id],
+    );
+  });
+
+  it.each([
+    ["outside the storage root", () => join(root, "..", "recording.mp4")],
+    ["with an unmanaged filename", () => join(root, "recording.mp4")],
+  ])("rejects run recording paths %s", (_label, createPath) => {
+    expect(service.isManagedRunRecordingPath(createPath())).toBe(false);
+    expect(() =>
       service.registerRunRecording({
-        path: relativePath,
+        path: createPath(),
         sourceGame: "poe1",
         sourceLeague: "Standard",
         startedAt: "2026-06-12T10:00:00.000Z",
         stoppedAt: "2026-06-12T11:00:00.000Z",
       }),
-    ).toMatchObject({
-      path: resolve(relativePath),
-      sourceGame: "poe1",
-      sourceLeague: "Standard",
-    });
+    ).toThrow("Run recording path is outside managed storage");
   });
 
   it("reports cleanup usage without deleting when storage limit is disabled", async () => {

@@ -27,8 +27,7 @@ const recorderStatus = {
   recording: false,
   recordingStartedAt: null,
   runRecordingActive: false,
-  runRecordingPath: null,
-  runRecordingStartedAt: null,
+  runRecordingSession: null,
   runtime: "packaged_obs",
   runtimePath: null,
 };

@@ -21,7 +21,9 @@ function RecordingStatus() {
       return {
         isRunActive: status?.runRecordingActive === true,
         startedAt:
-          status?.runRecordingStartedAt ?? status?.recordingStartedAt ?? null,
+          status?.runRecordingSession?.startedAt ??
+          status?.recordingStartedAt ??
+          null,
       };
     },
   );

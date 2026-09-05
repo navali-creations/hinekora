@@ -84,10 +84,9 @@ function mockRecorderStatus(
     fps: 30,
     encoder: "hardware_h264",
     lastRecordingPath: null,
-    runRecordingPath: null,
     activeSessionDirectory: null,
     recordingStartedAt: null,
-    runRecordingStartedAt: null,
+    runRecordingSession: null,
     error: null,
     ...overrides,
   };

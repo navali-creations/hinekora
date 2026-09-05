@@ -1,29 +1,29 @@
-import { ProcessingRecordingTableCell } from "../ProcessingRecordingTableCell/ProcessingRecordingTableCell";
 import {
   getCellClassName,
   getRecordingRowClassName,
   type RecordingTableRow,
   resolveRecordingTableColumnIds,
 } from "../RecordingsPanel/RecordingsPanel.utils";
+import { TransientRunRecordingTableCell } from "../TransientRunRecordingTableCell/TransientRunRecordingTableCell";
 
-interface ProcessingRecordingTableRowProps {
+interface TransientRunRecordingTableRowProps {
   recording: RecordingTableRow;
   showLeagueColumn: boolean;
 }
 
-function ProcessingRecordingTableRow({
+function TransientRunRecordingTableRow({
   recording,
   showLeagueColumn,
-}: ProcessingRecordingTableRowProps) {
+}: TransientRunRecordingTableRowProps) {
   return (
     <tr
       aria-disabled="true"
       className={getRecordingRowClassName(recording)}
-      data-testid="processing-recording-row"
+      data-testid="transient-run-recording-row"
     >
       {resolveRecordingTableColumnIds(showLeagueColumn).map((columnId) => (
         <td className={getCellClassName(columnId)} key={columnId}>
-          <ProcessingRecordingTableCell
+          <TransientRunRecordingTableCell
             columnId={columnId}
             recording={recording}
           />
@@ -33,4 +33,4 @@ function ProcessingRecordingTableRow({
   );
 }
 
-export { ProcessingRecordingTableRow };
+export { TransientRunRecordingTableRow };

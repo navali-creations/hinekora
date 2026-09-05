@@ -10,6 +10,8 @@ import {
 import { RecordingTableActions } from "../../RecordingTableActions/RecordingTableActions";
 import {
   canOpenRecordingRow,
+  formatRecordingTableStatus,
+  getRecordingTableStatusBadgeClassName,
   type RecordingTableRow,
   resolveRecordingTableColumnIds,
 } from "../RecordingsPanel.utils";
@@ -70,15 +72,11 @@ function useRecordingsPanelColumns({
             header: "Status",
             cell: ({ row }) => (
               <span
-                className={
-                  row.original.tableStatus === "processing"
-                    ? "badge badge-warning badge-xs"
-                    : "badge badge-success badge-xs"
-                }
+                className={getRecordingTableStatusBadgeClassName(
+                  row.original.tableStatus,
+                )}
               >
-                {row.original.tableStatus === "processing"
-                  ? "Processing"
-                  : "Saved"}
+                {formatRecordingTableStatus(row.original.tableStatus)}
               </span>
             ),
           };
@@ -87,7 +85,7 @@ function useRecordingsPanelColumns({
             accessorKey: "createdAt",
             header: "Saved",
             cell: ({ row, getValue }) =>
-              row.original.tableStatus === "processing"
+              row.original.tableStatus !== "saved"
                 ? "--"
                 : formatDateTime(getValue<string>()),
           };
@@ -108,7 +106,7 @@ function useRecordingsPanelColumns({
             accessorKey: "sizeBytes",
             header: "Size",
             cell: ({ row, getValue }) =>
-              row.original.tableStatus === "processing"
+              row.original.tableStatus !== "saved"
                 ? "--"
                 : formatBytes(getValue<number>()),
           };

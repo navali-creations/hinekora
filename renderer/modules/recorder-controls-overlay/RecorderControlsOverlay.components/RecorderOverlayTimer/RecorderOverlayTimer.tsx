@@ -8,7 +8,11 @@ function RecorderOverlayTimer() {
   const startedAt = useManagedRecorderShallow((managedRecorder) => {
     const status = managedRecorder.status;
 
-    return status?.runRecordingStartedAt ?? status?.recordingStartedAt ?? null;
+    return (
+      status?.runRecordingSession?.startedAt ??
+      status?.recordingStartedAt ??
+      null
+    );
   });
   const [nowMs, setNowMs] = useState(() => Date.now());
 

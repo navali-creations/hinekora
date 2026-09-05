@@ -71,7 +71,15 @@ test("keeps sidebar storage anchored while recording status expands", async ({
     recording: true,
     recordingStartedAt: "2026-07-22T10:00:00.000Z",
     runRecordingActive: true,
-    runRecordingStartedAt: "2026-07-22T10:00:00.000Z",
+    runRecordingSession: {
+      framesPerSecond: 60,
+      path: null,
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+      startedAt: "2026-07-22T10:00:00.000Z",
+      state: "recording",
+      stoppedAt: null,
+    },
   });
   await expect(page.getByText("Run active", { exact: true })).toBeVisible();
   await expect.poll(() => getStorageFooterBottomGap(page)).toBe(12);

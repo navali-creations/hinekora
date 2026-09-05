@@ -108,6 +108,7 @@ class BookmarksService {
   static getInstance(): BookmarksService {
     if (!BookmarksService.instance) {
       BookmarksService.instance = new BookmarksService();
+      BookmarksService.instance.recoverInterruptedActivitySessions();
     }
 
     return BookmarksService.instance;
@@ -140,6 +141,15 @@ class BookmarksService {
     return this.repositoryCache;
   }
 
+  private recoverInterruptedActivitySessions(): void {
+    const recoveredCount = this.repository.closeInterruptedActivitySessions();
+    if (recoveredCount > 0) {
+      logInfo(BOOKMARKS_LOG_SCOPE, "Interrupted rewind sessions recovered", {
+        count: recoveredCount,
+      });
+    }
+  }
+
   beginRecordingSession(input: BookmarkSession): void {
     this.activeRecordingSession = input;
     this.lastBookmarkedSceneByGame[input.game] = null;
@@ -153,11 +163,19 @@ class BookmarksService {
 
   finalizeRecordingSession(recording: RunRecordingItem): void {
     const session = this.activeRecordingSession;
-    this.activeRecordingSession = null;
     if (!session) {
       return;
     }
 
+    this.linkRecordingBookmarks(recording);
+    this.activeRecordingSession = null;
+  }
+
+  finalizeRecoveredRecordingSession(recording: RunRecordingItem): void {
+    this.linkRecordingBookmarks(recording);
+  }
+
+  private linkRecordingBookmarks(recording: RunRecordingItem): void {
     this.repository.linkRecordingBookmarks({
       durationSeconds: recording.durationSeconds,
       recordingId: recording.id,
@@ -207,16 +225,19 @@ class BookmarksService {
 
   endRewindSession(): void {
     const session = this.activeRewindSession;
-    if (session) {
-      this.lastBookmarkedSceneByGame[session.game] = null;
-      if (session.activitySessionId) {
-        this.repository.closeActivitySession({
-          id: session.activitySessionId,
-          stoppedAt: new Date().toISOString(),
-        });
+    try {
+      if (session) {
+        this.lastBookmarkedSceneByGame[session.game] = null;
+        if (session.activitySessionId) {
+          this.repository.closeActivitySession({
+            id: session.activitySessionId,
+            stoppedAt: new Date().toISOString(),
+          });
+        }
       }
+    } finally {
+      this.activeRewindSession = null;
     }
-    this.activeRewindSession = null;
   }
 
   handleClientLogActivityEvents(

@@ -106,7 +106,31 @@ function insertReplayClipRow(clip: ReplayClip): void {
   );
 }
 
+function insertOpenActivitySessionRow(input: {
+  id: string;
+  startedAt: string;
+  updatedAt: string;
+}): void {
+  const database = DatabaseService.getInstance();
+
+  database.runQuery(
+    database.kysely.insertInto("activity_sessions").values({
+      bookmark_count: 0,
+      clip_count: 0,
+      created_at: input.startedAt,
+      id: input.id,
+      mode: "rewind",
+      source_game: "poe2",
+      source_league: "Standard",
+      started_at: input.startedAt,
+      stopped_at: null,
+      updated_at: input.updatedAt,
+    }),
+  );
+}
+
 beforeEach(() => {
+  BookmarksService.resetForTests();
   DatabaseService.resetForTests();
   mockIpcMainHandlers();
   vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
@@ -120,12 +144,12 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
+  BookmarksService.resetForTests();
   DatabaseService.resetForTests();
 });
 
 describe("BookmarksService", () => {
   it("supports singleton reset and injected repositories", () => {
-    BookmarksService.resetForTests();
     const singleton = BookmarksService.getInstance();
     expect(BookmarksService.getInstance()).toBe(singleton);
 
@@ -148,6 +172,75 @@ describe("BookmarksService", () => {
       expect.objectContaining({ totalCount: 0 }),
     );
     expect(injectedRepository.listLibraryPage).toHaveBeenCalledTimes(1);
+  });
+
+  it("closes interrupted rewind sessions when the singleton starts", () => {
+    insertOpenActivitySessionRow({
+      id: "active-interrupted-session",
+      startedAt: "2026-07-03T08:00:00.000Z",
+      updatedAt: "2026-07-03T20:00:00.000Z",
+    });
+    insertOpenActivitySessionRow({
+      id: "empty-interrupted-session",
+      startedAt: "2026-07-03T09:00:00.000Z",
+      updatedAt: "2026-07-03T20:00:00.000Z",
+    });
+    insertOpenActivitySessionRow({
+      id: "invalid-start-interrupted-session",
+      startedAt: "invalid-start",
+      updatedAt: "2026-07-03T10:01:00.000Z",
+    });
+
+    const repository = new BookmarksRepository(DatabaseService.getInstance());
+    const bookmark = repository.upsertBookmark({
+      category: "map",
+      id: "interrupted-session-map",
+      label: "Map",
+      occurredAt: "2026-07-03T08:02:00.000Z",
+      source: "client-log",
+      sourceGame: "poe2",
+      sourceLeague: "Standard",
+    });
+    repository.linkActivitySessionBookmark({
+      activitySessionId: "active-interrupted-session",
+      bookmarkId: bookmark.id,
+      offsetSeconds: 120,
+    });
+    repository.linkActivitySessionClip({
+      activitySessionId: "active-interrupted-session",
+      bookmarkId: null,
+      offsetSeconds: 180,
+      targetId: "interrupted-session-clip",
+      targetKind: "replay-clip",
+    });
+
+    const service = BookmarksService.getInstance();
+
+    expect(
+      repository.getActivitySession("active-interrupted-session")?.stoppedAt,
+    ).toBe("2026-07-03T08:03:00.000Z");
+    expect(
+      repository.getActivitySession("empty-interrupted-session")?.stoppedAt,
+    ).toBe("2026-07-03T09:00:00.000Z");
+    expect(
+      repository.getActivitySession("invalid-start-interrupted-session")
+        ?.stoppedAt,
+    ).toBe("invalid-start");
+    expect(service.listActivitySessions({ pageSize: 10 }).items).toContainEqual(
+      expect.objectContaining({
+        durationSeconds: 180,
+        id: "active-interrupted-session",
+      }),
+    );
+    expect(
+      service.listActivitySessionBookmarks("active-interrupted-session").items,
+    ).toContainEqual(
+      expect.objectContaining({
+        durationSeconds: 60,
+        id: bookmark.id,
+      }),
+    );
+    expect(repository.closeInterruptedActivitySessions()).toBe(0);
   });
 
   it("pairs location bookmarks with the first real scene after a generated area", () => {
@@ -1234,6 +1327,30 @@ describe("BookmarksService", () => {
     expect(service.listLibrary({ game: "poe2" }).totalCount).toBe(0);
   });
 
+  it("links recovered recording bookmarks without an active session", () => {
+    const linkRecordingBookmarks = vi.fn();
+    const service = new BookmarksService({
+      linkRecordingBookmarks,
+    } as unknown as BookmarksRepository);
+    const recording = createRecordingItem({
+      durationSeconds: 30,
+      id: "recovered-recording",
+      startedAt: "2026-07-03T14:00:00.000Z",
+      stoppedAt: "2026-07-03T14:00:30.000Z",
+    });
+
+    service.finalizeRecoveredRecordingSession(recording);
+
+    expect(linkRecordingBookmarks).toHaveBeenCalledWith({
+      durationSeconds: 30,
+      recordingId: "recovered-recording",
+      recordingTitle: "recovered-recording.mp4",
+      sourceGame: "poe2",
+      startedAt: "2026-07-03T14:00:00.000Z",
+      stoppedAt: "2026-07-03T14:00:30.000Z",
+    });
+  });
+
   it("ignores finalize requests when a recording session has no bookmarks", () => {
     const service = new BookmarksService();
     const recording = createRecordingItem({
@@ -1451,6 +1568,69 @@ describe("BookmarksService", () => {
         category: "death",
       }),
     );
+  });
+
+  it("clears the active rewind session when persistence fails while closing it", () => {
+    const closeActivitySession = vi.fn(() => {
+      throw new Error("database unavailable");
+    });
+    const service = new BookmarksService({
+      closeActivitySession,
+    } as unknown as BookmarksRepository);
+    const internals = service as unknown as {
+      activeRewindSession: {
+        activitySessionId: string;
+        game: "poe2";
+        league: string;
+        startedAt: string;
+      } | null;
+    };
+    internals.activeRewindSession = {
+      activitySessionId: "rewind-session",
+      game: "poe2",
+      league: "Standard",
+      startedAt: "2026-07-03T15:00:00.000Z",
+    };
+
+    expect(() => service.endRewindSession()).toThrow("database unavailable");
+    expect(closeActivitySession).toHaveBeenCalledWith({
+      id: "rewind-session",
+      stoppedAt: expect.any(String),
+    });
+    expect(internals.activeRewindSession).toBeNull();
+  });
+
+  it("retains the active recording session when bookmark linking fails", () => {
+    const linkRecordingBookmarks = vi.fn(() => {
+      throw new Error("database unavailable");
+    });
+    const service = new BookmarksService({
+      linkRecordingBookmarks,
+    } as unknown as BookmarksRepository);
+    const internals = service as unknown as {
+      activeRecordingSession: {
+        game: "poe2";
+        league: string;
+        startedAt: string;
+      } | null;
+    };
+    internals.activeRecordingSession = {
+      game: "poe2",
+      league: "Standard",
+      startedAt: "2026-07-03T15:00:00.000Z",
+    };
+
+    expect(() =>
+      service.finalizeRecordingSession(
+        createRecordingItem({
+          durationSeconds: 30,
+          id: "failed-link-recording",
+          startedAt: "2026-07-03T15:00:00.000Z",
+          stoppedAt: "2026-07-03T15:00:30.000Z",
+        }),
+      ),
+    ).toThrow("database unavailable");
+    expect(internals.activeRecordingSession).not.toBeNull();
   });
 
   it("ignores pending rewind clip sessions from another game", () => {

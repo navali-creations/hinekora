@@ -137,6 +137,10 @@ interface ActivitySessionLibraryRow extends ActivitySessionRow {
   clip_count: number;
 }
 
+interface InterruptedActivitySessionRow extends ActivitySessionRow {
+  last_activity_offset_seconds: number;
+}
+
 interface BookmarkCreateInput {
   category: BookmarkCategory;
   dedupeKey?: string | null;
@@ -361,6 +365,20 @@ function calculateActivitySessionDurationSeconds(
       : Date.now();
 
   return Math.max(0, (endMs - startedAtMs) / 1_000);
+}
+
+function resolveInterruptedActivitySessionStoppedAt(
+  session: Pick<ActivitySession, "startedAt">,
+  lastActivityOffsetSeconds: number,
+): string {
+  const startedAtMs = Date.parse(session.startedAt);
+  if (!Number.isFinite(startedAtMs)) {
+    return session.startedAt;
+  }
+
+  return new Date(
+    startedAtMs + lastActivityOffsetSeconds * 1_000,
+  ).toISOString();
 }
 
 function normalizePageSize(pageSize: number | undefined): number {
@@ -679,23 +697,50 @@ class BookmarksRepository {
     id: string;
     stoppedAt: string;
   }): ActivitySession | null {
-    return this.database.transaction(() => {
-      this.database.runQuery(
-        this.database.kysely
-          .updateTable("activity_sessions")
-          .set({
-            stopped_at: input.stoppedAt,
-            updated_at: new Date().toISOString(),
-          })
-          .where("id", "=", input.id),
-      );
+    return this.database.transaction(() =>
+      this.closeActivitySessionInTransaction(input),
+    );
+  }
 
-      const session = this.getActivitySession(input.id);
-      if (session) {
-        this.updateActivitySessionLocationDurations(session);
+  closeInterruptedActivitySessions(): number {
+    return this.database.transaction(() => {
+      const rows = this.database.queryAll(
+        this.database.kysely
+          .selectFrom("activity_sessions")
+          .selectAll()
+          .select(
+            sql<number>`MAX(
+              0,
+              COALESCE((
+                SELECT MAX(bookmark_links.offset_seconds)
+                FROM bookmark_links
+                WHERE bookmark_links.target_kind = 'activity-session'
+                  AND bookmark_links.target_id = activity_sessions.id
+                  AND bookmark_links.archived = 0
+              ), 0),
+              COALESCE((
+                SELECT MAX(activity_session_clips.offset_seconds)
+                FROM activity_session_clips
+                WHERE activity_session_clips.activity_session_id = activity_sessions.id
+              ), 0)
+            )`.as("last_activity_offset_seconds"),
+          )
+          .where("mode", "=", "rewind")
+          .where("stopped_at", "is", null),
+      ) as InterruptedActivitySessionRow[];
+
+      for (const row of rows) {
+        const session = mapActivitySessionRow(row);
+        this.closeActivitySessionInTransaction({
+          id: session.id,
+          stoppedAt: resolveInterruptedActivitySessionStoppedAt(
+            session,
+            row.last_activity_offset_seconds,
+          ),
+        });
       }
 
-      return session;
+      return rows.length;
     });
   }
 
@@ -1611,6 +1656,28 @@ class BookmarksRepository {
         row.bookmark_link_id,
       );
     }
+  }
+
+  private closeActivitySessionInTransaction(input: {
+    id: string;
+    stoppedAt: string;
+  }): ActivitySession | null {
+    this.database.runQuery(
+      this.database.kysely
+        .updateTable("activity_sessions")
+        .set({
+          stopped_at: input.stoppedAt,
+          updated_at: new Date().toISOString(),
+        })
+        .where("id", "=", input.id),
+    );
+
+    const session = this.getActivitySession(input.id);
+    if (session) {
+      this.updateActivitySessionLocationDurations(session);
+    }
+
+    return session;
   }
 
   private calculateActivitySessionBookmarkDurationSeconds(input: {

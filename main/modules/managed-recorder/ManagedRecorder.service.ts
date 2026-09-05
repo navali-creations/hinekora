@@ -7,7 +7,10 @@ import { app, screen } from "electron";
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { CaptureProfilesService } from "~/main/modules/capture-profiles";
 import { WindowName } from "~/main/modules/main-window/MainWindow.types";
-import { RecordingStorageService } from "~/main/modules/recording-storage";
+import {
+  RecordingStorageService,
+  type RunRecordingCreateInput,
+} from "~/main/modules/recording-storage";
 import {
   DEFAULT_RECORDING_DIRECTORY_NAME,
   RECORDING_STORAGE_DIRECTORY_NAMES,
@@ -50,6 +53,11 @@ import type {
   ManagedReplaySaveResult,
 } from "./ManagedRecorder.dto";
 import { ManagedRecordingStorageEstimateRequestSchema } from "./ManagedRecorder.dto";
+import { RunRecordingFinalizationCoordinator } from "./ManagedRecorder.finalization";
+import {
+  PendingRunRecordingFinalizationStore,
+  pendingRunRecordingFinalizationFileName,
+} from "./ManagedRecorder.finalization-store";
 import {
   importNoobsModule,
   loadNoobsApi,
@@ -57,6 +65,7 @@ import {
   type NoobsSignal,
 } from "./ManagedRecorder.noobs";
 import {
+  createManagedRecorderStatusForIpcEvent,
   publishManagedRecorderCaptureMode,
   publishManagedRecorderStatus,
 } from "./ManagedRecorder.status-publisher";
@@ -161,12 +170,6 @@ interface RecordingSession {
   startedAt: string;
 }
 
-interface RecordingSourceScope {
-  framesPerSecond: number;
-  game: GameId;
-  league: string;
-}
-
 interface EnsureNoobsRuntimeInitializedOptions {
   publishStatus?: boolean;
 }
@@ -198,10 +201,9 @@ class ManagedRecorderService {
     fps: 30,
     encoder: REPLAY_BUFFER_PLAYBACK_ENCODER,
     lastRecordingPath: null,
-    runRecordingPath: null,
     activeSessionDirectory: null,
     recordingStartedAt: null,
-    runRecordingStartedAt: null,
+    runRecordingSession: null,
     error: "Packaged OBS runtime is not installed yet",
   };
   private captureMode: ManagedRecorderCaptureMode = "rewind";
@@ -225,8 +227,10 @@ class ManagedRecorderService {
     output: null,
   };
   private activeRecordingBaselinePaths = new Set<string>();
-  private activeRunRecordingSource: RecordingSourceScope | null = null;
   private recordingStopWaiter: (() => void) | null = null;
+  private bufferStopRequest: Promise<ManagedRecorderStatus> | null = null;
+  private runRecordingStopRequest: Promise<ManagedRecorderStatus> | null = null;
+  private readonly runRecordingFinalization: RunRecordingFinalizationCoordinator;
   private activeReplaySaveRequest: Promise<ManagedReplaySaveResult> | null =
     null;
   private audioDeviceListRequest: Promise<ManagedRecorderAudioDevices> | null =
@@ -252,11 +256,30 @@ class ManagedRecorderService {
   }
 
   constructor() {
+    const finalizationStore = new PendingRunRecordingFinalizationStore(
+      join(app.getPath("userData"), pendingRunRecordingFinalizationFileName),
+    );
+    this.runRecordingFinalization = new RunRecordingFinalizationCoordinator({
+      cleanup: (path) => this.cleanupRecordingStorage([path]),
+      finalize: (input, recovered) =>
+        this.finalizeRunRecording(input, recovered),
+      getError: () => this.status.error,
+      isRetryDeferred: () =>
+        RecordingStorageService.isPerformanceSensitiveActivityActive(),
+      isValid: (input) =>
+        finalizationStore.isValid(input) &&
+        RecordingStorageService.getInstance().isManagedRunRecordingPath(
+          input.path,
+        ),
+      setError: (error) => this.setStatus({ error }),
+      store: finalizationStore,
+    });
     this.refreshStatusFromSettings();
     this.setupAutoStartSettingsListener();
     this.setupAutoStartCaptureProfilesListener();
     this.setupHandlers();
     this.syncRecordingStorageActivity();
+    this.runRecordingFinalization.restore();
   }
 
   getStatus(): ManagedRecorderStatus {
@@ -490,48 +513,61 @@ class ManagedRecorderService {
     return this.status;
   }
 
-  async stopBuffer(): Promise<ManagedRecorderStatus> {
-    if (!this.status.bufferActive) {
-      return this.status;
+  stopBuffer(): Promise<ManagedRecorderStatus> {
+    if (this.bufferStopRequest) {
+      return this.bufferStopRequest;
     }
 
-    this.setStatus({ isStoppingRecording: true, error: null });
-    logInfo(MANAGED_RECORDER_LOG_SCOPE, "Stopping replay buffer", {
-      durationSeconds: this.getActiveRecordingDurationSeconds(),
+    if (!this.status.bufferActive) {
+      return Promise.resolve(this.status);
+    }
+
+    this.bufferStopRequest = this.stopBufferOnce().finally(() => {
+      this.bufferStopRequest = null;
     });
 
+    return this.bufferStopRequest;
+  }
+
+  private async stopBufferOnce(): Promise<ManagedRecorderStatus> {
+    let recorderStopped = !(this.noobs && this.status.initialized);
+
     try {
+      this.setStatus({ isStoppingRecording: true, error: null });
+      logInfo(MANAGED_RECORDER_LOG_SCOPE, "Stopping replay buffer", {
+        durationSeconds: this.getActiveRecordingDurationSeconds(),
+      });
       if (this.noobs && this.status.initialized && this.status.bufferActive) {
         const stopped = this.waitForRecordingStop();
         this.noobs.StopRecording();
         await stopped;
+        recorderStopped = true;
         this.removeCaptureSource();
         this.removeAudioSources();
       }
 
       this.activeRecordingMode = null;
       this.activeRecordingBaselinePaths = new Set();
-      this.setStatus({
-        bufferActive: false,
-        recording: false,
-        isStoppingRecording: false,
-        activeGame: null,
-        activeSessionDirectory: null,
-        recordingStartedAt: null,
-        error: null,
-      });
+      this.completeBufferStop(null);
       BookmarksService.getInstance().endRewindSession();
       logInfo(MANAGED_RECORDER_LOG_SCOPE, "Replay buffer stopped", {
         saved: false,
       });
       this.cleanupRecordingStorage([]);
     } catch (error) {
+      const message = safeErrorMessage(error);
+      if (recorderStopped || !this.status.bufferActive) {
+        this.activeRecordingMode = null;
+        this.activeRecordingBaselinePaths = new Set();
+        this.completeBufferStop(message);
+      } else {
+        this.setStatus({
+          isStoppingRecording: false,
+          error: message,
+        });
+      }
       logError(MANAGED_RECORDER_LOG_SCOPE, "Replay buffer stop failed", {
-        error: safeErrorMessage(error),
-      });
-      this.setStatus({
-        isStoppingRecording: false,
-        error: safeErrorMessage(error),
+        error: message,
       });
     }
 
@@ -547,6 +583,10 @@ class ManagedRecorderService {
       this.setStatus({
         error: "Stop the replay buffer before starting full run recording",
       });
+      return this.status;
+    }
+
+    if (!this.runRecordingFinalization.retry()) {
       return this.status;
     }
 
@@ -572,31 +612,33 @@ class ManagedRecorderService {
       this.activeRecordingBaselinePaths = session.existingRecordingPaths;
       this.noobs.StartRecording(0);
       this.updateCaptureMode("session");
-      this.setStatus({
-        bufferActive: false,
-        recording: true,
-        isStartingRecording: false,
-        runRecordingActive: true,
-        runRecordingPath: this.resolveSavedRecordingPath(
-          session.directory,
-          Date.now() - 1_000,
-          session.existingRecordingPaths,
-        ),
-        activeSessionDirectory: session.directory,
-        recordingStartedAt: session.startedAt,
-        runRecordingStartedAt: session.startedAt,
-        error: null,
-      });
       /* v8 ignore next -- ensureActiveGameRunning refreshes activeGame before startup; fallback protects stale status mutations. */
       const sessionGame =
         this.status.activeGame ?? this.resolveConfiguredGame();
       const sessionLeague =
         SettingsStoreService.getInstance().get().activeLeague;
-      this.activeRunRecordingSource = {
-        framesPerSecond: this.status.fps,
-        game: sessionGame,
-        league: sessionLeague,
-      };
+      const sessionPath = this.resolveSavedRecordingPath(
+        session.directory,
+        Date.now() - 1_000,
+        session.existingRecordingPaths,
+      );
+      this.setStatus({
+        bufferActive: false,
+        recording: true,
+        isStartingRecording: false,
+        runRecordingActive: true,
+        activeSessionDirectory: session.directory,
+        runRecordingSession: {
+          framesPerSecond: this.status.fps,
+          path: sessionPath,
+          sourceGame: sessionGame,
+          sourceLeague: sessionLeague,
+          startedAt: session.startedAt,
+          stoppedAt: null,
+          state: "recording",
+        },
+        error: null,
+      });
       BookmarksService.getInstance().beginRecordingSession({
         game: sessionGame,
         league: sessionLeague,
@@ -608,7 +650,6 @@ class ManagedRecorderService {
     } catch (error) {
       this.activeRecordingMode = null;
       this.activeRecordingBaselinePaths = new Set();
-      this.activeRunRecordingSource = null;
       logError(MANAGED_RECORDER_LOG_SCOPE, "Full run recording start failed", {
         error: safeErrorMessage(error),
       });
@@ -616,11 +657,9 @@ class ManagedRecorderService {
         recording: false,
         isStartingRecording: false,
         runRecordingActive: false,
-        runRecordingPath: null,
         activeGame: null,
         activeSessionDirectory: null,
-        recordingStartedAt: null,
-        runRecordingStartedAt: null,
+        runRecordingSession: null,
         error: safeErrorMessage(error),
       });
     } finally {
@@ -630,28 +669,59 @@ class ManagedRecorderService {
     return this.status;
   }
 
-  async stopRunRecording(): Promise<ManagedRecorderStatus> {
-    if (!this.status.runRecordingActive) {
-      return this.status;
+  stopRunRecording(): Promise<ManagedRecorderStatus> {
+    if (this.runRecordingStopRequest) {
+      return this.runRecordingStopRequest;
     }
 
-    this.setStatus({ isStoppingRecording: true, error: null });
-    logInfo(MANAGED_RECORDER_LOG_SCOPE, "Stopping full run recording");
+    if (!this.status.runRecordingActive) {
+      return Promise.resolve(this.status);
+    }
+
+    this.runRecordingStopRequest = this.stopRunRecordingOnce().finally(() => {
+      this.runRecordingStopRequest = null;
+    });
+
+    return this.runRecordingStopRequest;
+  }
+
+  private async stopRunRecordingOnce(): Promise<ManagedRecorderStatus> {
+    let recorderStopped = !(this.noobs && this.status.initialized);
+    let savedPath: string | null = null;
+    let finalizationInput: RunRecordingCreateInput | null = null;
+    const runRecordingSession = this.status.runRecordingSession;
+    const outputDirectory = this.status.activeSessionDirectory;
+    const modifiedAfterMs = runRecordingSession
+      ? new Date(runRecordingSession.startedAt).getTime() - 1_000
+      : 0;
 
     try {
-      let savedPath: string | null = null;
-      const sessionGame = this.status.activeGame ?? null;
-      const recordingSource = this.activeRunRecordingSource;
-      const outputDirectory = this.status.activeSessionDirectory;
-      const runRecordingStartedAt = this.status.runRecordingStartedAt;
-      const modifiedAfterMs = this.status.runRecordingStartedAt
-        ? new Date(this.status.runRecordingStartedAt).getTime() - 1_000
-        : 0;
+      this.setStatus({
+        isStoppingRecording: true,
+        runRecordingSession: runRecordingSession
+          ? { ...runRecordingSession, state: "processing" }
+          : null,
+        error: null,
+      });
+      logInfo(MANAGED_RECORDER_LOG_SCOPE, "Stopping full run recording");
 
       if (this.noobs && this.status.initialized) {
         const stopped = this.waitForRecordingStop();
         this.noobs.StopRecording();
         await stopped;
+        recorderStopped = true;
+        const stoppedAt =
+          this.status.runRecordingSession?.stoppedAt ??
+          new Date().toISOString();
+        if (this.status.runRecordingSession) {
+          this.setStatus({
+            runRecordingSession: {
+              ...this.status.runRecordingSession,
+              state: "processing",
+              stoppedAt,
+            },
+          });
+        }
 
         if (outputDirectory) {
           savedPath = await this.waitForSavedRecording(
@@ -662,6 +732,17 @@ class ManagedRecorderService {
           );
         }
         savedPath = savedPath ?? this.noobs.GetLastRecording();
+        if (savedPath && runRecordingSession) {
+          finalizationInput = {
+            framesPerSecond: runRecordingSession.framesPerSecond,
+            path: savedPath,
+            startedAt: runRecordingSession.startedAt,
+            stoppedAt,
+            sourceGame: runRecordingSession.sourceGame,
+            sourceLeague: runRecordingSession.sourceLeague,
+          };
+          this.runRecordingFinalization.stage(finalizationInput);
+        }
         this.removeCaptureSource();
         this.removeAudioSources();
       }
@@ -670,7 +751,12 @@ class ManagedRecorderService {
       this.activeRecordingBaselinePaths = new Set();
       this.setStatus({
         recording: false,
-        runRecordingPath: savedPath ?? this.status.runRecordingPath,
+        runRecordingSession: this.status.runRecordingSession
+          ? {
+              ...this.status.runRecordingSession,
+              path: savedPath ?? this.status.runRecordingSession.path,
+            }
+          : null,
         lastRecordingPath: savedPath ?? this.status.lastRecordingPath,
         error: null,
       });
@@ -678,61 +764,105 @@ class ManagedRecorderService {
         saved: savedPath !== null,
         ...createSafePathLogFields(savedPath, "recording"),
       });
-      if (savedPath && runRecordingStartedAt) {
-        const settings = SettingsStoreService.getInstance().get();
-        const configuredGame =
-          recordingSource?.game ??
-          sessionGame ??
-          this.resolveConfiguredGame(settings);
-        const recordingStorage = RecordingStorageService.getInstance();
-        const recordingMetadata = recordingStorage.registerRunRecording({
-          framesPerSecond: recordingSource?.framesPerSecond ?? null,
-          path: savedPath,
-          startedAt: runRecordingStartedAt,
-          stoppedAt: new Date().toISOString(),
-          sourceGame: configuredGame,
-          sourceLeague: recordingSource?.league ?? settings.activeLeague,
-        });
-        const recordingDetail = recordingMetadata?.id
-          ? recordingStorage.getRecording(recordingMetadata.id)
-          : null;
-        if (recordingDetail) {
-          BookmarksService.getInstance().finalizeRecordingSession(
-            recordingDetail.recording,
-          );
-        } else {
-          BookmarksService.getInstance().discardRecordingSession();
-        }
+      if (finalizationInput) {
+        this.runRecordingFinalization.finalizeStaged();
       } else {
         BookmarksService.getInstance().discardRecordingSession();
       }
-      this.activeRunRecordingSource = null;
-      this.setStatus({
-        bufferActive: false,
-        recording: false,
-        isStoppingRecording: false,
-        runRecordingActive: false,
-        runRecordingPath: savedPath ?? this.status.runRecordingPath,
-        activeGame: null,
-        activeSessionDirectory: null,
-        recordingStartedAt: null,
-        runRecordingStartedAt: null,
-        lastRecordingPath: savedPath ?? this.status.lastRecordingPath,
-        error: null,
-      });
+      this.completeRunRecordingStop(savedPath, null);
       this.cleanupRecordingStorage([savedPath]);
     } catch (error) {
-      BookmarksService.getInstance().discardRecordingSession();
+      const message = safeErrorMessage(error);
+      if (recorderStopped || !this.status.runRecordingActive) {
+        this.completeRunRecordingStop(savedPath, message);
+        if (finalizationInput) {
+          this.runRecordingFinalization.queue(finalizationInput, message);
+          this.discardRecordingSessionSafely();
+        } else {
+          this.discardRecordingSessionSafely();
+          this.cleanupRecordingStorage([savedPath]);
+        }
+      } else {
+        this.setStatus({
+          isStoppingRecording: false,
+          error: message,
+        });
+      }
       logError(MANAGED_RECORDER_LOG_SCOPE, "Full run recording stop failed", {
-        error: safeErrorMessage(error),
-      });
-      this.setStatus({
-        isStoppingRecording: false,
-        error: safeErrorMessage(error),
+        error: message,
       });
     }
 
     return this.status;
+  }
+
+  private finalizeRunRecording(
+    input: RunRecordingCreateInput,
+    recovered: boolean,
+  ): void {
+    const recordingStorage = RecordingStorageService.getInstance();
+    const recordingMetadata = recordingStorage.registerRunRecording(input);
+    const recordingDetail = recordingStorage.getRecording(recordingMetadata.id);
+    if (!recordingDetail) {
+      throw new Error("Registered run recording metadata is unavailable");
+    }
+
+    const bookmarks = BookmarksService.getInstance();
+    if (recovered) {
+      bookmarks.finalizeRecoveredRecordingSession(recordingDetail.recording);
+    } else {
+      bookmarks.finalizeRecordingSession(recordingDetail.recording);
+    }
+  }
+
+  flushPendingRunRecordingFinalization(): boolean {
+    return this.runRecordingFinalization.flush();
+  }
+
+  private completeBufferStop(error: string | null): void {
+    this.setStatus({
+      bufferActive: false,
+      recording: false,
+      isStoppingRecording: false,
+      runRecordingActive: false,
+      activeGame: null,
+      activeSessionDirectory: null,
+      recordingStartedAt: null,
+      runRecordingSession: null,
+      error,
+    });
+  }
+
+  private completeRunRecordingStop(
+    savedPath: string | null,
+    error: string | null,
+  ): void {
+    this.activeRecordingMode = null;
+    this.activeRecordingBaselinePaths = new Set();
+    this.setStatus({
+      bufferActive: false,
+      recording: false,
+      isStoppingRecording: false,
+      runRecordingActive: false,
+      activeGame: null,
+      activeSessionDirectory: null,
+      recordingStartedAt: null,
+      runRecordingSession: null,
+      lastRecordingPath: savedPath ?? this.status.lastRecordingPath,
+      error,
+    });
+  }
+
+  private discardRecordingSessionSafely(): void {
+    try {
+      BookmarksService.getInstance().discardRecordingSession();
+    } catch (error) {
+      logWarn(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Recording bookmark session cleanup failed",
+        { error: safeErrorMessage(error) },
+      );
+    }
   }
 
   async saveReplay(
@@ -2469,11 +2599,22 @@ class ManagedRecorderService {
 
     if (signal.id === "deactivate") {
       this.recordingStopWaiter?.();
+      const runRecordingSession =
+        this.status.isStoppingRecording && this.status.runRecordingSession
+          ? {
+              ...this.status.runRecordingSession,
+              state: "processing" as const,
+              stoppedAt:
+                this.status.runRecordingSession.stoppedAt ??
+                new Date().toISOString(),
+            }
+          : null;
       this.setStatus({
         bufferActive: false,
         recording: false,
         runRecordingActive: false,
-        activeGame: null,
+        runRecordingSession,
+        ...(this.status.isStoppingRecording ? {} : { activeGame: null }),
         error: null,
       });
     }
@@ -2510,7 +2651,8 @@ class ManagedRecorderService {
     registerGuardedIpcHandler(
       ManagedRecorderChannel.GetStatus,
       [WindowName.Main, WindowName.RecorderOverlay],
-      () => this.getStatus(),
+      (event) =>
+        createManagedRecorderStatusForIpcEvent(this.getStatus(), event),
     );
     registerGuardedIpcHandler(
       ManagedRecorderChannel.GetRecordingStorageEstimates,
@@ -2556,22 +2698,32 @@ class ManagedRecorderService {
     registerGuardedIpcHandler(
       ManagedRecorderChannel.StartBuffer,
       [WindowName.Main, WindowName.RecorderOverlay],
-      () => this.startBuffer(),
+      async (event) =>
+        createManagedRecorderStatusForIpcEvent(await this.startBuffer(), event),
     );
     registerGuardedIpcHandler(
       ManagedRecorderChannel.StopBuffer,
       [WindowName.Main, WindowName.RecorderOverlay],
-      () => this.stopBuffer(),
+      async (event) =>
+        createManagedRecorderStatusForIpcEvent(await this.stopBuffer(), event),
     );
     registerGuardedIpcHandler(
       ManagedRecorderChannel.StartRunRecording,
       [WindowName.Main, WindowName.RecorderOverlay],
-      () => this.startRunRecording(),
+      async (event) =>
+        createManagedRecorderStatusForIpcEvent(
+          await this.startRunRecording(),
+          event,
+        ),
     );
     registerGuardedIpcHandler(
       ManagedRecorderChannel.StopRunRecording,
       [WindowName.Main, WindowName.RecorderOverlay],
-      () => this.stopRunRecording(),
+      async (event) =>
+        createManagedRecorderStatusForIpcEvent(
+          await this.stopRunRecording(),
+          event,
+        ),
     );
   }
 
@@ -2580,8 +2732,26 @@ class ManagedRecorderService {
     if (this.status.gameRunning) {
       this.clearStartupGameCheck();
     }
-    this.syncRecordingStorageActivity();
-    this.publishStatus();
+    try {
+      this.syncRecordingStorageActivity();
+    } catch (error) {
+      logWarn(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Recorder storage activity synchronization failed",
+        { error: safeErrorMessage(error) },
+      );
+    }
+    try {
+      this.publishStatus();
+    } catch (error) {
+      logWarn(
+        MANAGED_RECORDER_LOG_SCOPE,
+        "Recorder status publication failed",
+        {
+          error: safeErrorMessage(error),
+        },
+      );
+    }
   }
 
   private scheduleStartupGameCheckRelease(): void {
@@ -2605,15 +2775,22 @@ class ManagedRecorderService {
   }
 
   private syncRecordingStorageActivity(): void {
-    RecordingStorageService.setPerformanceSensitiveActivityActive(
+    const wasPerformanceSensitive =
+      RecordingStorageService.isPerformanceSensitiveActivityActive();
+    const isPerformanceSensitive =
       this.startupGameCheckActive ||
-        this.status.gameRunning ||
-        this.status.recording ||
-        this.status.bufferActive ||
-        this.status.runRecordingActive ||
-        this.status.isStartingRecording ||
-        this.status.isStoppingRecording,
+      this.status.gameRunning ||
+      this.status.recording ||
+      this.status.bufferActive ||
+      this.status.runRecordingActive ||
+      this.status.isStartingRecording ||
+      this.status.isStoppingRecording;
+    RecordingStorageService.setPerformanceSensitiveActivityActive(
+      isPerformanceSensitive,
     );
+    if (wasPerformanceSensitive && !isPerformanceSensitive) {
+      this.runRecordingFinalization.retry();
+    }
   }
 
   private beginRecordingStart(mode: ManagedRecordingMode): boolean {

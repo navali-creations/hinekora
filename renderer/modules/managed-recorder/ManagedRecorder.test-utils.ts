@@ -1,4 +1,22 @@
-import type { ManagedRecorderStatus } from "~/types";
+import type {
+  ManagedRecorderStatus,
+  ManagedRunRecordingSession,
+} from "~/types";
+
+function createManagedRunRecordingSessionTestFixture(
+  overrides: Partial<ManagedRunRecordingSession> = {},
+): ManagedRunRecordingSession {
+  return {
+    framesPerSecond: 60,
+    path: "C:\\Videos\\2026-09-05 03-20-00.mp4",
+    sourceGame: "poe2",
+    sourceLeague: "Runes of Aldur",
+    startedAt: "2026-09-05T03:20:00.000Z",
+    state: "recording",
+    stoppedAt: null,
+    ...overrides,
+  };
+}
 
 function createManagedRecorderStatusTestFixture(
   overrides: Partial<ManagedRecorderStatus> = {},
@@ -21,12 +39,14 @@ function createManagedRecorderStatusTestFixture(
     recording: false,
     recordingStartedAt: null,
     runRecordingActive: false,
-    runRecordingPath: null,
-    runRecordingStartedAt: null,
+    runRecordingSession: null,
     runtime: "packaged_obs",
     runtimePath: "obs.exe",
     ...overrides,
   };
 }
 
-export { createManagedRecorderStatusTestFixture };
+export {
+  createManagedRecorderStatusTestFixture,
+  createManagedRunRecordingSessionTestFixture,
+};

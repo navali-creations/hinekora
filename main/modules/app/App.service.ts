@@ -174,6 +174,7 @@ class AppService {
       if (status.bufferActive) {
         await managedRecorder.stopBuffer();
       }
+      managedRecorder.flushPendingRunRecordingFinalization();
     });
 
     await this.runShutdownStep("Stopping updater", () => {

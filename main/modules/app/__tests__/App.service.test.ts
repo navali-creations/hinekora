@@ -206,6 +206,7 @@ describe("AppService", () => {
       clientLog: { stopWatchFile: vi.fn() },
       database: { close: vi.fn() },
       managedRecorder: {
+        flushPendingRunRecordingFinalization: vi.fn(() => true),
         getStatus: vi.fn(() => ({
           bufferActive: true,
           runRecordingActive: true,
@@ -259,6 +260,9 @@ describe("AppService", () => {
     expect(services.poeProcess.stop).toHaveBeenCalledTimes(1);
     expect(services.managedRecorder.stopRunRecording).toHaveBeenCalledTimes(1);
     expect(services.managedRecorder.stopBuffer).toHaveBeenCalledTimes(1);
+    expect(
+      services.managedRecorder.flushPendingRunRecordingFinalization,
+    ).toHaveBeenCalledTimes(1);
     expect(services.updater.destroy).toHaveBeenCalledTimes(1);
     expect(services.keybinds.destroy).toHaveBeenCalledTimes(1);
     expect(services.overlayWindows.destroyAll).toHaveBeenCalledTimes(1);
@@ -271,6 +275,7 @@ describe("AppService", () => {
       clientLog: { stopWatchFile: vi.fn() },
       database: { close: vi.fn() },
       managedRecorder: {
+        flushPendingRunRecordingFinalization: vi.fn(() => true),
         getStatus: vi.fn(() => ({
           bufferActive: false,
           runRecordingActive: false,
@@ -314,6 +319,9 @@ describe("AppService", () => {
     expect(services.poeProcess.stop).toHaveBeenCalledTimes(1);
     expect(services.managedRecorder.stopRunRecording).not.toHaveBeenCalled();
     expect(services.managedRecorder.stopBuffer).not.toHaveBeenCalled();
+    expect(
+      services.managedRecorder.flushPendingRunRecordingFinalization,
+    ).toHaveBeenCalledTimes(1);
     expect(services.keybinds.destroy).toHaveBeenCalledTimes(1);
     expect(electronMocks.quit).not.toHaveBeenCalled();
   });

@@ -725,6 +725,19 @@ export const appSettingsKeys = Object.freeze(
   Object.keys(AppSettingsSchema.shape),
 ) as readonly AppSettingsKey[];
 
+const ManagedRunRecordingSessionSchema = z.object({
+  framesPerSecond: z.number().int().min(1).max(240),
+  path: z.string().max(2_048).nullable(),
+  sourceGame: GameIdSchema,
+  sourceLeague: z.string().min(1).max(80),
+  startedAt: z.string().datetime(),
+  stoppedAt: z.string().datetime().nullable(),
+  state: z.enum(["recording", "processing"]),
+});
+export type ManagedRunRecordingSession = z.infer<
+  typeof ManagedRunRecordingSessionSchema
+>;
+
 export const ManagedRecorderStatusSchema = z.object({
   available: z.boolean(),
   gameRunning: z.boolean(),
@@ -742,10 +755,9 @@ export const ManagedRecorderStatusSchema = z.object({
   fps: z.number().int().min(1).max(240),
   encoder: z.string().min(1).max(128),
   lastRecordingPath: z.string().max(2_048).nullable(),
-  runRecordingPath: z.string().max(2_048).nullable().default(null),
   activeSessionDirectory: z.string().max(2_048).nullable(),
   recordingStartedAt: z.string().datetime().nullable(),
-  runRecordingStartedAt: z.string().datetime().nullable().default(null),
+  runRecordingSession: ManagedRunRecordingSessionSchema.nullable(),
   error: z.string().max(2_048).nullable(),
 });
 export type ManagedRecorderStatus = z.infer<typeof ManagedRecorderStatusSchema>;

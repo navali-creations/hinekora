@@ -18,13 +18,12 @@ import {
 import {
   useManagedRecorderSelector,
   useRecordingStorageShallow,
-  useSettingsSelector,
 } from "~/renderer/store";
 
-import { ProcessingRecordingTableRow } from "../ProcessingRecordingTableRow/ProcessingRecordingTableRow";
+import { TransientRunRecordingTableRow } from "../TransientRunRecordingTableRow/TransientRunRecordingTableRow";
 import {
   canOpenRecordingRow,
-  createProcessingRecordingRow,
+  createTransientRunRecordingRow,
   getCellClassName,
   getHeaderClassName,
   getRecordingRowClassName,
@@ -43,9 +42,6 @@ function RecordingsPanel({ isScopeReady = true, scope }: RecordingsPanelProps) {
   const navigate = useNavigate();
   const managedRecorderStatus = useManagedRecorderSelector(
     (managedRecorder) => managedRecorder.status,
-  );
-  const activeLeague = useSettingsSelector(
-    (settings) => settings.value?.activeLeague ?? null,
   );
   const {
     clearSelectedRecordings,
@@ -77,12 +73,11 @@ function RecordingsPanel({ isScopeReady = true, scope }: RecordingsPanelProps) {
   const queryPageIndex =
     scopeResetKey === lastScopeResetKeyRef.current ? pagination.pageIndex : 0;
   const showLeagueColumn = scope.league === ALL_LEAGUES_VALUE;
-  const isProcessingRecording =
-    managedRecorderStatus?.runRecordingActive === true ||
-    managedRecorderStatus?.isStoppingRecording === true;
+  const isTimingRunRecording =
+    managedRecorderStatus?.runRecordingSession?.state === "recording";
 
   useEffect(() => {
-    if (!isProcessingRecording) {
+    if (!isTimingRunRecording) {
       return;
     }
 
@@ -94,17 +89,16 @@ function RecordingsPanel({ isScopeReady = true, scope }: RecordingsPanelProps) {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [isProcessingRecording]);
+  }, [isTimingRunRecording]);
 
-  const processingRecording = useMemo(
+  const transientRunRecording = useMemo(
     () =>
-      createProcessingRecordingRow({
-        activeLeague,
+      createTransientRunRecordingRow({
         now,
         scope,
         status: managedRecorderStatus,
       }),
-    [activeLeague, managedRecorderStatus, now, scope],
+    [managedRecorderStatus, now, scope],
   );
   const tableRecordings = useMemo<RecordingTableRow[]>(() => {
     return recordings.map(toRecordingTableRow);
@@ -179,9 +173,9 @@ function RecordingsPanel({ isScopeReady = true, scope }: RecordingsPanelProps) {
   };
 
   const renderPinnedTopRows = () =>
-    processingRecording ? (
-      <ProcessingRecordingTableRow
-        recording={processingRecording}
+    transientRunRecording ? (
+      <TransientRunRecordingTableRow
+        recording={transientRunRecording}
         showLeagueColumn={showLeagueColumn}
       />
     ) : null;
@@ -212,7 +206,7 @@ function RecordingsPanel({ isScopeReady = true, scope }: RecordingsPanelProps) {
         getHeaderClassName={getHeaderClassName}
         getRowClassName={getRecordingRowClassName}
         onRowClick={handleRowClick}
-        pinnedTopRowCount={processingRecording ? 1 : 0}
+        pinnedTopRowCount={transientRunRecording ? 1 : 0}
         renderPinnedTopRows={renderPinnedTopRows}
         table={table}
         totalCount={totalRecordingRows}

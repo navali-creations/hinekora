@@ -715,8 +715,15 @@ class RecordingStorageService {
     return recording ? this.resolveRecordingActionPath(recording.path) : null;
   }
 
+  isManagedRunRecordingPath(path: string): boolean {
+    return this.resolveManagedRecordingPath(path) !== null;
+  }
+
   registerRunRecording(input: RunRecordingCreateInput): RunRecordingMetadata {
-    const resolvedPath = resolve(input.path);
+    const resolvedPath = this.resolveManagedRecordingPath(input.path);
+    if (!resolvedPath) {
+      throw new Error("Run recording path is outside managed storage");
+    }
     const previousRecording = this.repository.getItemByPath(resolvedPath);
     const fileStats = this.getExistingFileStats(resolvedPath);
     const mediaDurationSeconds =
@@ -751,6 +758,7 @@ class RecordingStorageService {
       league: recording.sourceLeague,
       ...createSafePathLogFields(recording.path, "recording"),
     });
+    this.publishRecordingsChanged([recording.id]);
 
     return recording;
   }

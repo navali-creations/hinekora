@@ -1344,10 +1344,9 @@ describe("ReplayClipsService file actions", () => {
         fps: 60,
         encoder: "hardware_h264",
         lastRecordingPath: null,
-        runRecordingPath: null,
+        runRecordingSession: null,
         activeSessionDirectory: null,
         recordingStartedAt: null,
-        runRecordingStartedAt: null,
         error: null,
       }),
       saveReplay: vi.fn().mockResolvedValue({
@@ -1417,10 +1416,9 @@ describe("ReplayClipsService file actions", () => {
         fps: 60,
         encoder: "hardware_h264",
         lastRecordingPath: null,
-        runRecordingPath: null,
+        runRecordingSession: null,
         activeSessionDirectory: null,
         recordingStartedAt: null,
-        runRecordingStartedAt: null,
         error: null,
       }),
       saveReplay: vi.fn().mockResolvedValue({
