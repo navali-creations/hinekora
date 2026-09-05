@@ -14,7 +14,7 @@ import {
 } from "~/main/utils/app-log";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
 
-import type { ReplayClip } from "~/types";
+import type { ManagedRecorderStatus, ReplayClip } from "~/types";
 import type { ReplayTriggerEvent } from "./ReplayClips.dto";
 import { ReplayClipDuplicateTracker } from "./ReplayClips.duplicates";
 import type { ReplayClipsRepository } from "./ReplayClips.repository";
@@ -61,7 +61,8 @@ class ReplayClipCreationService {
         return existing;
       }
     }
-    if (!this.isManagedReplayBufferActive(event)) {
+    const recorderStatus = ManagedRecorderService.getInstance().getStatus();
+    if (!this.isManagedReplayBufferActive(event, recorderStatus)) {
       return null;
     }
 
@@ -78,6 +79,7 @@ class ReplayClipCreationService {
       event,
       settings.activeLeague,
       requestedDurationSeconds,
+      recorderStatus.fps,
     );
     return this.dependencies.runClipOperation(clip.id, () =>
       this.createStoredClip(
@@ -169,6 +171,7 @@ class ReplayClipCreationService {
     event: ReplayTriggerEvent,
     sourceLeague: string,
     targetDurationSeconds: number,
+    framesPerSecond: number,
   ): ReplayClip {
     const now = new Date().toISOString();
     return {
@@ -176,6 +179,7 @@ class ReplayClipCreationService {
       deathTimestamp: event.detectedAt,
       durationSeconds: null,
       error: null,
+      framesPerSecond,
       id: randomUUID(),
       kind: event.kind,
       originalObsPath: null,
@@ -190,8 +194,10 @@ class ReplayClipCreationService {
     };
   }
 
-  private isManagedReplayBufferActive(event: ReplayTriggerEvent): boolean {
-    const status = ManagedRecorderService.getInstance().getStatus();
+  private isManagedReplayBufferActive(
+    event: ReplayTriggerEvent,
+    status: ManagedRecorderStatus,
+  ): boolean {
     if (status.bufferActive && status.gameRunning !== false) {
       return true;
     }

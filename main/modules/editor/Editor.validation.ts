@@ -813,6 +813,10 @@ function validateEditorProjectAsset(
             channel,
           ),
     exists: value.exists,
+    framesPerSecond: validateEditorAssetFrameRate(
+      value.framesPerSecond,
+      channel,
+    ),
     id: value.id,
     kind: value.kind as EditorMediaKind,
     mediaUrl:
@@ -976,6 +980,22 @@ function validateProjectNumber(
     max: maxEditorExportDurationSeconds,
   });
 
+  return value;
+}
+
+function validateEditorAssetFrameRate(
+  value: unknown,
+  channel: EditorChannel,
+): number | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  assertNumber(value, "asset frame rate", channel, {
+    integer: true,
+    min: 1,
+    max: 240,
+  });
   return value;
 }
 

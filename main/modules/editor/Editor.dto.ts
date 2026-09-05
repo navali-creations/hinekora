@@ -45,6 +45,7 @@ export interface EditorMediaAsset {
   createdAt: string;
   durationSeconds: number | null;
   exists: boolean;
+  framesPerSecond: number | null;
   id: string;
   kind: EditorMediaKind;
   mediaUrl: string | null;

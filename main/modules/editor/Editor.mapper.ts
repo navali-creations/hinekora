@@ -35,6 +35,7 @@ function createEditorAssetFromReplayClip(
     durationSeconds:
       detail.durationSeconds ?? detail.clip.targetDurationSeconds,
     exists: detail.mediaUrl !== null,
+    framesPerSecond: detail.clip.framesPerSecond,
     id: detail.clip.id,
     kind: "clip",
     mediaUrl: detail.mediaUrl,
@@ -56,6 +57,7 @@ function createEditorAssetFromRecording(
     createdAt: detail.recording.createdAt,
     durationSeconds: detail.recording.durationSeconds,
     exists: detail.recording.exists && detail.mediaUrl !== null,
+    framesPerSecond: detail.recording.framesPerSecond,
     id: detail.recording.id,
     kind: "recording",
     mediaUrl: detail.mediaUrl,

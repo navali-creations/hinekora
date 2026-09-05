@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from "react";
 
+import { useMediaFrameStepKeyboardShortcuts } from "~/renderer/modules/media-playback/useMediaFrameStepKeyboardShortcuts/useMediaFrameStepKeyboardShortcuts";
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
 import { useClipPreviewOverlayDiagnostics } from "../useClipPreviewOverlayDiagnostics/useClipPreviewOverlayDiagnostics";
@@ -125,6 +126,17 @@ function useClipPreviewOverlayMediaWorkflow() {
     trim,
     updatePlaybackFrame,
     videoSrc,
+  });
+
+  useMediaFrameStepKeyboardShortcuts({
+    enabled:
+      canUseClip &&
+      !isPreparingClip &&
+      !isProcessing &&
+      typeof clip?.framesPerSecond === "number",
+    ...(clip?.framesPerSecond ? { framesPerSecond: clip.framesPerSecond } : {}),
+    getPlaybackSeconds,
+    onStep: seekPreview,
   });
 
   useClipPreviewOverlayDiagnostics({

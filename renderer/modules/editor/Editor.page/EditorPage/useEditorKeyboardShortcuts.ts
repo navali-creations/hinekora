@@ -1,12 +1,15 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 
+import { isKeyboardShortcutSuppressedTarget } from "~/renderer/modules/keyboard-shortcuts/KeyboardShortcuts.utils/KeyboardShortcuts.utils";
+import { useMediaFrameStepKeyboardShortcuts } from "~/renderer/modules/media-playback/useMediaFrameStepKeyboardShortcuts/useMediaFrameStepKeyboardShortcuts";
 import { useBookmarksShallow, useEditorShallow } from "~/renderer/store";
 
+import { subscribeEditorPlaybackVisualTime } from "../../Editor.utils/Editor.utils";
 import { editorShortcutEventNames } from "../../Editor.utils/EditorShortcuts.utils";
 import {
   isEditorDeleteShortcut,
-  isEditorShortcutSuppressedTarget,
   isEditorTimelineShortcutTarget,
+  resolveEditorFrameStepSeconds,
 } from "./EditorPage.utils";
 
 function useEditorKeyboardShortcuts(): void {
@@ -18,13 +21,17 @@ function useEditorKeyboardShortcuts(): void {
     exportStatus,
     hasProject,
     hoveredTimelineGap,
+    isPreviewPlaying,
     playbackSeconds,
     previewHasAudio,
+    project,
     redoProjectChange,
     removeAllTimelineGaps,
     removeTimelineClip,
     removeTimelineGap,
     setHoveredTimelineGap,
+    setPlaybackSeconds,
+    setPreviewPlaying,
     splitTimelineClipAt,
     toggleProjectAudioMuted,
     toggleSidePanel,
@@ -37,13 +44,17 @@ function useEditorKeyboardShortcuts(): void {
     exportStatus: editor.exportState.status,
     hasProject: editor.project !== null,
     hoveredTimelineGap: editor.hoveredTimelineGap,
+    isPreviewPlaying: editor.isPreviewPlaying,
     playbackSeconds: editor.playbackSeconds,
     previewHasAudio: editor.previewHasAudio,
+    project: editor.project,
     redoProjectChange: editor.redoProjectChange,
     removeAllTimelineGaps: editor.removeAllTimelineGaps,
     removeTimelineClip: editor.removeTimelineClip,
     removeTimelineGap: editor.removeTimelineGap,
     setHoveredTimelineGap: editor.setHoveredTimelineGap,
+    setPlaybackSeconds: editor.setPlaybackSeconds,
+    setPreviewPlaying: editor.setPreviewPlaying,
     splitTimelineClipAt: editor.splitTimelineClipAt,
     toggleProjectAudioMuted: editor.toggleProjectAudioMuted,
     toggleSidePanel: editor.toggleSidePanel,
@@ -57,12 +68,38 @@ function useEditorKeyboardShortcuts(): void {
     }),
   );
   const isProcessing = clipboardStatus === "copying";
+  const resolveFrameStep = useCallback(
+    (currentSeconds: number, direction: -1 | 1) =>
+      resolveEditorFrameStepSeconds({
+        direction,
+        playbackSeconds: currentSeconds,
+        project,
+      }),
+    [project],
+  );
+  const handleFrameStep = useCallback(
+    (seconds: number) => {
+      setPreviewPlaying(false);
+      setPlaybackSeconds(seconds);
+    },
+    [setPlaybackSeconds, setPreviewPlaying],
+  );
+
+  useMediaFrameStepKeyboardShortcuts({
+    enabled: !isProcessing && Boolean(project && project.durationSeconds > 0),
+    focusRegionSelector: '[data-onboarding="editor-timeline"]',
+    isPlaying: isPreviewPlaying,
+    onStep: handleFrameStep,
+    playbackSeconds,
+    resolveFrameStepSeconds: resolveFrameStep,
+    subscribePlaybackSeconds: subscribeEditorPlaybackVisualTime,
+  });
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const target = event.target;
 
-      if (isEditorShortcutSuppressedTarget(target)) {
+      if (isKeyboardShortcutSuppressedTarget(target)) {
         return;
       }
 

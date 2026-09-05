@@ -2,6 +2,7 @@ import { useEffect } from "react";
 
 import { useAuraProfileSave } from "~/renderer/modules/crop-editor/CropEditor.hooks/useAuraProfileSave/useAuraProfileSave";
 import { getSelectedProfile } from "~/renderer/modules/crop-editor/CropEditor.utils/CropEditor.utils";
+import { isKeyboardShortcutEditableTarget } from "~/renderer/modules/keyboard-shortcuts/KeyboardShortcuts.utils/KeyboardShortcuts.utils";
 import {
   useCropEditorShallow,
   useProfilesShallow,
@@ -46,7 +47,7 @@ function useAuraProfileKeyboardShortcuts(): void {
       if (!["d", "e", "n", "s"].includes(key)) {
         return;
       }
-      if (key !== "s" && isEditableTarget(event.target)) {
+      if (key !== "s" && isKeyboardShortcutEditableTarget(event.target)) {
         return;
       }
 
@@ -73,15 +74,6 @@ function useAuraProfileKeyboardShortcuts(): void {
 
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [openProfileActionDialog, profile, profileActionDialog, saveProfile]);
-}
-
-function isEditableTarget(target: EventTarget | null): boolean {
-  return (
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLTextAreaElement ||
-    target instanceof HTMLSelectElement ||
-    (target instanceof HTMLElement && target.isContentEditable)
-  );
 }
 
 export { useAuraProfileKeyboardShortcuts };

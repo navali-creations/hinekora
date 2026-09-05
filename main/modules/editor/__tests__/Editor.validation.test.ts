@@ -962,4 +962,44 @@ describe("Editor validation", () => {
       }),
     ).toThrow("clip range must fit project duration");
   });
+
+  it("normalizes legacy asset frame rates and accepts current metadata", () => {
+    const project = createEditorProject();
+    const { framesPerSecond: _framesPerSecond, ...legacyAsset } =
+      createEditorMediaAsset();
+
+    expect(
+      validateEditorSaveProjectInput({
+        project: { ...project, assets: [legacyAsset] },
+      }).project.assets[0]?.framesPerSecond,
+    ).toBeNull();
+    expect(
+      validateEditorSaveProjectInput({
+        project: {
+          ...project,
+          assets: [createEditorMediaAsset({ framesPerSecond: null })],
+        },
+      }).project.assets[0]?.framesPerSecond,
+    ).toBeNull();
+    expect(
+      validateEditorSaveProjectInput({ project }).project.assets[0]
+        ?.framesPerSecond,
+    ).toBe(60);
+  });
+
+  it("rejects invalid asset frame rates", () => {
+    const project = createEditorProject();
+
+    expect(() =>
+      validateEditorSaveProjectInput({
+        project: {
+          ...project,
+          assets: project.assets.map((asset) => ({
+            ...asset,
+            framesPerSecond: 60.5,
+          })),
+        },
+      }),
+    ).toThrow("asset frame rate must be an integer");
+  });
 });

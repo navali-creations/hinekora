@@ -31,6 +31,16 @@ const editorShortcutItems: EditorShortcutItem[] = [
     label: "Clear empty gaps from the timeline.",
   },
   {
+    category: "timeline",
+    keys: [","],
+    label: "Move the playhead to the previous frame.",
+  },
+  {
+    category: "timeline",
+    keys: ["."],
+    label: "Move the playhead to the next frame.",
+  },
+  {
     category: "editor",
     keys: ["Ctrl", "Z"],
     label: "Undo the last timeline edit.",

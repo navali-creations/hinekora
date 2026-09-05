@@ -25,6 +25,7 @@ const project: EditorProject = {
       createdAt: "2026-06-18T00:00:00.000Z",
       durationSeconds: 10,
       exists: true,
+      framesPerSecond: 60,
       id: "asset-1",
       kind: "clip",
       mediaUrl: "hinekora-media://replay-clip/asset-1",

@@ -206,7 +206,14 @@ interface DashboardE2EFixture {
   recorderOverlayRequested: boolean;
 }
 
-type DashboardE2EElectron = Window["electron"];
+type DashboardE2EElectron = Omit<Window["electron"], "settings"> & {
+  settings: Window["electron"]["settings"] & {
+    dismissClipPreviewInfoAlert: () => Promise<{
+      clipPreviewInfoAlertDismissed: boolean;
+      telemetryCrashReporting: boolean;
+    }>;
+  };
+};
 
 const dashboardE2ENow = "2026-06-25T00:00:00.000Z";
 
@@ -1708,6 +1715,7 @@ async function setupDashboardE2E(
                 durationSeconds: bookmark.activeRecordingDurationSeconds,
                 exists: true,
                 fileName: `${recordingId}.mp4`,
+                framesPerSecond: 60,
                 id: recordingId,
                 path: `C:/Hinekora/Recordings/${recordingId}.mp4`,
                 sizeBytes: 1024 * 1024,
@@ -1866,6 +1874,21 @@ async function setupDashboardE2E(
         settings: createBridgeDomain<DashboardE2EElectron["settings"]>(
           "settings",
           {
+            dismissClipPreviewInfoAlert: async () => {
+              settings = {
+                ...settings,
+                clipPreviewInfoAlertDismissed: true,
+              };
+              calls.settingsUpdates.push({
+                clipPreviewInfoAlertDismissed: true,
+              });
+              listeners.settingsChanged?.(clone(settings));
+
+              return {
+                clipPreviewInfoAlertDismissed: true,
+                telemetryCrashReporting: settings.telemetryCrashReporting,
+              };
+            },
             get: async () => clone(settings),
             onChanged: (callback) => {
               listeners.settingsChanged = callback;

@@ -1,5 +1,7 @@
 import type { EditorTimelineClip } from "~/main/modules/editor";
 
+const playbackSyncToleranceSeconds = 0.08;
+
 function isPlaybackInsideClip(input: {
   clip: EditorTimelineClip;
   playbackSeconds: number;
@@ -29,4 +31,20 @@ function findContiguousTimelineClip(input: {
   );
 }
 
-export { findContiguousTimelineClip, isPlaybackInsideClip };
+function shouldSynchronizeEditorPreviewSource(input: {
+  currentSeconds: number;
+  isPlaying: boolean;
+  sourceSeconds: number;
+}): boolean {
+  return (
+    !input.isPlaying ||
+    Math.abs(input.currentSeconds - input.sourceSeconds) >
+      playbackSyncToleranceSeconds
+  );
+}
+
+export {
+  findContiguousTimelineClip,
+  isPlaybackInsideClip,
+  shouldSynchronizeEditorPreviewSource,
+};

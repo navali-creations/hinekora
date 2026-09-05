@@ -82,6 +82,26 @@ function createRecordingBookmark(
   });
 }
 
+async function readRecordingPlaybackSeconds(page: Page): Promise<number> {
+  const value = await page
+    .getByText(/\/ 1:30\.00$/)
+    .first()
+    .locator("..")
+    .textContent();
+  const match = value?.trim().match(/^(\d+):(\d{2})\.(\d{2})/);
+  if (!match) {
+    throw new Error(`Unexpected recording timestamp: ${value ?? "<empty>"}`);
+  }
+
+  return Number(match[1]) * 60 + Number(match[2]) + Number(match[3]) / 100;
+}
+
+async function readRecordingVideoSeconds(page: Page): Promise<number> {
+  return page
+    .locator('video[title="recording-detail-1.mp4"]')
+    .evaluate((video: HTMLVideoElement) => video.currentTime);
+}
+
 async function getLastBookmarkLibraryQuery(page: Page) {
   const queries = (await getDashboardE2ECalls(page)).bookmarkLibraryQueries;
   const query = queries.at(-1);
@@ -442,6 +462,43 @@ test("covers recording detail playback, timeline seeking, bookmark pagination, a
 
   await clickTimelineAt(page, 0.5);
   await expect(page.getByText(/0:4[3-7]\.\d{2} \/ 1:30\.00/)).toBeVisible();
+  const playbackBeforeFrameStep = await readRecordingPlaybackSeconds(page);
+  const videoBeforeFrameStep = await readRecordingVideoSeconds(page);
+  await page.keyboard.press(".");
+  await expect
+    .poll(async () => readRecordingPlaybackSeconds(page))
+    .toBeGreaterThan(playbackBeforeFrameStep);
+  const playbackAfterFrameStep = await readRecordingPlaybackSeconds(page);
+  expect(playbackAfterFrameStep - playbackBeforeFrameStep).toBeLessThanOrEqual(
+    0.021,
+  );
+  await expect
+    .poll(async () => readRecordingVideoSeconds(page))
+    .toBeGreaterThan(videoBeforeFrameStep);
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await readRecordingVideoSeconds(page)) -
+          (await readRecordingPlaybackSeconds(page)),
+      ),
+    )
+    .toBeLessThanOrEqual(0.011);
+  const videoAfterFrameStep = await readRecordingVideoSeconds(page);
+  await page.keyboard.press(",");
+  await expect
+    .poll(async () => readRecordingPlaybackSeconds(page))
+    .toBeCloseTo(playbackBeforeFrameStep, 2);
+  await expect
+    .poll(async () => readRecordingVideoSeconds(page))
+    .toBeLessThan(videoAfterFrameStep);
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await readRecordingVideoSeconds(page)) -
+          (await readRecordingPlaybackSeconds(page)),
+      ),
+    )
+    .toBeLessThanOrEqual(0.011);
   await page.getByLabel("Recording volume").fill("0.25");
   await expect(page.getByLabel("Recording volume")).toHaveValue("0.25");
 

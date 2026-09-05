@@ -26,6 +26,7 @@ const storeMocks = vi.hoisted(() => ({
   setHoveredTimelineGap: vi.fn(),
   setMediaFilter: vi.fn(),
   setPlaybackSeconds: vi.fn(),
+  setPreviewPlaying: vi.fn(),
   splitTimelineClipAt: vi.fn(),
   toggleProjectAudioMuted: vi.fn(),
   undoProjectChange: vi.fn(),
@@ -287,6 +288,7 @@ vi.mock("../../Editor.components/EditorTimeline/EditorTimeline", () => ({
 
     return (
       <div
+        data-onboarding="editor-timeline"
         data-show-bookmark-markers={String(
           props.bookmarks?.showBookmarkMarkers ?? false,
         )}
@@ -296,11 +298,13 @@ vi.mock("../../Editor.components/EditorTimeline/EditorTimeline", () => ({
           ""
         }
         data-testid="timeline"
+        tabIndex={0}
       />
     );
   },
 }));
 
+import { publishEditorPlaybackVisualTime } from "../../Editor.utils/Editor.utils";
 import { editorShortcutEventNames } from "../../Editor.utils/EditorShortcuts.utils";
 import { EditorPage } from "./EditorPage";
 
@@ -313,6 +317,7 @@ const project: EditorProject = {
       createdAt: "2026-06-18T00:00:00.000Z",
       durationSeconds: 10,
       exists: true,
+      framesPerSecond: 60,
       id: "asset-1",
       kind: "clip",
       mediaUrl: "hinekora-media://replay-clip/asset-1",
@@ -374,6 +379,7 @@ const recordingProject: EditorProject = {
       createdAt: "2026-06-18T00:00:00.000Z",
       durationSeconds: 20,
       exists: true,
+      framesPerSecond: 60,
       id: "recording-1",
       kind: "recording",
       mediaUrl: "hinekora-media://run-recording/recording-1",
@@ -452,6 +458,7 @@ const secondRecordingProject: EditorProject = {
       createdAt: "2026-06-18T00:00:00.000Z",
       durationSeconds: 20,
       exists: true,
+      framesPerSecond: 60,
       id: "recording-2",
       kind: "recording",
       mediaUrl: "hinekora-media://run-recording/recording-2",
@@ -531,6 +538,7 @@ function configureEditorState(overrides: Record<string, unknown> = {}) {
     setHoveredTimelineGap: storeMocks.setHoveredTimelineGap,
     setMediaFilter: storeMocks.setMediaFilter,
     setPlaybackSeconds: storeMocks.setPlaybackSeconds,
+    setPreviewPlaying: storeMocks.setPreviewPlaying,
     splitTimelineClipAt: storeMocks.splitTimelineClipAt,
     toggleProjectAudioMuted: storeMocks.toggleProjectAudioMuted,
     toggleSidePanel: toggleEditorSidePanel,
@@ -1182,15 +1190,22 @@ describe("EditorPage shortcuts", () => {
 
   it("supports focused timeline single-key shortcuts", async () => {
     await renderEditorPage();
+    const timeline = container.querySelector<HTMLElement>(
+      '[data-testid="timeline"]',
+    );
+    if (!timeline) {
+      throw new Error("Expected timeline");
+    }
+    timeline.focus();
 
     await act(async () => {
-      document.body.dispatchEvent(
+      timeline.dispatchEvent(
         new KeyboardEvent("keydown", { bubbles: true, key: "s" }),
       );
-      document.body.dispatchEvent(
+      timeline.dispatchEvent(
         new KeyboardEvent("keydown", { bubbles: true, key: "m" }),
       );
-      document.body.dispatchEvent(
+      timeline.dispatchEvent(
         new KeyboardEvent("keydown", { bubbles: true, key: "c" }),
       );
     });
@@ -1198,6 +1213,54 @@ describe("EditorPage shortcuts", () => {
     expect(storeMocks.splitTimelineClipAt).toHaveBeenCalledWith(4);
     expect(storeMocks.toggleProjectAudioMuted).toHaveBeenCalledTimes(1);
     expect(storeMocks.removeAllTimelineGaps).toHaveBeenCalledTimes(1);
+  });
+
+  it("steps one frame backward and forward while the timeline is focused", async () => {
+    configureEditorState({
+      isPreviewPlaying: true,
+      playbackSeconds: 12,
+      project: {
+        ...recordingProject,
+        tracks: [
+          {
+            ...recordingProject.tracks[0],
+            clips: [
+              {
+                ...recordingProject.tracks[0]?.clips[0],
+                playbackRate: 2,
+              },
+            ],
+          },
+        ],
+      },
+    });
+    await renderEditorPage();
+    const timeline = container.querySelector<HTMLElement>(
+      '[data-testid="timeline"]',
+    );
+    if (!timeline) {
+      throw new Error("Expected timeline");
+    }
+    timeline.focus();
+
+    await act(async () => {
+      publishEditorPlaybackVisualTime(12.01);
+      timeline.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "." }),
+      );
+      timeline.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "," }),
+      );
+    });
+
+    expect(storeMocks.setPreviewPlaying).toHaveBeenCalledTimes(2);
+    expect(storeMocks.setPreviewPlaying).toHaveBeenNthCalledWith(1, false);
+    expect(storeMocks.setPlaybackSeconds.mock.calls[0]?.[0]).toBeCloseTo(
+      12 + 2 / 120,
+    );
+    expect(storeMocks.setPlaybackSeconds.mock.calls[1]?.[0]).toBeCloseTo(
+      12 + 1 / 120,
+    );
   });
 
   it("blocks mutating editor shortcuts while processing", async () => {

@@ -139,11 +139,12 @@ function EditorTimeline({
         hoverSeconds ??
         passiveBookmarkMarkerSeconds ??
         null);
-
   return (
     <section
+      aria-label="Editor timeline"
       className="col-span-full flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-200"
       data-onboarding="editor-timeline"
+      tabIndex={0}
     >
       <EditorTimelineControlsRow />
 

@@ -23,6 +23,7 @@ interface RunRecordingRow {
   source_league: string;
   file_name: string;
   duration_seconds: number | null;
+  frames_per_second: number | null;
   size_bytes: number;
   exists_on_disk: number;
   mtime_ms: number;
@@ -87,6 +88,7 @@ type RunRecordingFilterQuery = SelectQueryBuilder<
 
 function mapRunRecordingRow(row: RunRecordingRow): RunRecordingMetadata {
   return {
+    framesPerSecond: row.frames_per_second,
     id: row.id,
     path: row.path,
     sourceGame: row.source_game,
@@ -387,6 +389,7 @@ class RecordingStorageRepository {
           source_league: input.sourceLeague,
           file_name: basename(normalizedPath),
           duration_seconds: durationSeconds,
+          frames_per_second: input.framesPerSecond ?? null,
           size_bytes: input.sizeBytes ?? 0,
           exists_on_disk: input.exists === false ? 0 : 1,
           mtime_ms: input.mtimeMs ?? 0,
@@ -401,6 +404,9 @@ class RecordingStorageRepository {
             source_league: input.sourceLeague,
             file_name: basename(normalizedPath),
             duration_seconds: durationSeconds,
+            ...(input.framesPerSecond !== undefined
+              ? { frames_per_second: input.framesPerSecond }
+              : {}),
             size_bytes: input.sizeBytes ?? 0,
             exists_on_disk: input.exists === false ? 0 : 1,
             mtime_ms: input.mtimeMs ?? 0,

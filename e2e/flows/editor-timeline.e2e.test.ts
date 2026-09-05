@@ -56,6 +56,12 @@ async function waitForEditorBridgeToSettle(page: Page) {
   });
 }
 
+async function readEditorPreviewVideoSeconds(page: Page): Promise<number> {
+  return page
+    .locator('[data-onboarding="editor-preview-source"] video')
+    .evaluate((video: HTMLVideoElement) => video.currentTime);
+}
+
 test("normalizes corrupted editor timeline state before autosaving UI edits", async ({
   page,
 }) => {
@@ -910,6 +916,44 @@ test("covers timeline toolbar, playback controls, zoom, and keyboard shortcuts",
   await expect(
     page.getByRole("button", { name: "Play preview" }),
   ).toBeVisible();
+  const playbackBeforeFrameStep = await readPlaybackSeconds(page);
+  const videoBeforeFrameStep = await readEditorPreviewVideoSeconds(page);
+  await page.getByLabel("Editor timeline").focus();
+  await page.keyboard.press(".");
+  await expect
+    .poll(async () => readPlaybackSeconds(page))
+    .toBeGreaterThan(playbackBeforeFrameStep);
+  const playbackAfterFrameStep = await readPlaybackSeconds(page);
+  expect(playbackAfterFrameStep - playbackBeforeFrameStep).toBeLessThanOrEqual(
+    0.021,
+  );
+  await expect
+    .poll(async () => readEditorPreviewVideoSeconds(page))
+    .toBeGreaterThan(videoBeforeFrameStep);
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await readEditorPreviewVideoSeconds(page)) -
+          (await readPlaybackSeconds(page)),
+      ),
+    )
+    .toBeLessThanOrEqual(0.011);
+  const videoAfterFrameStep = await readEditorPreviewVideoSeconds(page);
+  await page.keyboard.press(",");
+  await expect
+    .poll(async () => readPlaybackSeconds(page))
+    .toBeCloseTo(playbackBeforeFrameStep, 2);
+  await expect
+    .poll(async () => readEditorPreviewVideoSeconds(page))
+    .toBeLessThan(videoAfterFrameStep);
+  await expect
+    .poll(async () =>
+      Math.abs(
+        (await readEditorPreviewVideoSeconds(page)) -
+          (await readPlaybackSeconds(page)),
+      ),
+    )
+    .toBeLessThanOrEqual(0.011);
   const volumeControl = page.getByLabel("Editor preview volume");
   await expect(volumeControl).toHaveValue("1");
   await volumeControl.focus();

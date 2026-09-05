@@ -17,6 +17,7 @@ function createReplayClip(overrides: Partial<ReplayClip> = {}): ReplayClip {
     processedClipPath: null,
     targetDurationSeconds: 10,
     durationSeconds: null,
+    framesPerSecond: null,
     sizeBytes: 0,
     error: null,
     createdAt: now,

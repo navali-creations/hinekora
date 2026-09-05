@@ -21,6 +21,7 @@ describe("RecordingStorageRepository", () => {
     const path = "recordings/run-one.mkv";
 
     const created = repository.upsertRunRecording({
+      framesPerSecond: 60,
       path,
       sourceGame: "poe1",
       sourceLeague: "Standard",
@@ -30,6 +31,7 @@ describe("RecordingStorageRepository", () => {
 
     expect(created).toMatchObject({
       path: resolve(path),
+      framesPerSecond: 60,
       sourceGame: "poe1",
       sourceLeague: "Standard",
     });
@@ -45,6 +47,7 @@ describe("RecordingStorageRepository", () => {
     expect(updated).toMatchObject({
       id: created.id,
       path: resolve(path),
+      framesPerSecond: 60,
       sourceGame: "poe2",
       sourceLeague: "Hardcore",
       startedAt: "2026-06-12T11:00:00.000Z",

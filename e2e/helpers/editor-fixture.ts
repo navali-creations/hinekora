@@ -374,6 +374,7 @@ function createEditorE2EAsset(input: {
     createdAt: input.createdAt ?? editorE2ENow,
     durationSeconds: 10,
     exists: true,
+    framesPerSecond: 60,
     id: input.id,
     kind: input.kind,
     mediaUrl:

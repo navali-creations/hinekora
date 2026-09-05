@@ -124,6 +124,7 @@ function createProcessingRecordingRow({
         ? "Processing recording"
         : "Active recording",
     durationSeconds,
+    framesPerSecond: status.fps,
     sizeBytes: 0,
     exists: true,
     tableStatus: "processing",

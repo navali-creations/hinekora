@@ -116,6 +116,14 @@ function RecordingDetailPage({
     playback.seekBy(5);
   };
 
+  const handleFrameStep = useCallback(
+    (seconds: number) => {
+      playback.videoRef.current?.pause();
+      playback.seekTo(seconds);
+    },
+    [playback.seekTo, playback.videoRef],
+  );
+
   return (
     <PageContainer className="relative gap-4">
       <PageHeader
@@ -188,6 +196,15 @@ function RecordingDetailPage({
                 }}
                 playback={{
                   durationSeconds: playback.durationSeconds,
+                  ...(recording.framesPerSecond
+                    ? {
+                        frameStep: {
+                          framesPerSecond: recording.framesPerSecond,
+                          getPlaybackSeconds: playback.getPlaybackSeconds,
+                          onStep: handleFrameStep,
+                        },
+                      }
+                    : {}),
                   isPlaying: playback.isPlaying,
                   mediaUrl: state.detail.mediaUrl,
                   playbackSeconds: playback.playbackSeconds,

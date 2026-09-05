@@ -35,6 +35,7 @@ function createRecording(overrides: Partial<RunRecordingItem> = {}) {
     updatedAt: now,
     fileName: "run.mp4",
     durationSeconds: 60,
+    framesPerSecond: 60,
     sizeBytes: 10,
     exists: true,
     ...overrides,

@@ -175,6 +175,7 @@ function setupClipPreviewOverlayTestHarness(
       id: "clip-1",
       durationSeconds: 10,
       fileName: "2026-07-08 01-18-40.mp4",
+      framesPerSecond: 30,
       hasMediaFile: true,
     });
     storeMocks.getClip.mockResolvedValue({
@@ -260,6 +261,7 @@ function setupClipPreviewOverlayTestHarness(
           id: "clip-1",
           durationSeconds: 10,
           fileName: "Renamed clip.mp4",
+          framesPerSecond: 30,
           hasMediaFile: true,
         }),
         durationSeconds: 10,

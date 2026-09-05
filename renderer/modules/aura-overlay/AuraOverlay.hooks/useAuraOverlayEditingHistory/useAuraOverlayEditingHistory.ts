@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { isKeyboardShortcutEditableTarget } from "~/renderer/modules/keyboard-shortcuts/KeyboardShortcuts.utils/KeyboardShortcuts.utils";
 import type { ProfilesSlice } from "~/renderer/store/store.types";
 
 import type { Profile } from "~/types";
@@ -30,19 +31,6 @@ interface UseAuraOverlayEditingHistoryResult {
   recordAuraHistory: () => boolean;
   selectPlacement: (placementId: string) => void;
   selectedPlacementId: string | null;
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false;
-  }
-
-  return (
-    target.isContentEditable ||
-    target instanceof HTMLInputElement ||
-    target instanceof HTMLSelectElement ||
-    target instanceof HTMLTextAreaElement
-  );
 }
 
 function appendHistorySnapshot(
@@ -193,7 +181,10 @@ export function useAuraOverlayEditingHistory({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || isEditableKeyboardTarget(event.target)) {
+      if (
+        event.defaultPrevented ||
+        isKeyboardShortcutEditableTarget(event.target)
+      ) {
         return;
       }
 

@@ -25,6 +25,7 @@ interface ReplayClipRow {
   processed_clip_path: string | null;
   target_duration_seconds: number;
   duration_seconds: number | null;
+  frames_per_second: number | null;
   size_bytes: number;
   error: string | null;
   created_at: string;
@@ -96,6 +97,7 @@ function mapReplayClipRow(row: ReplayClipRow): ReplayClip {
     processedClipPath: row.processed_clip_path,
     targetDurationSeconds: row.target_duration_seconds,
     durationSeconds: row.duration_seconds,
+    framesPerSecond: row.frames_per_second,
     sizeBytes: row.size_bytes,
     error: row.error,
     createdAt: row.created_at,
@@ -411,6 +413,7 @@ class ReplayClipsRepository {
           processed_clip_path: clip.processedClipPath,
           target_duration_seconds: clip.targetDurationSeconds,
           duration_seconds: clip.durationSeconds,
+          frames_per_second: clip.framesPerSecond,
           size_bytes: clip.sizeBytes,
           error: clip.error,
           created_at: clip.createdAt,
@@ -430,6 +433,7 @@ class ReplayClipsRepository {
               clip.durationSeconds === null
                 ? sql<number | null>`duration_seconds`
                 : clip.durationSeconds,
+            frames_per_second: clip.framesPerSecond,
             size_bytes: clip.sizeBytes,
             error: clip.error,
             updated_at: clip.updatedAt,

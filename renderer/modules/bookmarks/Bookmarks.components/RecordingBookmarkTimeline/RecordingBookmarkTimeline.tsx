@@ -1,7 +1,6 @@
-import { type PointerEvent, type ReactNode, useRef } from "react";
+import { type PointerEvent, useRef } from "react";
 
-import type { RecordingBookmark } from "~/main/modules/bookmarks";
-import type { VisualPlaybackSubscriber } from "~/renderer/modules/media-playback/useVisualPlaybackPublisher/useVisualPlaybackPublisher";
+import { useMediaFrameStepKeyboardShortcuts } from "~/renderer/modules/media-playback/useMediaFrameStepKeyboardShortcuts/useMediaFrameStepKeyboardShortcuts";
 
 import { RecordingBookmarkTimelineToolbar } from "../RecordingBookmarkTimelineToolbar/RecordingBookmarkTimelineToolbar";
 import { RecordingTimelineBookmarkMarkers } from "../RecordingTimelineBookmarkMarkers/RecordingTimelineBookmarkMarkers";
@@ -9,6 +8,7 @@ import { RecordingTimelineHoverMarker } from "../RecordingTimelineHoverMarker/Re
 import { RecordingTimelinePlayhead } from "../RecordingTimelinePlayhead/RecordingTimelinePlayhead";
 import { RecordingTimelineRuler } from "../RecordingTimelineRuler/RecordingTimelineRuler";
 import { RecordingTimelineVideoRail } from "../RecordingTimelineVideoRail/RecordingTimelineVideoRail";
+import type { RecordingBookmarkTimelineProps } from "./RecordingBookmarkTimeline.types";
 import {
   calculateRecordingTimelineMarkers,
   calculateRecordingTimelineMinorMarkers,
@@ -19,48 +19,6 @@ import {
   resolveRecordingTimelineSecondsFromClientX,
 } from "./RecordingBookmarkTimeline.utils";
 import { useRecordingTimelineGridWidth } from "./useRecordingTimelineGridWidth";
-
-interface RecordingBookmarkTimelineMarkers {
-  bookmarks: RecordingBookmark[];
-  clipTargetsByBookmarkId?: Record<
-    string,
-    {
-      durationSeconds: number | null;
-      targetDurationSeconds: number | null;
-      targetId: string;
-    }
-  >;
-  highlightDeathsInRuler?: boolean;
-  highlightManualsInRuler?: boolean;
-  hoveredBookmark?: RecordingBookmark | null;
-  markerBookmarks?: RecordingBookmark[];
-  showBookmarkMarkers?: boolean;
-  onClipTargetSelect?: (clipId: string) => void;
-}
-
-interface RecordingBookmarkTimelinePlayback {
-  durationSeconds: number | null;
-  enableVisualPlaybackSubscription?: boolean;
-  isPlaying: boolean;
-  isPlaybackDisabled?: boolean;
-  mediaUrl: string | null;
-  playbackSeconds: number;
-  subscribeVisualPlaybackTime?: VisualPlaybackSubscriber;
-  visualPlaybackOffsetSeconds?: number;
-  volume: number;
-  onJumpToStart: () => void;
-  onSeek: (seconds: number) => void;
-  onSeekBackward: () => void;
-  onSeekForward: () => void;
-  onTogglePlayback: () => void;
-  onVolumeChange: (volume: number) => void;
-}
-
-interface RecordingBookmarkTimelineProps {
-  markers: RecordingBookmarkTimelineMarkers;
-  playback: RecordingBookmarkTimelinePlayback;
-  toolbarStart?: ReactNode;
-}
 
 function RecordingBookmarkTimeline({
   toolbarStart,
@@ -80,6 +38,7 @@ function RecordingBookmarkTimeline({
   const {
     durationSeconds,
     enableVisualPlaybackSubscription,
+    frameStep,
     isPlaying,
     isPlaybackDisabled,
     mediaUrl,
@@ -107,6 +66,18 @@ function RecordingBookmarkTimeline({
   const timelineMarkers = calculateRecordingTimelineMarkers(duration);
   const minorMarkers = calculateRecordingTimelineMinorMarkers(duration);
   const isDisabled = duration <= 0 || (isPlaybackDisabled ?? !mediaUrl);
+  const canStepFrames = !isDisabled && frameStep !== undefined;
+  useMediaFrameStepKeyboardShortcuts({
+    enabled: canStepFrames,
+    focusRegionSelector: '[data-recording-frame-step-shortcuts="true"]',
+    ...(frameStep
+      ? {
+          framesPerSecond: frameStep.framesPerSecond,
+          getPlaybackSeconds: frameStep.getPlaybackSeconds,
+          onStep: frameStep.onStep,
+        }
+      : {}),
+  });
   const activeVisualPlaybackSubscriber =
     enableVisualPlaybackSubscription === false
       ? undefined
@@ -160,7 +131,12 @@ function RecordingBookmarkTimeline({
   };
 
   return (
-    <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-200">
+    <section
+      aria-label="Recording timeline"
+      className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-base-content/10 bg-base-200"
+      data-recording-frame-step-shortcuts={canStepFrames ? "true" : undefined}
+      tabIndex={canStepFrames ? 0 : undefined}
+    >
       <RecordingBookmarkTimelineToolbar
         durationSeconds={duration}
         isDisabled={isDisabled}

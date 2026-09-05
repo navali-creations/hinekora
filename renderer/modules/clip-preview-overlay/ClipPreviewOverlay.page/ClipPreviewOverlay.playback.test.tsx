@@ -1,6 +1,7 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import { createReplayClipView } from "~/main/test/factories/replayClip";
 import { useBoundStore } from "~/renderer/store";
 
 import type { AppSettings } from "~/types";
@@ -83,6 +84,58 @@ describe("ClipPreviewOverlayPage playback", () => {
       );
     });
     expect(play).toHaveBeenCalledTimes(2);
+  });
+
+  it("steps one frame with comma and period anywhere in the focused overlay", async () => {
+    await renderPage();
+    await flushPromises();
+    const video = await markPreviewVideoReady();
+    const pause = vi.fn();
+    Object.defineProperties(video, {
+      pause: { configurable: true, value: pause },
+      paused: { configurable: true, value: false },
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "." }));
+    });
+    expect(video.currentTime).toBeCloseTo(1 / 30);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("0.03 / 10.00");
+
+    Object.defineProperty(video, "paused", {
+      configurable: true,
+      value: true,
+    });
+    await act(async () => {
+      video.dispatchEvent(new Event("seeked", { bubbles: true }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "," }));
+    });
+    expect(video.currentTime).toBe(0);
+    expect(pause).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("0.00 / 10.00");
+  });
+
+  it("does not frame-step legacy clips without captured FPS metadata", async () => {
+    storeMocks.getClip.mockResolvedValue({
+      clip: createReplayClipView({
+        durationSeconds: 10,
+        fileName: "legacy.mp4",
+        framesPerSecond: null,
+        hasMediaFile: true,
+      }),
+      durationSeconds: 10,
+      mediaUrl: "hinekora-media://replay-clip/legacy",
+    });
+    await renderPage();
+    await flushPromises();
+    const video = await markPreviewVideoReady();
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "." }));
+    });
+
+    expect(video.currentTime).toBe(0);
   });
 
   it("updates timer and playhead only when a video frame is presented", async () => {

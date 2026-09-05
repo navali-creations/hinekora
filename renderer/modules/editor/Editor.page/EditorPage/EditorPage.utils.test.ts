@@ -5,8 +5,7 @@ import {
   createExportSubtitle,
   createExportTitle,
   isEditorDeleteShortcut,
-  isEditorShortcutEditableTarget,
-  isEditorShortcutSuppressedTarget,
+  resolveEditorFrameStepSeconds,
   shouldHydrateEditorProject,
 } from "./EditorPage.utils";
 
@@ -88,7 +87,7 @@ describe("EditorPage utils", () => {
     ).toBe(false);
   });
 
-  it("detects delete shortcuts and editable shortcut targets", () => {
+  it("detects delete shortcuts", () => {
     expect(
       isEditorDeleteShortcut(
         new KeyboardEvent("keydown", { code: "Delete", key: "Del" }),
@@ -102,39 +101,109 @@ describe("EditorPage utils", () => {
         new KeyboardEvent("keydown", { key: "Backspace" }),
       ),
     ).toBe(false);
-
-    const button = document.createElement("button");
-    const input = document.createElement("input");
-    const editable = document.createElement("div");
-    editable.contentEditable = "true";
-
-    expect(isEditorShortcutEditableTarget(button)).toBe(false);
-    expect(isEditorShortcutEditableTarget(input)).toBe(true);
-    expect(isEditorShortcutEditableTarget(editable)).toBe(true);
-    expect(isEditorShortcutSuppressedTarget(input)).toBe(true);
   });
 
-  it("suppresses editor shortcuts inside open dialogs", () => {
-    const dialog = document.createElement("dialog");
-    const button = document.createElement("button");
-    dialog.setAttribute("open", "");
-    dialog.append(button);
-    document.body.append(dialog);
+  it("resolves frame stepping against the active source clip", () => {
+    const project = createEditorTestProject();
+    const track = project.tracks[0];
+    const clip = track?.clips[0];
+    if (!track || !clip) {
+      throw new Error("Expected editor test track and clip");
+    }
+    const timedProject = {
+      ...project,
+      durationSeconds: 20,
+      tracks: [
+        {
+          ...track,
+          clips: [
+            {
+              ...clip,
+              inSeconds: 3,
+              playbackRate: 2 as const,
+              startSeconds: 10,
+            },
+          ],
+        },
+      ],
+    };
 
-    expect(isEditorShortcutSuppressedTarget(button)).toBe(true);
-
-    dialog.remove();
+    expect(
+      resolveEditorFrameStepSeconds({
+        direction: 1,
+        playbackSeconds: 12,
+        project: timedProject,
+      }),
+    ).toBeCloseTo(12 + 1 / 120);
+    expect(
+      resolveEditorFrameStepSeconds({
+        direction: 1,
+        playbackSeconds: 0,
+        project: timedProject,
+      }),
+    ).toBeNull();
+    expect(
+      resolveEditorFrameStepSeconds({
+        direction: 1,
+        playbackSeconds: 12,
+        project: {
+          ...timedProject,
+          assets: timedProject.assets.map((asset) => ({
+            ...asset,
+            framesPerSecond: null,
+          })),
+        },
+      }),
+    ).toBeNull();
   });
 
-  it("suppresses editor shortcuts inside menus", () => {
-    const menu = document.createElement("div");
-    const button = document.createElement("button");
-    menu.setAttribute("role", "menu");
-    menu.append(button);
-    document.body.append(menu);
+  it("uses the destination clip frame grid across contiguous boundaries", () => {
+    const project = createEditorTestProject();
+    const firstAsset = {
+      ...project.assets[0]!,
+      framesPerSecond: 30,
+    };
+    const secondAsset = {
+      ...firstAsset,
+      assetKey: "clip:asset-2",
+      framesPerSecond: 60,
+      id: "asset-2",
+    };
+    const firstClip = {
+      ...project.tracks[0]!.clips[0]!,
+      assetKey: firstAsset.assetKey,
+      durationSeconds: 1.01,
+      inSeconds: 0,
+      playbackRate: 1 as const,
+      startSeconds: 0,
+    };
+    const secondClip = {
+      ...firstClip,
+      assetKey: secondAsset.assetKey,
+      id: "timeline-2",
+      playbackRate: 2 as const,
+      startSeconds: 1.01,
+    };
+    const mixedFrameRateProject = {
+      ...project,
+      assets: [firstAsset, secondAsset],
+      durationSeconds: 2.02,
+      tracks: [{ ...project.tracks[0]!, clips: [firstClip, secondClip] }],
+    };
 
-    expect(isEditorShortcutSuppressedTarget(button)).toBe(true);
-
-    menu.remove();
+    expect(
+      resolveEditorFrameStepSeconds({
+        direction: 1,
+        playbackSeconds: 1,
+        project: mixedFrameRateProject,
+      }),
+    ).toBe(1.01);
+    expect(
+      resolveEditorFrameStepSeconds({
+        direction: -1,
+        playbackSeconds: 1.01,
+        project: mixedFrameRateProject,
+      }),
+    ).toBe(1);
   });
 });

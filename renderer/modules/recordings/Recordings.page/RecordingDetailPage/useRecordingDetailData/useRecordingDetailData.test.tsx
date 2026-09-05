@@ -45,6 +45,7 @@ function createRecordingDetail(id: string): RunRecordingDetail {
       durationSeconds: 60,
       exists: true,
       fileName: `${id}.mp4`,
+      framesPerSecond: 60,
       id,
       path: `${id}.mp4`,
       sizeBytes: 1_024,

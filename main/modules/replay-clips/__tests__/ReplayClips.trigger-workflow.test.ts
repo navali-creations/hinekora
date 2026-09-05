@@ -725,6 +725,7 @@ describe("ReplayClipsService replay-trigger workflow", () => {
     }
 
     expect(ready).toMatchObject({
+      framesPerSecond: 60,
       kind: "death",
       status: "ready",
       processedClipPath: resolve(replayPath),

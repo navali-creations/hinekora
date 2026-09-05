@@ -256,6 +256,38 @@ describe("ManagedRecorderService", () => {
     });
   });
 
+  it("preserves the configured output frame rate while a buffer is active", () => {
+    let settings: AppSettings = {
+      ...createDefaultSettings(),
+      recordingFps: 120,
+      recordingStoragePath: directory,
+    };
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => settings,
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const internals = service as unknown as {
+      activeRecordingMode: "buffer" | "run" | null;
+      refreshStatusFromSettings(): void;
+      status: ManagedRecorderStatus;
+    };
+    internals.activeRecordingMode = "buffer";
+    internals.status = {
+      ...service.getStatus(),
+      bufferActive: true,
+      fps: 60,
+    };
+    settings = { ...settings, recordingFps: 30 };
+
+    internals.refreshStatusFromSettings();
+
+    expect(service.getStatus().fps).toBe(60);
+
+    internals.activeRecordingMode = null;
+    internals.refreshStatusFromSettings();
+    expect(service.getStatus().fps).toBe(30);
+  });
+
   it("notifies main-process observers when recorder state changes", () => {
     const service = createService();
     const listener = vi.fn();
@@ -1042,6 +1074,7 @@ describe("ManagedRecorderService", () => {
       durationSeconds: 30,
       exists: true,
       fileName: "run.mp4",
+      framesPerSecond: 60,
       id: "registered-run",
       path: savedPath,
       sizeBytes: 1024,
@@ -1077,7 +1110,7 @@ describe("ManagedRecorderService", () => {
     internals.initialize = vi.fn().mockResolvedValue(undefined);
     internals.waitForRecordingStop = vi.fn().mockResolvedValue(undefined);
     internals.waitForSavedRecording = vi.fn().mockResolvedValue(savedPath);
-    internals.status = { ...service.getStatus(), activeGame: null };
+    internals.status = { ...service.getStatus(), activeGame: null, fps: 60 };
 
     await expect(service.startRunRecording()).resolves.toMatchObject({
       recording: true,
@@ -1145,6 +1178,7 @@ describe("ManagedRecorderService", () => {
     );
     expect(registerRunRecording).toHaveBeenCalledWith(
       expect.objectContaining({
+        framesPerSecond: 60,
         path: savedPath,
         startedAt: runStartedAt,
         sourceGame: "poe1",
@@ -1212,6 +1246,7 @@ describe("ManagedRecorderService", () => {
 
     expect(registerRunRecording).toHaveBeenCalledWith(
       expect.objectContaining({
+        framesPerSecond: null,
         path: savedPath,
         sourceGame: "poe2",
         sourceLeague: "Runes of Aldur",

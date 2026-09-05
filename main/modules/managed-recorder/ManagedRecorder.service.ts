@@ -162,6 +162,7 @@ interface RecordingSession {
 }
 
 interface RecordingSourceScope {
+  framesPerSecond: number;
   game: GameId;
   league: string;
 }
@@ -592,6 +593,7 @@ class ManagedRecorderService {
       const sessionLeague =
         SettingsStoreService.getInstance().get().activeLeague;
       this.activeRunRecordingSource = {
+        framesPerSecond: this.status.fps,
         game: sessionGame,
         league: sessionLeague,
       };
@@ -684,6 +686,7 @@ class ManagedRecorderService {
           this.resolveConfiguredGame(settings);
         const recordingStorage = RecordingStorageService.getInstance();
         const recordingMetadata = recordingStorage.registerRunRecording({
+          framesPerSecond: recordingSource?.framesPerSecond ?? null,
           path: savedPath,
           startedAt: runRecordingStartedAt,
           stoppedAt: new Date().toISOString(),
@@ -2261,7 +2264,10 @@ class ManagedRecorderService {
         settings.recordingOutputResolution === NATIVE_RECORDING_RESOLUTION
           ? "Native source"
           : settings.recordingOutputResolution,
-      fps: settings.recordingFps,
+      fps:
+        this.activeRecordingMode === null
+          ? settings.recordingFps
+          : this.status.fps,
       encoder: settings.recordingEncoder,
     };
     this.refreshRuntimeAvailability();

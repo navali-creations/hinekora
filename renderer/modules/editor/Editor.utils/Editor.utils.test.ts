@@ -40,6 +40,7 @@ const asset: EditorMediaAsset = {
   createdAt: "2026-06-12T10:00:00.000Z",
   durationSeconds: 12,
   exists: true,
+  framesPerSecond: 60,
   id: "clip-1",
   kind: "clip",
   mediaUrl: "hinekora-media://replay-clip/clip-1",

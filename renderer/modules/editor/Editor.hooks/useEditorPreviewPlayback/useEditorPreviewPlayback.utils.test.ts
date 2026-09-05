@@ -5,6 +5,7 @@ import type { EditorTimelineClip } from "~/main/modules/editor";
 import {
   findContiguousTimelineClip,
   isPlaybackInsideClip,
+  shouldSynchronizeEditorPreviewSource,
 } from "./useEditorPreviewPlayback.utils";
 
 const clip: EditorTimelineClip = {
@@ -55,5 +56,29 @@ describe("useEditorPreviewPlayback utils", () => {
         toleranceSeconds: 0.02,
       }),
     ).toBe(null);
+  });
+
+  it("synchronizes every paused seek while retaining drift tolerance during playback", () => {
+    expect(
+      shouldSynchronizeEditorPreviewSource({
+        currentSeconds: 4.93,
+        isPlaying: false,
+        sourceSeconds: 4.947,
+      }),
+    ).toBe(true);
+    expect(
+      shouldSynchronizeEditorPreviewSource({
+        currentSeconds: 4.93,
+        isPlaying: true,
+        sourceSeconds: 4.947,
+      }),
+    ).toBe(false);
+    expect(
+      shouldSynchronizeEditorPreviewSource({
+        currentSeconds: 4.93,
+        isPlaying: true,
+        sourceSeconds: 5.02,
+      }),
+    ).toBe(true);
   });
 });

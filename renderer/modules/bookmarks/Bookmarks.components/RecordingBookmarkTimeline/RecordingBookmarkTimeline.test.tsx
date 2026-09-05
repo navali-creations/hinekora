@@ -324,4 +324,69 @@ describe("RecordingBookmarkTimeline", () => {
       )?.style.transform,
     ).toContain("translate3d(50px");
   });
+
+  it("steps frames only after its recording timeline is focused or clicked", () => {
+    const onStep = vi.fn();
+    const getPlaybackSeconds = vi.fn(() => 10);
+
+    act(() => {
+      root.render(
+        <RecordingBookmarkTimeline
+          markers={{ bookmarks: [] }}
+          playback={{
+            durationSeconds: 100,
+            frameStep: {
+              framesPerSecond: 60,
+              getPlaybackSeconds,
+              onStep,
+            },
+            isPlaying: false,
+            mediaUrl: "hinekora-media://recording/recording-1",
+            playbackSeconds: 10,
+            volume: 1,
+            onJumpToStart: vi.fn(),
+            onSeek: vi.fn(),
+            onSeekBackward: vi.fn(),
+            onSeekForward: vi.fn(),
+            onTogglePlayback: vi.fn(),
+            onVolumeChange: vi.fn(),
+          }}
+        />,
+      );
+    });
+    const timeline = container.querySelector<HTMLElement>(
+      "[data-recording-frame-step-shortcuts='true']",
+    );
+    if (!timeline) {
+      throw new Error("Expected focusable recording timeline");
+    }
+
+    act(() => {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", { bubbles: true, key: "." }),
+      );
+    });
+    expect(onStep).not.toHaveBeenCalled();
+
+    const grid = container.querySelector<HTMLElement>(
+      "[data-recording-timeline-grid='true']",
+    );
+    if (!grid) {
+      throw new Error("Expected recording timeline grid");
+    }
+    act(() => {
+      grid.dispatchEvent(new MouseEvent("pointerdown", { bubbles: true }));
+    });
+    act(() => {
+      document.body.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          cancelable: true,
+          key: ".",
+        }),
+      );
+    });
+    expect(getPlaybackSeconds).toHaveBeenCalledTimes(1);
+    expect(onStep).toHaveBeenCalledWith(10 + 1 / 60);
+  });
 });

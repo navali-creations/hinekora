@@ -30,6 +30,7 @@ function createReplayClipDetail(
       id,
       kind: "manual",
       fileName: status === "ready" ? `${id}.mp4` : null,
+      framesPerSecond: 60,
       hasMediaFile: status === "ready",
       sizeBytes: 2048,
       sourceGame: "poe2",
@@ -395,6 +396,15 @@ test("covers manual replay and death clip overlay actions", async ({
       return state.pauseCalls;
     })
     .toBeGreaterThanOrEqual(1);
+
+  await page.keyboard.press(".");
+  await expect
+    .poll(async () => (await getClipPreviewVideoState(page)).currentTime)
+    .toBeCloseTo(6 + 1 / 60, 3);
+  await page.keyboard.press(",");
+  await expect
+    .poll(async () => (await getClipPreviewVideoState(page)).currentTime)
+    .toBeCloseTo(6, 3);
 
   await fullscreenButton.click();
   await expect(page.getByLabel("Close fullscreen")).toHaveCount(2);

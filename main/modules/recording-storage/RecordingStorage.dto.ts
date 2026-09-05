@@ -22,6 +22,7 @@ export type RecordingStorageUsageSnapshot = z.infer<
 >;
 
 export interface RunRecordingMetadata {
+  framesPerSecond: number | null;
   id: string;
   path: string;
   sourceGame: GameId;
@@ -81,6 +82,7 @@ export interface RunRecordingLibraryPage {
 }
 
 export interface RunRecordingCreateInput {
+  framesPerSecond?: number | null;
   id?: string;
   path: string;
   startedAt: string;

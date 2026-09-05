@@ -2989,6 +2989,7 @@ describe("RecordingStorageService", () => {
         createdAt: "2026-06-12T10:05:00.000Z",
         updatedAt: "2026-06-12T10:05:00.000Z",
         durationSeconds: 300,
+        framesPerSecond: 60,
         sizeBytes: 5,
         exists: true,
       },

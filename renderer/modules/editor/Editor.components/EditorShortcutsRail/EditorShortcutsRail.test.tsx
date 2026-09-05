@@ -43,6 +43,8 @@ describe("EditorShortcutsRail", () => {
 
     expect(container.textContent).toContain("Shortcuts");
     expect(container.textContent).toContain("Delete the selected clip");
+    expect(container.textContent).toContain("previous frame");
+    expect(container.textContent).toContain("next frame");
     expect(container.textContent).toContain("Timeline");
     expect(container.textContent).toContain("Editor");
     expect(container.textContent).not.toContain("ignored while typing");

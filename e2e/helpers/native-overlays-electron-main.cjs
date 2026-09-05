@@ -60,6 +60,7 @@ const clip = {
   durationSeconds: 10,
   error: null,
   fileName: "Native fullscreen clip.mp4",
+  framesPerSecond: 60,
   hasMediaFile: true,
   id: "native-clip",
   kind: "manual",

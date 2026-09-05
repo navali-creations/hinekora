@@ -124,6 +124,7 @@ function createReplayClipDetail(
       id,
       kind,
       fileName: `${id}.mp4`,
+      framesPerSecond: 60,
       hasMediaFile: true,
       sizeBytes: 2048,
       sourceGame: "poe2",

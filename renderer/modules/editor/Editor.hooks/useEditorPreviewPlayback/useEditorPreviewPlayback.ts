@@ -8,9 +8,9 @@ import { useEditorPreviewFrame } from "../useEditorPreviewFrame/useEditorPreview
 import {
   findContiguousTimelineClip,
   isPlaybackInsideClip,
+  shouldSynchronizeEditorPreviewSource,
 } from "./useEditorPreviewPlayback.utils";
 
-const playbackSyncToleranceSeconds = 0.08;
 const clipBoundaryToleranceSeconds = 0.02;
 const playbackStoreSyncIntervalMs = 50;
 
@@ -159,11 +159,15 @@ function useEditorPreviewPlayback() {
     }
 
     if (
-      Math.abs(video.currentTime - sourceSeconds) > playbackSyncToleranceSeconds
+      shouldSynchronizeEditorPreviewSource({
+        currentSeconds: video.currentTime,
+        isPlaying: isPreviewPlaying,
+        sourceSeconds,
+      })
     ) {
       video.currentTime = sourceSeconds;
     }
-  }, [mediaUrl, sourceSeconds]);
+  }, [isPreviewPlaying, mediaUrl, sourceSeconds]);
 
   useEffect(() => {
     const video = videoRef.current;

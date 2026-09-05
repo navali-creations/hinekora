@@ -93,6 +93,7 @@ interface ReplayClipTable {
   processed_clip_path: NullableTextColumn;
   target_duration_seconds: number;
   duration_seconds: number | null;
+  frames_per_second: number | null;
   size_bytes: number;
   error: NullableTextColumn;
   created_at: TimestampColumn;
@@ -106,6 +107,7 @@ interface RunRecordingTable {
   source_league: string;
   file_name: string;
   duration_seconds: number | null;
+  frames_per_second: number | null;
   size_bytes: number;
   exists_on_disk: number;
   mtime_ms: number;

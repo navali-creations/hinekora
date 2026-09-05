@@ -15,6 +15,7 @@ import { migration_20260711_000000_poe_leagues } from "./20260711_000000_poe_lea
 import { migration_20260717_000000_storage_file_deletion_operations } from "./20260717_000000_storage_file_deletion_operations";
 import { migration_20260723_000000_editor_export_videos } from "./20260723_000000_editor_export_videos";
 import { migration_20260729_000000_editor_export_source_project } from "./20260729_000000_editor_export_source_project";
+import { migration_20260904_000000_media_frame_rates } from "./20260904_000000_media_frame_rates";
 import type { Migration } from "./Migration.interface";
 
 const migrations: Migration[] = [
@@ -35,6 +36,7 @@ const migrations: Migration[] = [
   migration_20260717_000000_storage_file_deletion_operations,
   migration_20260723_000000_editor_export_videos,
   migration_20260729_000000_editor_export_source_project,
+  migration_20260904_000000_media_frame_rates,
 ];
 
 export type { Migration } from "./Migration.interface";
