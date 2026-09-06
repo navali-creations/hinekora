@@ -6,25 +6,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Profile } from "~/types";
 
 const storeMocks = vi.hoisted(() => ({
-  addAuraRequest: null as {
-    requestId: string;
-    shape?: "rect" | "arc" | "points";
-  } | null,
-  addingAuraShape: null as "rect" | "arc" | "points" | null,
-  setAddAuraRequest: vi.fn(
-    (
-      request: {
-        requestId: string;
-        shape?: "rect" | "arc" | "points";
-      } | null,
-    ) => {
-      storeMocks.addAuraRequest = request;
-    },
-  ),
-  setAddingAuraShape: vi.fn((shape: "rect" | "arc" | "points" | null) => {
-    storeMocks.addingAuraShape = shape;
-  }),
-  useAuraOverlayShallow: vi.fn(),
+  preferenceErrors: {},
+  settingsValue: { activeGame: "poe1" } as Record<string, unknown>,
+  useSettingsShallow: vi.fn(),
+  updatePreference: vi.fn(),
   updateProfile: vi.fn(),
   useCapturePreviewShallow: vi.fn(),
   usePoeProcessSelector: vi.fn(),
@@ -51,13 +36,18 @@ const captureStreamMocks = vi.hoisted(() => ({
   })),
 }));
 
-vi.mock("~/renderer/store", () => ({
-  useAuraOverlayShallow: storeMocks.useAuraOverlayShallow,
-  useCapturePreviewShallow: storeMocks.useCapturePreviewShallow,
-  usePoeProcessSelector: storeMocks.usePoeProcessSelector,
-  useProfilesShallow: storeMocks.useProfilesShallow,
-  useSettingsSelector: storeMocks.useSettingsSelector,
-}));
+vi.mock("~/renderer/store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/renderer/store")>();
+
+  return {
+    ...actual,
+    useCapturePreviewShallow: storeMocks.useCapturePreviewShallow,
+    usePoeProcessSelector: storeMocks.usePoeProcessSelector,
+    useProfilesShallow: storeMocks.useProfilesShallow,
+    useSettingsShallow: storeMocks.useSettingsShallow,
+    useSettingsSelector: storeMocks.useSettingsSelector,
+  };
+});
 
 vi.mock(
   "~/renderer/modules/capture-preview/CapturePreview.hooks/useDesktopCaptureStream/useDesktopCaptureStream",
@@ -65,6 +55,8 @@ vi.mock(
     useDesktopCaptureStream: captureStreamMocks.useDesktopCaptureStream,
   }),
 );
+
+import { useBoundStore } from "~/renderer/store";
 
 import { AuraOverlayPage } from "./AuraOverlay.page";
 
@@ -141,8 +133,11 @@ describe("AuraOverlayPage", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    storeMocks.addAuraRequest = null;
-    storeMocks.addingAuraShape = null;
+    useBoundStore.getState().auraOverlay.setAddAuraRequest(null);
+    useBoundStore.getState().auraOverlay.setAddingAuraShape(null);
+    useBoundStore.getState().auraOverlay.resetAuraHistory(profile.id);
+    storeMocks.preferenceErrors = {};
+    storeMocks.settingsValue = { activeGame: "poe1" };
     captureStreamMocks.useDesktopCaptureStream.mockClear();
     captureStreamMocks.useDesktopCaptureStream.mockReturnValue({
       error: null,
@@ -150,14 +145,7 @@ describe("AuraOverlayPage", () => {
       stop: vi.fn(),
       stream: null,
     });
-    storeMocks.setAddAuraRequest.mockClear();
-    storeMocks.setAddAuraRequest.mockImplementation((request) => {
-      storeMocks.addAuraRequest = request;
-    });
-    storeMocks.setAddingAuraShape.mockClear();
-    storeMocks.setAddingAuraShape.mockImplementation((shape) => {
-      storeMocks.addingAuraShape = shape;
-    });
+    storeMocks.updatePreference.mockResolvedValue(true);
     window.location.hash = "#/aura-overlay?profileId=profile-1";
     electronMocks.isAuraLocked.mockResolvedValue(true);
     electronMocks.onAuraLockChanged.mockReturnValue(vi.fn());
@@ -180,18 +168,17 @@ describe("AuraOverlayPage", () => {
       }),
     );
     storeMocks.useSettingsSelector.mockImplementation((selector) =>
-      selector({ value: { activeGame: "poe1" } }),
+      selector({ value: storeMocks.settingsValue }),
+    );
+    storeMocks.useSettingsShallow.mockImplementation((selector) =>
+      selector({
+        preferenceErrors: storeMocks.preferenceErrors,
+        updatePreference: storeMocks.updatePreference,
+        value: storeMocks.settingsValue,
+      }),
     );
     storeMocks.usePoeProcessSelector.mockImplementation((selector) =>
       selector({ state: { isRunning: false, processName: "" } }),
-    );
-    storeMocks.useAuraOverlayShallow.mockImplementation((selector) =>
-      selector({
-        addAuraRequest: storeMocks.addAuraRequest,
-        setAddAuraRequest: storeMocks.setAddAuraRequest,
-        addingAuraShape: storeMocks.addingAuraShape,
-        setAddingAuraShape: storeMocks.setAddingAuraShape,
-      }),
     );
     Object.defineProperty(window, "electron", {
       configurable: true,
@@ -397,14 +384,10 @@ describe("AuraOverlayPage", () => {
 
   it("hides the full-screen editing frame when disabled in settings", async () => {
     electronMocks.isAuraLocked.mockResolvedValue(false);
-    storeMocks.useSettingsSelector.mockImplementation((selector) =>
-      selector({
-        value: {
-          activeGame: "poe1",
-          auraOverlayShowEditingFrame: false,
-        },
-      }),
-    );
+    storeMocks.settingsValue = {
+      activeGame: "poe1",
+      auraOverlayShowEditingFrame: false,
+    };
     const container = document.createElement("div");
     document.body.append(container);
     const root = createTestRoot(container);
@@ -418,6 +401,210 @@ describe("AuraOverlayPage", () => {
     expect(
       container.querySelector('main[aria-label="Aura overlay"]')?.className,
     ).not.toContain("overlayEditing");
+  });
+
+  it("applies the aura label and focused-options visibility preferences", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    storeMocks.settingsValue = {
+      activeGame: "poe1",
+      auraOverlayHideLabels: true,
+      auraOverlayHidePropertiesPanel: true,
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const overlay = container.querySelector('main[aria-label="Aura overlay"]');
+    expect(overlay?.className).toContain("overlayHideLabels");
+    expect(overlay?.className).toContain("overlayHideProperties");
+    expect(container.querySelector("[data-aura-label]")).toBeInstanceOf(
+      HTMLSpanElement,
+    );
+  });
+
+  it("shows the alignment grid only while aura editing is unlocked", async () => {
+    storeMocks.settingsValue = {
+      activeGame: "poe1",
+      auraOverlayShowCenterGuides: false,
+      auraOverlayShowEditingGrid: true,
+    };
+    const lockedHtml = renderToStaticMarkup(<AuraOverlayPage />);
+    expect(lockedHtml).not.toContain("overlayEditingGrid");
+
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    expect(
+      container.querySelector('main[aria-label="Aura overlay"]')?.className,
+    ).toContain("overlayEditingGrid");
+    expect(container.querySelector('[data-aura-center-guide="x"]')).toBeNull();
+    expect(
+      container
+        .querySelector('main[aria-label="Aura overlay"]')
+        ?.getAttribute("style"),
+    ).toContain("background-size: 32px 32px");
+  });
+
+  it("shows center lines independently from the editing grid", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    storeMocks.settingsValue = {
+      activeGame: "poe1",
+      auraOverlayShowCenterGuides: true,
+      auraOverlayShowEditingGrid: false,
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    expect(
+      container.querySelector('main[aria-label="Aura overlay"]')?.className,
+    ).not.toContain("overlayEditingGrid");
+    expect(
+      container.querySelector('[data-aura-center-guide="x"]'),
+    ).toBeInstanceOf(HTMLSpanElement);
+    expect(
+      container.querySelector('[data-aura-center-guide="y"]'),
+    ).toBeInstanceOf(HTMLSpanElement);
+  });
+
+  it("snaps dragged auras to the visible editing grid", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    storeMocks.settingsValue = {
+      activeGame: "poe1",
+      auraOverlayEnableSnapping: true,
+      auraOverlayShowEditingGrid: true,
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const auraButton = container.querySelector(
+      'button[data-placement-id="placement-1"]',
+    );
+    expect(auraButton).toBeInstanceOf(HTMLButtonElement);
+
+    await act(async () => {
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          button: 0,
+          clientX: 30,
+          clientY: 40,
+        }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointermove", {
+          button: 0,
+          clientX: 47,
+          clientY: 77,
+        }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerup", {
+          button: 0,
+          clientX: 47,
+          clientY: 77,
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect(storeMocks.updateProfile).toHaveBeenLastCalledWith({
+      id: "profile-1",
+      cropRegions: [
+        {
+          ...profile.cropRegions[0],
+          referenceHeight: 1080,
+          referenceWidth: 1920,
+        },
+      ],
+      overlayPlacements: [
+        {
+          ...profile.overlayPlacements[0],
+          referenceHeight: 1080,
+          referenceWidth: 1920,
+          x: 32,
+          y: 64,
+        },
+      ],
+    });
+  });
+
+  it("keeps free movement when item snapping is disabled", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    storeMocks.settingsValue = {
+      activeGame: "poe1",
+      auraOverlayEnableSnapping: false,
+      auraOverlayShowEditingGrid: true,
+    };
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const auraButton = container.querySelector(
+      'button[data-placement-id="placement-1"]',
+    );
+    await act(async () => {
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          button: 0,
+          clientX: 30,
+          clientY: 40,
+        }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointermove", {
+          button: 0,
+          clientX: 47,
+          clientY: 77,
+        }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerup", {
+          button: 0,
+          clientX: 47,
+          clientY: 77,
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect(storeMocks.updateProfile).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        overlayPlacements: [
+          expect.objectContaining({
+            x: 47,
+            y: 77,
+          }),
+        ],
+      }),
+    );
   });
 
   it("projects legacy aura placements into the centered ultrawide safe area", async () => {
@@ -692,6 +879,78 @@ describe("AuraOverlayPage", () => {
     });
   });
 
+  it("snaps an aura resize to a peer aura scale", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    storeMocks.settingsValue = {
+      activeGame: "poe1",
+      auraOverlayEnableSnapping: true,
+    };
+    const profileWithPeerScale: Profile = {
+      ...profile,
+      overlayPlacements: [
+        profile.overlayPlacements[0]!,
+        {
+          ...profile.overlayPlacements[0]!,
+          id: "placement-2",
+          scale: 1.5,
+          x: 300,
+        },
+      ],
+    };
+    storeMocks.useProfilesShallow.mockImplementation((selector) =>
+      selector({
+        items: [profileWithPeerScale],
+        selectedProfileId: "profile-1",
+        update: storeMocks.updateProfile,
+      }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const resizeHandle = container.querySelector(
+      'span[data-placement-id="placement-1"][data-corner="se"]',
+    );
+    await act(async () => {
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          button: 0,
+          clientX: 130,
+          clientY: 80,
+        }),
+      );
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointermove", {
+          button: 0,
+          clientX: 177,
+          clientY: 99,
+        }),
+      );
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointerup", {
+          button: 0,
+          clientX: 177,
+          clientY: 99,
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect(storeMocks.updateProfile).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        overlayPlacements: [
+          expect.objectContaining({ id: "placement-1", scale: 1.5 }),
+          expect.objectContaining({ id: "placement-2", scale: 1.5 }),
+        ],
+      }),
+    );
+  });
+
   it("keeps a resized aura at the released size while saving", async () => {
     electronMocks.isAuraLocked.mockResolvedValue(false);
     storeMocks.useCapturePreviewShallow.mockImplementation((selector) =>
@@ -830,6 +1089,17 @@ describe("AuraOverlayPage", () => {
     vi.spyOn(crypto, "randomUUID")
       .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
       .mockReturnValueOnce("00000000-0000-4000-8000-000000000002");
+    let currentProfile = structuredClone(profile);
+    storeMocks.updateProfile.mockImplementation(async (input) => {
+      currentProfile = { ...currentProfile, ...input };
+    });
+    storeMocks.useProfilesShallow.mockImplementation((selector) =>
+      selector({
+        items: [currentProfile],
+        selectedProfileId: "profile-1",
+        update: storeMocks.updateProfile,
+      }),
+    );
     const container = document.createElement("div");
     document.body.append(container);
     const root = createTestRoot(container);
@@ -879,6 +1149,17 @@ describe("AuraOverlayPage", () => {
         }),
       ],
     });
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+    expect(
+      container
+        .querySelector(
+          'nav[aria-label="Aura placements"] button[data-placement-id="00000000-0000-4000-8000-000000000002"]',
+        )
+        ?.getAttribute("aria-pressed"),
+    ).toBe("true");
     expect(electronMocks.showAura).not.toHaveBeenCalled();
   });
 
@@ -900,6 +1181,17 @@ describe("AuraOverlayPage", () => {
       await flushPromises();
     });
 
+    const existingAura = container.querySelector(
+      'button[data-placement-id="placement-1"]',
+    );
+    await act(async () => {
+      existingAura?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flushPromises();
+    });
+    expect(
+      container.querySelector('[aria-label="Aura placement properties"]'),
+    ).toBeInstanceOf(HTMLElement);
+
     const archedButton = [...container.querySelectorAll("button")].find(
       (button) => button.textContent === "Add arched aura",
     );
@@ -911,6 +1203,9 @@ describe("AuraOverlayPage", () => {
       root.render(<AuraOverlayPage />);
       await flushPromises();
     });
+    expect(
+      container.querySelector('[aria-label="Aura placement properties"]'),
+    ).toBeNull();
 
     const buttons = [...container.querySelectorAll("button")];
     const selectingButtons = buttons.filter(
@@ -1042,8 +1337,7 @@ describe("AuraOverlayPage", () => {
     expect(electronMocks.selectCropRegion).toHaveBeenCalledWith({
       shape: "rect",
     });
-    expect(storeMocks.setAddAuraRequest).toHaveBeenLastCalledWith(null);
-    expect(storeMocks.addAuraRequest).toBeNull();
+    expect(useBoundStore.getState().auraOverlay.addAuraRequest).toBeNull();
     expect(storeMocks.updateProfile).toHaveBeenCalledWith({
       id: "profile-1",
       cropRegions: [
@@ -1259,6 +1553,24 @@ describe("AuraOverlayPage", () => {
     });
     expect(currentProfile.overlayPlacements).toEqual([]);
 
+    storeMocks.updateProfile.mockRejectedValueOnce(new Error("write failed"));
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "z",
+        }),
+      );
+      await flushPromises();
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+    expect(currentProfile.overlayPlacements).toEqual([]);
+    expect(
+      useBoundStore.getState().auraOverlay.editingHistory.undo,
+    ).toHaveLength(1);
+
     await act(async () => {
       window.dispatchEvent(
         new KeyboardEvent("keydown", {
@@ -1274,6 +1586,24 @@ describe("AuraOverlayPage", () => {
     expect(currentProfile.cropRegions).toEqual(profile.cropRegions);
     expect(currentProfile.overlayPlacements).toEqual(profile.overlayPlacements);
 
+    storeMocks.updateProfile.mockRejectedValueOnce(new Error("write failed"));
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "y",
+        }),
+      );
+      await flushPromises();
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+    expect(currentProfile.overlayPlacements).toEqual(profile.overlayPlacements);
+    expect(
+      useBoundStore.getState().auraOverlay.editingHistory.redo,
+    ).toHaveLength(1);
+
     await act(async () => {
       window.dispatchEvent(
         new KeyboardEvent("keydown", {
@@ -1287,5 +1617,89 @@ describe("AuraOverlayPage", () => {
     expect(currentProfile.cropRegions).toEqual([]);
     expect(currentProfile.overlayPlacements).toEqual([]);
     expect(electronMocks.showAura).not.toHaveBeenCalled();
+  });
+
+  it("keeps the focused aura selected while applying history", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    const secondCrop = {
+      height: 40,
+      id: "crop-2",
+      label: "Mana",
+      width: 100,
+      x: 120,
+      y: 20,
+    };
+    const secondPlacement = {
+      cropRegionId: secondCrop.id,
+      id: "placement-2",
+      opacity: 1,
+      scale: 1,
+      x: 150,
+      y: 40,
+    };
+    let currentProfile: Profile = {
+      ...structuredClone(profile),
+      cropRegions: [...structuredClone(profile.cropRegions), secondCrop],
+      overlayPlacements: [
+        ...structuredClone(profile.overlayPlacements),
+        secondPlacement,
+      ],
+    };
+    storeMocks.updateProfile.mockImplementation(async (input) => {
+      currentProfile = { ...currentProfile, ...input };
+    });
+    storeMocks.useProfilesShallow.mockImplementation((selector) =>
+      selector({
+        items: [currentProfile],
+        selectedProfileId: currentProfile.id,
+        update: storeMocks.updateProfile,
+      }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[data-placement-id="placement-2"]',
+        )
+        ?.click();
+      useBoundStore.getState().auraOverlay.recordAuraHistory(currentProfile);
+      currentProfile = {
+        ...currentProfile,
+        overlayPlacements: currentProfile.overlayPlacements.map((placement) =>
+          placement.id === secondPlacement.id
+            ? { ...placement, x: 300 }
+            : placement,
+        ),
+      };
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    await act(async () => {
+      window.dispatchEvent(
+        new KeyboardEvent("keydown", {
+          bubbles: true,
+          ctrlKey: true,
+          key: "z",
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect(useBoundStore.getState().auraOverlay.selectedPlacementId).toBe(
+      secondPlacement.id,
+    );
+    expect(
+      currentProfile.overlayPlacements.find(
+        (placement) => placement.id === secondPlacement.id,
+      )?.x,
+    ).toBe(secondPlacement.x);
   });
 });

@@ -1,6 +1,6 @@
 import type { PointerEvent } from "react";
 
-import type { ProfilesSlice } from "~/renderer/store/store.types";
+import { useAuraOverlayShallow, useProfilesShallow } from "~/renderer/store";
 
 import type { OverlayPlacement, Profile } from "~/types";
 import {
@@ -10,28 +10,33 @@ import {
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import { createReferenceDimensionsForPlacement } from "../useAuraOverlayPlacementEditor/useAuraOverlayPlacementEditor.utils";
 import type { UseAuraOverlayPlacementInteractionStateResult } from "../useAuraOverlayPlacementInteractionState/useAuraOverlayPlacementInteractionState";
-
-type UpdateProfile = ProfilesSlice["profiles"]["update"];
+import {
+  createAuraOverlayScaleSnapContext,
+  resizeAuraPlacementWithPeerScaleSnap,
+} from "./useAuraOverlayPlacementResize.utils";
 
 interface UseAuraOverlayPlacementResizeInput {
   interaction: UseAuraOverlayPlacementInteractionStateResult;
   profile: Profile | null;
-  recordAuraHistory: () => boolean;
   referenceViewport: AuraVideoSize | null;
-  selectPlacement: (placementId: string) => void;
+  snapEnabled: boolean;
   targetViewport: AuraVideoSize;
-  updateProfile: UpdateProfile;
 }
 
 function useAuraOverlayPlacementResize({
   interaction,
   profile,
-  recordAuraHistory,
   referenceViewport,
-  selectPlacement,
+  snapEnabled,
   targetViewport,
-  updateProfile,
 }: UseAuraOverlayPlacementResizeInput) {
+  const updateProfile = useProfilesShallow((profiles) => profiles.update);
+  const { recordAuraHistory, selectPlacement } = useAuraOverlayShallow(
+    (auraOverlay) => ({
+      recordAuraHistory: auraOverlay.recordAuraHistory,
+      selectPlacement: auraOverlay.selectPlacement,
+    }),
+  );
   const {
     arcThicknessResizeStateRef,
     commitDragState,
@@ -57,6 +62,9 @@ function useAuraOverlayPlacementResize({
     const placement = profile.overlayPlacements.find(
       (item) => item.id === placementId,
     );
+    const crop = profile.cropRegions.find(
+      (item) => item.id === placement?.cropRegionId,
+    );
     if (!placement || !isAuraResizeCorner(corner)) {
       return;
     }
@@ -74,6 +82,16 @@ function useAuraOverlayPlacementResize({
       initialPlacement: placement,
       draftPlacement: placement,
       isReleased: false,
+      scaleSnapContext:
+        snapEnabled && crop
+          ? createAuraOverlayScaleSnapContext({
+              crop,
+              placement,
+              profile,
+              referenceViewport,
+              targetViewport,
+            })
+          : null,
     });
   };
 
@@ -92,15 +110,28 @@ function useAuraOverlayPlacementResize({
       return;
     }
 
-    const draftPlacement = resizeAuraPlacementFromCorner(
-      crop,
-      currentResizeState.initialPlacement,
-      currentResizeState.corner,
-      event.clientX - currentResizeState.startX,
-      event.clientY - currentResizeState.startY,
-      targetViewport,
-      referenceViewport,
-    );
+    const deltaX = event.clientX - currentResizeState.startX;
+    const deltaY = event.clientY - currentResizeState.startY;
+    const draftPlacement = currentResizeState.scaleSnapContext
+      ? resizeAuraPlacementWithPeerScaleSnap({
+          corner: currentResizeState.corner,
+          crop,
+          deltaX,
+          deltaY,
+          placement: currentResizeState.initialPlacement,
+          referenceViewport,
+          scaleSnapContext: currentResizeState.scaleSnapContext,
+          targetViewport,
+        })
+      : resizeAuraPlacementFromCorner(
+          crop,
+          currentResizeState.initialPlacement,
+          currentResizeState.corner,
+          deltaX,
+          deltaY,
+          targetViewport,
+          referenceViewport,
+        );
 
     resizeStateRef.current = { ...currentResizeState, draftPlacement };
     publishInteractionSnapshot();
@@ -139,10 +170,11 @@ function useAuraOverlayPlacementResize({
       referenceViewport,
     );
 
-    recordAuraHistory();
+    recordAuraHistory(profile);
     const releasedResizeState = {
       ...currentResizeState,
       isReleased: true,
+      scaleSnapContext: null,
     };
     commitResizeState(releasedResizeState);
     void updateProfile({

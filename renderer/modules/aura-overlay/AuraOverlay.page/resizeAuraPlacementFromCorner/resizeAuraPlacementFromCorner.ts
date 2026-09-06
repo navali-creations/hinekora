@@ -9,8 +9,8 @@ import type {
   AuraVideoSize,
 } from "../AuraOverlay.page.utils.types";
 import { clamp } from "../clamp/clamp";
-import { projectAuraBox } from "../projectAuraBox/projectAuraBox";
 import { projectAuraPoint } from "../projectAuraPoint/projectAuraPoint";
+import { resolveAuraPlacementBaseSize } from "../resolveAuraPlacementBaseSize/resolveAuraPlacementBaseSize";
 import { resolveAuraPlacementScale } from "../resolveAuraPlacementScale/resolveAuraPlacementScale";
 import { resolveAuraReferenceViewport } from "../resolveAuraReferenceViewport/resolveAuraReferenceViewport";
 import { unprojectAuraPoint } from "../unprojectAuraPoint/unprojectAuraPoint";
@@ -37,12 +37,16 @@ function resizeAuraPlacementFromCorner(
   }
 
   const placementScale = resolveAuraPlacementScale(placement);
-  const width = crop.width * placementScale;
-  const height = crop.height * placementScale;
+  const baseWidth =
+    placement.width && placement.height ? placement.width : crop.width;
+  const baseHeight =
+    placement.width && placement.height ? placement.height : crop.height;
+  const width = baseWidth * placementScale;
+  const height = baseHeight * placementScale;
   const nextWidth = corner.includes("w") ? width - deltaX : width + deltaX;
   const nextHeight = corner.includes("n") ? height - deltaY : height + deltaY;
-  const nextScaleX = nextWidth / crop.width;
-  const nextScaleY = nextHeight / crop.height;
+  const nextScaleX = nextWidth / baseWidth;
+  const nextScaleY = nextHeight / baseHeight;
   const nextScale =
     Math.abs(nextScaleX - placementScale) >
     Math.abs(nextScaleY - placementScale)
@@ -53,8 +57,8 @@ function resizeAuraPlacementFromCorner(
     AuraPlacementScaleSettings.minScale,
     AuraPlacementScaleSettings.maxScale,
   );
-  const scaledWidth = crop.width * scale;
-  const scaledHeight = crop.height * scale;
+  const scaledWidth = baseWidth * scale;
+  const scaledHeight = baseHeight * scale;
 
   return {
     ...placement,
@@ -85,10 +89,11 @@ function resizeProjectedAuraPlacementFromCorner(
     placement,
     cropReferenceViewport,
   );
-  const projectedCrop = projectAuraBox(
+  const baseSize = resolveAuraPlacementBaseSize(
     crop,
-    cropReferenceViewport,
+    placement,
     targetViewport,
+    fallbackReferenceViewport,
   );
   const projectedPlacement = projectAuraPoint(
     placement,
@@ -96,12 +101,12 @@ function resizeProjectedAuraPlacementFromCorner(
     targetViewport,
   );
   const placementScale = resolveAuraPlacementScale(placement);
-  const width = projectedCrop.width * placementScale;
-  const height = projectedCrop.height * placementScale;
+  const width = baseSize.width * placementScale;
+  const height = baseSize.height * placementScale;
   const nextWidth = corner.includes("w") ? width - deltaX : width + deltaX;
   const nextHeight = corner.includes("n") ? height - deltaY : height + deltaY;
-  const nextScaleX = nextWidth / projectedCrop.width;
-  const nextScaleY = nextHeight / projectedCrop.height;
+  const nextScaleX = nextWidth / baseSize.width;
+  const nextScaleY = nextHeight / baseSize.height;
   const nextScale =
     Math.abs(nextScaleX - placementScale) >
     Math.abs(nextScaleY - placementScale)
@@ -112,8 +117,8 @@ function resizeProjectedAuraPlacementFromCorner(
     AuraPlacementScaleSettings.minScale,
     AuraPlacementScaleSettings.maxScale,
   );
-  const scaledWidth = projectedCrop.width * scale;
-  const scaledHeight = projectedCrop.height * scale;
+  const scaledWidth = baseSize.width * scale;
+  const scaledHeight = baseSize.height * scale;
   const x = corner.includes("w")
     ? projectedPlacement.x + width - scaledWidth
     : projectedPlacement.x;

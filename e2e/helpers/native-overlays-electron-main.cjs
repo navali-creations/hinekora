@@ -33,7 +33,12 @@ const recorderStatus = {
 };
 const overlaySettings = {
   activeGame: "poe1",
+  auraOverlayEnableSnapping: false,
+  auraOverlayHideLabels: false,
+  auraOverlayHidePropertiesPanel: false,
+  auraOverlayShowCenterGuides: false,
   auraOverlayShowEditingFrame: true,
+  auraOverlayShowEditingGrid: false,
   manualReplayShowPreview: true,
   manualReplaySeconds: 30,
   replayClipPreviewResolution: "720p",

@@ -1,6 +1,6 @@
 import type { PointerEvent } from "react";
 
-import type { ProfilesSlice } from "~/renderer/store/store.types";
+import { useAuraOverlayShallow, useProfilesShallow } from "~/renderer/store";
 
 import type { Profile } from "~/types";
 import {
@@ -14,27 +14,26 @@ import {
 } from "../useAuraOverlayPlacementEditor/useAuraOverlayPlacementEditor.utils";
 import type { UseAuraOverlayPlacementInteractionStateResult } from "../useAuraOverlayPlacementInteractionState/useAuraOverlayPlacementInteractionState";
 
-type UpdateProfile = ProfilesSlice["profiles"]["update"];
-
 interface UseAuraOverlayArcThicknessResizeInput {
   interaction: UseAuraOverlayPlacementInteractionStateResult;
   profile: Profile | null;
-  recordAuraHistory: () => boolean;
   referenceViewport: AuraVideoSize | null;
-  selectPlacement: (placementId: string) => void;
   targetViewport: AuraVideoSize;
-  updateProfile: UpdateProfile;
 }
 
 function useAuraOverlayArcThicknessResize({
   interaction,
   profile,
-  recordAuraHistory,
   referenceViewport,
-  selectPlacement,
   targetViewport,
-  updateProfile,
 }: UseAuraOverlayArcThicknessResizeInput) {
+  const updateProfile = useProfilesShallow((profiles) => profiles.update);
+  const { recordAuraHistory, selectPlacement } = useAuraOverlayShallow(
+    (auraOverlay) => ({
+      recordAuraHistory: auraOverlay.recordAuraHistory,
+      selectPlacement: auraOverlay.selectPlacement,
+    }),
+  );
   const {
     arcThicknessResizeStateRef,
     commitArcThicknessResizeState,
@@ -140,7 +139,7 @@ function useAuraOverlayArcThicknessResize({
       return;
     }
 
-    recordAuraHistory();
+    recordAuraHistory(profile);
     const releasedResizeState = {
       ...currentResizeState,
       isReleased: true,

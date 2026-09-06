@@ -56,6 +56,30 @@ interface AuraViewportProjection {
   scale: number;
 }
 
+type AuraOverlaySnapGuideKind = "placement" | "viewport-center";
+type AuraOverlaySnapGuideAnchor = "start" | "center" | "end";
+
+interface AuraOverlaySnapGuide {
+  anchor: AuraOverlaySnapGuideAnchor;
+  kind: AuraOverlaySnapGuideKind;
+  position: number;
+}
+
+interface AuraOverlaySnapContext {
+  displayHeight: number;
+  displayWidth: number;
+  gridCellHeight: number;
+  gridCellWidth: number;
+  xGuides: AuraOverlaySnapGuide[];
+  yGuides: AuraOverlaySnapGuide[];
+}
+
+interface AuraOverlayScaleSnapContext {
+  baseHeight: number;
+  baseWidth: number;
+  peerScales: number[];
+}
+
 interface AuraHistorySnapshot {
   cropRegions: CropRegion[];
   overlayPlacements: OverlayPlacement[];
@@ -69,6 +93,9 @@ export type {
   AuraArcBoundaryPaths,
   AuraArcBoundaryPoints,
   AuraHistorySnapshot,
+  AuraOverlayScaleSnapContext,
+  AuraOverlaySnapContext,
+  AuraOverlaySnapGuide,
   AuraPoint,
   AuraProfile,
   AuraProfileUpdate,

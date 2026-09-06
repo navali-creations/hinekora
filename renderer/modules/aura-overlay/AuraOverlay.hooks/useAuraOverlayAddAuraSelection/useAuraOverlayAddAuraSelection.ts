@@ -2,12 +2,9 @@ import { useCallback, useEffect, useRef } from "react";
 
 import type { CropRegionSelectionShape } from "~/main/modules/overlay-windows/OverlayWindows.dto";
 import { createAuraProfileUpdateFromSelection } from "~/renderer/modules/crop-editor/CropEditor.utils/CropEditor.utils";
-import { useAuraOverlayShallow } from "~/renderer/store";
-import type { ProfilesSlice } from "~/renderer/store/store.types";
+import { useAuraOverlayShallow, useProfilesShallow } from "~/renderer/store";
 
 import type { Profile } from "~/types";
-
-type UpdateProfile = ProfilesSlice["profiles"]["update"];
 
 interface StartAddAuraSelectionOptions {
   shape?: CropRegionSelectionShape;
@@ -17,28 +14,34 @@ interface StartAddAuraSelectionOptions {
 interface UseAuraOverlayAddAuraSelectionInput {
   lockAuraOverlay: () => Promise<void>;
   profile: Profile | null;
-  recordAuraHistory: () => boolean;
   routeAddAuraRequestId: string | null;
   routeStartAddingAura: boolean;
-  updateProfile: UpdateProfile;
 }
 
 function useAuraOverlayAddAuraSelection({
   lockAuraOverlay,
   profile,
-  recordAuraHistory,
   routeAddAuraRequestId,
   routeStartAddingAura,
-  updateProfile,
 }: UseAuraOverlayAddAuraSelectionInput) {
   const handledAddAuraRequestRef = useRef<string | null>(null);
   const addingAuraRef = useRef(false);
-  const { addAuraRequest, setAddAuraRequest, setAddingAuraShape } =
-    useAuraOverlayShallow((auraOverlay) => ({
-      addAuraRequest: auraOverlay.addAuraRequest,
-      setAddAuraRequest: auraOverlay.setAddAuraRequest,
-      setAddingAuraShape: auraOverlay.setAddingAuraShape,
-    }));
+  const updateProfile = useProfilesShallow((profiles) => profiles.update);
+  const {
+    addAuraRequest,
+    clearPlacementSelection,
+    recordAuraHistory,
+    selectPlacement,
+    setAddAuraRequest,
+    setAddingAuraShape,
+  } = useAuraOverlayShallow((auraOverlay) => ({
+    addAuraRequest: auraOverlay.addAuraRequest,
+    clearPlacementSelection: auraOverlay.clearPlacementSelection,
+    recordAuraHistory: auraOverlay.recordAuraHistory,
+    selectPlacement: auraOverlay.selectPlacement,
+    setAddAuraRequest: auraOverlay.setAddAuraRequest,
+    setAddingAuraShape: auraOverlay.setAddingAuraShape,
+  }));
 
   const startAddAuraSelection = useCallback(
     (options?: StartAddAuraSelectionOptions) => {
@@ -49,6 +52,7 @@ function useAuraOverlayAddAuraSelection({
       const lockOnCancel = options?.lockOnCancel === true;
       const shape = options?.shape ?? "rect";
       addingAuraRef.current = true;
+      clearPlacementSelection();
       setAddingAuraShape(shape);
       void window.electron.overlayWindows
         .selectCropRegion({ shape })
@@ -60,12 +64,11 @@ function useAuraOverlayAddAuraSelection({
             return;
           }
 
-          const { profileUpdate } = createAuraProfileUpdateFromSelection(
-            profile,
-            selection,
-          );
+          const { placement, profileUpdate } =
+            createAuraProfileUpdateFromSelection(profile, selection);
 
-          recordAuraHistory();
+          recordAuraHistory(profile);
+          selectPlacement(placement.id);
           await updateProfile(profileUpdate);
         })
         .catch(() => {
@@ -81,9 +84,11 @@ function useAuraOverlayAddAuraSelection({
       return true;
     },
     [
+      clearPlacementSelection,
       lockAuraOverlay,
       profile,
       recordAuraHistory,
+      selectPlacement,
       setAddingAuraShape,
       updateProfile,
     ],

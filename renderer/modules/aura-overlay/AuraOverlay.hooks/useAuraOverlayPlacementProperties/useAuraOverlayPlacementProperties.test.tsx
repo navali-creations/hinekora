@@ -2,10 +2,30 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { useBoundStore } from "~/renderer/store";
 import type { ProfilesSlice } from "~/renderer/store/store.types";
 
 import type { Profile } from "~/types";
 import type { AuraPlacementPropertiesPatch } from "../../AuraOverlay.components/AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel";
+
+const storeMocks = vi.hoisted(() => ({
+  updateProfile: vi.fn<ProfilesSlice["profiles"]["update"]>(),
+}));
+
+vi.mock("~/renderer/store", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("~/renderer/store")>();
+
+  return {
+    ...actual,
+    useProfilesShallow: (selector: unknown) =>
+      (
+        selector as (profiles: {
+          update: ProfilesSlice["profiles"]["update"];
+        }) => unknown
+      )({ update: storeMocks.updateProfile }),
+  };
+});
+
 import { useAuraOverlayPlacementProperties } from "./useAuraOverlayPlacementProperties";
 
 const profile: Profile = {
@@ -45,12 +65,12 @@ describe("useAuraOverlayPlacementProperties", () => {
     root?.unmount();
     root = null;
     document.body.replaceChildren();
+    useBoundStore.getState().auraOverlay.resetAuraHistory(null);
+    vi.clearAllMocks();
   });
 
   it("consumes rejected fire-and-forget profile updates", async () => {
-    const updateProfile = vi
-      .fn<ProfilesSlice["profiles"]["update"]>()
-      .mockRejectedValue(new Error("write failed"));
+    storeMocks.updateProfile.mockRejectedValue(new Error("write failed"));
     let handleChange:
       | ((placementId: string, patch: AuraPlacementPropertiesPatch) => void)
       | null = null;
@@ -59,10 +79,8 @@ describe("useAuraOverlayPlacementProperties", () => {
       ({ handlePlacementPropertiesChange: handleChange } =
         useAuraOverlayPlacementProperties({
           profile,
-          recordAuraHistory: vi.fn(() => true),
           referenceViewport: null,
           targetViewport: { height: 1080, width: 1920 },
-          updateProfile,
         }));
 
       return null;
@@ -80,11 +98,14 @@ describe("useAuraOverlayPlacementProperties", () => {
       await Promise.resolve();
     });
 
-    expect(updateProfile).toHaveBeenCalledWith(
+    expect(storeMocks.updateProfile).toHaveBeenCalledWith(
       expect.objectContaining({
         id: profile.id,
         overlayPlacements: [expect.objectContaining({ opacity: 0.5 })],
       }),
     );
+    expect(
+      useBoundStore.getState().auraOverlay.editingHistory.undo,
+    ).toHaveLength(1);
   });
 });

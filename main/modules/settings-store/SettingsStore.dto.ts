@@ -1,9 +1,20 @@
 import type { AppSettings, AppSettingsUpdate } from "~/types";
 
-type SettingsStoreOverlaySnapshot = Pick<
+const auraOverlaySettingsUpdateKeys = [
+  "auraOverlayEnableSnapping",
+  "auraOverlayHideLabels",
+  "auraOverlayHidePropertiesPanel",
+  "auraOverlayShowCenterGuides",
+  "auraOverlayShowEditingFrame",
+  "auraOverlayShowEditingGrid",
+] as const satisfies readonly (keyof AppSettings)[];
+
+type SettingsStoreAuraOverlayUpdate = Partial<
+  Pick<AppSettings, (typeof auraOverlaySettingsUpdateKeys)[number]>
+>;
+type SettingsStoreCommonOverlaySnapshot = Pick<
   AppSettings,
   | "activeGame"
-  | "auraOverlayShowEditingFrame"
   | "manualReplaySeconds"
   | "replayClipPreviewResolution"
   | "selectedCaptureProfileId"
@@ -11,7 +22,9 @@ type SettingsStoreOverlaySnapshot = Pick<
   | "selectedProfileId"
   | "telemetryCrashReporting"
 >;
-type SettingsStoreRecorderOverlaySnapshot = SettingsStoreOverlaySnapshot &
+type SettingsStoreAuraOverlaySnapshot = SettingsStoreCommonOverlaySnapshot &
+  Pick<AppSettings, (typeof auraOverlaySettingsUpdateKeys)[number]>;
+type SettingsStoreRecorderOverlaySnapshot = SettingsStoreCommonOverlaySnapshot &
   Pick<AppSettings, "manualReplayShowPreview">;
 type SettingsStoreClipPreviewOverlaySnapshot = Pick<
   AppSettings,
@@ -19,17 +32,19 @@ type SettingsStoreClipPreviewOverlaySnapshot = Pick<
 >;
 export type SettingsUpdateInput = AppSettingsUpdate;
 export type {
+  SettingsStoreAuraOverlaySnapshot,
+  SettingsStoreAuraOverlayUpdate,
   SettingsStoreClipPreviewOverlaySnapshot,
-  SettingsStoreOverlaySnapshot,
+  SettingsStoreCommonOverlaySnapshot,
   SettingsStoreRecorderOverlaySnapshot,
 };
+export { auraOverlaySettingsUpdateKeys };
 
-export function createSettingsStoreOverlaySnapshot(
+function createSettingsStoreCommonOverlaySnapshot(
   settings: AppSettings,
-): SettingsStoreOverlaySnapshot {
+): SettingsStoreCommonOverlaySnapshot {
   return {
     activeGame: settings.activeGame,
-    auraOverlayShowEditingFrame: settings.auraOverlayShowEditingFrame,
     manualReplaySeconds: settings.manualReplaySeconds,
     replayClipPreviewResolution: settings.replayClipPreviewResolution,
     selectedCaptureProfileId: settings.selectedCaptureProfileId,
@@ -39,11 +54,25 @@ export function createSettingsStoreOverlaySnapshot(
   };
 }
 
+export function createSettingsStoreAuraOverlaySnapshot(
+  settings: AppSettings,
+): SettingsStoreAuraOverlaySnapshot {
+  return {
+    ...createSettingsStoreCommonOverlaySnapshot(settings),
+    auraOverlayEnableSnapping: settings.auraOverlayEnableSnapping,
+    auraOverlayHideLabels: settings.auraOverlayHideLabels,
+    auraOverlayHidePropertiesPanel: settings.auraOverlayHidePropertiesPanel,
+    auraOverlayShowCenterGuides: settings.auraOverlayShowCenterGuides,
+    auraOverlayShowEditingFrame: settings.auraOverlayShowEditingFrame,
+    auraOverlayShowEditingGrid: settings.auraOverlayShowEditingGrid,
+  };
+}
+
 export function createSettingsStoreRecorderOverlaySnapshot(
   settings: AppSettings,
 ): SettingsStoreRecorderOverlaySnapshot {
   return {
-    ...createSettingsStoreOverlaySnapshot(settings),
+    ...createSettingsStoreCommonOverlaySnapshot(settings),
     manualReplayShowPreview: settings.manualReplayShowPreview,
   };
 }

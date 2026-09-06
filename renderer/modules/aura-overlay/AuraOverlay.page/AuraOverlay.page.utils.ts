@@ -1,6 +1,9 @@
 export type {
   AuraArcBoundaryPaths,
   AuraHistorySnapshot,
+  AuraOverlayScaleSnapContext,
+  AuraOverlaySnapContext,
+  AuraOverlaySnapGuide,
   AuraPoint,
   AuraResizeCorner,
   AuraSize,
@@ -33,6 +36,7 @@ export { readAuraVideoSize } from "./readAuraVideoSize/readAuraVideoSize";
 export { resizeAuraPlacementFromCorner } from "./resizeAuraPlacementFromCorner/resizeAuraPlacementFromCorner";
 export { resolveAuraArcDisplayThickness } from "./resolveAuraArcDisplayThickness/resolveAuraArcDisplayThickness";
 export { resolveAuraArcSourceThickness } from "./resolveAuraArcSourceThickness/resolveAuraArcSourceThickness";
+export { resolveAuraOverlayGridCellSize } from "./resolveAuraOverlayGridCellSize/resolveAuraOverlayGridCellSize";
 export { resolveAuraPlacementArcVisibleThickness } from "./resolveAuraPlacementArcVisibleThickness/resolveAuraPlacementArcVisibleThickness";
 export { resolveAuraPlacementBaseSize } from "./resolveAuraPlacementBaseSize/resolveAuraPlacementBaseSize";
 export { resolveAuraPlacementDisplaySize } from "./resolveAuraPlacementDisplaySize/resolveAuraPlacementDisplaySize";
@@ -41,4 +45,5 @@ export { resolveAuraPlacementPointSampleSize } from "./resolveAuraPlacementPoint
 export { resolveAuraPlacementPointSpacing } from "./resolveAuraPlacementPointSpacing/resolveAuraPlacementPointSpacing";
 export { resolveAuraPlacementScale } from "./resolveAuraPlacementScale/resolveAuraPlacementScale";
 export { resolveAuraReferenceViewport } from "./resolveAuraReferenceViewport/resolveAuraReferenceViewport";
+export { selectAuraOverlayPageSettings } from "./selectAuraOverlayPageSettings/selectAuraOverlayPageSettings";
 export { unprojectAuraPoint } from "./unprojectAuraPoint/unprojectAuraPoint";

@@ -1,27 +1,25 @@
-import type { ProfilesSlice } from "~/renderer/store/store.types";
+import { useAuraOverlayShallow, useProfilesShallow } from "~/renderer/store";
 
 import type { Profile } from "~/types";
 import type { AuraPlacementPropertiesPatch } from "../../AuraOverlay.components/AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel";
 import type { AuraVideoSize } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import { createPlacementPropertiesUpdate } from "../useAuraOverlayPlacementEditor/useAuraOverlayPlacementEditor.utils";
 
-type UpdateProfile = ProfilesSlice["profiles"]["update"];
-
 interface UseAuraOverlayPlacementPropertiesInput {
   profile: Profile | null;
-  recordAuraHistory: () => boolean;
   referenceViewport: AuraVideoSize | null;
   targetViewport: AuraVideoSize;
-  updateProfile: UpdateProfile;
 }
 
 function useAuraOverlayPlacementProperties({
   profile,
-  recordAuraHistory,
   referenceViewport,
   targetViewport,
-  updateProfile,
 }: UseAuraOverlayPlacementPropertiesInput) {
+  const updateProfile = useProfilesShallow((profiles) => profiles.update);
+  const recordAuraHistory = useAuraOverlayShallow(
+    (auraOverlay) => auraOverlay.recordAuraHistory,
+  );
   const handlePlacementPropertiesChange = (
     placementId: string,
     patch: AuraPlacementPropertiesPatch,
@@ -49,7 +47,7 @@ function useAuraOverlayPlacementProperties({
     );
 
     if (patch.recordHistory !== false) {
-      recordAuraHistory();
+      recordAuraHistory(profile);
     }
     void updateProfile({
       id: profile.id,

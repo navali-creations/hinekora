@@ -1,0 +1,45 @@
+.guideLayer {
+  position: fixed;
+  z-index: 6;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.guide {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.verticalGuide {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-0.5px);
+}
+
+.horizontalGuide {
+  right: 0;
+  left: 0;
+  height: 1px;
+  transform: translateY(-0.5px);
+}
+
+.centerGuide {
+  background: color-mix(in oklch, #ef4444 74%, transparent);
+  box-shadow: 0 0 8px color-mix(in oklch, #ef4444 54%, transparent);
+}
+
+.centerGuide.verticalGuide {
+  left: 50%;
+}
+
+.centerGuide.horizontalGuide {
+  top: 50%;
+}
+
+.alignmentGuide {
+  background: #14b8a6;
+  box-shadow: 0 0 8px color-mix(in oklch, #14b8a6 72%, transparent);
+}

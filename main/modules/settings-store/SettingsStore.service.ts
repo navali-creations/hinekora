@@ -25,8 +25,9 @@ import {
 } from "~/types";
 import { SettingsStoreChannel } from "./SettingsStore.channels";
 import {
+  auraOverlaySettingsUpdateKeys,
+  createSettingsStoreAuraOverlaySnapshot,
   createSettingsStoreClipPreviewOverlaySnapshot,
-  createSettingsStoreOverlaySnapshot,
   createSettingsStoreRecorderOverlaySnapshot,
 } from "./SettingsStore.dto";
 import { normalizeLeagueSettingsUpdate } from "./SettingsStore.normalization";
@@ -42,6 +43,9 @@ const settingsStoreOverlayChangeWindowRoles = new Set([
 const clipPreviewOverlaySettingsUpdateKeys = new Set<keyof AppSettings>([
   "clipPreviewInfoAlertDismissed",
 ]);
+const auraOverlaySettingsUpdateKeySet = new Set<string>(
+  auraOverlaySettingsUpdateKeys,
+);
 
 type SettingsStoreChangeListener = (settings: AppSettings) => void;
 
@@ -157,7 +161,7 @@ class SettingsStoreService {
       (event) =>
         getIpcWindowRole(event) === WindowName.RecorderOverlay
           ? createSettingsStoreRecorderOverlaySnapshot(this.get())
-          : createSettingsStoreOverlaySnapshot(this.get()),
+          : createSettingsStoreAuraOverlaySnapshot(this.get()),
     );
     registerGuardedIpcHandler(
       SettingsStoreChannel.GetClipPreviewOverlaySnapshot,
@@ -166,19 +170,26 @@ class SettingsStoreService {
     );
     registerGuardedIpcHandler(
       SettingsStoreChannel.Update,
-      [WindowName.Main, WindowName.ClipPreviewOverlay],
+      [WindowName.Main, WindowName.AuraOverlay, WindowName.ClipPreviewOverlay],
       (event, input: unknown) => {
         try {
           assertObject(input, "settings", SettingsStoreChannel.Update);
           const role = getIpcWindowRole(event);
-          if (role === WindowName.ClipPreviewOverlay) {
+          if (role === WindowName.AuraOverlay) {
+            assertAuraOverlaySettingsUpdate(input);
+          } else if (role === WindowName.ClipPreviewOverlay) {
             assertClipPreviewOverlaySettingsUpdate(input);
           }
 
           const settings = this.update(input);
-          return role === WindowName.ClipPreviewOverlay
-            ? createSettingsStoreClipPreviewOverlaySnapshot(settings)
-            : settings;
+          if (role === WindowName.AuraOverlay) {
+            return createSettingsStoreAuraOverlaySnapshot(settings);
+          }
+          if (role === WindowName.ClipPreviewOverlay) {
+            return createSettingsStoreClipPreviewOverlaySnapshot(settings);
+          }
+
+          return settings;
         } catch (error) {
           return handleValidationError(error);
         }
@@ -217,7 +228,7 @@ class SettingsStoreService {
           SettingsStoreChannel.OverlayChanged,
           role === WindowName.RecorderOverlay
             ? createSettingsStoreRecorderOverlaySnapshot(settings)
-            : createSettingsStoreOverlaySnapshot(settings),
+            : createSettingsStoreAuraOverlaySnapshot(settings),
         );
       }
       if (role === WindowName.ClipPreviewOverlay) {
@@ -242,6 +253,21 @@ function assertStorageRootsDoNotOverlap(settings: AppSettings): void {
   );
   if (storagePathsOverlap(recordingRoot, exportRoot)) {
     throw new Error("Recording and export folders must not contain each other");
+  }
+}
+
+function assertAuraOverlaySettingsUpdate(input: Record<string, unknown>): void {
+  for (const key of Object.keys(input)) {
+    if (!auraOverlaySettingsUpdateKeySet.has(key)) {
+      throw new IpcValidationError(
+        SettingsStoreChannel.Update,
+        `${key} cannot be updated from this window`,
+      );
+    }
+  }
+
+  for (const key of auraOverlaySettingsUpdateKeys) {
+    assertOptionalBoolean(input[key], key, SettingsStoreChannel.Update);
   }
 }
 

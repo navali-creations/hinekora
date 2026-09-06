@@ -46,7 +46,12 @@ describe("shared schemas", () => {
       recorderOverlayStartMinimized: false,
       recorderOverlayIgnoreGameFocus: false,
       auraOverlayIgnoreGameFocus: false,
+      auraOverlayEnableSnapping: false,
+      auraOverlayHideLabels: false,
+      auraOverlayHidePropertiesPanel: false,
+      auraOverlayShowCenterGuides: false,
       auraOverlayShowEditingFrame: true,
+      auraOverlayShowEditingGrid: false,
       clipPreviewOverlayIgnoreGameFocus: false,
       gridLinesOverlayIgnoreGameFocus: false,
       installedGames: ["poe1"],
@@ -111,7 +116,12 @@ describe("shared schemas", () => {
     expect(appSettingsKeys).toContain("recorderOverlayStartMinimized");
     expect(appSettingsKeys).toContain("recorderOverlayIgnoreGameFocus");
     expect(appSettingsKeys).toContain("auraOverlayIgnoreGameFocus");
+    expect(appSettingsKeys).toContain("auraOverlayEnableSnapping");
+    expect(appSettingsKeys).toContain("auraOverlayHideLabels");
+    expect(appSettingsKeys).toContain("auraOverlayHidePropertiesPanel");
+    expect(appSettingsKeys).toContain("auraOverlayShowCenterGuides");
     expect(appSettingsKeys).toContain("auraOverlayShowEditingFrame");
+    expect(appSettingsKeys).toContain("auraOverlayShowEditingGrid");
     expect(appSettingsKeys).toContain("clipPreviewOverlayIgnoreGameFocus");
     expect(appSettingsKeys).toContain("gridLinesOverlayIgnoreGameFocus");
     expect(appSettingsKeys).not.toContain("recordingHideOverlaysFromCapture");

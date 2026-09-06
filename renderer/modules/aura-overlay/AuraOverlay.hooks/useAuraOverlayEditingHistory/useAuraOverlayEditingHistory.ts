@@ -1,120 +1,107 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import { isKeyboardShortcutEditableTarget } from "~/renderer/modules/keyboard-shortcuts/KeyboardShortcuts.utils/KeyboardShortcuts.utils";
-import type { ProfilesSlice } from "~/renderer/store/store.types";
+import { useAuraOverlayShallow, useProfilesShallow } from "~/renderer/store";
 
 import type { Profile } from "~/types";
 import {
   type AuraHistorySnapshot,
-  createAuraHistorySnapshot,
   createAuraProfileUpdateDeletingPlacement,
   createAuraProfileUpdateFromSnapshot,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
-
-const auraHistoryLimit = 50;
-
-type UpdateProfile = ProfilesSlice["profiles"]["update"];
-
-interface AuraHistoryState {
-  profileId: string | null;
-  redo: AuraHistorySnapshot[];
-  undo: AuraHistorySnapshot[];
-}
+import type { AuraHistoryTransition } from "../../AuraOverlay.slice/AuraOverlay.slice";
 
 interface UseAuraOverlayEditingHistoryInput {
   canEditAuras: boolean;
   profile: Profile | null;
-  updateProfile: UpdateProfile;
-}
-
-interface UseAuraOverlayEditingHistoryResult {
-  recordAuraHistory: () => boolean;
-  selectPlacement: (placementId: string) => void;
-  selectedPlacementId: string | null;
-}
-
-function appendHistorySnapshot(
-  snapshots: AuraHistorySnapshot[],
-  snapshot: AuraHistorySnapshot,
-): void {
-  snapshots.push(snapshot);
-  if (snapshots.length > auraHistoryLimit) {
-    snapshots.shift();
-  }
 }
 
 export function useAuraOverlayEditingHistory({
   canEditAuras,
   profile,
-  updateProfile,
-}: UseAuraOverlayEditingHistoryInput): UseAuraOverlayEditingHistoryResult {
-  const [selectedPlacementId, setSelectedPlacementId] = useState<string | null>(
-    null,
-  );
-  const historyRef = useRef<AuraHistoryState>({
-    profileId: null,
-    redo: [],
-    undo: [],
-  });
+}: UseAuraOverlayEditingHistoryInput): void {
+  const historyUpdatePendingRef = useRef(false);
+  const updateProfile = useProfilesShallow((profiles) => profiles.update);
+  const {
+    clearPlacementSelection,
+    recordHistory,
+    redoHistory,
+    resetHistory,
+    rollbackHistory,
+    selectPlacement,
+    selectedPlacementId,
+    undoHistory,
+  } = useAuraOverlayShallow((auraOverlay) => ({
+    clearPlacementSelection: auraOverlay.clearPlacementSelection,
+    recordHistory: auraOverlay.recordAuraHistory,
+    redoHistory: auraOverlay.redoAuraHistory,
+    resetHistory: auraOverlay.resetAuraHistory,
+    rollbackHistory: auraOverlay.rollbackAuraHistory,
+    selectPlacement: auraOverlay.selectPlacement,
+    selectedPlacementId: auraOverlay.selectedPlacementId,
+    undoHistory: auraOverlay.undoAuraHistory,
+  }));
 
   useEffect(() => {
-    historyRef.current = {
-      profileId: profile?.id ?? null,
-      redo: [],
-      undo: [],
-    };
-    setSelectedPlacementId(null);
-  }, [profile?.id]);
+    resetHistory(profile?.id ?? null);
+  }, [profile?.id, resetHistory]);
 
   useEffect(() => {
     if (!profile) {
-      setSelectedPlacementId(null);
+      clearPlacementSelection();
       return;
     }
 
-    setSelectedPlacementId((currentPlacementId) => {
-      if (
-        currentPlacementId &&
-        profile.overlayPlacements.some(
-          (placement) => placement.id === currentPlacementId,
-        )
-      ) {
-        return currentPlacementId;
-      }
-
-      return null;
-    });
-  }, [profile]);
-
-  const recordAuraHistory = useCallback(() => {
-    if (!profile) {
-      return false;
+    if (
+      selectedPlacementId &&
+      !profile.overlayPlacements.some(
+        (placement) => placement.id === selectedPlacementId,
+      )
+    ) {
+      clearPlacementSelection();
     }
-
-    const history = historyRef.current;
-    if (history.profileId !== profile.id) {
-      history.profileId = profile.id;
-      history.redo = [];
-      history.undo = [];
-    }
-
-    appendHistorySnapshot(history.undo, createAuraHistorySnapshot(profile));
-    history.redo = [];
-    return true;
-  }, [profile]);
+  }, [clearPlacementSelection, profile, selectedPlacementId]);
 
   const applyHistorySnapshot = useCallback(
-    (snapshot: AuraHistorySnapshot) => {
+    async (
+      snapshot: AuraHistorySnapshot,
+      selectedPlacementId: string | null,
+    ) => {
       if (!profile) {
         return;
       }
 
-      setSelectedPlacementId(snapshot.overlayPlacements[0]?.id ?? null);
-      void updateProfile(
+      if (selectedPlacementId) {
+        selectPlacement(selectedPlacementId);
+      } else {
+        clearPlacementSelection();
+      }
+      await updateProfile(
         createAuraProfileUpdateFromSnapshot(profile.id, snapshot),
-      ).catch(() => undefined);
+      );
     },
-    [profile, updateProfile],
+    [clearPlacementSelection, profile, selectPlacement, updateProfile],
+  );
+
+  const applyHistoryTransition = useCallback(
+    (transition: AuraHistoryTransition) => {
+      if (!profile) {
+        return;
+      }
+
+      historyUpdatePendingRef.current = true;
+      void applyHistorySnapshot(
+        transition.snapshot,
+        transition.selectedPlacementIdAfterTransition,
+      )
+        .catch(() => {
+          rollbackHistory(transition);
+        })
+        .finally(() => {
+          historyUpdatePendingRef.current = false;
+        });
+    },
+    [applyHistorySnapshot, profile, rollbackHistory],
   );
 
   const deleteSelectedAura = useCallback(() => {
@@ -130,54 +117,49 @@ export function useAuraOverlayEditingHistory({
       return;
     }
 
-    recordAuraHistory();
-    setSelectedPlacementId(profileUpdate.overlayPlacements?.[0]?.id ?? null);
+    recordHistory(profile);
+    const firstPlacementId = profileUpdate.overlayPlacements?.[0]?.id;
+    if (firstPlacementId) {
+      selectPlacement(firstPlacementId);
+    } else {
+      clearPlacementSelection();
+    }
     void updateProfile(profileUpdate).catch(() => undefined);
   }, [
     canEditAuras,
+    clearPlacementSelection,
     profile,
-    recordAuraHistory,
+    recordHistory,
+    selectPlacement,
     selectedPlacementId,
     updateProfile,
   ]);
 
   const undoAuraHistory = useCallback(() => {
-    if (!canEditAuras || !profile) {
+    if (!canEditAuras || !profile || historyUpdatePendingRef.current) {
       return;
     }
 
-    const history = historyRef.current;
-    if (history.profileId !== profile.id) {
+    const transition = undoHistory(profile);
+    if (!transition) {
       return;
     }
 
-    const snapshot = history.undo.pop();
-    if (!snapshot) {
-      return;
-    }
-
-    appendHistorySnapshot(history.redo, createAuraHistorySnapshot(profile));
-    applyHistorySnapshot(snapshot);
-  }, [applyHistorySnapshot, canEditAuras, profile]);
+    applyHistoryTransition(transition);
+  }, [applyHistoryTransition, canEditAuras, profile, undoHistory]);
 
   const redoAuraHistory = useCallback(() => {
-    if (!canEditAuras || !profile) {
+    if (!canEditAuras || !profile || historyUpdatePendingRef.current) {
       return;
     }
 
-    const history = historyRef.current;
-    if (history.profileId !== profile.id) {
+    const transition = redoHistory(profile);
+    if (!transition) {
       return;
     }
 
-    const snapshot = history.redo.pop();
-    if (!snapshot) {
-      return;
-    }
-
-    appendHistorySnapshot(history.undo, createAuraHistorySnapshot(profile));
-    applyHistorySnapshot(snapshot);
-  }, [applyHistorySnapshot, canEditAuras, profile]);
+    applyHistoryTransition(transition);
+  }, [applyHistoryTransition, canEditAuras, profile, redoHistory]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -239,14 +221,4 @@ export function useAuraOverlayEditingHistory({
     selectedPlacementId,
     undoAuraHistory,
   ]);
-
-  const selectPlacement = useCallback((placementId: string) => {
-    setSelectedPlacementId(placementId);
-  }, []);
-
-  return {
-    recordAuraHistory,
-    selectPlacement,
-    selectedPlacementId,
-  };
 }

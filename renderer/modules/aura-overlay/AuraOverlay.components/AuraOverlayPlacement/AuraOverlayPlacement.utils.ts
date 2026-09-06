@@ -6,13 +6,13 @@ import type {
 
 import type { CropRegion, OverlayPlacement } from "~/types";
 import type {
+  AuraOverlayScaleSnapContext,
+  AuraOverlaySnapContext,
+  AuraOverlaySnapGuide,
   AuraResizeCorner,
   AuraVideoSize,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
-import type {
-  AuraPlacementPropertiesPanelSide,
-  AuraPlacementPropertiesPatch,
-} from "../AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel";
+import type { AuraPlacementPropertiesPatch } from "../AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel";
 
 interface AuraOverlayDragState {
   placementId: string;
@@ -23,6 +23,9 @@ interface AuraOverlayDragState {
   deltaX: number;
   deltaY: number;
   isReleased: boolean;
+  snapContext: AuraOverlaySnapContext | null;
+  snapGuideX: AuraOverlaySnapGuide | null;
+  snapGuideY: AuraOverlaySnapGuide | null;
 }
 
 interface AuraOverlayResizeState {
@@ -33,6 +36,7 @@ interface AuraOverlayResizeState {
   initialPlacement: OverlayPlacement;
   draftPlacement: OverlayPlacement;
   isReleased: boolean;
+  scaleSnapContext: AuraOverlayScaleSnapContext | null;
 }
 
 interface AuraArcThicknessResizeState {
@@ -58,7 +62,6 @@ interface AuraOverlayPlacementProps {
   placement: OverlayPlacement;
   referenceViewport: AuraVideoSize | null;
   resizeState: AuraOverlayResizeState | null;
-  selectedPlacementId: string | null;
   stream: MediaStream | null;
   onAuraClick: MouseEventHandler<HTMLElement>;
   onPointerCancel: PointerEventHandler<HTMLElement>;
@@ -93,37 +96,10 @@ function createPlacementContentTransform(placement: OverlayPlacement): string {
   return transforms.join(" ");
 }
 
-function resolvePropertiesPanelSide(
-  left: number,
-  top: number,
-  width: number,
-  height: number,
-): AuraPlacementPropertiesPanelSide {
-  const panelWidth = 180;
-  const panelHeight = 126;
-  const gap = 8;
-  const viewportWidth = window.innerWidth || 0;
-  const viewportHeight = window.innerHeight || 0;
-
-  if (left + width + panelWidth + gap <= viewportWidth) {
-    return "right";
-  }
-
-  if (left >= panelWidth + gap) {
-    return "left";
-  }
-
-  if (top + height + panelHeight + gap <= viewportHeight) {
-    return "bottom";
-  }
-
-  return "top";
-}
-
 export type {
   AuraArcThicknessResizeState,
   AuraOverlayDragState,
   AuraOverlayPlacementProps,
   AuraOverlayResizeState,
 };
-export { createPlacementContentTransform, resolvePropertiesPanelSide };
+export { createPlacementContentTransform };

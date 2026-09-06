@@ -5,21 +5,23 @@ import { unwrapIpcResult } from "~/main/utils/ipc-api";
 import type { AppSettings } from "~/types";
 import { SettingsStoreChannel } from "./SettingsStore.channels";
 import type {
+  SettingsStoreAuraOverlaySnapshot,
+  SettingsStoreAuraOverlayUpdate,
   SettingsStoreClipPreviewOverlaySnapshot,
-  SettingsStoreOverlaySnapshot,
+  SettingsStoreCommonOverlaySnapshot,
   SettingsStoreRecorderOverlaySnapshot,
   SettingsUpdateInput,
 } from "./SettingsStore.dto";
 
 function getOverlaySnapshot<
-  TSnapshot extends SettingsStoreOverlaySnapshot,
+  TSnapshot extends SettingsStoreCommonOverlaySnapshot,
 >(): Promise<TSnapshot> {
   return ipcRenderer
     .invoke(SettingsStoreChannel.GetOverlaySnapshot)
     .then(unwrapIpcResult);
 }
 
-function onOverlayChanged<TSnapshot extends SettingsStoreOverlaySnapshot>(
+function onOverlayChanged<TSnapshot extends SettingsStoreCommonOverlaySnapshot>(
   callback: (settings: TSnapshot) => void,
 ): () => void {
   const listener = (_event: Electron.IpcRendererEvent, settings: TSnapshot) => {
@@ -90,10 +92,16 @@ const SettingsStoreClipPreviewOverlayAPI = {
 
 const SettingsStoreOverlayAPI = {
   scope: "aura-overlay" as const,
-  get: (): Promise<SettingsStoreOverlaySnapshot> => getOverlaySnapshot(),
+  get: (): Promise<SettingsStoreAuraOverlaySnapshot> => getOverlaySnapshot(),
   onChanged: (
-    callback: (settings: SettingsStoreOverlaySnapshot) => void,
+    callback: (settings: SettingsStoreAuraOverlaySnapshot) => void,
   ): (() => void) => onOverlayChanged(callback),
+  update: (
+    input: SettingsStoreAuraOverlayUpdate,
+  ): Promise<SettingsStoreAuraOverlaySnapshot> =>
+    ipcRenderer
+      .invoke(SettingsStoreChannel.Update, input)
+      .then(unwrapIpcResult),
 };
 
 const SettingsStoreRecorderOverlayAPI = {

@@ -7,6 +7,7 @@ import type {
 } from "../../main/modules/overlay-windows/OverlayWindows.dto";
 import {
   type AppSettings,
+  type AppSettingsUpdate,
   type CapturePreviewSource,
   createDefaultSettings,
   type Profile,
@@ -30,6 +31,7 @@ interface AuraOverlayE2ECalls {
   preparedDisplayMediaSourceIds: string[];
   profileUpdates: ProfileUpdateInput[];
   selectCropRegionCalls: SelectCropRegionOptions[];
+  settingsUpdates: AppSettingsUpdate[];
   unexpectedBridgeCalls: string[];
 }
 
@@ -217,6 +219,7 @@ async function setupAuraOverlayE2E(
         preparedDisplayMediaSourceIds: [],
         profileUpdates: [],
         selectCropRegionCalls: [],
+        settingsUpdates: [],
         unexpectedBridgeCalls: [],
       };
       const listeners: {
@@ -361,7 +364,13 @@ async function setupAuraOverlayE2E(
 
               return unsubscribe;
             },
-            update: undefined,
+            update: async (input) => {
+              calls.settingsUpdates.push(clone(input));
+              Object.assign(settings, input);
+              listeners.settingsChanged?.(clone(settings));
+
+              return clone(settings);
+            },
           },
         ),
       } as unknown as AuraOverlayE2EElectron;

@@ -1,22 +1,26 @@
 import clsx from "clsx";
 import { type MouseEvent, useMemo } from "react";
 
+import { useAuraOverlayShallow } from "~/renderer/store";
+
 import type { CropRegion, OverlayPlacement } from "~/types";
 import styles from "./AuraPlacementFocusStrip.module.css";
 
 interface AuraPlacementFocusStripProps {
   cropRegions: CropRegion[];
   placements: OverlayPlacement[];
-  selectedPlacementId: string | null;
-  onSelectPlacement: (placementId: string) => void;
 }
 
 function AuraPlacementFocusStrip({
   cropRegions,
   placements,
-  selectedPlacementId,
-  onSelectPlacement,
 }: AuraPlacementFocusStripProps) {
+  const { selectPlacement, selectedPlacementId } = useAuraOverlayShallow(
+    (auraOverlay) => ({
+      selectPlacement: auraOverlay.selectPlacement,
+      selectedPlacementId: auraOverlay.selectedPlacementId,
+    }),
+  );
   const cropLabelById = useMemo(
     () => new Map(cropRegions.map((crop) => [crop.id, crop.label])),
     [cropRegions],
@@ -25,7 +29,7 @@ function AuraPlacementFocusStrip({
   const handlePlacementClick = (event: MouseEvent<HTMLButtonElement>) => {
     const placementId = event.currentTarget.dataset.placementId;
     if (placementId) {
-      onSelectPlacement(placementId);
+      selectPlacement(placementId);
     }
   };
 

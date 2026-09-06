@@ -1,5 +1,7 @@
 import clsx from "clsx";
 
+import { useAuraOverlayShallow } from "~/renderer/store";
+
 import {
   createAuraArcBoundaryPaths,
   projectAuraOverlayPlacement,
@@ -15,7 +17,6 @@ import styles from "./AuraOverlayPlacement.module.css";
 import {
   type AuraOverlayPlacementProps,
   createPlacementContentTransform,
-  resolvePropertiesPanelSide,
 } from "./AuraOverlayPlacement.utils";
 
 function AuraOverlayPlacement({
@@ -29,7 +30,6 @@ function AuraOverlayPlacement({
   placement,
   referenceViewport,
   resizeState,
-  selectedPlacementId,
   stream,
   onAuraClick,
   onPointerCancel,
@@ -47,6 +47,9 @@ function AuraOverlayPlacement({
   onThicknessPointerUp,
   onVideoSizeChange,
 }: AuraOverlayPlacementProps) {
+  const selectedPlacementId = useAuraOverlayShallow(
+    (auraOverlay) => auraOverlay.selectedPlacementId,
+  );
   const currentResizeState =
     resizeState?.placementId === placement.id ? resizeState : null;
   const currentThicknessResizeState =
@@ -199,7 +202,11 @@ function AuraOverlayPlacement({
           />
         )}
       </button>
-      {!auraOverlayLocked && <span className={styles.label}>{crop.label}</span>}
+      {!auraOverlayLocked && (
+        <span className={styles.label} data-aura-label>
+          {crop.label}
+        </span>
+      )}
       {!auraOverlayLocked && isResizing && (
         <span className={styles.resizeReadout}>
           x: {left} y: {top}
@@ -216,17 +223,17 @@ function AuraOverlayPlacement({
         )}
       {!auraOverlayLocked && canEditAuras && isSelected && (
         <AuraPlacementPropertiesPanel
+          anchorBounds={{
+            height: displayHeight,
+            left,
+            top,
+            width: displayWidth,
+          }}
           displayHeight={displayHeight}
           displayWidth={displayWidth}
           label={crop.label}
           placement={effectivePlacement}
           pointControls={crop.shape === "points"}
-          side={resolvePropertiesPanelSide(
-            left,
-            top,
-            displayWidth,
-            displayHeight,
-          )}
           {...(effectiveVisibleArcThickness !== undefined
             ? { visibleThickness: effectiveVisibleArcThickness }
             : {})}

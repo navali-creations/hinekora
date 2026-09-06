@@ -1,34 +1,38 @@
 import type { MouseEvent } from "react";
 
-import type { ProfilesSlice } from "~/renderer/store/store.types";
+import { useAuraOverlayShallow } from "~/renderer/store";
 
 import type { Profile } from "~/types";
-import type { AuraVideoSize } from "../../AuraOverlay.page/AuraOverlay.page.utils";
+import type {
+  AuraSize,
+  AuraVideoSize,
+} from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import { useAuraOverlayArcThicknessResize } from "../useAuraOverlayArcThicknessResize/useAuraOverlayArcThicknessResize";
 import { useAuraOverlayPlacementDrag } from "../useAuraOverlayPlacementDrag/useAuraOverlayPlacementDrag";
 import { useAuraOverlayPlacementInteractionState } from "../useAuraOverlayPlacementInteractionState/useAuraOverlayPlacementInteractionState";
 import { useAuraOverlayPlacementProperties } from "../useAuraOverlayPlacementProperties/useAuraOverlayPlacementProperties";
 import { useAuraOverlayPlacementResize } from "../useAuraOverlayPlacementResize/useAuraOverlayPlacementResize";
 
-type UpdateProfile = ProfilesSlice["profiles"]["update"];
-
 interface UseAuraOverlayPlacementEditorInput {
+  gridCellSize: AuraSize;
+  guideViewport: AuraVideoSize;
   profile: Profile | null;
   referenceViewport: AuraVideoSize | null;
-  recordAuraHistory: () => boolean;
-  selectPlacement: (placementId: string) => void;
+  snapEnabled: boolean;
   targetViewport: AuraVideoSize;
-  updateProfile: UpdateProfile;
 }
 
 function useAuraOverlayPlacementEditor({
+  gridCellSize,
+  guideViewport,
   profile,
   referenceViewport,
-  recordAuraHistory,
-  selectPlacement,
+  snapEnabled,
   targetViewport,
-  updateProfile,
 }: UseAuraOverlayPlacementEditorInput) {
+  const selectPlacement = useAuraOverlayShallow(
+    (auraOverlay) => auraOverlay.selectPlacement,
+  );
   const interaction = useAuraOverlayPlacementInteractionState();
   const { arcThicknessResizeState, dragState, resizeState } = interaction;
   const {
@@ -37,13 +41,13 @@ function useAuraOverlayPlacementEditor({
     handlePointerMove,
     handlePointerUp,
   } = useAuraOverlayPlacementDrag({
+    gridCellSize,
+    guideViewport,
     interaction,
     profile,
-    recordAuraHistory,
     referenceViewport,
-    selectPlacement,
+    snapEnabled,
     targetViewport,
-    updateProfile,
   });
   const {
     handleResizePointerCancel,
@@ -53,11 +57,9 @@ function useAuraOverlayPlacementEditor({
   } = useAuraOverlayPlacementResize({
     interaction,
     profile,
-    recordAuraHistory,
     referenceViewport,
-    selectPlacement,
+    snapEnabled,
     targetViewport,
-    updateProfile,
   });
   const {
     handleThicknessPointerCancel,
@@ -67,19 +69,14 @@ function useAuraOverlayPlacementEditor({
   } = useAuraOverlayArcThicknessResize({
     interaction,
     profile,
-    recordAuraHistory,
     referenceViewport,
-    selectPlacement,
     targetViewport,
-    updateProfile,
   });
   const { handlePlacementPropertiesChange } = useAuraOverlayPlacementProperties(
     {
       profile,
-      recordAuraHistory,
       referenceViewport,
       targetViewport,
-      updateProfile,
     },
   );
 

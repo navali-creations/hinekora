@@ -94,4 +94,72 @@ describe("resizeAuraPlacementFromCorner", () => {
       referenceHeight: 1080,
     });
   });
+
+  it("uses explicit matched dimensions as the resize base", () => {
+    expect(
+      resizeAuraPlacementFromCorner(
+        {
+          id: "crop-1",
+          label: "Life",
+          x: 100,
+          y: 50,
+          width: 40,
+          height: 40,
+        },
+        {
+          id: "placement-1",
+          cropRegionId: "crop-1",
+          height: 75,
+          opacity: 1,
+          scale: 1,
+          width: 150,
+          x: 24,
+          y: 24,
+        },
+        "nw",
+        -10,
+        -5,
+      ),
+    ).toMatchObject({
+      x: 14,
+      y: 19,
+      scale: 1.067,
+    });
+  });
+
+  it("uses projected explicit dimensions while preserving the opposite corner", () => {
+    expect(
+      resizeAuraPlacementFromCorner(
+        {
+          id: "crop-1",
+          label: "Life",
+          x: 100,
+          y: 50,
+          width: 40,
+          height: 40,
+        },
+        {
+          id: "placement-1",
+          cropRegionId: "crop-1",
+          height: 75,
+          opacity: 1,
+          referenceHeight: 1080,
+          referenceWidth: 1920,
+          scale: 1,
+          width: 150,
+          x: 300,
+          y: 300,
+        },
+        "nw",
+        -75,
+        -37.5,
+        { width: 1920, height: 1080 },
+        { width: 1920, height: 1080 },
+      ),
+    ).toMatchObject({
+      x: 225,
+      y: 263,
+      scale: 1.5,
+    });
+  });
 });

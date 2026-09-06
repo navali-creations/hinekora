@@ -55,7 +55,6 @@ describe("SettingsStoreAPI", () => {
   it("uses the scoped overlay channel for recorder settings and changes", async () => {
     const settings = {
       activeGame: "poe1" as const,
-      auraOverlayShowEditingFrame: true,
       manualReplaySeconds: 30,
       manualReplayShowPreview: false,
       replayClipPreviewResolution: "720p" as const,
@@ -121,6 +120,40 @@ describe("SettingsStoreAPI", () => {
     expect(electronMocks.removeListener).toHaveBeenCalledWith(
       SettingsStoreChannel.ClipPreviewOverlayChanged,
       clipListener,
+    );
+  });
+
+  it("updates aura editing preferences through the scoped API", async () => {
+    const settings = {
+      auraOverlayEnableSnapping: false,
+      auraOverlayHideLabels: true,
+      auraOverlayHidePropertiesPanel: true,
+      auraOverlayShowCenterGuides: false,
+      auraOverlayShowEditingFrame: false,
+      auraOverlayShowEditingGrid: true,
+    };
+    electronMocks.invoke.mockResolvedValue(settings);
+
+    await expect(
+      SettingsStoreOverlayAPI.update({
+        auraOverlayEnableSnapping: false,
+        auraOverlayHideLabels: true,
+        auraOverlayHidePropertiesPanel: true,
+        auraOverlayShowCenterGuides: false,
+        auraOverlayShowEditingFrame: false,
+        auraOverlayShowEditingGrid: true,
+      }),
+    ).resolves.toBe(settings);
+    expect(electronMocks.invoke).toHaveBeenCalledWith(
+      SettingsStoreChannel.Update,
+      {
+        auraOverlayEnableSnapping: false,
+        auraOverlayHideLabels: true,
+        auraOverlayHidePropertiesPanel: true,
+        auraOverlayShowCenterGuides: false,
+        auraOverlayShowEditingFrame: false,
+        auraOverlayShowEditingGrid: true,
+      },
     );
   });
 });

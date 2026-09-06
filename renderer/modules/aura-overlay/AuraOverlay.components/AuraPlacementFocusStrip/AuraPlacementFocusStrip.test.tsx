@@ -1,11 +1,17 @@
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+
+import { useBoundStore } from "~/renderer/store";
 
 import { AuraPlacementFocusStrip } from "./AuraPlacementFocusStrip";
 
 describe("AuraPlacementFocusStrip", () => {
   let root: Root | null = null;
+
+  beforeEach(() => {
+    useBoundStore.getState().auraOverlay.clearPlacementSelection();
+  });
 
   afterEach(() => {
     root?.unmount();
@@ -14,7 +20,7 @@ describe("AuraPlacementFocusStrip", () => {
   });
 
   it("lists aura placements and focuses the clicked placement", async () => {
-    const onSelectPlacement = vi.fn();
+    useBoundStore.getState().auraOverlay.selectPlacement("placement-1");
     const container = document.createElement("div");
     document.body.append(container);
     root = createRoot(container);
@@ -51,8 +57,6 @@ describe("AuraPlacementFocusStrip", () => {
               opacity: 1,
             },
           ]}
-          selectedPlacementId="placement-1"
-          onSelectPlacement={onSelectPlacement}
         />,
       );
     });
@@ -66,7 +70,9 @@ describe("AuraPlacementFocusStrip", () => {
       shieldButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     });
 
-    expect(onSelectPlacement).toHaveBeenCalledWith("placement-2");
+    expect(useBoundStore.getState().auraOverlay.selectedPlacementId).toBe(
+      "placement-2",
+    );
   });
 
   it("does not render an empty focus strip", async () => {
@@ -76,12 +82,7 @@ describe("AuraPlacementFocusStrip", () => {
 
     await act(async () => {
       root?.render(
-        <AuraPlacementFocusStrip
-          cropRegions={[]}
-          placements={[]}
-          selectedPlacementId={null}
-          onSelectPlacement={vi.fn()}
-        />,
+        <AuraPlacementFocusStrip cropRegions={[]} placements={[]} />,
       );
     });
 

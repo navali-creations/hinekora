@@ -331,8 +331,16 @@ describe("SettingsStoreService", () => {
         SettingsStoreChannel.OverlayChanged,
         {
           activeGame: "poe2",
+          auraOverlayEnableSnapping: updatedSettings.auraOverlayEnableSnapping,
+          auraOverlayHideLabels: updatedSettings.auraOverlayHideLabels,
+          auraOverlayHidePropertiesPanel:
+            updatedSettings.auraOverlayHidePropertiesPanel,
+          auraOverlayShowCenterGuides:
+            updatedSettings.auraOverlayShowCenterGuides,
           auraOverlayShowEditingFrame:
             updatedSettings.auraOverlayShowEditingFrame,
+          auraOverlayShowEditingGrid:
+            updatedSettings.auraOverlayShowEditingGrid,
           manualReplaySeconds: updatedSettings.manualReplaySeconds,
           replayClipPreviewResolution:
             updatedSettings.replayClipPreviewResolution,
@@ -347,8 +355,6 @@ describe("SettingsStoreService", () => {
         SettingsStoreChannel.OverlayChanged,
         {
           activeGame: "poe2",
-          auraOverlayShowEditingFrame:
-            updatedSettings.auraOverlayShowEditingFrame,
           manualReplayShowPreview: updatedSettings.manualReplayShowPreview,
           manualReplaySeconds: updatedSettings.manualReplaySeconds,
           replayClipPreviewResolution:
@@ -458,9 +464,8 @@ describe("SettingsStoreService", () => {
       expect(() => handlers.get(SettingsStoreChannel.Get)?.(auraEvent)).toThrow(
         "settings-store:get is not available from this window",
       );
-      const expectedOverlaySnapshot = {
+      const expectedCommonOverlaySnapshot = {
         activeGame: fullSettings.activeGame,
-        auraOverlayShowEditingFrame: fullSettings.auraOverlayShowEditingFrame,
         manualReplaySeconds: fullSettings.manualReplaySeconds,
         replayClipPreviewResolution: fullSettings.replayClipPreviewResolution,
         selectedCaptureProfileId: fullSettings.selectedCaptureProfileId,
@@ -469,17 +474,27 @@ describe("SettingsStoreService", () => {
         selectedProfileId: fullSettings.selectedProfileId,
         telemetryCrashReporting: fullSettings.telemetryCrashReporting,
       };
+      const expectedAuraOverlaySnapshot = {
+        ...expectedCommonOverlaySnapshot,
+        auraOverlayEnableSnapping: fullSettings.auraOverlayEnableSnapping,
+        auraOverlayHideLabels: fullSettings.auraOverlayHideLabels,
+        auraOverlayHidePropertiesPanel:
+          fullSettings.auraOverlayHidePropertiesPanel,
+        auraOverlayShowCenterGuides: fullSettings.auraOverlayShowCenterGuides,
+        auraOverlayShowEditingFrame: fullSettings.auraOverlayShowEditingFrame,
+        auraOverlayShowEditingGrid: fullSettings.auraOverlayShowEditingGrid,
+      };
       expect(
         await handlers.get(SettingsStoreChannel.GetOverlaySnapshot)?.(
           auraEvent,
         ),
-      ).toEqual(expectedOverlaySnapshot);
+      ).toEqual(expectedAuraOverlaySnapshot);
       expect(
         await handlers.get(SettingsStoreChannel.GetOverlaySnapshot)?.(
           recorderEvent,
         ),
       ).toEqual({
-        ...expectedOverlaySnapshot,
+        ...expectedCommonOverlaySnapshot,
         manualReplayShowPreview: fullSettings.manualReplayShowPreview,
       });
       expect(() =>
@@ -509,6 +524,73 @@ describe("SettingsStoreService", () => {
         }),
       ).toMatchObject({
         activeGame: "poe2",
+      });
+      expect(
+        await handlers.get(SettingsStoreChannel.Update)?.(auraEvent, {
+          auraOverlayEnableSnapping: false,
+          auraOverlayHideLabels: true,
+          auraOverlayHidePropertiesPanel: true,
+          auraOverlayShowCenterGuides: false,
+          auraOverlayShowEditingFrame: false,
+          auraOverlayShowEditingGrid: true,
+        }),
+      ).toEqual({
+        ...expectedAuraOverlaySnapshot,
+        activeGame: "poe2",
+        auraOverlayEnableSnapping: false,
+        auraOverlayHideLabels: true,
+        auraOverlayHidePropertiesPanel: true,
+        auraOverlayShowCenterGuides: false,
+        auraOverlayShowEditingFrame: false,
+        auraOverlayShowEditingGrid: true,
+      });
+      expect(
+        await handlers.get(SettingsStoreChannel.Update)?.(auraEvent, {
+          activeGame: "poe1",
+        }),
+      ).toEqual({
+        ok: false,
+        error: "activeGame cannot be updated from this window",
+      });
+      expect(
+        await handlers.get(SettingsStoreChannel.Update)?.(auraEvent, {
+          auraOverlayShowEditingGrid: "yes",
+        }),
+      ).toEqual({
+        ok: false,
+        error: "auraOverlayShowEditingGrid must be a boolean",
+      });
+      expect(
+        await handlers.get(SettingsStoreChannel.Update)?.(auraEvent, {
+          auraOverlayEnableSnapping: "yes",
+        }),
+      ).toEqual({
+        ok: false,
+        error: "auraOverlayEnableSnapping must be a boolean",
+      });
+      expect(
+        await handlers.get(SettingsStoreChannel.Update)?.(auraEvent, {
+          auraOverlayHideLabels: "yes",
+        }),
+      ).toEqual({
+        ok: false,
+        error: "auraOverlayHideLabels must be a boolean",
+      });
+      expect(
+        await handlers.get(SettingsStoreChannel.Update)?.(auraEvent, {
+          auraOverlayHidePropertiesPanel: "yes",
+        }),
+      ).toEqual({
+        ok: false,
+        error: "auraOverlayHidePropertiesPanel must be a boolean",
+      });
+      expect(
+        await handlers.get(SettingsStoreChannel.Update)?.(auraEvent, {
+          auraOverlayShowCenterGuides: "yes",
+        }),
+      ).toEqual({
+        ok: false,
+        error: "auraOverlayShowCenterGuides must be a boolean",
       });
       expect(
         await handlers.get(SettingsStoreChannel.Update)?.(clipPreviewEvent, {

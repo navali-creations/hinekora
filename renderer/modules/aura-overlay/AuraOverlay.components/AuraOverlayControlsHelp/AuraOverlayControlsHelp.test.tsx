@@ -26,6 +26,11 @@ describe("AuraOverlayControlsHelp", () => {
     expect(container.textContent).toContain("Undo the last aura edit.");
     expect(container.textContent).toContain("Corner circles");
     expect(container.textContent).toContain("Filled arc circle");
+    expect(container.textContent).toContain("Match icon size");
+    expect(container.textContent).toContain(
+      "match their width and height to the anchor",
+    );
+    expect(container.textContent).toContain("Panel arrow");
     expect(container.textContent).toContain("Default aura");
     expect(container.textContent).toContain("action bar cooldowns");
     expect(container.textContent).toContain("Arched aura");

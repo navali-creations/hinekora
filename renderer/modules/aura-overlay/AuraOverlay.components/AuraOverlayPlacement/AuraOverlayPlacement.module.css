@@ -121,12 +121,14 @@
   left: 0;
   z-index: 4;
   max-width: min(14rem, calc(100vw - 8px));
+  width: max-content;
   overflow: hidden;
   border-radius: 0.25rem;
   padding: 2px 5px;
   color: var(--color-primary);
   background: color-mix(in oklch, var(--color-base-300) 72%, transparent);
   text-overflow: ellipsis;
+  white-space: nowrap;
   pointer-events: none;
   -webkit-app-region: no-drag;
 }
@@ -211,10 +213,16 @@
 .propertiesPanel {
   position: absolute;
   z-index: 8;
-  display: grid;
+  display: block;
+  overflow-x: hidden;
+  overflow-y: auto;
   width: 164px;
-  grid-template-columns: 1fr 1fr;
-  gap: 6px;
+  min-height: 28px;
+  max-height: min(
+    320px,
+    var(--aura-properties-panel-viewport-max-height, calc(100vh - 16px))
+  );
+  box-sizing: border-box;
   border: 1px solid color-mix(in oklch, var(--color-primary) 52%, transparent);
   border-radius: 0.375rem;
   padding: 8px;
@@ -227,27 +235,88 @@
   font-weight: 800;
   line-height: 1.15;
   pointer-events: auto;
+  transition:
+    width 180ms ease,
+    max-height 180ms ease,
+    padding 180ms ease;
   -webkit-app-region: no-drag;
 }
 
-.propertiesPanelRight {
-  top: 0;
-  left: calc(100% + 8px);
+.propertiesPanel:not([open]) {
+  overflow: hidden;
+  width: 28px;
+  max-height: 28px;
+  padding: 0;
 }
 
-.propertiesPanelLeft {
-  top: 0;
-  right: calc(100% + 8px);
+.propertiesPanelToggle {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  box-sizing: border-box;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  list-style: none;
+  place-items: center;
+  border-radius: 0.25rem;
+  color: var(--color-primary);
+  background: color-mix(in oklch, var(--color-base-100) 88%, transparent);
 }
 
-.propertiesPanelBottom {
-  top: calc(100% + 8px);
-  left: 0;
+.propertiesPanelToggle::-webkit-details-marker {
+  display: none;
 }
 
-.propertiesPanelTop {
-  bottom: calc(100% + 8px);
-  left: 0;
+.propertiesPanelToggle svg {
+  display: block;
+  transition: transform 180ms ease;
+}
+
+.propertiesPanelToggle:hover,
+.propertiesPanelToggle:focus-visible {
+  background: color-mix(in oklch, var(--color-primary) 18%, transparent);
+  outline: 1px solid color-mix(in oklch, var(--color-primary) 70%, transparent);
+}
+
+.propertiesPanel:not([open]) .propertiesPanelToggle svg {
+  transform: rotate(180deg);
+}
+
+.propertiesPanel:not([open]) .propertiesPanelToggle {
+  top: 50%;
+  right: auto;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.propertiesPanelContent {
+  display: grid;
+  min-width: 146px;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding-top: 20px;
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  transition:
+    opacity 140ms ease,
+    visibility 0ms linear,
+    transform 180ms ease;
+}
+
+.propertiesPanel:not([open]) .propertiesPanelContent {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-6px);
+  transition:
+    opacity 100ms ease,
+    visibility 0ms linear 100ms,
+    transform 180ms ease;
 }
 
 .propertiesField {
@@ -326,4 +395,12 @@
 .boxLocked:focus-visible {
   border-color: transparent;
   background: transparent;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .propertiesPanel,
+  .propertiesPanelContent,
+  .propertiesPanelToggle svg {
+    transition: none;
+  }
 }

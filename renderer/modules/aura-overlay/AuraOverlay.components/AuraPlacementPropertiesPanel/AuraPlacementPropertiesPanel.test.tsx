@@ -41,11 +41,11 @@ describe("AuraPlacementPropertiesPanel", () => {
     await act(async () => {
       root?.render(
         <AuraPlacementPropertiesPanel
+          anchorBounds={{ height: 80, left: 30, top: 40, width: 120 }}
           displayHeight={80}
           displayWidth={120}
           label="Aura name"
           placement={placement}
-          side="right"
           visibleThickness={20}
           onChange={onChange}
         />,
@@ -86,11 +86,11 @@ describe("AuraPlacementPropertiesPanel", () => {
     await act(async () => {
       root?.render(
         <AuraPlacementPropertiesPanel
+          anchorBounds={{ height: 80, left: 30, top: 40, width: 120 }}
           displayHeight={80}
           displayWidth={120}
           label="Aura name"
           placement={{ ...placement, scale: 2 }}
-          side="right"
           visibleThickness={20}
           onChange={onChange}
         />,
@@ -123,11 +123,11 @@ describe("AuraPlacementPropertiesPanel", () => {
     await act(async () => {
       root?.render(
         <AuraPlacementPropertiesPanel
+          anchorBounds={{ height: 80, left: 30, top: 40, width: 120 }}
           displayHeight={80}
           displayWidth={120}
           label="Aura name"
           placement={placement}
-          side="right"
           visibleThickness={20}
           onChange={onChange}
         />,
@@ -161,11 +161,11 @@ describe("AuraPlacementPropertiesPanel", () => {
     await act(async () => {
       root?.render(
         <AuraPlacementPropertiesPanel
+          anchorBounds={{ height: 80, left: 30, top: 40, width: 120 }}
           displayHeight={80}
           displayWidth={120}
           label="Aura name"
           placement={placement}
-          side="right"
           onChange={onChange}
         />,
       );
@@ -216,11 +216,11 @@ describe("AuraPlacementPropertiesPanel", () => {
     await act(async () => {
       root?.render(
         <AuraPlacementPropertiesPanel
+          anchorBounds={{ height: 80, left: 30, top: 40, width: 120 }}
           displayHeight={80}
           displayWidth={120}
           label="Aura name"
           placement={placement}
-          side="right"
           onChange={onChange}
         />,
       );
@@ -239,5 +239,38 @@ describe("AuraPlacementPropertiesPanel", () => {
 
     expect(nameInput?.value).toBe("Aura name");
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it("collapses and expands the per-aura controls", async () => {
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+
+    await act(async () => {
+      root?.render(
+        <AuraPlacementPropertiesPanel
+          anchorBounds={{ height: 80, left: 30, top: 40, width: 120 }}
+          displayHeight={80}
+          displayWidth={120}
+          label="Aura name"
+          placement={placement}
+          onChange={vi.fn()}
+        />,
+      );
+    });
+
+    const panel = container.querySelector<HTMLDetailsElement>(
+      'details[aria-label="Aura placement properties"]',
+    );
+    const toggle = container.querySelector<HTMLElement>(
+      'summary[aria-label="Collapse or expand aura properties"]',
+    );
+    expect(panel?.open).toBe(true);
+
+    await act(async () => toggle?.click());
+    expect(panel?.open).toBe(false);
+
+    await act(async () => toggle?.click());
+    expect(panel?.open).toBe(true);
   });
 });

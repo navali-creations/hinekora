@@ -4,47 +4,48 @@ import { useEffect, useState } from "react";
 import { OverlayExitNotice } from "~/renderer/components/OverlayExitNotice/OverlayExitNotice";
 import { AuraEditingNotice } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraEditingNotice/AuraEditingNotice";
 import { AuraLockHandoffNotice } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraLockHandoffNotice/AuraLockHandoffNotice";
+import { AuraOverlayAlignmentGuides } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraOverlayAlignmentGuides/AuraOverlayAlignmentGuides";
 import { AuraOverlayPlacement } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraOverlayPlacement/AuraOverlayPlacement";
 import { AuraPlacementFocusStrip } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraPlacementFocusStrip/AuraPlacementFocusStrip";
 import { useAuraOverlayAddAuraSelection } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayAddAuraSelection/useAuraOverlayAddAuraSelection";
 import { useAuraOverlayCaptureStream } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayCaptureStream/useAuraOverlayCaptureStream";
+import { useAuraOverlayEditingGeometry } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayEditingGeometry/useAuraOverlayEditingGeometry";
 import { useAuraOverlayEditingHistory } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayEditingHistory/useAuraOverlayEditingHistory";
 import { useAuraOverlayLockState } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayLockState/useAuraOverlayLockState";
 import { useAuraOverlayPlacementEditor } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayPlacementEditor/useAuraOverlayPlacementEditor";
 import { useAuraOverlayVideoSizing } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayVideoSizing/useAuraOverlayVideoSizing";
 import { getSelectedProfile } from "~/renderer/modules/crop-editor/CropEditor.utils/CropEditor.utils";
 import { ProfileMutationError } from "~/renderer/modules/profiles/Profiles.components/ProfileMutationError/ProfileMutationError";
-import { useProfilesShallow, useSettingsSelector } from "~/renderer/store";
+import { useProfilesShallow, useSettingsShallow } from "~/renderer/store";
 
 import {
   type AuraVideoSize,
   readAuraRouteParams,
+  selectAuraOverlayPageSettings,
 } from "./AuraOverlay.page.utils";
 import styles from "./AuraOverlayPage.module.css";
 
 function AuraOverlayPage() {
-  const { profileItems, selectedProfileId, updateProfile } = useProfilesShallow(
+  const { profileItems, selectedProfileId } = useProfilesShallow(
     (profiles) => ({
       profileItems: profiles.items,
       selectedProfileId: profiles.selectedProfileId,
-      updateProfile: profiles.update,
     }),
   );
   const [routeParams, setRouteParams] = useState(readAuraRouteParams);
   const routeProfileId = routeParams.get("profileId");
   const routeStartAddingAura = routeParams.get("startAddingAura") === "1";
   const routeAddAuraRequestId = routeParams.get("addAuraRequestId");
-  const activeGame = useSettingsSelector(
-    (settings) => settings.value?.activeGame ?? "poe1",
-  );
-  const showAuraEditingFrame = useSettingsSelector(
-    (settings) => settings.value?.auraOverlayShowEditingFrame ?? true,
-  );
+  const auraSettings = useSettingsShallow(selectAuraOverlayPageSettings);
   const profile =
     (routeProfileId
       ? profileItems.find((item) => item.id === routeProfileId)
       : null) ??
-    getSelectedProfile(profileItems, selectedProfileId, activeGame);
+    getSelectedProfile(
+      profileItems,
+      selectedProfileId,
+      auraSettings.activeGame,
+    );
   const { auraOverlayLocked, lockAuraOverlay, showLockHandoffHint } =
     useAuraOverlayLockState();
 
@@ -70,18 +71,18 @@ function AuraOverlayPage() {
     profile,
   });
   const canEditAuras = !auraOverlayLocked;
-  const { recordAuraHistory, selectPlacement, selectedPlacementId } =
-    useAuraOverlayEditingHistory({
-      canEditAuras,
-      profile,
-      updateProfile,
-    });
+  useAuraOverlayEditingHistory({
+    canEditAuras,
+    profile,
+  });
   const { bindAuraVideo, effectiveVideoSize, handleVideoSizeChange } =
     useAuraOverlayVideoSizing({
       captureSourceId,
       fallbackVideoSize: captureSourceVideoSize,
       stream,
     });
+  const { gridCellSize, viewport: editingViewport } =
+    useAuraOverlayEditingGeometry(effectiveVideoSize);
   const {
     arcThicknessResizeState,
     dragState,
@@ -101,12 +102,12 @@ function AuraOverlayPage() {
     handleThicknessPointerUp,
     resizeState,
   } = useAuraOverlayPlacementEditor({
+    gridCellSize,
+    guideViewport: editingViewport,
     profile,
     referenceViewport: profileReferenceViewport,
-    recordAuraHistory,
-    selectPlacement,
+    snapEnabled: auraSettings.enableSnapping,
     targetViewport: effectiveVideoSize,
-    updateProfile,
   });
 
   useEffect(() => {
@@ -128,10 +129,8 @@ function AuraOverlayPage() {
   const { startAddAuraSelection } = useAuraOverlayAddAuraSelection({
     lockAuraOverlay,
     profile,
-    recordAuraHistory,
     routeAddAuraRequestId,
     routeStartAddingAura,
-    updateProfile,
   });
 
   const handleAddAuraClick = () => {
@@ -151,9 +150,17 @@ function AuraOverlayPage() {
       aria-label="Aura overlay"
       className={clsx(
         styles.overlay,
-        canEditAuras && showAuraEditingFrame && styles.overlayEditing,
+        canEditAuras && auraSettings.showFrame && styles.overlayEditing,
+        canEditAuras && auraSettings.showGrid && styles.overlayEditingGrid,
+        canEditAuras && auraSettings.hideLabels && styles.overlayHideLabels,
+        canEditAuras &&
+          auraSettings.hideProperties &&
+          styles.overlayHideProperties,
       )}
       role="application"
+      style={{
+        backgroundSize: `${gridCellSize.width}px ${gridCellSize.height}px`,
+      }}
     >
       <ProfileMutationError className={styles.profileError ?? ""} />
       {profile?.overlayPlacements.map((placement) => {
@@ -177,7 +184,6 @@ function AuraOverlayPage() {
             placement={placement}
             referenceViewport={profileReferenceViewport}
             resizeState={resizeState}
-            selectedPlacementId={selectedPlacementId}
             stream={stream}
             onAuraClick={handleAuraClick}
             onPointerCancel={handlePointerCancel}
@@ -200,11 +206,10 @@ function AuraOverlayPage() {
       <AuraPlacementFocusStrip
         cropRegions={profile?.cropRegions ?? []}
         placements={canEditAuras ? (profile?.overlayPlacements ?? []) : []}
-        selectedPlacementId={selectedPlacementId}
-        onSelectPlacement={selectPlacement}
       />
       {canEditAuras && (
         <>
+          <AuraOverlayAlignmentGuides dragState={dragState} />
           <OverlayExitNotice overlayName="aura overlay" />
           <AuraEditingNotice
             canAddAura={!!profile}

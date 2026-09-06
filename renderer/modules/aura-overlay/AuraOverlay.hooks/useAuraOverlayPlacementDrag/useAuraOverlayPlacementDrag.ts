@@ -1,37 +1,47 @@
 import type { PointerEvent } from "react";
 
-import type { ProfilesSlice } from "~/renderer/store/store.types";
+import { useAuraOverlayShallow, useProfilesShallow } from "~/renderer/store";
 
 import { createCoordinateReferenceDimensions, type Profile } from "~/types";
 import {
+  type AuraSize,
   type AuraVideoSize,
   projectAuraOverlayPlacement,
   resolveAuraReferenceViewport,
   unprojectAuraPoint,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import type { UseAuraOverlayPlacementInteractionStateResult } from "../useAuraOverlayPlacementInteractionState/useAuraOverlayPlacementInteractionState";
-
-type UpdateProfile = ProfilesSlice["profiles"]["update"];
+import {
+  createAuraOverlaySnapContext,
+  resolveAuraOverlayDragSnap,
+} from "./useAuraOverlayPlacementDrag.utils";
 
 interface UseAuraOverlayPlacementDragInput {
+  gridCellSize: AuraSize;
+  guideViewport: AuraVideoSize;
   interaction: UseAuraOverlayPlacementInteractionStateResult;
   profile: Profile | null;
-  recordAuraHistory: () => boolean;
   referenceViewport: AuraVideoSize | null;
-  selectPlacement: (placementId: string) => void;
+  snapEnabled: boolean;
   targetViewport: AuraVideoSize;
-  updateProfile: UpdateProfile;
 }
 
 function useAuraOverlayPlacementDrag({
+  gridCellSize,
+  guideViewport,
   interaction,
   profile,
-  recordAuraHistory,
   referenceViewport,
-  selectPlacement,
+  snapEnabled,
   targetViewport,
-  updateProfile,
 }: UseAuraOverlayPlacementDragInput) {
+  const updateProfile = useProfilesShallow((profiles) => profiles.update);
+  const { recordAuraHistory, selectPlacement } = useAuraOverlayShallow(
+    (auraOverlay) => ({
+      recordAuraHistory: auraOverlay.recordAuraHistory,
+      selectPlacement: auraOverlay.selectPlacement,
+    }),
+  );
   const {
     arcThicknessResizeStateRef,
     commitDragState,
@@ -84,6 +94,18 @@ function useAuraOverlayPlacementDrag({
       deltaX: 0,
       deltaY: 0,
       isReleased: false,
+      snapContext: snapEnabled
+        ? createAuraOverlaySnapContext({
+            fallbackReferenceViewport: referenceViewport,
+            gridCellSize,
+            guideViewport,
+            placementId: placement.id,
+            profile,
+            targetViewport,
+          })
+        : null,
+      snapGuideX: null,
+      snapGuideY: null,
     });
   };
 
@@ -93,10 +115,28 @@ function useAuraOverlayPlacementDrag({
       return;
     }
 
+    const rawX =
+      currentDragState.initialDisplayX +
+      event.clientX -
+      currentDragState.startX;
+    const rawY =
+      currentDragState.initialDisplayY +
+      event.clientY -
+      currentDragState.startY;
+    const snappedPosition = currentDragState.snapContext
+      ? resolveAuraOverlayDragSnap({
+          rawX,
+          rawY,
+          snapContext: currentDragState.snapContext,
+        })
+      : { guideX: null, guideY: null, x: rawX, y: rawY };
+
     dragStateRef.current = {
       ...currentDragState,
-      deltaX: event.clientX - currentDragState.startX,
-      deltaY: event.clientY - currentDragState.startY,
+      deltaX: snappedPosition.x - currentDragState.initialDisplayX,
+      deltaY: snappedPosition.y - currentDragState.initialDisplayY,
+      snapGuideX: snappedPosition.guideX,
+      snapGuideY: snappedPosition.guideY,
     };
     publishInteractionSnapshot();
   };
@@ -151,12 +191,15 @@ function useAuraOverlayPlacementDrag({
     const nextX = Math.max(0, Math.round(referencePoint.x));
     const nextY = Math.max(0, Math.round(referencePoint.y));
 
-    recordAuraHistory();
+    recordAuraHistory(profile);
     const releasedDragState = {
       ...currentDragState,
       deltaX: x - currentDragState.initialDisplayX,
       deltaY: y - currentDragState.initialDisplayY,
       isReleased: true,
+      snapContext: null,
+      snapGuideX: null,
+      snapGuideY: null,
     };
     commitDragState(releasedDragState);
     void updateProfile({

@@ -4,6 +4,7 @@ import { getAuraSelectionTypeHelp } from "~/renderer/modules/aura-selection/Aura
 import { useAuraOverlayShallow } from "~/renderer/store";
 
 import { AuraOverlayControlsHelp } from "../AuraOverlayControlsHelp/AuraOverlayControlsHelp";
+import { AuraOverlayEditingPreferences } from "../AuraOverlayEditingPreferences/AuraOverlayEditingPreferences";
 import styles from "./AuraEditingNotice.module.css";
 
 interface AuraEditingNoticeProps {
@@ -87,6 +88,7 @@ function AuraEditingNotice({
           </button>
         </div>
       </div>
+      <AuraOverlayEditingPreferences />
       <AuraOverlayControlsHelp />
     </div>
   );

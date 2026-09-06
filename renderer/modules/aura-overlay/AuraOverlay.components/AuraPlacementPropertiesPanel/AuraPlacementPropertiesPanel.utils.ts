@@ -5,11 +5,23 @@ import {
 } from "~/types";
 import {
   type AuraRotationDegrees,
+  type AuraSize,
   auraRotationDegrees,
   normalizeAuraPlacementNumberValue,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 
-type AuraPlacementPropertiesPanelSide = "bottom" | "left" | "right" | "top";
+interface AuraPlacementPropertiesPanelBounds {
+  height: number;
+  left: number;
+  top: number;
+  width: number;
+}
+
+interface AuraPlacementPropertiesPanelLayout {
+  left: number;
+  maxHeight: number;
+  top: number;
+}
 
 interface AuraPlacementPropertiesPatch {
   arcStraightened?: boolean;
@@ -173,9 +185,51 @@ function resolvePlacementScale(placement: OverlayPlacement): number {
   );
 }
 
+function resolveAuraPlacementPropertiesPanelLayout(
+  anchor: AuraPlacementPropertiesPanelBounds,
+  panel: AuraSize,
+  viewport: AuraSize,
+): AuraPlacementPropertiesPanelLayout {
+  const gap = 8;
+  const margin = 8;
+  const maxHeight = Math.max(0, viewport.height - margin * 2);
+  const panelHeight = Math.min(panel.height, maxHeight);
+  const candidates = [
+    { left: anchor.left + anchor.width + gap, top: anchor.top },
+    { left: anchor.left - panel.width - gap, top: anchor.top },
+    { left: anchor.left, top: anchor.top + anchor.height + gap },
+    { left: anchor.left, top: anchor.top - panelHeight - gap },
+  ];
+  const fitsViewport = (candidate: { left: number; top: number }) =>
+    candidate.left >= margin &&
+    candidate.top >= margin &&
+    candidate.left + panel.width <= viewport.width - margin &&
+    candidate.top + panelHeight <= viewport.height - margin;
+  const overflow = (candidate: { left: number; top: number }) =>
+    Math.max(0, margin - candidate.left) +
+    Math.max(0, margin - candidate.top) +
+    Math.max(0, candidate.left + panel.width - viewport.width + margin) +
+    Math.max(0, candidate.top + panelHeight - viewport.height + margin);
+  const preferredCandidate =
+    candidates.find(fitsViewport) ??
+    candidates.reduce((best, candidate) =>
+      overflow(candidate) < overflow(best) ? candidate : best,
+    );
+  const maxLeft = Math.max(margin, viewport.width - panel.width - margin);
+  const maxTop = Math.max(margin, viewport.height - panelHeight - margin);
+
+  return {
+    left: Math.round(
+      clamp(preferredCandidate.left, margin, maxLeft) - anchor.left,
+    ),
+    maxHeight,
+    top: Math.round(clamp(preferredCandidate.top, margin, maxTop) - anchor.top),
+  };
+}
+
 export type {
   AuraPlacementPropertiesDraft,
-  AuraPlacementPropertiesPanelSide,
+  AuraPlacementPropertiesPanelBounds,
   AuraPlacementPropertiesPatch,
   NumberFieldName,
 };
@@ -186,5 +240,6 @@ export {
   createPropertiesDraft,
   normalizeNumberInputValue,
   readNumberFieldName,
+  resolveAuraPlacementPropertiesPanelLayout,
   resolveNextRotationDegrees,
 };
