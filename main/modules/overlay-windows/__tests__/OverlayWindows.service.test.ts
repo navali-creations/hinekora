@@ -477,23 +477,20 @@ describe("OverlayWindowsService", () => {
   });
 
   it("applies the overlay capture protection setting to open overlay windows", async () => {
-    let handleSettingsChange:
-      | ((settings: {
-          recordingHideOverlaysFromRecording: boolean;
-          recordingHideOverlaysFromRewind: boolean;
-        }) => void)
-      | null = null;
+    let handleSettingsChange: ((settings: AppSettings) => void) | null = null;
     let handleRecorderChange:
       | ((snapshot: {
           captureMode: "session" | "rewind";
           status: { bufferActive: boolean; runRecordingActive: boolean };
         }) => void)
       | null = null;
-    settingsStoreMocks.get.mockReturnValue({
+    let currentSettings: AppSettings = {
+      ...createDefaultSettings(),
       activeGame: "poe2",
       recordingHideOverlaysFromRecording: false,
       recordingHideOverlaysFromRewind: false,
-    });
+    };
+    settingsStoreMocks.get.mockReturnValue(currentSettings);
     settingsStoreMocks.onDidChange.mockImplementation((listener) => {
       handleSettingsChange = listener;
       return vi.fn();
@@ -522,10 +519,12 @@ describe("OverlayWindowsService", () => {
 
     expect(handleSettingsChange).not.toBeNull();
     expect(handleRecorderChange).not.toBeNull();
-    const notifySettingsChange = handleSettingsChange as unknown as (settings: {
-      recordingHideOverlaysFromRecording: boolean;
-      recordingHideOverlaysFromRewind: boolean;
-    }) => void;
+    const notifySettingsChange = (update: Partial<AppSettings>) => {
+      currentSettings = { ...currentSettings, ...update };
+      (handleSettingsChange as unknown as (settings: AppSettings) => void)(
+        currentSettings,
+      );
+    };
     const notifyRecorderChange = handleRecorderChange as unknown as (snapshot: {
       captureMode: "session" | "rewind";
       status: { bufferActive: boolean; runRecordingActive: boolean };
@@ -559,6 +558,21 @@ describe("OverlayWindowsService", () => {
     );
     expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(true);
 
+    notifySettingsChange({
+      auraOverlayIncludeInCaptures: true,
+      recordingHideOverlaysFromRecording: false,
+      recordingHideOverlaysFromRewind: true,
+    });
+
+    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
+      true,
+    );
+    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
+      false,
+    );
+    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+
     notifyRecorderChange({
       captureMode: "rewind",
       status: { bufferActive: false, runRecordingActive: true },
@@ -583,9 +597,9 @@ describe("OverlayWindowsService", () => {
       true,
     );
     expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
-      true,
+      false,
     );
-    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(false);
 
     notifyRecorderChange({
       captureMode: "rewind",
@@ -1586,6 +1600,20 @@ describe("GridLinesOverlayService", () => {
     await expect(selection).resolves.toBeNull();
   });
 
+  it("does not show a crop selector whose request became stale while loading", async () => {
+    const cropWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(cropWindow);
+    const coordinator = new GameOverlayCoordinator();
+    const service = new GridLinesOverlayService(coordinator);
+
+    await expect(service.selectCropRegion({}, () => false)).resolves.toBeNull();
+
+    expect(cropWindow.showInactive).not.toHaveBeenCalled();
+    expect(cropWindow.focus).not.toHaveBeenCalled();
+    expect(electronMocks.globalShortcutRegister).not.toHaveBeenCalled();
+    service.destroy();
+  });
+
   it("loads and resolves arched crop selector selections", async () => {
     const cropWindow = createFakeWindow();
     electronMocks.browserWindowFactory.mockReturnValue(cropWindow);
@@ -1912,6 +1940,72 @@ describe("GridLinesOverlayService", () => {
     expect(auraWindow.setOpacity).toHaveBeenCalledWith(0);
   });
 
+  it("keeps the aura editor visible until the crop selector is ready", async () => {
+    const cropWindow = createFakeWindow();
+    let finishLoadingCropSelector!: () => void;
+    cropWindow.loadFile.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishLoadingCropSelector = resolve;
+        }),
+    );
+    electronMocks.browserWindowFactory.mockReturnValue(cropWindow);
+    const service = new OverlayWindowsService();
+    service.setRunningGame("poe1");
+    service.setPoeFocusActive(true);
+    await flushTimers();
+
+    const auraWindow = createFakeWindow({ visible: true });
+    Object.assign(getInternals(service).auraManagerOverlays, {
+      auraOverlayProfileId: "profile-1",
+      auraOverlayRequested: true,
+      auraWindow,
+    });
+
+    const selection = service.selectCropRegion();
+    await vi.waitFor(() => {
+      expect(cropWindow.loadFile).toHaveBeenCalledTimes(1);
+    });
+
+    expect(auraWindow.setOpacity).not.toHaveBeenCalledWith(0);
+    expect(cropWindow.showInactive).not.toHaveBeenCalled();
+
+    finishLoadingCropSelector();
+    await flushTimers();
+
+    expect(auraWindow.setOpacity).toHaveBeenCalledWith(0);
+    expect(cropWindow.showInactive).toHaveBeenCalledTimes(1);
+
+    service.cancelCropRegionSelection();
+    await expect(selection).resolves.toBeNull();
+  });
+
+  it("invalidates a crop selector that is still loading when auras lock", async () => {
+    const cropWindow = createFakeWindow();
+    let finishLoadingCropSelector!: () => void;
+    cropWindow.loadFile.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishLoadingCropSelector = resolve;
+        }),
+    );
+    electronMocks.browserWindowFactory.mockReturnValue(cropWindow);
+    const service = new OverlayWindowsService();
+
+    const selection = service.selectCropRegion();
+    await vi.waitFor(() => {
+      expect(cropWindow.loadFile).toHaveBeenCalledTimes(1);
+    });
+
+    service.setAuraOverlayLocked(true);
+    finishLoadingCropSelector();
+
+    await expect(selection).resolves.toBeNull();
+    expect(cropWindow.showInactive).not.toHaveBeenCalled();
+    expect(cropWindow.focus).not.toHaveBeenCalled();
+    expect(electronMocks.globalShortcutRegister).not.toHaveBeenCalled();
+  });
+
   it("suppresses the recorder overlay while the crop selector is active", async () => {
     const recorderWindow = createFakeWindow();
     const cropWindow = createFakeWindow();
@@ -1960,21 +2054,28 @@ describe("GridLinesOverlayService", () => {
     const service = new OverlayWindowsService();
     const coordinator = getInternals(service).coordinator;
     const gridLinesOverlay = getInternals(service).gridLinesOverlay as {
-      selectCropRegion(): Promise<null>;
+      selectCropRegion(
+        options?: unknown,
+        activateWhenReady?: () => boolean,
+      ): Promise<null>;
     };
     let resolveFirst!: (selection: null) => void;
     let resolveSecond!: (selection: null) => void;
+    let activateFirst!: () => boolean;
+    let activateSecond!: () => boolean;
     vi.spyOn(gridLinesOverlay, "selectCropRegion")
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
+      .mockImplementationOnce((_options, activateWhenReady) => {
+        activateFirst = activateWhenReady!;
+        return new Promise((resolve) => {
           resolveFirst = resolve;
-        }),
-      )
-      .mockReturnValueOnce(
-        new Promise((resolve) => {
+        });
+      })
+      .mockImplementationOnce((_options, activateWhenReady) => {
+        activateSecond = activateWhenReady!;
+        return new Promise((resolve) => {
           resolveSecond = resolve;
-        }),
-      );
+        });
+      });
     const setExclusiveParticipant = vi.spyOn(
       coordinator,
       "setExclusiveParticipant",
@@ -1982,6 +2083,9 @@ describe("GridLinesOverlayService", () => {
 
     const firstSelection = service.selectCropRegion();
     const secondSelection = service.selectCropRegion();
+    expect(activateFirst()).toBe(false);
+    expect(activateSecond()).toBe(true);
+    expect(setExclusiveParticipant).toHaveBeenCalledWith(gridLinesOverlay);
     resolveFirst(null);
     await firstSelection;
 
@@ -2197,6 +2301,64 @@ describe("GridLinesOverlayService", () => {
     expect(
       getInternals(service).gridLinesOverlay.cropSelectorWindow,
     ).toBeNull();
+  });
+
+  it("ignores lifecycle events from a replaced crop selector window", async () => {
+    const firstCropWindow = createFakeWindow();
+    const secondCropWindow = createFakeWindow();
+    let finishLoadingFirst!: () => void;
+    let finishLoadingSecond!: () => void;
+    firstCropWindow.loadFile.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishLoadingFirst = resolve;
+        }),
+    );
+    secondCropWindow.loadFile.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishLoadingSecond = resolve;
+        }),
+    );
+    electronMocks.browserWindowFactory
+      .mockReturnValueOnce(firstCropWindow)
+      .mockReturnValueOnce(secondCropWindow);
+    const service = new OverlayWindowsService();
+
+    const firstSelection = service.selectCropRegion();
+    await vi.waitFor(() => {
+      expect(firstCropWindow.loadFile).toHaveBeenCalledTimes(1);
+    });
+    const secondSelection = service.selectCropRegion();
+    await vi.waitFor(() => {
+      expect(secondCropWindow.loadFile).toHaveBeenCalledTimes(1);
+    });
+
+    finishLoadingSecond();
+    await flushTimers();
+    const firstFocusListener = firstCropWindow.on.mock.calls.find(
+      ([eventName]) => eventName === "focus",
+    )?.[1];
+    const firstBlurListener = firstCropWindow.on.mock.calls.find(
+      ([eventName]) => eventName === "blur",
+    )?.[1];
+    const firstClosedListener = firstCropWindow.on.mock.calls.find(
+      ([eventName]) => eventName === "closed",
+    )?.[1];
+    firstFocusListener?.();
+    firstBlurListener?.();
+    firstClosedListener?.();
+    await flushPromises();
+
+    expect(getInternals(service).gridLinesOverlay.cropSelectorWindow).toBe(
+      secondCropWindow,
+    );
+    expect(secondCropWindow.showInactive).toHaveBeenCalledTimes(1);
+
+    finishLoadingFirst();
+    await expect(firstSelection).resolves.toBeNull();
+    service.cancelCropRegionSelection();
+    await expect(secondSelection).resolves.toBeNull();
   });
 });
 

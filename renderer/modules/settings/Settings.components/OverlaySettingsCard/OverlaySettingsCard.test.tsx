@@ -53,8 +53,8 @@ describe("OverlaySettingsCard", () => {
     const recorderStartupToggle = container.querySelector<HTMLInputElement>(
       'input[aria-label="Show recording overlay at startup"]',
     );
-    const auraEditingFrameToggle = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Show aura overlay editing frame"]',
+    const auraCaptureToggle = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Include aura overlay in captures"]',
     );
     const recorderStartMinimizedToggle =
       container.querySelector<HTMLInputElement>(
@@ -77,7 +77,7 @@ describe("OverlaySettingsCard", () => {
       if (
         !recorderStartupToggle ||
         !recorderStartMinimizedToggle ||
-        !auraEditingFrameToggle ||
+        !auraCaptureToggle ||
         !recorderFocusToggle ||
         !auraFocusToggle ||
         !clipPreviewFocusToggle ||
@@ -88,7 +88,7 @@ describe("OverlaySettingsCard", () => {
 
       recorderStartupToggle.click();
       recorderStartMinimizedToggle.click();
-      auraEditingFrameToggle.click();
+      auraCaptureToggle.click();
       recorderFocusToggle.click();
       auraFocusToggle.click();
       clipPreviewFocusToggle.click();
@@ -104,9 +104,10 @@ describe("OverlaySettingsCard", () => {
       true,
     );
     expect(storeMocks.updatePreference).toHaveBeenCalledWith(
-      "auraOverlayShowEditingFrame",
-      false,
+      "auraOverlayIncludeInCaptures",
+      true,
     );
+    expect(container.textContent).toContain("Windows screenshots");
     expect(storeMocks.updatePreference).toHaveBeenCalledWith(
       "recorderOverlayIgnoreGameFocus",
       true,

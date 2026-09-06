@@ -29,17 +29,17 @@ function useAuraOverlayAddAuraSelection({
   const updateProfile = useProfilesShallow((profiles) => profiles.update);
   const {
     addAuraRequest,
-    clearPlacementSelection,
     recordAuraHistory,
     selectPlacement,
     setAddAuraRequest,
+    setAddAuraSelectionError,
     setAddingAuraShape,
   } = useAuraOverlayShallow((auraOverlay) => ({
     addAuraRequest: auraOverlay.addAuraRequest,
-    clearPlacementSelection: auraOverlay.clearPlacementSelection,
     recordAuraHistory: auraOverlay.recordAuraHistory,
     selectPlacement: auraOverlay.selectPlacement,
     setAddAuraRequest: auraOverlay.setAddAuraRequest,
+    setAddAuraSelectionError: auraOverlay.setAddAuraSelectionError,
     setAddingAuraShape: auraOverlay.setAddingAuraShape,
   }));
 
@@ -52,10 +52,16 @@ function useAuraOverlayAddAuraSelection({
       const lockOnCancel = options?.lockOnCancel === true;
       const shape = options?.shape ?? "rect";
       addingAuraRef.current = true;
-      clearPlacementSelection();
+      setAddAuraSelectionError(null);
       setAddingAuraShape(shape);
       void window.electron.overlayWindows
         .selectCropRegion({ shape })
+        .catch(() => {
+          setAddAuraSelectionError(
+            "Could not prepare the selection overlay. Please try again.",
+          );
+          return null;
+        })
         .then(async (selection) => {
           if (!selection) {
             if (lockOnCancel) {
@@ -84,11 +90,11 @@ function useAuraOverlayAddAuraSelection({
       return true;
     },
     [
-      clearPlacementSelection,
       lockAuraOverlay,
       profile,
       recordAuraHistory,
       selectPlacement,
+      setAddAuraSelectionError,
       setAddingAuraShape,
       updateProfile,
     ],

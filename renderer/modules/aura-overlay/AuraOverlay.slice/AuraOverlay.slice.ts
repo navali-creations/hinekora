@@ -28,6 +28,7 @@ interface AuraHistoryTransition {
 interface AuraOverlaySlice {
   auraOverlay: {
     addAuraRequest: AuraAddRequest | null;
+    addAuraSelectionError: string | null;
     addingAuraShape: CropRegionSelectionShape | null;
     editingHistory: AuraOverlayHistoryState;
     selectedPlacementId: string | null;
@@ -38,6 +39,7 @@ interface AuraOverlaySlice {
     rollbackAuraHistory: (transition: AuraHistoryTransition) => void;
     selectPlacement: (placementId: string) => void;
     setAddAuraRequest: (request: AuraAddRequest | null) => void;
+    setAddAuraSelectionError: (error: string | null) => void;
     setAddingAuraShape: (shape: CropRegionSelectionShape | null) => void;
     undoAuraHistory: (profile: Profile) => AuraHistoryTransition | null;
   };
@@ -105,6 +107,7 @@ const createAuraOverlaySlice: BoundStoreStateCreator<AuraOverlaySlice> = (
 ) => ({
   auraOverlay: {
     addAuraRequest: null,
+    addAuraSelectionError: null,
     addingAuraShape: null,
     editingHistory: {
       profileId: null,
@@ -195,6 +198,11 @@ const createAuraOverlaySlice: BoundStoreStateCreator<AuraOverlaySlice> = (
     setAddAuraRequest: (request) => {
       set((state) => {
         state.auraOverlay.addAuraRequest = request;
+      });
+    },
+    setAddAuraSelectionError: (error) => {
+      set((state) => {
+        state.auraOverlay.addAuraSelectionError = error;
       });
     },
     setAddingAuraShape: (shape) => {

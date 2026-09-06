@@ -625,6 +625,7 @@ export const AppSettingsSchema = z.object({
   recorderOverlayStartMinimized: z.boolean().default(false),
   recorderOverlayIgnoreGameFocus: z.boolean().default(false),
   auraOverlayIgnoreGameFocus: z.boolean().default(false),
+  auraOverlayIncludeInCaptures: z.boolean().default(false),
   auraOverlayShowEditingFrame: z.boolean().default(true),
   auraOverlayShowEditingGrid: z.boolean().default(false),
   auraOverlayShowCenterGuides: z.boolean().default(false),

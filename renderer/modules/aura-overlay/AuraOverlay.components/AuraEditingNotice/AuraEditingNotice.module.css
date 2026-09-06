@@ -1,3 +1,21 @@
+.preparingOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+}
+
+.preparingNotice {
+  --overlay-notice-accent: #14b8a6;
+
+  top: 4.25rem;
+}
+
+.selectionErrorNotice {
+  --overlay-notice-accent: var(--color-error);
+
+  top: 4.25rem;
+}
+
 .editingDock {
   --aura-editing-bar-height: 2.875rem;
 

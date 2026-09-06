@@ -23,11 +23,11 @@ function OverlaySettingsCard() {
         />
 
         <OverlayPreferenceToggleRow
-          ariaLabel="Show aura overlay editing frame"
-          defaultValue={true}
-          description="Show the border and glow around the screen while the aura overlay is unlocked for editing."
-          label="Aura Editing Frame"
-          preferenceKey="auraOverlayShowEditingFrame"
+          ariaLabel="Include aura overlay in captures"
+          defaultValue={false}
+          description="Keep the aura overlay and selection grid visible in Windows screenshots, Hinekora rewinds and recordings, and other capture tools."
+          label="Include Aura Overlay in Captures"
+          preferenceKey="auraOverlayIncludeInCaptures"
         />
       </div>
 

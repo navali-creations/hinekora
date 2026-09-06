@@ -37,12 +37,16 @@ describe("AuraOverlay slice", () => {
     );
 
     expect(store.getState().auraOverlay.addAuraRequest).toBeNull();
+    expect(store.getState().auraOverlay.addAuraSelectionError).toBeNull();
     expect(store.getState().auraOverlay.addingAuraShape).toBeNull();
     expect(store.getState().auraOverlay.selectedPlacementId).toBeNull();
 
     store
       .getState()
       .auraOverlay.setAddAuraRequest({ requestId: "request-1", shape: "arc" });
+    store
+      .getState()
+      .auraOverlay.setAddAuraSelectionError("Selection unavailable");
     store.getState().auraOverlay.setAddingAuraShape("points");
 
     expect(store.getState().auraOverlay.addAuraRequest).toEqual({
@@ -50,11 +54,16 @@ describe("AuraOverlay slice", () => {
       shape: "arc",
     });
     expect(store.getState().auraOverlay.addingAuraShape).toBe("points");
+    expect(store.getState().auraOverlay.addAuraSelectionError).toBe(
+      "Selection unavailable",
+    );
 
     store.getState().auraOverlay.setAddAuraRequest(null);
+    store.getState().auraOverlay.setAddAuraSelectionError(null);
     store.getState().auraOverlay.setAddingAuraShape(null);
 
     expect(store.getState().auraOverlay.addAuraRequest).toBeNull();
+    expect(store.getState().auraOverlay.addAuraSelectionError).toBeNull();
     expect(store.getState().auraOverlay.addingAuraShape).toBeNull();
   });
 

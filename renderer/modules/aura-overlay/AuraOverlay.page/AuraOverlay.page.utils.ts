@@ -36,7 +36,6 @@ export { readAuraVideoSize } from "./readAuraVideoSize/readAuraVideoSize";
 export { resizeAuraPlacementFromCorner } from "./resizeAuraPlacementFromCorner/resizeAuraPlacementFromCorner";
 export { resolveAuraArcDisplayThickness } from "./resolveAuraArcDisplayThickness/resolveAuraArcDisplayThickness";
 export { resolveAuraArcSourceThickness } from "./resolveAuraArcSourceThickness/resolveAuraArcSourceThickness";
-export { resolveAuraOverlayGridCellSize } from "./resolveAuraOverlayGridCellSize/resolveAuraOverlayGridCellSize";
 export { resolveAuraPlacementArcVisibleThickness } from "./resolveAuraPlacementArcVisibleThickness/resolveAuraPlacementArcVisibleThickness";
 export { resolveAuraPlacementBaseSize } from "./resolveAuraPlacementBaseSize/resolveAuraPlacementBaseSize";
 export { resolveAuraPlacementDisplaySize } from "./resolveAuraPlacementDisplaySize/resolveAuraPlacementDisplaySize";

@@ -5,30 +5,4 @@
   height: 100vh;
   cursor: crosshair;
   user-select: none;
-  background:
-    linear-gradient(
-      90deg,
-      color-mix(in oklch, var(--color-primary) 20%, transparent) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      180deg,
-      color-mix(in oklch, var(--color-primary) 20%, transparent) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      90deg,
-      color-mix(in oklch, var(--color-secondary) 10%, transparent) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      180deg,
-      color-mix(in oklch, var(--color-secondary) 10%, transparent) 1px,
-      transparent 1px
-    );
-  background-size:
-    24px 24px,
-    24px 24px,
-    96px 96px,
-    96px 96px;
 }

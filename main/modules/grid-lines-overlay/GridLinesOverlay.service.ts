@@ -52,11 +52,15 @@ class GridLinesOverlayService implements GameOverlayParticipant {
 
   async selectCropRegion(
     options: SelectCropRegionOptions = {},
+    activateWhenReady: () => boolean = () => true,
   ): Promise<CropRegionSelection | null> {
     this.cancelCropRegionSelection();
     this.cropSelectorShape = options.shape ?? "rect";
 
     await this.createWindow();
+    if (!activateWhenReady()) {
+      return null;
+    }
 
     return new Promise((resolveSelection) => {
       this.pendingCropSelection = { resolve: resolveSelection };
@@ -159,18 +163,26 @@ class GridLinesOverlayService implements GameOverlayParticipant {
     });
     cropSelectorWindow.setFullScreenable(false);
     cropSelectorWindow.on("focus", () => {
+      if (this.cropSelectorWindow !== cropSelectorWindow) {
+        return;
+      }
       this.setCropSelectorOverlayFocusActive(true);
     });
     cropSelectorWindow.on("blur", () => {
+      if (this.cropSelectorWindow !== cropSelectorWindow) {
+        return;
+      }
       this.setCropSelectorOverlayFocusActive(false, { startHandoff: false });
     });
     cropSelectorWindow.on("closed", () => {
       unregisterIpcWindowRole(cropSelectorWebContents);
       logInfo(GRID_LINES_OVERLAY_SCOPE, "Crop selector overlay closed");
-      this.setCropSelectorOverlayFocusActive(false);
-      if (this.cropSelectorWindow === cropSelectorWindow) {
-        this.cropSelectorWindow = null;
+      if (this.cropSelectorWindow !== cropSelectorWindow) {
+        return;
       }
+
+      this.setCropSelectorOverlayFocusActive(false);
+      this.cropSelectorWindow = null;
       this.pendingCropSelection?.resolve(null);
       this.pendingCropSelection = null;
       this.unregisterCropSelectionShortcuts();

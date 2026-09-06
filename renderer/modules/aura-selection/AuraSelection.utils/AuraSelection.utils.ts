@@ -12,6 +12,13 @@ interface AuraSelectionTypeHelp {
   selectorText: string;
 }
 
+interface AuraSelectionGridSize {
+  height: number;
+  width: number;
+}
+
+const preferredAuraSelectionGridCellSize = 32;
+
 const auraSelectionTypeHelpByShape = {
   arc: {
     Icon: PiBezierCurve,
@@ -48,9 +55,41 @@ function getAuraSelectionTypeHelp(
   return auraSelectionTypeHelpByShape[shape];
 }
 
+function resolveAuraSelectionGridCellSize(
+  viewport: AuraSelectionGridSize,
+): AuraSelectionGridSize {
+  const width = normalizeAuraSelectionGridDimension(viewport.width);
+  const height = normalizeAuraSelectionGridDimension(viewport.height);
+
+  return {
+    width: width / resolveAuraSelectionGridCellCount(width),
+    height: height / resolveAuraSelectionGridCellCount(height),
+  };
+}
+
+function resolveAuraSelectionGridCellCount(dimension: number): number {
+  const approximateCount = dimension / preferredAuraSelectionGridCellSize;
+  const lowerEvenCount = Math.max(2, Math.floor(approximateCount / 2) * 2);
+  const upperEvenCount = Math.max(2, Math.ceil(approximateCount / 2) * 2);
+  const lowerCellSize = dimension / lowerEvenCount;
+  const upperCellSize = dimension / upperEvenCount;
+
+  return Math.abs(lowerCellSize - preferredAuraSelectionGridCellSize) <=
+    Math.abs(upperCellSize - preferredAuraSelectionGridCellSize)
+    ? lowerEvenCount
+    : upperEvenCount;
+}
+
+function normalizeAuraSelectionGridDimension(dimension: number): number {
+  return Number.isFinite(dimension) && dimension > 0
+    ? dimension
+    : preferredAuraSelectionGridCellSize * 2;
+}
+
 export type { AuraSelectionTypeHelp };
 export {
   auraSelectionShapes,
   auraSelectionTypeHelpByShape,
   getAuraSelectionTypeHelp,
+  resolveAuraSelectionGridCellSize,
 };

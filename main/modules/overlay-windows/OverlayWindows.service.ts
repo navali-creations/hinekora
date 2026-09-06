@@ -84,6 +84,7 @@ class OverlayWindowsService {
   private static instance: OverlayWindowsService | null = null;
 
   private overlayCaptureProtectionEnabled = false;
+  private auraOverlayIncludeInCaptures = false;
   private overlayCaptureProtectionSettings: Pick<
     AppSettings,
     "recordingHideOverlaysFromRecording" | "recordingHideOverlaysFromRewind"
@@ -113,6 +114,8 @@ class OverlayWindowsService {
   };
   private readonly getOverlayCaptureProtectionEnabled = () =>
     this.overlayCaptureProtectionEnabled;
+  private readonly getAuraOverlayCaptureProtectionEnabled = () =>
+    this.overlayCaptureProtectionEnabled && !this.auraOverlayIncludeInCaptures;
   private readonly shouldRecorderOverlayIgnoreGameFocus = () =>
     this.overlayFocusSettings.recorderOverlayIgnoreGameFocus;
   private readonly shouldClipPreviewOverlayIgnoreGameFocus = () =>
@@ -146,13 +149,13 @@ class OverlayWindowsService {
   );
   private readonly gridLinesOverlay = new GridLinesOverlayService(
     this.coordinator,
-    this.getOverlayCaptureProtectionEnabled,
+    this.getAuraOverlayCaptureProtectionEnabled,
     () => this.startActiveGameFocusHandoff("crop-selector-hidden"),
     this.shouldGridLinesOverlayIgnoreGameFocus,
   );
   private readonly auraManagerOverlays = new AuraManagerOverlaysService(
     this.coordinator,
-    this.getOverlayCaptureProtectionEnabled,
+    this.getAuraOverlayCaptureProtectionEnabled,
     (active) =>
       this.setRecorderOverlaySuppressed(
         RECORDER_SUPPRESSION_AURA_OVERLAY,
@@ -180,6 +183,8 @@ class OverlayWindowsService {
     const managedRecorder = ManagedRecorderService.getInstance();
     const settings = settingsStore.get();
     this.overlayCaptureProtectionSettings = settings;
+    this.auraOverlayIncludeInCaptures =
+      settings.auraOverlayIncludeInCaptures === true;
     this.overlayFocusSettings = settings;
     this.updateManagedRecorderSnapshot({
       captureMode: managedRecorder.getCaptureMode(),
@@ -191,6 +196,8 @@ class OverlayWindowsService {
         const focusSettingsChanged =
           this.haveOverlayFocusSettingsChanged(nextSettings);
         this.overlayCaptureProtectionSettings = nextSettings;
+        this.auraOverlayIncludeInCaptures =
+          nextSettings.auraOverlayIncludeInCaptures === true;
         this.overlayFocusSettings = nextSettings;
         this.applyOverlayCaptureProtection();
         if (focusSettingsChanged) {
@@ -325,6 +332,9 @@ class OverlayWindowsService {
   }
 
   setAuraOverlayLocked(locked: boolean): void {
+    if (locked) {
+      this.cancelCropRegionSelection();
+    }
     this.auraManagerOverlays.setLocked(locked);
     if (locked) {
       this.startActiveGameFocusHandoff("aura-locked");
@@ -406,13 +416,21 @@ class OverlayWindowsService {
     options: SelectCropRegionOptions = {},
   ): Promise<CropRegionSelection | null> {
     const generation = ++this.cropSelectionGeneration;
-    this.coordinator.setExclusiveParticipant(this.gridLinesOverlay);
 
-    return this.gridLinesOverlay.selectCropRegion(options).finally(() => {
-      if (generation === this.cropSelectionGeneration) {
-        this.coordinator.setExclusiveParticipant(null);
-      }
-    });
+    return this.gridLinesOverlay
+      .selectCropRegion(options, () => {
+        if (generation !== this.cropSelectionGeneration) {
+          return false;
+        }
+
+        this.coordinator.setExclusiveParticipant(this.gridLinesOverlay);
+        return true;
+      })
+      .finally(() => {
+        if (generation === this.cropSelectionGeneration) {
+          this.coordinator.setExclusiveParticipant(null);
+        }
+      });
   }
 
   completeCropRegionSelection(selection: unknown): void {
@@ -420,6 +438,8 @@ class OverlayWindowsService {
   }
 
   cancelCropRegionSelection(): void {
+    this.cropSelectionGeneration += 1;
+    this.coordinator.setExclusiveParticipant(null);
     this.gridLinesOverlay.cancelCropRegionSelection();
   }
 
@@ -587,11 +607,17 @@ class OverlayWindowsService {
 
   private setOverlayCaptureProtectionEnabled(enabled: boolean): void {
     this.overlayCaptureProtectionEnabled = enabled;
+    const auraOverlayProtectionEnabled =
+      this.getAuraOverlayCaptureProtectionEnabled();
     this.recordingControlsOverlay.setContentProtectionEnabled(enabled);
     this.deathClipsOverlay.setContentProtectionEnabled(enabled);
     this.replayStatusOverlay.setContentProtectionEnabled(enabled);
-    this.gridLinesOverlay.setContentProtectionEnabled(enabled);
-    this.auraManagerOverlays.setContentProtectionEnabled(enabled);
+    this.gridLinesOverlay.setContentProtectionEnabled(
+      auraOverlayProtectionEnabled,
+    );
+    this.auraManagerOverlays.setContentProtectionEnabled(
+      auraOverlayProtectionEnabled,
+    );
   }
 
   private updateManagedRecorderSnapshot(

@@ -14,22 +14,6 @@
     inset 0 0 44px color-mix(in oklch, var(--color-primary) 24%, transparent);
 }
 
-.overlayEditingGrid {
-  --aura-editing-grid-color: #14b8a6;
-
-  background-image:
-    linear-gradient(
-      to right,
-      color-mix(in oklch, var(--aura-editing-grid-color) 20%, transparent) 1px,
-      transparent 1px
-    ),
-    linear-gradient(
-      to bottom,
-      color-mix(in oklch, var(--aura-editing-grid-color) 20%, transparent) 1px,
-      transparent 1px
-    );
-}
-
 .overlayHideLabels [data-aura-label],
 .overlayHideProperties [data-aura-properties-panel] {
   display: none;

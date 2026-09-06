@@ -1,6 +1,9 @@
-import { useEffect } from "react";
+import clsx from "clsx";
+import { useEffect, useMemo } from "react";
 
 import { OverlayExitNotice } from "~/renderer/components/OverlayExitNotice/OverlayExitNotice";
+import { resolveAuraSelectionGridCellSize } from "~/renderer/modules/aura-selection/AuraSelection.utils/AuraSelection.utils";
+import auraSelectionGridStyles from "~/renderer/modules/aura-selection/AuraSelectionGrid.module.css";
 
 import { ArcSelectionPreview } from "../CropSelectorOverlay.components/ArcSelectionPreview/ArcSelectionPreview";
 import { CropSelectionBox } from "../CropSelectorOverlay.components/CropSelectionBox/CropSelectionBox";
@@ -12,6 +15,14 @@ import styles from "./CropSelectorOverlayPage.module.css";
 const cropSelectorRouteClassName = "is-crop-selector-route";
 
 function CropSelectorOverlayPage() {
+  const gridCellSize = useMemo(
+    () =>
+      resolveAuraSelectionGridCellSize({
+        height: window.innerHeight,
+        width: window.innerWidth,
+      }),
+    [],
+  );
   const {
     arcEnd,
     arcStart,
@@ -38,8 +49,14 @@ function CropSelectorOverlayPage() {
   return (
     <main
       aria-label="Crop selector"
-      className={styles.overlay}
+      className={clsx(
+        styles.overlay,
+        auraSelectionGridStyles.auraSelectionGrid,
+      )}
       role="application"
+      style={{
+        backgroundSize: `${gridCellSize.width}px ${gridCellSize.height}px`,
+      }}
       onContextMenu={handleContextMenu}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}

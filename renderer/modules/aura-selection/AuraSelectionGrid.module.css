@@ -1,0 +1,15 @@
+.auraSelectionGrid {
+  --aura-selection-grid-color: #14b8a6;
+
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in oklch, var(--aura-selection-grid-color) 20%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in oklch, var(--aura-selection-grid-color) 20%, transparent) 1px,
+      transparent 1px
+    );
+}

@@ -14,6 +14,7 @@ import { useAuraOverlayEditingHistory } from "~/renderer/modules/aura-overlay/Au
 import { useAuraOverlayLockState } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayLockState/useAuraOverlayLockState";
 import { useAuraOverlayPlacementEditor } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayPlacementEditor/useAuraOverlayPlacementEditor";
 import { useAuraOverlayVideoSizing } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayVideoSizing/useAuraOverlayVideoSizing";
+import auraSelectionGridStyles from "~/renderer/modules/aura-selection/AuraSelectionGrid.module.css";
 import { getSelectedProfile } from "~/renderer/modules/crop-editor/CropEditor.utils/CropEditor.utils";
 import { ProfileMutationError } from "~/renderer/modules/profiles/Profiles.components/ProfileMutationError/ProfileMutationError";
 import { useProfilesShallow, useSettingsShallow } from "~/renderer/store";
@@ -151,7 +152,9 @@ function AuraOverlayPage() {
       className={clsx(
         styles.overlay,
         canEditAuras && auraSettings.showFrame && styles.overlayEditing,
-        canEditAuras && auraSettings.showGrid && styles.overlayEditingGrid,
+        canEditAuras &&
+          auraSettings.showGrid &&
+          auraSelectionGridStyles.auraSelectionGrid,
         canEditAuras && auraSettings.hideLabels && styles.overlayHideLabels,
         canEditAuras &&
           auraSettings.hideProperties &&

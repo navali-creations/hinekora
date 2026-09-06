@@ -134,6 +134,7 @@ describe("AuraOverlayPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useBoundStore.getState().auraOverlay.setAddAuraRequest(null);
+    useBoundStore.getState().auraOverlay.setAddAuraSelectionError(null);
     useBoundStore.getState().auraOverlay.setAddingAuraShape(null);
     useBoundStore.getState().auraOverlay.resetAuraHistory(profile.id);
     storeMocks.preferenceErrors = {};
@@ -434,7 +435,7 @@ describe("AuraOverlayPage", () => {
       auraOverlayShowEditingGrid: true,
     };
     const lockedHtml = renderToStaticMarkup(<AuraOverlayPage />);
-    expect(lockedHtml).not.toContain("overlayEditingGrid");
+    expect(lockedHtml).not.toContain("auraSelectionGrid");
 
     electronMocks.isAuraLocked.mockResolvedValue(false);
     const container = document.createElement("div");
@@ -448,7 +449,7 @@ describe("AuraOverlayPage", () => {
 
     expect(
       container.querySelector('main[aria-label="Aura overlay"]')?.className,
-    ).toContain("overlayEditingGrid");
+    ).toContain("auraSelectionGrid");
     expect(container.querySelector('[data-aura-center-guide="x"]')).toBeNull();
     expect(
       container
@@ -475,7 +476,7 @@ describe("AuraOverlayPage", () => {
 
     expect(
       container.querySelector('main[aria-label="Aura overlay"]')?.className,
-    ).not.toContain("overlayEditingGrid");
+    ).not.toContain("auraSelectionGrid");
     expect(
       container.querySelector('[data-aura-center-guide="x"]'),
     ).toBeInstanceOf(HTMLSpanElement);
@@ -1163,7 +1164,7 @@ describe("AuraOverlayPage", () => {
     expect(electronMocks.showAura).not.toHaveBeenCalled();
   });
 
-  it("only marks the active add aura shape as selecting", async () => {
+  it("keeps the selected aura visible while preparing a new selection", async () => {
     electronMocks.isAuraLocked.mockResolvedValue(false);
     let resolveSelection: ((selection: null) => void) | null = null;
     electronMocks.selectCropRegion.mockImplementation(
@@ -1205,7 +1206,11 @@ describe("AuraOverlayPage", () => {
     });
     expect(
       container.querySelector('[aria-label="Aura placement properties"]'),
-    ).toBeNull();
+    ).toBeInstanceOf(HTMLElement);
+    expect(container.textContent).toContain("Preparing selection overlay…");
+    expect(container.querySelector('[aria-busy="true"]')).toBeInstanceOf(
+      HTMLElement,
+    );
 
     const buttons = [...container.querySelectorAll("button")];
     const selectingButtons = buttons.filter(
@@ -1234,6 +1239,38 @@ describe("AuraOverlayPage", () => {
       resolveSelection?.(null);
       await flushPromises();
     });
+    expect(container.textContent).not.toContain("Preparing selection overlay…");
+    expect(
+      container.querySelector('[aria-label="Aura placement properties"]'),
+    ).toBeInstanceOf(HTMLElement);
+  });
+
+  it("shows an error when the selection overlay cannot be prepared", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    electronMocks.selectCropRegion.mockRejectedValue(
+      new Error("Renderer unavailable"),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const addAuraButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Add new aura",
+    );
+    await act(async () => {
+      addAuraButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      await flushPromises();
+    });
+
+    expect(container.textContent).toContain(
+      "Could not prepare the selection overlay. Please try again.",
+    );
+    expect(container.textContent).not.toContain("Preparing selection overlay…");
   });
 
   it("starts add aura selection from the route request", async () => {

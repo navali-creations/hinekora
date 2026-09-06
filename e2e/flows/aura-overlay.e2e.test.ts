@@ -64,7 +64,7 @@ test("toggles aura editing guides from the overlay toolbar", async ({
     .check();
   await expect(
     page.getByRole("application", { name: "Aura overlay" }),
-  ).toHaveClass(/overlayEditingGrid/);
+  ).toHaveClass(/auraSelectionGrid/);
   await options
     .getByRole("checkbox", { name: "Show aura center lines" })
     .check();
@@ -86,7 +86,7 @@ test("toggles aura editing guides from the overlay toolbar", async ({
     ]);
   await expect(
     page.getByRole("application", { name: "Aura overlay" }),
-  ).toHaveClass(/overlayEditingGrid/);
+  ).toHaveClass(/auraSelectionGrid/);
   await expect(page.locator('[data-aura-center-guide="x"]')).toBeVisible();
   await expect(page.locator('[data-aura-center-guide="y"]')).toBeVisible();
   await expect(page.getByLabel("3 active options")).toHaveText("3");

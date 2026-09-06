@@ -183,6 +183,11 @@ describe("CropSelectorOverlayPage", () => {
     expect(container.textContent).toContain("Esc");
     expect(container.textContent).toContain("grid selector");
     expect(container.querySelector(".kbd")).toBeInstanceOf(HTMLElement);
+    expect(
+      container
+        .querySelector('main[aria-label="Crop selector"]')
+        ?.getAttribute("style"),
+    ).toContain("background-size: 32px 32px");
   });
 
   it("resets an arched selection with right click without closing the overlay", async () => {

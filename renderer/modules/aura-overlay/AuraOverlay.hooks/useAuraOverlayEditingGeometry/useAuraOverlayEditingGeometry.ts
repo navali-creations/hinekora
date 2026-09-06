@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  type AuraVideoSize,
-  resolveAuraOverlayGridCellSize,
-} from "../../AuraOverlay.page/AuraOverlay.page.utils";
+import { resolveAuraSelectionGridCellSize } from "~/renderer/modules/aura-selection/AuraSelection.utils/AuraSelection.utils";
+
+import type { AuraVideoSize } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 
 function useAuraOverlayEditingGeometry(fallbackViewport: AuraVideoSize): {
   gridCellSize: AuraVideoSize;
@@ -35,7 +34,7 @@ function useAuraOverlayEditingGeometry(fallbackViewport: AuraVideoSize): {
   }, [fallbackHeight, fallbackWidth]);
 
   const gridCellSize = useMemo(
-    () => resolveAuraOverlayGridCellSize(viewport),
+    () => resolveAuraSelectionGridCellSize(viewport),
     [viewport],
   );
 
