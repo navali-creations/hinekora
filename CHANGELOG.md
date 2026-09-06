@@ -1,3 +1,65 @@
+## 0.15.0
+
+### Minor Changes
+
+- [`f97768e`](https://github.com/navali-creations/hinekora/commit/f97768e11461b7467fbbc9dd95da9f8a4268b6bd) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Arrange aura overlays faster with visual guides, snapping, focused controls, and consistent icon sizing.
+
+  - **Independent display options:** Toggle the editing frame, resolution-aware grid, screen-center lines, item snapping, aura labels, and focused aura options separately. The filters button shows how many options are active.
+  - **Smart alignment:** Snap auras to grid cells, screen center, or matching center and border axes on other auras, with teal guides showing the active alignment.
+  - **Consistent sizing:** Choose any aura or element as the size anchor, then match the selected aura types to its width and height in one undoable action.
+  - **Cleaner editing:** Collapse individual aura controls when they are not needed, while aura names stay readable on one line.
+  - **Smoother creation:** Newly added auras are selected immediately without briefly showing controls for the previous aura.
+
+- [`d780908`](https://github.com/navali-creations/hinekora/commit/d780908f53c4a8dc3238c8973b27f8e506fd6b9e) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Save manual replays without interrupting gameplay.
+
+  Turn off **Show manual replay preview** in Rewind settings to replace the editing window with a compact status notification while Hinekora processes and saves the replay.
+
+  - **Clear progress:** See when the replay is processing and when it has been saved, then keep playing as the notification dismisses automatically.
+  - **Edit later:** Saved replays remain available from the Clips page whenever you are ready to edit them.
+
+- [`80ffa6d`](https://github.com/navali-creations/hinekora/commit/80ffa6dd18d893bbe80cde9482fa21b800e481ae) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Adding auras now keeps the editor visible and clearly shows when the selection overlay is being prepared.
+
+  - **Consistent selection grid:** Aura selection uses the same teal, resolution-aware grid as aura editing.
+  - **Capture control:** Choose whether the aura overlay and selection grid remain visible in Windows screenshots, Hinekora rewinds and recordings, and other capture tools.
+  - **Clear feedback:** A preparation notice appears without changing to a system wait cursor, and selection errors are shown directly in the overlay.
+
+- [`f77f46a`](https://github.com/navali-creations/hinekora/commit/f77f46af6f69dccb41f82cef914ab97340b2e9a0) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Step through captured video one frame at a time with `,` and `.` while the Editor timeline, a replay trimming overlay, or a recording timeline is focused.
+
+  Frame stepping is available for clips and recordings captured with this release or later. Older media remains fully playable and editable, but does not include the frame-rate metadata needed for frame-accurate stepping.
+
+### Patch Changes
+
+- [`a768fb7`](https://github.com/navali-creations/hinekora/commit/a768fb7c700820cc6c77d2c18bc56c577a55a3f7) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Rotated auras now stay aligned with their selection and editing controls.
+
+  Aura Manager now uses each rotated aura's visible bounds while editing, so positioning and sizing remain predictable at every supported rotation.
+
+  - **Accurate selection:** Selection frames, resize handles, labels, and controls stay attached to the visible aura.
+  - **Stable editing:** Dragging, corner resizing, numeric size changes, snapping, and matching icon sizes preserve the aura's visible position.
+  - **Arc and point controls:** Handles continue to follow rotated and mirrored aura content correctly.
+
+- [`860cf60`](https://github.com/navali-creations/hinekora/commit/860cf60c18e10cf89b0b57e9f3d997e18b876d51) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Recordings no longer remain stuck in **Processing** after capture stops.
+
+  Hinekora now keeps replay-buffer activity separate from full recordings and reliably clears recording progress when finalization encounters a problem.
+
+  - **Recordings page:** Active sessions are labeled **Recording**, while **Processing** is reserved for the brief saving stage.
+  - **Immediate library updates:** A finished recording now changes from **Processing** to **Saved** without requiring a page reload.
+  - **Rewind reliability:** Stopping a rewind buffer no longer creates a phantom recording or an incorrect hours-long duration.
+  - **Rewind recovery:** Rewind sessions left open by an earlier crash or shutdown are closed automatically the next time Hinekora starts.
+  - **Automatic recovery:** If a recording cannot finish saving to the library, Hinekora keeps retrying and resumes recovery the next time the app opens.
+  - **Performance-aware recovery:** Background recovery waits until gameplay and recording activity has ended before doing storage work.
+
 ## 0.14.0
 
 ### Minor Changes
