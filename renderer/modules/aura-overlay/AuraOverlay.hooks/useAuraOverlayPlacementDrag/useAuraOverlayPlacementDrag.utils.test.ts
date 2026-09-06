@@ -75,6 +75,42 @@ describe("useAuraOverlayPlacementDrag utilities", () => {
     });
   });
 
+  it("creates snap dimensions and guides from rotated visual bounds", () => {
+    const rotatedProfile = {
+      ...profile,
+      overlayPlacements: profile.overlayPlacements.map((placement) => ({
+        ...placement,
+        rotationDegrees: 90 as const,
+      })),
+    };
+
+    expect(
+      createAuraOverlaySnapContext({
+        fallbackReferenceViewport: { height: 1080, width: 1920 },
+        gridCellSize: { height: 30, width: 32 },
+        guideViewport: { height: 760, width: 1280 },
+        placementId: "placement-1",
+        profile: rotatedProfile,
+        targetViewport: { height: 1080, width: 1920 },
+      }),
+    ).toMatchObject({
+      displayHeight: 100,
+      displayWidth: 40,
+      xGuides: [
+        { anchor: "center", kind: "viewport-center", position: 640 },
+        { anchor: "start", kind: "placement", position: 230 },
+        { anchor: "center", kind: "placement", position: 250 },
+        { anchor: "end", kind: "placement", position: 270 },
+      ],
+      yGuides: [
+        { anchor: "center", kind: "viewport-center", position: 380 },
+        { anchor: "start", kind: "placement", position: 190 },
+        { anchor: "center", kind: "placement", position: 240 },
+        { anchor: "end", kind: "placement", position: 290 },
+      ],
+    });
+  });
+
   it("returns no context when the selected placement or crop is unavailable", () => {
     expect(
       createAuraOverlaySnapContext({

@@ -16,14 +16,16 @@ function resolveAuraPlacementArcVisibleThickness(
     ? resolveAuraArcDisplayThickness(crop, displaySize, crop.arc.thickness)
     : crop.arc.thickness;
   const visibleThickness = placement.arcVisibleThickness ?? defaultThickness;
-
-  return clamp(
-    Math.round(visibleThickness),
+  const maximumThickness = Math.max(
     1,
-    displaySize
-      ? Math.max(displaySize.width, displaySize.height)
-      : Math.max(crop.width, crop.height),
+    Math.floor(
+      displaySize
+        ? Math.max(displaySize.width, displaySize.height)
+        : Math.max(crop.width, crop.height),
+    ),
   );
+
+  return clamp(Math.round(visibleThickness), 1, maximumThickness);
 }
 
 export { resolveAuraPlacementArcVisibleThickness };

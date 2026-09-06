@@ -9,8 +9,13 @@ import {
 } from "~/types";
 import {
   type AuraVideoSize,
+  isAuraPlacementQuarterTurn,
+  resolveAuraPlacementArcVisibleThickness,
   resolveAuraPlacementDisplaySize,
+  resolveAuraPlacementGeometry,
+  resolveAuraPlacementReferencePosition,
   resolveAuraPlacementScale,
+  resolveAuraPlacementVisualSize,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 
 const auraScaleCategories = auraSelectionShapes;
@@ -93,6 +98,7 @@ function createAuraProfileUpdateMatchingAnchorSize(
   categories: readonly AuraScaleCategory[],
   fallbackViewport: AuraVideoSize,
 ): Omit<ProfileUpdateInput, "id"> | null {
+  const cropsById = new Map(profile.cropRegions.map((crop) => [crop.id, crop]));
   const anchorPlacement = profile.overlayPlacements.find(
     (placement) => placement.id === anchorPlacementId,
   );
@@ -100,9 +106,7 @@ function createAuraProfileUpdateMatchingAnchorSize(
     return null;
   }
 
-  const anchorCrop = profile.cropRegions.find(
-    (crop) => crop.id === anchorPlacement.cropRegionId,
-  );
+  const anchorCrop = cropsById.get(anchorPlacement.cropRegionId);
   if (!anchorCrop) {
     return null;
   }
@@ -115,8 +119,17 @@ function createAuraProfileUpdateMatchingAnchorSize(
     referenceViewport,
     profileViewport,
   );
-  const matchedWidth = Math.max(1, Math.round(anchorDisplaySize.width));
-  const matchedHeight = Math.max(1, Math.round(anchorDisplaySize.height));
+  const anchorVisualSize = resolveAuraPlacementVisualSize(
+    anchorPlacement,
+    anchorDisplaySize,
+  );
+  const anchorArcVisibleThickness = resolveAuraPlacementArcVisibleThickness(
+    anchorCrop,
+    anchorPlacement,
+    anchorDisplaySize,
+  );
+  const matchedWidth = Math.max(1, Math.round(anchorVisualSize.width));
+  const matchedHeight = Math.max(1, Math.round(anchorVisualSize.height));
   const referenceDimensions =
     createCoordinateReferenceDimensions(referenceViewport);
   const selectedCategories = new Set(categories);
@@ -125,25 +138,72 @@ function createAuraProfileUpdateMatchingAnchorSize(
   const overlayPlacements = profile.overlayPlacements.map((placement) => {
     const category = resolveAuraScaleCategory(placement, cropCategories);
     const isAnchor = placement.id === anchorPlacementId;
+    const crop = cropsById.get(placement.cropRegionId);
+    const width = isAuraPlacementQuarterTurn(placement)
+      ? matchedHeight
+      : matchedWidth;
+    const height = isAuraPlacementQuarterTurn(placement)
+      ? matchedWidth
+      : matchedHeight;
+    const shouldMatchArcThickness =
+      anchorArcVisibleThickness !== undefined &&
+      crop?.shape === "arc" &&
+      crop.arc !== undefined;
+    const matchesArcThickness =
+      !shouldMatchArcThickness ||
+      resolveAuraPlacementArcVisibleThickness(
+        crop,
+        placement,
+        resolveAuraPlacementDisplaySize(
+          crop,
+          placement,
+          referenceViewport,
+          profileViewport,
+        ),
+      ) === anchorArcVisibleThickness;
     if (
       (!selectedCategories.has(category) && !isAnchor) ||
+      !crop ||
       (isAnchor && anchorCrop.shape !== "points") ||
-      (placement.width === matchedWidth &&
-        placement.height === matchedHeight &&
+      (placement.width === width &&
+        placement.height === height &&
         resolveAuraPlacementScale(placement) === 1 &&
         placement.referenceWidth === referenceDimensions.referenceWidth &&
-        placement.referenceHeight === referenceDimensions.referenceHeight)
+        placement.referenceHeight === referenceDimensions.referenceHeight &&
+        matchesArcThickness)
     ) {
       return placement;
     }
 
     hasChanges = true;
-    return {
+    const { visualBounds } = resolveAuraPlacementGeometry(
+      crop,
+      placement,
+      referenceViewport,
+      profileViewport,
+    );
+    const nextPlacement: OverlayPlacement = {
       ...placement,
       ...referenceDimensions,
-      height: matchedHeight,
+      height,
       scale: 1,
-      width: matchedWidth,
+      width,
+    };
+    if (shouldMatchArcThickness) {
+      nextPlacement.arcVisibleThickness = anchorArcVisibleThickness;
+    }
+    const referencePosition = resolveAuraPlacementReferencePosition(
+      crop,
+      nextPlacement,
+      { x: visualBounds.x, y: visualBounds.y },
+      referenceViewport,
+      profileViewport,
+    );
+
+    return {
+      ...nextPlacement,
+      x: Math.round(referencePosition.x),
+      y: Math.round(referencePosition.y),
     };
   });
 

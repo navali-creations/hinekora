@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { Profile } from "~/types";
+import { type Profile, ProfileUpdateInputSchema } from "~/types";
 import {
   createAuraProfileUpdateMatchingAnchorSize,
   createAuraScaleAnchorOptions,
@@ -109,6 +109,154 @@ describe("createAuraProfileUpdateMatchingAnchorSize", () => {
       referenceWidth: 1920,
       scale: 1,
       width: 150,
+    });
+  });
+
+  it("matches rotated visual width and height across orientations", () => {
+    const rotatedProfile = {
+      ...profile,
+      overlayPlacements: profile.overlayPlacements.map((placement, index) =>
+        index === 1 || index === 2
+          ? { ...placement, rotationDegrees: 90 as const }
+          : placement,
+      ),
+    };
+    const update = createAuraProfileUpdateMatchingAnchorSize(
+      rotatedProfile,
+      "placement-2",
+      ["rect", "points"],
+      { height: 1080, width: 1920 },
+    );
+
+    expect(update?.overlayPlacements?.[0]).toMatchObject({
+      height: 150,
+      width: 75,
+    });
+    expect(update?.overlayPlacements?.[2]).toMatchObject({
+      height: 75,
+      width: 150,
+      x: -7,
+      y: 68,
+    });
+  });
+
+  it("matches visible thickness between arched auras", () => {
+    const arc = {
+      controlX: 30,
+      controlY: 0,
+      endX: 60,
+      endY: 30,
+      startX: 0,
+      startY: 30,
+      thickness: 10,
+    };
+    const arcProfile: Profile = {
+      ...profile,
+      cropRegions: [
+        { ...profile.cropRegions[1]!, arc },
+        {
+          ...profile.cropRegions[1]!,
+          arc,
+          id: "crop-4",
+          label: "Arc target",
+        },
+      ],
+      overlayPlacements: [
+        {
+          ...profile.overlayPlacements[1]!,
+          arcVisibleThickness: 24,
+        },
+        {
+          arcVisibleThickness: 8,
+          cropRegionId: "crop-4",
+          height: 75,
+          id: "placement-4",
+          opacity: 1,
+          referenceHeight: 1080,
+          referenceWidth: 1920,
+          scale: 1,
+          width: 150,
+          x: 100,
+          y: 100,
+        },
+      ],
+    };
+
+    const update = createAuraProfileUpdateMatchingAnchorSize(
+      arcProfile,
+      "placement-2",
+      ["arc"],
+      { height: 1080, width: 1920 },
+    );
+
+    expect(update?.overlayPlacements?.[0]).toBe(
+      arcProfile.overlayPlacements[0],
+    );
+    expect(update?.overlayPlacements?.[1]).toMatchObject({
+      arcVisibleThickness: 24,
+      height: 75,
+      width: 150,
+      x: 100,
+      y: 100,
+    });
+  });
+
+  it("persists an integer thickness from a fractionally scaled arc anchor", () => {
+    const arc = {
+      controlX: 30,
+      controlY: 0,
+      endX: 60,
+      endY: 30,
+      startX: 0,
+      startY: 30,
+      thickness: 10,
+    };
+    const arcProfile: Profile = {
+      ...profile,
+      cropRegions: [
+        { ...profile.cropRegions[1]!, arc },
+        {
+          ...profile.cropRegions[1]!,
+          arc,
+          id: "crop-4",
+          label: "Arc target",
+        },
+      ],
+      overlayPlacements: [
+        {
+          ...profile.overlayPlacements[1]!,
+          arcVisibleThickness: 100,
+          scale: 1.333,
+        },
+        {
+          cropRegionId: "crop-4",
+          id: "placement-4",
+          opacity: 1,
+          scale: 1,
+          x: 100,
+          y: 100,
+        },
+      ],
+    };
+    const update = createAuraProfileUpdateMatchingAnchorSize(
+      arcProfile,
+      "placement-2",
+      ["arc"],
+      { height: 1080, width: 1920 },
+    );
+    if (!update) {
+      throw new Error("Expected a bulk resize update");
+    }
+
+    const parsedUpdate = ProfileUpdateInputSchema.parse({
+      id: arcProfile.id,
+      ...update,
+    });
+
+    expect(parsedUpdate.overlayPlacements?.[1]).toMatchObject({
+      arcVisibleThickness: 79,
+      height: 40,
+      width: 80,
     });
   });
 

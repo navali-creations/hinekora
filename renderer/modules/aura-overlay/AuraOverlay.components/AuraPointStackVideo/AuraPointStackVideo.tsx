@@ -1,4 +1,10 @@
-import { type SyntheticEvent, useCallback, useMemo, useRef } from "react";
+import {
+  type CSSProperties,
+  type SyntheticEvent,
+  useCallback,
+  useMemo,
+  useRef,
+} from "react";
 
 import type { CropRegion, OverlayPlacement } from "~/types";
 import { useAuraVideoCanvasFrame } from "../../AuraOverlay.hooks/useAuraVideoCanvasFrame/useAuraVideoCanvasFrame";
@@ -15,7 +21,7 @@ import {
 
 interface AuraPointStackVideoProps {
   bindAuraVideo: (element: HTMLVideoElement | null) => void;
-  contentTransform: string;
+  contentStyle: CSSProperties;
   crop: CropRegion;
   displaySize: AuraSize;
   placement: OverlayPlacement;
@@ -26,7 +32,7 @@ interface AuraPointStackVideoProps {
 
 function AuraPointStackVideo({
   bindAuraVideo,
-  contentTransform,
+  contentStyle,
   crop,
   displaySize,
   placement,
@@ -74,10 +80,7 @@ function AuraPointStackVideo({
   });
 
   return (
-    <div
-      className={styles.straightenedClip}
-      style={{ transform: contentTransform }}
-    >
+    <div className={styles.straightenedClip} style={contentStyle}>
       <video
         aria-hidden="true"
         className={styles.straightenedVideo}

@@ -4,10 +4,9 @@ import { useAuraOverlayShallow } from "~/renderer/store";
 
 import {
   createAuraArcBoundaryPaths,
-  projectAuraOverlayPlacement,
   resolveAuraPlacementArcVisibleThickness,
-  resolveAuraPlacementDisplaySize,
-  resolveAuraReferenceViewport,
+  resolveAuraPlacementGeometry,
+  resolveAuraPlacementVisualPoint,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import { AuraArcThicknessHandle } from "../AuraArcThicknessHandle/AuraArcThicknessHandle";
 import { AuraOverlayPlacementVideo } from "../AuraOverlayPlacementVideo/AuraOverlayPlacementVideo";
@@ -16,7 +15,7 @@ import { AuraPlacementPropertiesPanel } from "../AuraPlacementPropertiesPanel/Au
 import styles from "./AuraOverlayPlacement.module.css";
 import {
   type AuraOverlayPlacementProps,
-  createPlacementContentTransform,
+  createPlacementContentStyle,
 } from "./AuraOverlayPlacement.utils";
 
 function AuraOverlayPlacement({
@@ -60,33 +59,25 @@ function AuraOverlayPlacement({
     currentResizeState?.draftPlacement ??
     currentThicknessResizeState?.draftPlacement ??
     placement;
-  const cropReferenceViewport = resolveAuraReferenceViewport(
-    crop,
-    referenceViewport,
-  );
-  const projectedPlacement = projectAuraOverlayPlacement(
-    effectivePlacement,
-    effectiveVideoSize,
-    cropReferenceViewport,
-  );
+  const { contentSize: placementSize, visualBounds } =
+    resolveAuraPlacementGeometry(
+      crop,
+      effectivePlacement,
+      effectiveVideoSize,
+      referenceViewport,
+    );
   const currentDragState =
     dragState?.placementId === placement.id ? dragState : null;
   const x = currentDragState
     ? currentDragState.initialDisplayX + currentDragState.deltaX
-    : projectedPlacement.x;
+    : visualBounds.x;
   const y = currentDragState
     ? currentDragState.initialDisplayY + currentDragState.deltaY
-    : projectedPlacement.y;
+    : visualBounds.y;
   const isResizing = currentResizeState !== null;
   const isSelected = selectedPlacementId === placement.id;
-  const placementSize = resolveAuraPlacementDisplaySize(
-    crop,
-    effectivePlacement,
-    effectiveVideoSize,
-    referenceViewport,
-  );
-  const displayWidth = Math.round(placementSize.width);
-  const displayHeight = Math.round(placementSize.height);
+  const displayWidth = Math.round(visualBounds.width);
+  const displayHeight = Math.round(visualBounds.height);
   const width = displayWidth;
   const height = displayHeight;
   const left = Math.round(x);
@@ -96,29 +87,27 @@ function AuraOverlayPlacement({
     effectivePlacement,
     placementSize,
   );
-  const effectiveVisibleArcThickness = visibleArcThickness;
-  const contentTransform = createPlacementContentTransform(effectivePlacement);
+  const contentStyle = createPlacementContentStyle(
+    effectivePlacement,
+    placementSize,
+  );
   const isStraightenedArc =
     effectivePlacement.arcStraightened === true &&
     crop.shape === "arc" &&
     !!crop.arc &&
-    effectiveVisibleArcThickness !== undefined;
+    visibleArcThickness !== undefined;
   const arcControlPoint = crop.arc
-    ? {
+    ? resolveAuraPlacementVisualPoint(effectivePlacement, {
         x: (crop.arc.controlX / crop.width) * 100,
         y: (crop.arc.controlY / crop.height) * 100,
-      }
+      })
     : null;
   const arcBoundaryPaths =
     canEditAuras &&
     crop.shape === "arc" &&
     !isStraightenedArc &&
-    effectiveVisibleArcThickness !== undefined
-      ? createAuraArcBoundaryPaths(
-          crop,
-          effectiveVisibleArcThickness,
-          placementSize,
-        )
+    visibleArcThickness !== undefined
+      ? createAuraArcBoundaryPaths(crop, visibleArcThickness, placementSize)
       : null;
 
   return (
@@ -128,8 +117,8 @@ function AuraOverlayPlacement({
       style={{
         left: `${x}px`,
         top: `${y}px`,
-        width: `${placementSize.width}px`,
-        height: `${placementSize.height}px`,
+        width: `${visualBounds.width}px`,
+        height: `${visualBounds.height}px`,
       }}
     >
       <button
@@ -153,14 +142,14 @@ function AuraOverlayPlacement({
         {stream && (
           <AuraOverlayPlacementVideo
             bindAuraVideo={bindAuraVideo}
-            contentTransform={contentTransform}
+            contentStyle={contentStyle}
             crop={crop}
             displaySize={placementSize}
             isStraightenedArc={isStraightenedArc}
             placement={effectivePlacement}
             referenceViewport={referenceViewport}
             videoSize={effectiveVideoSize}
-            visibleThickness={effectiveVisibleArcThickness}
+            visibleThickness={visibleArcThickness}
             onVideoSizeChange={onVideoSizeChange}
           />
         )}
@@ -168,6 +157,7 @@ function AuraOverlayPlacement({
           <svg
             aria-hidden="true"
             className={styles.arcBoundaryOverlay}
+            style={contentStyle}
             viewBox={`0 0 ${placementSize.width} ${placementSize.height}`}
           >
             <path
@@ -216,9 +206,9 @@ function AuraOverlayPlacement({
       )}
       {!auraOverlayLocked &&
         currentThicknessResizeState &&
-        effectiveVisibleArcThickness !== undefined && (
+        visibleArcThickness !== undefined && (
           <span className={styles.resizeReadout}>
-            thickness: {Math.round(effectiveVisibleArcThickness)}px
+            thickness: {Math.round(visibleArcThickness)}px
           </span>
         )}
       {!auraOverlayLocked && canEditAuras && isSelected && (
@@ -234,8 +224,8 @@ function AuraOverlayPlacement({
           label={crop.label}
           placement={effectivePlacement}
           pointControls={crop.shape === "points"}
-          {...(effectiveVisibleArcThickness !== undefined
-            ? { visibleThickness: effectiveVisibleArcThickness }
+          {...(visibleArcThickness !== undefined
+            ? { visibleThickness: visibleArcThickness }
             : {})}
           onChange={onPlacementPropertiesChange}
         />

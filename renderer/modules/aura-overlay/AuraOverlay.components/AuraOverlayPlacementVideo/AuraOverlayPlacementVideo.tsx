@@ -1,4 +1,4 @@
-import type { SyntheticEvent } from "react";
+import type { CSSProperties, SyntheticEvent } from "react";
 
 import type { CropRegion, OverlayPlacement } from "~/types";
 import {
@@ -13,7 +13,7 @@ import { AuraStraightenedArcVideo } from "../AuraStraightenedArcVideo/AuraStraig
 
 interface AuraOverlayPlacementVideoProps {
   bindAuraVideo: (element: HTMLVideoElement | null) => void;
-  contentTransform: string;
+  contentStyle: CSSProperties;
   crop: CropRegion;
   displaySize: AuraSize;
   isStraightenedArc: boolean;
@@ -26,7 +26,7 @@ interface AuraOverlayPlacementVideoProps {
 
 function AuraOverlayPlacementVideo({
   bindAuraVideo,
-  contentTransform,
+  contentStyle,
   crop,
   displaySize,
   isStraightenedArc,
@@ -40,7 +40,7 @@ function AuraOverlayPlacementVideo({
     return (
       <AuraStraightenedArcVideo
         bindAuraVideo={bindAuraVideo}
-        contentTransform={contentTransform}
+        contentStyle={contentStyle}
         crop={crop}
         displaySize={displaySize}
         referenceViewport={referenceViewport}
@@ -55,7 +55,7 @@ function AuraOverlayPlacementVideo({
     return (
       <AuraPointStackVideo
         bindAuraVideo={bindAuraVideo}
-        contentTransform={contentTransform}
+        contentStyle={contentStyle}
         crop={crop}
         displaySize={displaySize}
         placement={placement}
@@ -76,8 +76,8 @@ function AuraOverlayPlacementVideo({
     <div
       className={styles.videoClip}
       style={{
+        ...contentStyle,
         ...(cropClipPath ? { clipPath: cropClipPath } : {}),
-        transform: contentTransform,
       }}
     >
       <video

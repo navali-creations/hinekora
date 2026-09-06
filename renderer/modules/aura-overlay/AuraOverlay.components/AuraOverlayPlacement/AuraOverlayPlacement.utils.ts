@@ -1,4 +1,5 @@
 import type {
+  CSSProperties,
   MouseEventHandler,
   PointerEventHandler,
   SyntheticEvent,
@@ -10,6 +11,7 @@ import type {
   AuraOverlaySnapContext,
   AuraOverlaySnapGuide,
   AuraResizeCorner,
+  AuraSize,
   AuraVideoSize,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import type { AuraPlacementPropertiesPatch } from "../AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel";
@@ -96,10 +98,25 @@ function createPlacementContentTransform(placement: OverlayPlacement): string {
   return transforms.join(" ");
 }
 
+function createPlacementContentStyle(
+  placement: OverlayPlacement,
+  contentSize: AuraSize,
+): CSSProperties {
+  const contentTransform = createPlacementContentTransform(placement);
+
+  return {
+    height: `${contentSize.height}px`,
+    left: "50%",
+    top: "50%",
+    transform: `translate(-50%, -50%)${contentTransform ? ` ${contentTransform}` : ""}`,
+    width: `${contentSize.width}px`,
+  };
+}
+
 export type {
   AuraArcThicknessResizeState,
   AuraOverlayDragState,
   AuraOverlayPlacementProps,
   AuraOverlayResizeState,
 };
-export { createPlacementContentTransform };
+export { createPlacementContentStyle };

@@ -102,6 +102,7 @@ function useAuraOverlayArcThicknessResize({
     event.stopPropagation();
     const nextThickness = resizeArchedPlacementThickness(
       currentResizeState.crop,
+      currentResizeState.initialPlacement,
       currentResizeState.initialDisplayThickness,
       currentResizeState.maxDisplayThickness,
       event.clientX - currentResizeState.startX,

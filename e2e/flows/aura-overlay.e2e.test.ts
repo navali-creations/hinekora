@@ -337,6 +337,25 @@ test("edits an arched aura through the overlay workflow", async ({ page }) => {
     page.getByRole("region", { name: "Aura placement properties" }),
   ).toBeVisible();
 
+  const auraFrame = page
+    .locator('div[data-placement-id="placement-arc-1"]')
+    .first();
+  await expect(auraFrame).toHaveCSS("width", "220px");
+  await expect(auraFrame).toHaveCSS("height", "180px");
+  await page.getByRole("button", { name: "Rotate 0deg" }).click();
+  await expect
+    .poll(async () => {
+      const calls = await getAuraOverlayE2ECalls(page);
+
+      return calls.profileUpdates.at(-1)?.overlayPlacements?.at(-1)
+        ?.rotationDegrees;
+    })
+    .toBe(90);
+  await expect(auraFrame).toHaveCSS("left", "870px");
+  await expect(auraFrame).toHaveCSS("top", "430px");
+  await expect(auraFrame).toHaveCSS("width", "180px");
+  await expect(auraFrame).toHaveCSS("height", "220px");
+
   await page.getByLabel("Straighten").check();
   await expect
     .poll(async () => {

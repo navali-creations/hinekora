@@ -636,6 +636,135 @@ describe("AuraOverlayPage", () => {
     expect(Number.parseFloat(style.height)).toBeCloseTo(160 / 3);
   });
 
+  it("rotates the selected aura and its placement frame around their center", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    let currentProfile = structuredClone(profile);
+    storeMocks.updateProfile.mockImplementation(async (input) => {
+      currentProfile = { ...currentProfile, ...input };
+    });
+    storeMocks.useProfilesShallow.mockImplementation((selector) =>
+      selector({
+        items: [currentProfile],
+        selectedProfileId: "profile-1",
+        update: storeMocks.updateProfile,
+      }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const auraButton = container.querySelector<HTMLButtonElement>(
+      'button[data-placement-id="placement-1"]',
+    );
+    await act(async () => {
+      auraButton?.click();
+      await flushPromises();
+    });
+    const rotateButton = [...container.querySelectorAll("button")].find(
+      (button) => button.textContent === "Rotate 0deg",
+    );
+    expect(rotateButton).toBeDefined();
+
+    await act(async () => {
+      rotateButton?.click();
+      await flushPromises();
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    expect(storeMocks.updateProfile).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        overlayPlacements: [expect.objectContaining({ rotationDegrees: 90 })],
+      }),
+    );
+    const auraFrame = container.querySelector<HTMLDivElement>(
+      'div[data-placement-id="placement-1"]',
+    );
+    expect(auraFrame?.style.left).toBe("60px");
+    expect(auraFrame?.style.top).toBe("10px");
+    expect(auraFrame?.style.width).toBe("40px");
+    expect(auraFrame?.style.height).toBe("100px");
+
+    expect(
+      container.querySelector<HTMLInputElement>('input[name="width"]')?.value,
+    ).toBe("40");
+    expect(
+      container.querySelector<HTMLInputElement>('input[name="height"]')?.value,
+    ).toBe("100");
+  });
+
+  it("persists negative content coordinates at a rotated viewport edge", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    storeMocks.settingsValue = {
+      activeGame: "poe1",
+      auraOverlayEnableSnapping: false,
+    };
+    const rotatedProfile: Profile = {
+      ...profile,
+      overlayPlacements: [
+        {
+          ...profile.overlayPlacements[0]!,
+          rotationDegrees: 90,
+          x: 0,
+          y: 0,
+        },
+      ],
+    };
+    storeMocks.useProfilesShallow.mockImplementation((selector) =>
+      selector({
+        items: [rotatedProfile],
+        selectedProfileId: "profile-1",
+        update: storeMocks.updateProfile,
+      }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const auraButton = container.querySelector<HTMLButtonElement>(
+      'button[data-placement-id="placement-1"]',
+    );
+    await act(async () => {
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", { clientX: 30, clientY: -30 }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerup", { clientX: 30, clientY: -30 }),
+      );
+      await flushPromises();
+    });
+    expect(storeMocks.updateProfile).not.toHaveBeenCalled();
+
+    await act(async () => {
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", { clientX: 30, clientY: -30 }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointermove", { clientX: 0, clientY: 0 }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerup", { clientX: 0, clientY: 0 }),
+      );
+      await flushPromises();
+    });
+
+    expect(storeMocks.updateProfile).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        overlayPlacements: [expect.objectContaining({ x: -30, y: 30 })],
+      }),
+    );
+  });
+
   it("drags legacy ultrawide auras back into reference coordinates", async () => {
     electronMocks.isAuraLocked.mockResolvedValue(false);
     storeMocks.useCapturePreviewShallow.mockImplementation((selector) =>
@@ -946,6 +1075,83 @@ describe("AuraOverlayPage", () => {
       expect.objectContaining({
         overlayPlacements: [
           expect.objectContaining({ id: "placement-1", scale: 1.5 }),
+          expect.objectContaining({ id: "placement-2", scale: 1.5 }),
+        ],
+      }),
+    );
+  });
+
+  it("snaps a rotated aura resize to a peer aura scale", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    storeMocks.settingsValue = {
+      activeGame: "poe1",
+      auraOverlayEnableSnapping: true,
+    };
+    const profileWithRotatedPeerScale: Profile = {
+      ...profile,
+      overlayPlacements: [
+        { ...profile.overlayPlacements[0]!, rotationDegrees: 90 },
+        {
+          ...profile.overlayPlacements[0]!,
+          id: "placement-2",
+          scale: 1.5,
+          x: 300,
+        },
+      ],
+    };
+    storeMocks.useProfilesShallow.mockImplementation((selector) =>
+      selector({
+        items: [profileWithRotatedPeerScale],
+        selectedProfileId: "profile-1",
+        update: storeMocks.updateProfile,
+      }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const resizeHandle = container.querySelector(
+      'span[data-placement-id="placement-1"][data-corner="se"]',
+    );
+    await act(async () => {
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          button: 0,
+          clientX: 100,
+          clientY: 110,
+        }),
+      );
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointermove", {
+          button: 0,
+          clientX: 119,
+          clientY: 159,
+        }),
+      );
+      resizeHandle?.dispatchEvent(
+        createPointerLikeEvent("pointerup", {
+          button: 0,
+          clientX: 119,
+          clientY: 159,
+        }),
+      );
+      await flushPromises();
+    });
+
+    expect(storeMocks.updateProfile).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        overlayPlacements: [
+          expect.objectContaining({
+            id: "placement-1",
+            scale: 1.5,
+            x: 15,
+            y: 55,
+          }),
           expect.objectContaining({ id: "placement-2", scale: 1.5 }),
         ],
       }),

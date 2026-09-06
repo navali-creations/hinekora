@@ -162,4 +162,72 @@ describe("resizeAuraPlacementFromCorner", () => {
       scale: 1.5,
     });
   });
+
+  it("resizes quarter-turn placements from their visual bounds", () => {
+    expect(
+      resizeAuraPlacementFromCorner(
+        {
+          height: 100,
+          id: "crop-1",
+          label: "Aura",
+          width: 20,
+          x: 0,
+          y: 0,
+        },
+        {
+          cropRegionId: "crop-1",
+          height: 100,
+          id: "placement-1",
+          opacity: 1,
+          rotationDegrees: 90,
+          scale: 1,
+          width: 20,
+          x: 100,
+          y: 200,
+        },
+        "se",
+        20,
+        0,
+      ),
+    ).toMatchObject({
+      scale: 1.2,
+      x: 108,
+      y: 192,
+    });
+  });
+
+  it("keeps projected quarter-turn resizing anchored at the viewport edge", () => {
+    expect(
+      resizeAuraPlacementFromCorner(
+        {
+          height: 20,
+          id: "crop-1",
+          label: "Aura",
+          width: 100,
+          x: 0,
+          y: 0,
+        },
+        {
+          cropRegionId: "crop-1",
+          height: 20,
+          id: "placement-1",
+          opacity: 1,
+          rotationDegrees: 90,
+          scale: 1,
+          width: 100,
+          x: -40,
+          y: 40,
+        },
+        "se",
+        20,
+        0,
+        { height: 1080, width: 1920 },
+        { height: 1080, width: 1920 },
+      ),
+    ).toMatchObject({
+      scale: 2,
+      x: -80,
+      y: 80,
+    });
+  });
 });

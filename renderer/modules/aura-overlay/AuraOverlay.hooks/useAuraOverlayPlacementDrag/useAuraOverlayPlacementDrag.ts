@@ -6,9 +6,10 @@ import { createCoordinateReferenceDimensions, type Profile } from "~/types";
 import {
   type AuraSize,
   type AuraVideoSize,
-  projectAuraOverlayPlacement,
+  projectAuraPoint,
+  resolveAuraPlacementGeometry,
+  resolveAuraPlacementReferencePosition,
   resolveAuraReferenceViewport,
-  unprojectAuraPoint,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import type { UseAuraOverlayPlacementInteractionStateResult } from "../useAuraOverlayPlacementInteractionState/useAuraOverlayPlacementInteractionState";
 import {
@@ -69,17 +70,14 @@ function useAuraOverlayPlacementDrag({
       (item) => item.id === placement?.cropRegionId,
     );
 
-    if (!placement) {
+    if (!placement || !crop) {
       return;
     }
-    const cropReferenceViewport = resolveAuraReferenceViewport(
+    const { visualBounds } = resolveAuraPlacementGeometry(
       crop,
-      referenceViewport,
-    );
-    const projectedPlacement = projectAuraOverlayPlacement(
       placement,
       targetViewport,
-      cropReferenceViewport,
+      referenceViewport,
     );
 
     event.preventDefault();
@@ -89,8 +87,8 @@ function useAuraOverlayPlacementDrag({
       placementId: placement.id,
       startX: event.clientX,
       startY: event.clientY,
-      initialDisplayX: projectedPlacement.x,
-      initialDisplayY: projectedPlacement.y,
+      initialDisplayX: visualBounds.x,
+      initialDisplayY: visualBounds.y,
       deltaX: 0,
       deltaY: 0,
       isReleased: false,
@@ -150,13 +148,11 @@ function useAuraOverlayPlacementDrag({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
-    const x = Math.max(
-      0,
-      Math.round(currentDragState.initialDisplayX + currentDragState.deltaX),
+    const requestedX = Math.round(
+      currentDragState.initialDisplayX + currentDragState.deltaX,
     );
-    const y = Math.max(
-      0,
-      Math.round(currentDragState.initialDisplayY + currentDragState.deltaY),
+    const requestedY = Math.round(
+      currentDragState.initialDisplayY + currentDragState.deltaY,
     );
     const placementId = currentDragState.placementId;
     const placement = profile.overlayPlacements.find(
@@ -166,13 +162,13 @@ function useAuraOverlayPlacementDrag({
       (item) => item.id === placement?.cropRegionId,
     );
     if (
-      x === Math.round(currentDragState.initialDisplayX) &&
-      y === Math.round(currentDragState.initialDisplayY)
+      requestedX === Math.round(currentDragState.initialDisplayX) &&
+      requestedY === Math.round(currentDragState.initialDisplayY)
     ) {
       commitDragState(null);
       return;
     }
-    if (!placement) {
+    if (!placement || !crop) {
       commitDragState(null);
       return;
     }
@@ -180,16 +176,32 @@ function useAuraOverlayPlacementDrag({
       placement,
       resolveAuraReferenceViewport(crop, referenceViewport),
     );
-    const referencePoint = unprojectAuraPoint(
-      { x, y },
+    const minimumVisualPosition = projectAuraPoint(
+      { x: 0, y: 0 },
       placementReferenceViewport,
       targetViewport,
+    );
+    const x = Math.max(minimumVisualPosition.x, requestedX);
+    const y = Math.max(minimumVisualPosition.y, requestedY);
+    if (
+      x === Math.round(currentDragState.initialDisplayX) &&
+      y === Math.round(currentDragState.initialDisplayY)
+    ) {
+      commitDragState(null);
+      return;
+    }
+    const referencePoint = resolveAuraPlacementReferencePosition(
+      crop,
+      placement,
+      { x, y },
+      targetViewport,
+      referenceViewport,
     );
     const referenceDimensions = createCoordinateReferenceDimensions(
       placementReferenceViewport,
     );
-    const nextX = Math.max(0, Math.round(referencePoint.x));
-    const nextY = Math.max(0, Math.round(referencePoint.y));
+    const nextX = Math.round(referencePoint.x);
+    const nextY = Math.round(referencePoint.y);
 
     recordAuraHistory(profile);
     const releasedDragState = {

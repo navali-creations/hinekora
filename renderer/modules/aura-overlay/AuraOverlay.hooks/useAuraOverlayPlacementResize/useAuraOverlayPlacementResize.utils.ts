@@ -6,6 +6,7 @@ import {
   resizeAuraPlacementFromCorner,
   resolveAuraPlacementBaseSize,
   resolveAuraPlacementScale,
+  resolveAuraPlacementVisualSize,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 
 interface CreateAuraOverlayScaleSnapContextInput {
@@ -86,8 +87,12 @@ function resizeAuraPlacementWithPeerScaleSnap({
   }
 
   const initialScale = resolveAuraPlacementScale(placement);
-  const widthDelta = (peerScale - initialScale) * scaleSnapContext.baseWidth;
-  const heightDelta = (peerScale - initialScale) * scaleSnapContext.baseHeight;
+  const visualBaseSize = resolveAuraPlacementVisualSize(placement, {
+    height: scaleSnapContext.baseHeight,
+    width: scaleSnapContext.baseWidth,
+  });
+  const widthDelta = (peerScale - initialScale) * visualBaseSize.width;
+  const heightDelta = (peerScale - initialScale) * visualBaseSize.height;
 
   return resizeAuraPlacementFromCorner(
     crop,

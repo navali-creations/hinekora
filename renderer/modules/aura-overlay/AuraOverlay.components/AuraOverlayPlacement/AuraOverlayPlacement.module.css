@@ -56,7 +56,6 @@
 
 .videoClip {
   position: absolute;
-  inset: 0;
   z-index: 2;
   overflow: hidden;
   pointer-events: none;
@@ -72,7 +71,6 @@
 
 .straightenedClip {
   position: absolute;
-  inset: 0;
   z-index: 2;
   overflow: hidden;
   pointer-events: none;

@@ -4,9 +4,8 @@ import {
   type AuraOverlaySnapGuide,
   type AuraSize,
   type AuraVideoSize,
-  projectAuraOverlayPlacement,
-  resolveAuraPlacementDisplaySize,
-  resolveAuraReferenceViewport,
+  resolveAuraPlacementGeometry,
+  resolveAuraPlacementVisualSize,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 
 interface CreateAuraOverlaySnapContextInput {
@@ -51,11 +50,15 @@ function createAuraOverlaySnapContext({
     return null;
   }
 
-  const selectedDisplaySize = resolveAuraPlacementDisplaySize(
+  const { contentSize: selectedDisplaySize } = resolveAuraPlacementGeometry(
     selectedCrop,
     selectedPlacement,
     targetViewport,
     fallbackReferenceViewport,
+  );
+  const selectedVisualSize = resolveAuraPlacementVisualSize(
+    selectedPlacement,
+    selectedDisplaySize,
   );
   const xGuides: AuraOverlaySnapGuide[] = [
     {
@@ -84,16 +87,7 @@ function createAuraOverlaySnapContext({
       continue;
     }
 
-    const cropReferenceViewport = resolveAuraReferenceViewport(
-      crop,
-      fallbackReferenceViewport,
-    );
-    const projectedPlacement = projectAuraOverlayPlacement(
-      placement,
-      targetViewport,
-      cropReferenceViewport,
-    );
-    const displaySize = resolveAuraPlacementDisplaySize(
+    const { visualBounds } = resolveAuraPlacementGeometry(
       crop,
       placement,
       targetViewport,
@@ -103,41 +97,41 @@ function createAuraOverlaySnapContext({
       {
         anchor: "start",
         kind: "placement",
-        position: projectedPlacement.x,
+        position: visualBounds.x,
       },
       {
         anchor: "center",
         kind: "placement",
-        position: projectedPlacement.x + displaySize.width / 2,
+        position: visualBounds.x + visualBounds.width / 2,
       },
       {
         anchor: "end",
         kind: "placement",
-        position: projectedPlacement.x + displaySize.width,
+        position: visualBounds.x + visualBounds.width,
       },
     );
     yGuides.push(
       {
         anchor: "start",
         kind: "placement",
-        position: projectedPlacement.y,
+        position: visualBounds.y,
       },
       {
         anchor: "center",
         kind: "placement",
-        position: projectedPlacement.y + displaySize.height / 2,
+        position: visualBounds.y + visualBounds.height / 2,
       },
       {
         anchor: "end",
         kind: "placement",
-        position: projectedPlacement.y + displaySize.height,
+        position: visualBounds.y + visualBounds.height,
       },
     );
   }
 
   return {
-    displayHeight: selectedDisplaySize.height,
-    displayWidth: selectedDisplaySize.width,
+    displayHeight: selectedVisualSize.height,
+    displayWidth: selectedVisualSize.width,
     gridCellHeight: gridCellSize.height,
     gridCellWidth: gridCellSize.width,
     xGuides,

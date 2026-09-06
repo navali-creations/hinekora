@@ -10,7 +10,11 @@ import type { AuraPlacementPropertiesPatch } from "../../AuraOverlay.components/
 import {
   type AuraVideoSize,
   createAuraViewportProjection,
+  isAuraPlacementQuarterTurn,
+  resolveAuraPlacementContentDelta,
   resolveAuraPlacementDisplaySize,
+  resolveAuraPlacementGeometry,
+  resolveAuraPlacementReferencePosition,
   resolveAuraReferenceViewport,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import { createArcControlNormal } from "../../AuraOverlay.utils/AuraOverlay.utils";
@@ -30,6 +34,20 @@ function createPlacementPropertiesUpdate(
   fallbackReferenceViewport: AuraVideoSize | null,
 ): AuraPlacementPropertiesUpdate {
   const nextPlacement: OverlayPlacement = { ...placement };
+  const shouldPreserveVisualPosition =
+    patch.scale !== undefined ||
+    patch.displayWidth !== undefined ||
+    patch.displayHeight !== undefined ||
+    patch.pointSampleSize !== undefined ||
+    patch.pointGap !== undefined;
+  const initialVisualBounds = shouldPreserveVisualPosition
+    ? resolveAuraPlacementGeometry(
+        crop,
+        placement,
+        targetViewport,
+        fallbackReferenceViewport,
+      ).visualBounds
+    : null;
   let nextCrop = crop;
   if (crop.shape !== "arc") {
     delete nextPlacement.arcStraightened;
@@ -83,12 +101,6 @@ function createPlacementPropertiesUpdate(
   }
 
   if (patch.displayWidth !== undefined || patch.displayHeight !== undefined) {
-    const displaySize = resolveAuraPlacementDisplaySize(
-      crop,
-      nextPlacement,
-      targetViewport,
-      fallbackReferenceViewport,
-    );
     const referenceViewport = resolveAuraReferenceViewport(
       nextPlacement,
       resolveAuraReferenceViewport(crop, fallbackReferenceViewport),
@@ -98,21 +110,43 @@ function createPlacementPropertiesUpdate(
       targetViewport,
     );
     const scale = nextPlacement.scale || 1;
+    const visualWidth =
+      patch.displayWidth ??
+      initialVisualBounds?.width ??
+      minimumDisplayDimension;
+    const visualHeight =
+      patch.displayHeight ??
+      initialVisualBounds?.height ??
+      minimumDisplayDimension;
+    const contentWidth = isAuraPlacementQuarterTurn(nextPlacement)
+      ? visualHeight
+      : visualWidth;
+    const contentHeight = isAuraPlacementQuarterTurn(nextPlacement)
+      ? visualWidth
+      : visualHeight;
 
     nextPlacement.width = clamp(
-      Math.round(
-        (patch.displayWidth ?? displaySize.width) / scale / projection.scale,
-      ),
+      Math.round(contentWidth / scale / projection.scale),
       minimumDisplayDimension,
       100_000,
     );
     nextPlacement.height = clamp(
-      Math.round(
-        (patch.displayHeight ?? displaySize.height) / scale / projection.scale,
-      ),
+      Math.round(contentHeight / scale / projection.scale),
       minimumDisplayDimension,
       100_000,
     );
+  }
+
+  if (initialVisualBounds) {
+    const referencePosition = resolveAuraPlacementReferencePosition(
+      crop,
+      nextPlacement,
+      { x: initialVisualBounds.x, y: initialVisualBounds.y },
+      targetViewport,
+      fallbackReferenceViewport,
+    );
+    nextPlacement.x = Math.round(referencePosition.x);
+    nextPlacement.y = Math.round(referencePosition.y);
   }
 
   if (isArchedCropRegion(crop) && patch.arcVisibleThickness !== undefined) {
@@ -154,6 +188,7 @@ function isArchedCropRegion(
 
 function resizeArchedPlacementThickness(
   crop: CropRegion,
+  placement: OverlayPlacement,
   initialDisplayThickness: number,
   maxDisplayThickness: number,
   deltaX: number,
@@ -163,7 +198,15 @@ function resizeArchedPlacementThickness(
     return initialDisplayThickness;
   }
 
-  const delta = getArchedCropThicknessDelta(crop, deltaX, deltaY);
+  const contentDelta = resolveAuraPlacementContentDelta(placement, {
+    x: deltaX,
+    y: deltaY,
+  });
+  const delta = getArchedCropThicknessDelta(
+    crop,
+    contentDelta.x,
+    contentDelta.y,
+  );
   return clamp(
     Math.round(initialDisplayThickness + delta),
     1,

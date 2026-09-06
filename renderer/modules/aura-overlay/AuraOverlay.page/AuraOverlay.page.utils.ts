@@ -38,7 +38,17 @@ export { resolveAuraArcDisplayThickness } from "./resolveAuraArcDisplayThickness
 export { resolveAuraArcSourceThickness } from "./resolveAuraArcSourceThickness/resolveAuraArcSourceThickness";
 export { resolveAuraPlacementArcVisibleThickness } from "./resolveAuraPlacementArcVisibleThickness/resolveAuraPlacementArcVisibleThickness";
 export { resolveAuraPlacementBaseSize } from "./resolveAuraPlacementBaseSize/resolveAuraPlacementBaseSize";
-export { resolveAuraPlacementDisplaySize } from "./resolveAuraPlacementDisplaySize/resolveAuraPlacementDisplaySize";
+export {
+  isAuraPlacementQuarterTurn,
+  resolveAuraPlacementContentDelta,
+  resolveAuraPlacementContentPosition,
+  resolveAuraPlacementDisplaySize,
+  resolveAuraPlacementGeometry,
+  resolveAuraPlacementReferencePosition,
+  resolveAuraPlacementVisualBounds,
+  resolveAuraPlacementVisualPoint,
+  resolveAuraPlacementVisualSize,
+} from "./resolveAuraPlacementDisplaySize/resolveAuraPlacementDisplaySize";
 export { resolveAuraPlacementPointGap } from "./resolveAuraPlacementPointGap/resolveAuraPlacementPointGap";
 export { resolveAuraPlacementPointSampleSize } from "./resolveAuraPlacementPointSampleSize/resolveAuraPlacementPointSampleSize";
 export { resolveAuraPlacementPointSpacing } from "./resolveAuraPlacementPointSpacing/resolveAuraPlacementPointSpacing";

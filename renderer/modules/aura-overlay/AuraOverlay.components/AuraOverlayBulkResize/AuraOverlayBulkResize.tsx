@@ -175,7 +175,8 @@ function AuraOverlayBulkResize() {
           Match icon size
         </h3>
         <p className="m-0 font-bold text-primary/75">
-          Match both width and height to one aura or element.
+          Match width and height to one aura or element. Arched auras also match
+          an arched anchor's thickness.
         </p>
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
