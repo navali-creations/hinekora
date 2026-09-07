@@ -53,8 +53,8 @@ describe("OverlaySettingsCard", () => {
     const recorderStartupToggle = container.querySelector<HTMLInputElement>(
       'input[aria-label="Show recording overlay at startup"]',
     );
-    const auraCaptureToggle = container.querySelector<HTMLInputElement>(
-      'input[aria-label="Include aura overlay in captures"]',
+    const overlayCaptureToggle = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Include overlays in captures"]',
     );
     const recorderStartMinimizedToggle =
       container.querySelector<HTMLInputElement>(
@@ -77,7 +77,7 @@ describe("OverlaySettingsCard", () => {
       if (
         !recorderStartupToggle ||
         !recorderStartMinimizedToggle ||
-        !auraCaptureToggle ||
+        !overlayCaptureToggle ||
         !recorderFocusToggle ||
         !auraFocusToggle ||
         !clipPreviewFocusToggle ||
@@ -88,7 +88,7 @@ describe("OverlaySettingsCard", () => {
 
       recorderStartupToggle.click();
       recorderStartMinimizedToggle.click();
-      auraCaptureToggle.click();
+      overlayCaptureToggle.click();
       recorderFocusToggle.click();
       auraFocusToggle.click();
       clipPreviewFocusToggle.click();
@@ -104,7 +104,7 @@ describe("OverlaySettingsCard", () => {
       true,
     );
     expect(storeMocks.updatePreference).toHaveBeenCalledWith(
-      "auraOverlayIncludeInCaptures",
+      "overlayWindowsIncludeInCaptures",
       true,
     );
     expect(container.textContent).toContain("Windows screenshots");

@@ -72,6 +72,10 @@ function useCropSelectorSelection() {
     [completePointSelection, pointSelectionPoints],
   );
 
+  const handleCompletePointSelection = useCallback(() => {
+    completePointSelection(pointSelectionPoints);
+  }, [completePointSelection, pointSelectionPoints]);
+
   const handleArcPoint = useCallback(
     (point: CropSelectorPoint) => {
       if (!arcStart) {
@@ -217,19 +221,24 @@ function useCropSelectorSelection() {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (shape === "points" && pointSelectionPoints.length > 0) {
+          handleCompletePointSelection();
+          return;
+        }
+
         handleCancel();
         return;
       }
 
       if (event.key === "Enter" && shape === "points") {
-        completePointSelection(pointSelectionPoints);
+        handleCompletePointSelection();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
 
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [completePointSelection, handleCancel, pointSelectionPoints, shape]);
+  }, [handleCancel, handleCompletePointSelection, pointSelectionPoints, shape]);
 
   return {
     arcEnd,

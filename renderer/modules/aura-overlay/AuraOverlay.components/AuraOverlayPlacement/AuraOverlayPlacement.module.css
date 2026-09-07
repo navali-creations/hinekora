@@ -1,12 +1,22 @@
 .boxFrame {
   position: absolute;
+  isolation: isolate;
   overflow: visible;
   min-width: 0;
   min-height: 0;
 }
 
+.boxFrame:has(.boxSelected) {
+  z-index: 8;
+}
+
+.boxFrame:has(.propertiesColorInput:focus) {
+  z-index: 10;
+}
+
 .box {
   position: relative;
+  z-index: 1;
   display: block;
   overflow: hidden;
   width: 100%;
@@ -19,8 +29,8 @@
   padding: 0;
   color: var(--color-base-300);
   background: color-mix(in oklch, var(--color-base-300) 26%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--color-base-300) 28%, transparent),
+  box-shadow: 0 0 0 1px
+      color-mix(in oklch, var(--color-base-300) 28%, transparent),
     0 0 22px color-mix(in oklch, var(--color-primary) 36%, transparent);
   cursor: move;
   font-size: 0.75rem;
@@ -43,13 +53,26 @@
   backdrop-filter: none;
 }
 
+.box.boxCustomShape,
+.box.boxCustomShape:hover,
+.box.boxCustomShape:focus-visible,
+.box.boxCustomShape.boxSelected,
+.box.boxCustomShape.boxSelected:hover,
+.box.boxCustomShape.boxSelected:focus-visible {
+  overflow: visible;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
 .boxSelected {
   --aura-selected-teal: #14b8a6;
 
   border: 1px solid var(--aura-selected-teal);
   background: color-mix(in oklch, var(--aura-selected-teal) 16%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--aura-selected-teal) 82%, transparent),
+  box-shadow: 0 0 0 1px
+      color-mix(in oklch, var(--aura-selected-teal) 82%, transparent),
     0 0 18px color-mix(in oklch, var(--aura-selected-teal) 58%, transparent),
     0 0 42px color-mix(in oklch, var(--aura-selected-teal) 32%, transparent);
 }
@@ -57,6 +80,15 @@
 .videoClip {
   position: absolute;
   z-index: 2;
+  isolation: isolate;
+  overflow: hidden;
+  pointer-events: none;
+  transform-origin: center;
+}
+
+.videoContent {
+  position: absolute;
+  inset: 0;
   overflow: hidden;
   pointer-events: none;
   transform-origin: center;
@@ -200,8 +232,8 @@
   border: var(--border) solid var(--color-base-300);
   border-radius: 50%;
   background: var(--aura-selected-teal, #14b8a6);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--color-primary) 82%, transparent),
+  box-shadow: 0 0 0 1px
+      color-mix(in oklch, var(--color-primary) 82%, transparent),
     0 0 16px color-mix(in oklch, #14b8a6 58%, transparent);
   cursor: move;
   transform: translate(-50%, -50%);
@@ -214,11 +246,11 @@
   display: block;
   overflow-x: hidden;
   overflow-y: auto;
-  width: 164px;
+  width: 180px;
   min-height: 28px;
-  max-height: min(
-    320px,
-    var(--aura-properties-panel-viewport-max-height, calc(100vh - 16px))
+  max-height: var(
+    --aura-properties-panel-viewport-max-height,
+    calc(100vh - 16px)
   );
   box-sizing: border-box;
   border: 1px solid color-mix(in oklch, var(--color-primary) 52%, transparent);
@@ -226,18 +258,24 @@
   padding: 8px;
   color: var(--color-primary);
   background: color-mix(in oklch, var(--color-base-300) 88%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--color-base-300) 52%, transparent),
+  box-shadow: 0 0 0 1px
+      color-mix(in oklch, var(--color-base-300) 52%, transparent),
     0 12px 32px rgb(0 0 0 / 38%);
   font-size: 10px;
   font-weight: 800;
   line-height: 1.15;
   pointer-events: auto;
-  transition:
-    width 180ms ease,
-    max-height 180ms ease,
-    padding 180ms ease;
+  transition: width 180ms ease, max-height 180ms ease, padding 180ms ease;
   -webkit-app-region: no-drag;
+}
+
+.propertiesPanel[open] {
+  scrollbar-gutter: stable;
+}
+
+.propertiesPanel[open]:has(.propertiesColorInput:focus) {
+  overflow: visible;
+  scrollbar-gutter: auto;
 }
 
 .propertiesPanel:not([open]) {
@@ -249,8 +287,8 @@
 
 .propertiesPanelToggle {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 8px;
+  right: 8px;
   z-index: 2;
   display: grid;
   width: 20px;
@@ -292,28 +330,77 @@
   transform: translate(-50%, -50%);
 }
 
+.propertiesPanelTabs {
+  display: flex;
+  min-width: 122px;
+  height: 20px;
+  margin-right: 24px;
+  gap: 4px;
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(0);
+  transition: opacity 140ms ease, visibility 0ms linear, transform 180ms ease;
+}
+
+.propertiesPanelTab {
+  flex: 1;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in oklch, var(--color-primary) 26%, transparent);
+  border-radius: 0.25rem;
+  padding: 0 5px;
+  color: color-mix(in oklch, var(--color-primary) 72%, transparent);
+  background: color-mix(in oklch, var(--color-base-100) 72%, transparent);
+  font: inherit;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.propertiesPanelTab:first-child {
+  flex-grow: 1.35;
+}
+
+.propertiesPanelTab:hover,
+.propertiesPanelTab:focus-visible,
+.propertiesPanelTab[aria-selected="true"] {
+  border-color: var(--aura-selected-teal, #14b8a6);
+  color: var(--color-primary);
+  background: color-mix(in oklch, #14b8a6 18%, transparent);
+  outline: none;
+}
+
+.propertiesPanelTab:disabled {
+  border-color: color-mix(in oklch, var(--color-primary) 12%, transparent);
+  color: color-mix(in oklch, var(--color-primary) 30%, transparent);
+  background: transparent;
+  cursor: not-allowed;
+}
+
+.propertiesPanel:not([open]) .propertiesPanelTabs {
+  opacity: 0;
+  visibility: hidden;
+  transform: translateX(-6px);
+  transition: opacity 100ms ease, visibility 0ms linear 100ms,
+    transform 180ms ease;
+}
+
 .propertiesPanelContent {
   display: grid;
   min-width: 146px;
   grid-template-columns: 1fr 1fr;
-  gap: 6px;
-  padding-top: 20px;
+  gap: 8px 6px;
+  padding-top: 8px;
   opacity: 1;
   visibility: visible;
   transform: translateX(0);
-  transition:
-    opacity 140ms ease,
-    visibility 0ms linear,
-    transform 180ms ease;
+  transition: opacity 140ms ease, visibility 0ms linear, transform 180ms ease;
 }
 
 .propertiesPanel:not([open]) .propertiesPanelContent {
   opacity: 0;
   visibility: hidden;
   transform: translateX(-6px);
-  transition:
-    opacity 100ms ease,
-    visibility 0ms linear 100ms,
+  transition: opacity 100ms ease, visibility 0ms linear 100ms,
     transform 180ms ease;
 }
 
@@ -352,11 +439,178 @@
   gap: 6px;
 }
 
-.propertiesToggle {
+.propertiesAppearance {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+}
+
+.propertiesCoordinates {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.propertiesIcon {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 8px 6px;
+}
+
+.propertiesEffect {
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.propertiesEffect + .propertiesEffect {
+  border-top: 1px solid
+    color-mix(in oklch, var(--color-primary) 18%, transparent);
+  padding-top: 8px;
+}
+
+.propertiesEffectControls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  align-items: end;
+  gap: 6px;
+}
+
+.propertiesShapeField {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 4px;
+  min-width: 0;
+  border: 0;
+  border-bottom: 1px solid
+    color-mix(in oklch, var(--color-primary) 18%, transparent);
+  padding: 0 0 6px;
+}
+
+.propertiesContentZoom {
+  grid-column: 1 / -1;
+}
+
+.propertiesShapeField legend {
+  padding: 0;
+}
+
+.propertiesShapeRow {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.propertiesShapeButton {
+  display: grid;
+  min-width: 0;
+  height: 26px;
+  border: 1px solid color-mix(in oklch, var(--color-primary) 34%, transparent);
+  border-radius: 0.25rem;
+  padding: 0;
+  color: var(--color-primary);
+  background: color-mix(in oklch, var(--color-base-100) 72%, transparent);
+  cursor: pointer;
+  place-items: center;
+}
+
+.propertiesShapeButton:hover,
+.propertiesShapeButton:focus-visible,
+.propertiesShapeButton[aria-pressed="true"] {
+  border-color: var(--aura-selected-teal, #14b8a6);
+  background: color-mix(in oklch, #14b8a6 18%, transparent);
+  outline: none;
+  box-shadow: 0 0 8px color-mix(in oklch, #14b8a6 32%, transparent);
+}
+
+.propertiesShapeIcon {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2;
+}
+
+.placementShapeFocus {
+  position: absolute;
+  z-index: 3;
+  overflow: visible;
+  pointer-events: none;
+  filter: drop-shadow(0 0 1px color-mix(in oklch, #14b8a6 90%, transparent))
+    drop-shadow(0 0 8px color-mix(in oklch, #14b8a6 66%, transparent))
+    drop-shadow(0 0 18px color-mix(in oklch, #14b8a6 38%, transparent));
+  transform-origin: center;
+}
+
+.placementShapeFocusGeometry {
+  fill: color-mix(in oklch, #14b8a6 12%, transparent);
+  stroke: #14b8a6;
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+}
+
+.propertiesColorField {
+  display: grid;
+  gap: 3px;
+}
+
+.propertiesColorInput {
+  position: relative;
+  z-index: 10;
+  width: 38px;
+  height: 22px;
+  box-sizing: border-box;
+  border: 1px solid color-mix(in oklch, var(--color-primary) 38%, transparent);
+  border-radius: 0.25rem;
+  padding: 1px 2px;
+  background: color-mix(in oklch, var(--color-base-100) 82%, transparent);
+  cursor: pointer;
+}
+
+.boxFrame:has(.propertiesColorInput:focus) .boxSelected,
+.boxFrame:has(.propertiesColorInput:focus) .boxSelected:hover,
+.boxFrame:has(.propertiesColorInput:focus) .boxSelected:focus-visible {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.boxFrame:has(.propertiesColorInput:focus) .resizeHandle,
+.boxFrame:has(.propertiesColorInput:focus) .thicknessHandle,
+.boxFrame:has(.propertiesColorInput:focus) .arcBoundaryOverlay,
+.boxFrame:has(.propertiesColorInput:focus) .placementShapeFocus {
+  opacity: 0;
+}
+
+.propertiesToggle,
+.propertiesToggleWide {
   display: inline-flex;
   align-items: center;
   gap: 4px;
   white-space: nowrap;
+}
+
+.propertiesToggleWide {
+  grid-column: 1 / -1;
+}
+
+.propertiesRotationButton {
+  width: 100%;
+  height: 22px;
+  min-width: 0;
+  border: 1px solid color-mix(in oklch, var(--color-primary) 38%, transparent);
+  border-radius: 0.25rem;
+  padding: 0 4px;
+  color: var(--color-base-content);
+  background: color-mix(in oklch, var(--color-base-100) 82%, transparent);
+  font: inherit;
+  cursor: pointer;
+}
+
+.propertiesRotationButton:hover,
+.propertiesRotationButton:focus-visible {
+  border-color: var(--color-primary);
+  outline: none;
+  box-shadow: 0 0 0 1px var(--color-primary);
 }
 
 .propertiesButton {
@@ -369,7 +623,16 @@
   color: var(--color-primary);
   background: color-mix(in oklch, var(--color-primary) 10%, transparent);
   font: inherit;
+  cursor: pointer;
   white-space: nowrap;
+}
+
+.propertiesButton:hover,
+.propertiesButton:focus-visible {
+  border-color: var(--color-primary);
+  background: color-mix(in oklch, var(--color-primary) 18%, transparent);
+  outline: none;
+  box-shadow: 0 0 0 1px var(--color-primary);
 }
 
 .box:hover,
@@ -383,8 +646,8 @@
 .boxSelected:focus-visible {
   border-color: var(--aura-selected-teal);
   background: color-mix(in oklch, var(--aura-selected-teal) 18%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in oklch, var(--aura-selected-teal) 86%, transparent),
+  box-shadow: 0 0 0 1px
+      color-mix(in oklch, var(--aura-selected-teal) 86%, transparent),
     0 0 20px color-mix(in oklch, var(--aura-selected-teal) 64%, transparent),
     0 0 46px color-mix(in oklch, var(--aura-selected-teal) 36%, transparent);
 }
@@ -395,9 +658,18 @@
   background: transparent;
 }
 
+.placementEffects {
+  position: absolute;
+  z-index: 0;
+  overflow: visible;
+  pointer-events: none;
+  transform-origin: center;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .propertiesPanel,
   .propertiesPanelContent,
+  .propertiesPanelTabs,
   .propertiesPanelToggle svg {
     transition: none;
   }

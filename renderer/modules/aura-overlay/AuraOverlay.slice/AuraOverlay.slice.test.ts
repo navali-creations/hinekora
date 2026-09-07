@@ -39,6 +39,7 @@ describe("AuraOverlay slice", () => {
     expect(store.getState().auraOverlay.addAuraRequest).toBeNull();
     expect(store.getState().auraOverlay.addAuraSelectionError).toBeNull();
     expect(store.getState().auraOverlay.addingAuraShape).toBeNull();
+    expect(store.getState().auraOverlay.areaSelection).toBeNull();
     expect(store.getState().auraOverlay.selectedPlacementId).toBeNull();
 
     store
@@ -65,6 +66,41 @@ describe("AuraOverlay slice", () => {
     expect(store.getState().auraOverlay.addAuraRequest).toBeNull();
     expect(store.getState().auraOverlay.addAuraSelectionError).toBeNull();
     expect(store.getState().auraOverlay.addingAuraShape).toBeNull();
+  });
+
+  it("owns completed area selection and clears it when an aura gains focus", () => {
+    const store = createBoundStoreForTests((set, get, api) =>
+      createAuraOverlaySlice(set, get, api),
+    );
+    const selection = {
+      height: 80,
+      placementIds: ["placement-1", "placement-2"],
+      width: 120,
+      x: 20,
+      y: 30,
+    };
+
+    store.getState().auraOverlay.selectPlacement("placement-1");
+    store.getState().auraOverlay.setAreaSelection(selection);
+    expect(store.getState().auraOverlay.areaSelection).toEqual(selection);
+    expect(store.getState().auraOverlay.selectedPlacementId).toBeNull();
+
+    store.getState().auraOverlay.moveAreaSelection(15, -5);
+    expect(store.getState().auraOverlay.areaSelection).toEqual({
+      ...selection,
+      x: 35,
+      y: 25,
+    });
+
+    store.getState().auraOverlay.selectPlacement("placement-2");
+    expect(store.getState().auraOverlay.areaSelection).toBeNull();
+    expect(store.getState().auraOverlay.selectedPlacementId).toBe(
+      "placement-2",
+    );
+
+    store.getState().auraOverlay.setAreaSelection(selection);
+    store.getState().auraOverlay.clearAreaSelection();
+    expect(store.getState().auraOverlay.areaSelection).toBeNull();
   });
 
   it("owns the selected aura placement", () => {

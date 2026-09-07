@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Profile } from "~/types";
 import {
+  createAuraOverlayDragInitialPositions,
   createAuraOverlaySnapContext,
   resolveAuraOverlayDragSnap,
 } from "./useAuraOverlayPlacementDrag.utils";
@@ -45,6 +46,20 @@ const profile: Profile = {
 };
 
 describe("useAuraOverlayPlacementDrag utilities", () => {
+  it("captures every dragged aura's initial display position", () => {
+    expect(
+      createAuraOverlayDragInitialPositions({
+        fallbackReferenceViewport: { height: 1080, width: 1920 },
+        placementIds: ["placement-1", "placement-2", "missing"],
+        profile,
+        targetViewport: { height: 1080, width: 1920 },
+      }),
+    ).toEqual({
+      "placement-1": { x: 30, y: 40 },
+      "placement-2": { x: 200, y: 220 },
+    });
+  });
+
   it("creates center and peer-aura snap guides in display coordinates", () => {
     expect(
       createAuraOverlaySnapContext({

@@ -15,8 +15,8 @@ const keyboardControls = [
     text: "Reset the current target and start the same selection type again.",
   },
   {
-    keys: ["Enter"],
-    text: "Confirm a pointer selection after choosing its points.",
+    keys: ["Esc"],
+    text: "Confirm selected pointer points, or cancel before placing any.",
   },
 ];
 

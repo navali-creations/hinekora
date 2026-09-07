@@ -224,6 +224,10 @@ class GridLinesOverlayService implements GameOverlayParticipant {
 
   private registerCropSelectionShortcuts(): void {
     this.unregisterCropSelectionShortcuts();
+    if (this.cropSelectorShape === "points") {
+      return;
+    }
+
     this.cropSelectionEscapeRegistered = globalShortcut.register(
       "Escape",
       () => {

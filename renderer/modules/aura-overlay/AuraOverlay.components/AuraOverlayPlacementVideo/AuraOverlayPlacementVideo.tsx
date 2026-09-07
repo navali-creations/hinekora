@@ -1,6 +1,10 @@
 import type { CSSProperties, SyntheticEvent } from "react";
 
-import type { CropRegion, OverlayPlacement } from "~/types";
+import {
+  AuraPlacementContentZoomSettings,
+  type CropRegion,
+  type OverlayPlacement,
+} from "~/types";
 import {
   type AuraSize,
   type AuraVideoSize,
@@ -8,6 +12,7 @@ import {
   createAuraVideoStyle,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import styles from "../AuraOverlayPlacement/AuraOverlayPlacement.module.css";
+import { resolveAuraPlacementClipPath } from "../AuraOverlayPlacement/AuraOverlayPlacement.utils";
 import { AuraPointStackVideo } from "../AuraPointStackVideo/AuraPointStackVideo";
 import { AuraStraightenedArcVideo } from "../AuraStraightenedArcVideo/AuraStraightenedArcVideo";
 
@@ -71,30 +76,57 @@ function AuraOverlayPlacementVideo({
     visibleThickness,
     displaySize,
   );
+  const placementClipPath =
+    crop.shape === undefined || crop.shape === "rect"
+      ? resolveAuraPlacementClipPath(placement.clipShape)
+      : undefined;
+  const clipPath = cropClipPath ?? placementClipPath;
+  const supportsIconControls =
+    crop.shape === undefined || crop.shape === "rect";
+  const contentZoomScale =
+    (supportsIconControls
+      ? (placement.contentZoomPercent ??
+        AuraPlacementContentZoomSettings.defaultPercent)
+      : AuraPlacementContentZoomSettings.defaultPercent) / 100;
+  const iconOffsetX = supportsIconControls ? (placement.iconOffsetX ?? 0) : 0;
+  const iconOffsetY = supportsIconControls ? (placement.iconOffsetY ?? 0) : 0;
 
   return (
     <div
       className={styles.videoClip}
       style={{
         ...contentStyle,
-        ...(cropClipPath ? { clipPath: cropClipPath } : {}),
+        ...(clipPath ? { clipPath } : {}),
+        ...(placementClipPath && placement.clipShape === "circle"
+          ? { borderRadius: "50%" }
+          : {}),
       }}
     >
-      <video
-        aria-label={crop.label}
-        className={styles.video}
-        muted
-        playsInline
-        ref={bindAuraVideo}
-        style={createAuraVideoStyle(
-          crop,
-          placement,
-          videoSize,
-          referenceViewport,
-        )}
-        onLoadedMetadata={onVideoSizeChange}
-        onResize={onVideoSizeChange}
-      />
+      <div
+        className={styles.videoContent}
+        data-aura-content-zoom={contentZoomScale * 100}
+        data-aura-icon-x={iconOffsetX}
+        data-aura-icon-y={iconOffsetY}
+        style={{
+          transform: `translate(${iconOffsetX}px, ${iconOffsetY}px) scale(${contentZoomScale})`,
+        }}
+      >
+        <video
+          aria-label={crop.label}
+          className={styles.video}
+          muted
+          playsInline
+          ref={bindAuraVideo}
+          style={createAuraVideoStyle(
+            crop,
+            placement,
+            videoSize,
+            referenceViewport,
+          )}
+          onLoadedMetadata={onVideoSizeChange}
+          onResize={onVideoSizeChange}
+        />
+      </div>
     </div>
   );
 }

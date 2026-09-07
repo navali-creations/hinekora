@@ -1,5 +1,4 @@
 import {
-  type ChangeEvent,
   type FocusEvent,
   type KeyboardEvent,
   useCallback,
@@ -8,45 +7,37 @@ import {
   useState,
 } from "react";
 
-import type { OverlayPlacement } from "~/types";
 import { useAuraPlacementPropertiesPanelLayout } from "../../AuraOverlay.hooks/useAuraPlacementPropertiesPanelLayout/useAuraPlacementPropertiesPanelLayout";
 import styles from "../AuraOverlayPlacement/AuraOverlayPlacement.module.css";
-import { AuraPlacementNameField } from "../AuraPlacementNameField/AuraPlacementNameField";
-import { AuraPlacementNumberField } from "../AuraPlacementNumberField/AuraPlacementNumberField";
-import { AuraPlacementPointPropertiesFields } from "../AuraPlacementPointPropertiesFields/AuraPlacementPointPropertiesFields";
-import { AuraPlacementPropertiesActions } from "../AuraPlacementPropertiesActions/AuraPlacementPropertiesActions";
+import { AuraPlacementAppearanceControls } from "../AuraPlacementAppearanceControls/AuraPlacementAppearanceControls";
+import { AuraPlacementGeneralControls } from "../AuraPlacementGeneralControls/AuraPlacementGeneralControls";
+import { AuraPlacementIconControls } from "../AuraPlacementIconControls/AuraPlacementIconControls";
 import { AuraPlacementPropertiesPanelToggle } from "../AuraPlacementPropertiesPanelToggle/AuraPlacementPropertiesPanelToggle";
 import {
-  type AuraPlacementPropertiesPanelBounds,
+  type AuraPlacementPropertiesTab,
+  AuraPlacementPropertiesTabs,
+} from "../AuraPlacementPropertiesTabs/AuraPlacementPropertiesTabs";
+import {
+  type AuraPlacementPropertiesPanelProps,
   type AuraPlacementPropertiesPatch,
-  auraPlacementBaseNumberFields,
   createCurrentNumericValues,
   createNumberFieldPatch,
   createPropertiesDraft,
   type NumberFieldName,
   normalizeNumberInputValue,
   readNumberFieldName,
-  resolveNextRotationDegrees,
 } from "./AuraPlacementPropertiesPanel.utils";
-
-interface AuraPlacementPropertiesPanelProps {
-  anchorBounds: AuraPlacementPropertiesPanelBounds;
-  displayHeight: number;
-  displayWidth: number;
-  label: string;
-  placement: OverlayPlacement;
-  pointControls?: boolean;
-  visibleThickness?: number;
-  onChange: (placementId: string, patch: AuraPlacementPropertiesPatch) => void;
-}
 
 function AuraPlacementPropertiesPanel({
   anchorBounds,
+  centerOffsetX,
+  centerOffsetY,
   displayHeight,
   displayWidth,
   label,
   placement,
   pointControls = false,
+  showClipShapeControls = false,
   visibleThickness,
   onChange,
 }: AuraPlacementPropertiesPanelProps) {
@@ -57,10 +48,26 @@ function AuraPlacementPropertiesPanel({
   const historyRecordedFieldRef = useRef<NumberFieldName | null>(null);
   const createDraft = useCallback(
     () =>
-      createPropertiesDraft(displayWidth, displayHeight, placement, thickness),
-    [displayHeight, displayWidth, placement, thickness],
+      createPropertiesDraft(
+        centerOffsetX,
+        centerOffsetY,
+        displayWidth,
+        displayHeight,
+        placement,
+        thickness,
+      ),
+    [
+      centerOffsetX,
+      centerOffsetY,
+      displayHeight,
+      displayWidth,
+      placement,
+      thickness,
+    ],
   );
   const [draft, setDraft] = useState(createDraft);
+  const [activeTab, setActiveTab] =
+    useState<AuraPlacementPropertiesTab>("general");
 
   useEffect(() => {
     if (activeFieldRef.current !== null) {
@@ -70,13 +77,10 @@ function AuraPlacementPropertiesPanel({
     setDraft(createDraft());
   }, [createDraft]);
 
-  const handleNumberChange = (event: ChangeEvent<HTMLInputElement>) => {
-    const fieldName = readNumberFieldName(event.currentTarget.name);
-    if (!fieldName) {
-      return;
-    }
-
-    const nextValue = event.currentTarget.value;
+  const handleNumberValueChange = (
+    fieldName: NumberFieldName,
+    nextValue: string,
+  ) => {
     setDraft((currentDraft) => ({
       ...currentDraft,
       [fieldName]: nextValue,
@@ -133,20 +137,6 @@ function AuraPlacementPropertiesPanel({
     }
   };
 
-  const handleMirrorChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onChange(placement.id, { mirrored: event.currentTarget.checked });
-  };
-
-  const handleStraightenChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onChange(placement.id, { arcStraightened: event.currentTarget.checked });
-  };
-
-  const handleRotateClick = () => {
-    onChange(placement.id, {
-      rotationDegrees: resolveNextRotationDegrees(placement.rotationDegrees),
-    });
-  };
-
   const handleNameCommit = (nextLabel: string) => {
     onChange(placement.id, { label: nextLabel });
   };
@@ -160,6 +150,8 @@ function AuraPlacementPropertiesPanel({
     }: { recordHistory: boolean; resetDraftOnNoop: boolean },
   ): boolean => {
     const currentValue = createCurrentNumericValues(
+      centerOffsetX,
+      centerOffsetY,
       displayWidth,
       displayHeight,
       placement,
@@ -195,53 +187,58 @@ function AuraPlacementPropertiesPanel({
       style={panelStyle}
     >
       <AuraPlacementPropertiesPanelToggle />
-      <div className={styles.propertiesPanelContent}>
-        <AuraPlacementNameField label={label} onCommit={handleNameCommit} />
-        {auraPlacementBaseNumberFields.map((field) => (
-          <AuraPlacementNumberField
-            key={field.name}
-            {...field}
-            value={draft[field.name]}
-            onChange={handleNumberChange}
-            onBlur={handleNumberBlur}
-            onFocus={handleNumberFocus}
-            onKeyDown={handleNumberKeyDown}
-          />
-        ))}
-        {thickness !== null && (
-          <AuraPlacementNumberField
-            label="Thickness"
-            min="1"
-            name="thickness"
-            value={draft.thickness}
-            onChange={handleNumberChange}
-            onBlur={handleNumberBlur}
-            onFocus={handleNumberFocus}
-            onKeyDown={handleNumberKeyDown}
-          />
-        )}
-        {pointControls && (
-          <AuraPlacementPointPropertiesFields
+      <AuraPlacementPropertiesTabs
+        activeTab={activeTab}
+        showIconTab={showClipShapeControls}
+        onChange={setActiveTab}
+      />
+      <div
+        aria-label={`${activeTab} aura properties`}
+        className={styles.propertiesPanelContent}
+        id={`aura-properties-${activeTab}`}
+        role="tabpanel"
+      >
+        {activeTab === "general" && (
+          <AuraPlacementGeneralControls
             draft={draft}
-            onChange={handleNumberChange}
-            onBlur={handleNumberBlur}
-            onFocus={handleNumberFocus}
-            onKeyDown={handleNumberKeyDown}
+            label={label}
+            placement={placement}
+            pointControls={pointControls}
+            thickness={thickness}
+            onChange={onChange}
+            onNameCommit={handleNameCommit}
+            onNumberBlur={handleNumberBlur}
+            onNumberFocus={handleNumberFocus}
+            onNumberKeyDown={handleNumberKeyDown}
+            onNumberValueChange={handleNumberValueChange}
           />
         )}
-        <AuraPlacementPropertiesActions
-          arcStraightened={placement.arcStraightened === true}
-          canStraighten={thickness !== null}
-          mirrored={placement.mirrored === true}
-          rotationDegrees={placement.rotationDegrees ?? 0}
-          onMirrorChange={handleMirrorChange}
-          onRotateClick={handleRotateClick}
-          onStraightenChange={handleStraightenChange}
-        />
+        {activeTab === "aura" && (
+          <AuraPlacementAppearanceControls
+            draft={draft}
+            placement={placement}
+            showClipShapeControls={showClipShapeControls}
+            onChange={onChange}
+            onNumberBlur={handleNumberBlur}
+            onNumberFocus={handleNumberFocus}
+            onNumberKeyDown={handleNumberKeyDown}
+            onNumberValueChange={handleNumberValueChange}
+          />
+        )}
+        {activeTab === "icon" && showClipShapeControls && (
+          <AuraPlacementIconControls
+            draft={draft}
+            placement={placement}
+            onChange={onChange}
+            onNumberBlur={handleNumberBlur}
+            onNumberFocus={handleNumberFocus}
+            onNumberKeyDown={handleNumberKeyDown}
+            onNumberValueChange={handleNumberValueChange}
+          />
+        )}
       </div>
     </details>
   );
 }
 
-export type { AuraPlacementPropertiesPatch };
-export { AuraPlacementPropertiesPanel };
+export { AuraPlacementPropertiesPanel, type AuraPlacementPropertiesPatch };

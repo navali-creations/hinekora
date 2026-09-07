@@ -26,8 +26,8 @@ describe("CropSelectorControlsHelp", () => {
     expect(container.textContent).toContain("Pointer aura");
     expect(container.textContent).toContain("Right click");
     expect(container.textContent).toContain("Reset the current target");
-    expect(container.textContent).toContain("Enter");
-    expect(container.textContent).not.toContain("Esc");
+    expect(container.textContent).toContain("Esc");
+    expect(container.textContent).toContain("Confirm selected pointer points");
     expect(container.textContent).toContain("Default aura");
     expect(container.textContent).toContain("Arched aura");
     expect(container.textContent).toContain("ward");

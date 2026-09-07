@@ -501,6 +501,7 @@ describe("OverlayWindowsService", () => {
     });
     const recorderWindow = createFakeWindow();
     const clipPreviewWindow = createFakeWindow();
+    const replayStatusWindow = createFakeWindow();
     const cropSelectorWindow = createFakeWindow();
     const auraWindow = createFakeWindow();
     const service = new OverlayWindowsService();
@@ -509,6 +510,9 @@ describe("OverlayWindowsService", () => {
     });
     Object.assign(getInternals(service).deathClipsOverlay, {
       clipPreviewWindow,
+    });
+    Object.assign(getInternals(service).replayStatusOverlay, {
+      window: replayStatusWindow,
     });
     Object.assign(getInternals(service).gridLinesOverlay, {
       cropSelectorWindow,
@@ -529,105 +533,71 @@ describe("OverlayWindowsService", () => {
       captureMode: "session" | "rewind";
       status: { bufferActive: boolean; runRecordingActive: boolean };
     }) => void;
+    const overlayWindows = [
+      recorderWindow,
+      clipPreviewWindow,
+      replayStatusWindow,
+      cropSelectorWindow,
+      auraWindow,
+    ];
+    const expectContentProtection = (enabled: boolean) => {
+      for (const overlayWindow of overlayWindows) {
+        expect(overlayWindow.setContentProtection).toHaveBeenLastCalledWith(
+          enabled,
+        );
+      }
+    };
 
     notifySettingsChange({
       recordingHideOverlaysFromRecording: true,
       recordingHideOverlaysFromRewind: false,
     });
 
-    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(false);
-    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
-      false,
-    );
-    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
-      false,
-    );
-    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+    expectContentProtection(false);
 
     notifySettingsChange({
       recordingHideOverlaysFromRecording: false,
       recordingHideOverlaysFromRewind: true,
     });
 
-    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(true);
-    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
-      true,
-    );
-    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
-      true,
-    );
-    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+    expectContentProtection(true);
 
     notifySettingsChange({
-      auraOverlayIncludeInCaptures: true,
+      overlayWindowsIncludeInCaptures: true,
       recordingHideOverlaysFromRecording: false,
       recordingHideOverlaysFromRewind: true,
     });
 
-    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(true);
-    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
-      true,
-    );
-    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
-      false,
-    );
-    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+    expectContentProtection(false);
 
     notifyRecorderChange({
       captureMode: "rewind",
       status: { bufferActive: false, runRecordingActive: true },
     });
 
-    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(false);
-    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
-      false,
-    );
-    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
-      false,
-    );
-    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+    expectContentProtection(false);
 
     notifySettingsChange({
+      overlayWindowsIncludeInCaptures: false,
       recordingHideOverlaysFromRecording: true,
       recordingHideOverlaysFromRewind: false,
     });
 
-    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(true);
-    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
-      true,
-    );
-    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
-      false,
-    );
-    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+    expectContentProtection(true);
 
     notifyRecorderChange({
       captureMode: "rewind",
       status: { bufferActive: true, runRecordingActive: false },
     });
 
-    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(false);
-    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
-      false,
-    );
-    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
-      false,
-    );
-    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+    expectContentProtection(false);
 
     notifySettingsChange({
       recordingHideOverlaysFromRecording: false,
       recordingHideOverlaysFromRewind: false,
     });
 
-    expect(recorderWindow.setContentProtection).toHaveBeenLastCalledWith(false);
-    expect(clipPreviewWindow.setContentProtection).toHaveBeenLastCalledWith(
-      false,
-    );
-    expect(cropSelectorWindow.setContentProtection).toHaveBeenLastCalledWith(
-      false,
-    );
-    expect(auraWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+    expectContentProtection(false);
   });
 
   it("reapplies recorder focus visibility when its setting changes", async () => {
@@ -1741,6 +1711,7 @@ describe("GridLinesOverlayService", () => {
     expect(cropWindow.loadFile).toHaveBeenCalledWith(expect.any(String), {
       hash: `/${WindowName.CropSelectorOverlay}?shape=points`,
     });
+    expect(electronMocks.globalShortcutRegister).not.toHaveBeenCalled();
 
     service.completeCropRegionSelection({
       shape: "points",

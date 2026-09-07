@@ -10,7 +10,9 @@ export type {
   AuraVideoSize,
 } from "./AuraOverlay.page.utils.types";
 export { auraResizeCorners } from "./auraResizeCorners/auraResizeCorners";
+export { clamp } from "./clamp/clamp";
 export { createAuraArcBoundaryPaths } from "./createAuraArcBoundaryPaths/createAuraArcBoundaryPaths";
+export { createAuraArcBoundaryPoints } from "./createAuraArcBoundaryPoints/createAuraArcBoundaryPoints";
 export { createAuraArcCurvePoints } from "./createAuraArcCurvePoints/createAuraArcCurvePoints";
 export { createAuraCropClipPath } from "./createAuraCropClipPath/createAuraCropClipPath";
 export { createAuraHistorySnapshot } from "./createAuraHistorySnapshot/createAuraHistorySnapshot";
@@ -53,6 +55,7 @@ export { resolveAuraPlacementPointGap } from "./resolveAuraPlacementPointGap/res
 export { resolveAuraPlacementPointSampleSize } from "./resolveAuraPlacementPointSampleSize/resolveAuraPlacementPointSampleSize";
 export { resolveAuraPlacementPointSpacing } from "./resolveAuraPlacementPointSpacing/resolveAuraPlacementPointSpacing";
 export { resolveAuraPlacementScale } from "./resolveAuraPlacementScale/resolveAuraPlacementScale";
+export { resolveAuraProfileReferenceViewport } from "./resolveAuraProfileReferenceViewport/resolveAuraProfileReferenceViewport";
 export { resolveAuraReferenceViewport } from "./resolveAuraReferenceViewport/resolveAuraReferenceViewport";
 export { selectAuraOverlayPageSettings } from "./selectAuraOverlayPageSettings/selectAuraOverlayPageSettings";
 export { unprojectAuraPoint } from "./unprojectAuraPoint/unprojectAuraPoint";

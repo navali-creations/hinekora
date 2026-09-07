@@ -1,15 +1,24 @@
 import {
+  AuraPlacementContentZoomSettings,
+  AuraPlacementEffectSettings,
   AuraPlacementScaleSettings,
   AuraPointPlacementSettings,
 } from "~/types";
+import { clamp } from "../clamp/clamp";
 
 type AuraPlacementNumberField =
   | "arcVisibleThickness"
+  | "contentZoomPercent"
+  | "cornerRadius"
   | "height"
+  | "iconOffsetX"
+  | "iconOffsetY"
   | "opacity"
+  | "outlineThickness"
   | "pointGap"
   | "pointSampleSize"
   | "scale"
+  | "shadowSpread"
   | "thickness"
   | "width"
   | "x"
@@ -40,6 +49,16 @@ function normalizeAuraPlacementNumberValue(
     return clamp(Math.round(numericValue * 100) / 100, 0, 1);
   }
 
+  if (field === "contentZoomPercent") {
+    return Math.round(
+      clamp(
+        numericValue,
+        AuraPlacementContentZoomSettings.minPercent,
+        AuraPlacementContentZoomSettings.maxPercent,
+      ),
+    );
+  }
+
   if (field === "pointGap") {
     return Math.round(
       clamp(
@@ -64,14 +83,40 @@ function normalizeAuraPlacementNumberValue(
     return Math.round(Math.max(10, numericValue));
   }
 
+  if (field === "outlineThickness") {
+    return Math.round(
+      clamp(
+        numericValue,
+        AuraPlacementEffectSettings.minOutlineThickness,
+        AuraPlacementEffectSettings.maxOutlineThickness,
+      ),
+    );
+  }
+
+  if (field === "cornerRadius") {
+    return Math.round(
+      clamp(
+        numericValue,
+        AuraPlacementEffectSettings.minCornerRadius,
+        AuraPlacementEffectSettings.maxCornerRadius,
+      ),
+    );
+  }
+
+  if (field === "shadowSpread") {
+    return Math.round(
+      clamp(
+        numericValue,
+        AuraPlacementEffectSettings.minShadowSpread,
+        AuraPlacementEffectSettings.maxShadowSpread,
+      ),
+    );
+  }
+
   const minimum =
     field === "arcVisibleThickness" || field === "thickness" ? 1 : -100_000;
 
   return clamp(Math.round(numericValue), minimum, 100_000);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 export { normalizeAuraPlacementNumberValue };

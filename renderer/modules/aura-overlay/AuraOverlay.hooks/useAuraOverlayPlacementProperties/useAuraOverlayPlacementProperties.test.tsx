@@ -5,11 +5,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { useBoundStore } from "~/renderer/store";
 import type { ProfilesSlice } from "~/renderer/store/store.types";
 
-import type { Profile } from "~/types";
+import type { Profile, ProfileUpdateInput } from "~/types";
 import type { AuraPlacementPropertiesPatch } from "../../AuraOverlay.components/AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel";
 
 const storeMocks = vi.hoisted(() => ({
-  updateProfile: vi.fn<ProfilesSlice["profiles"]["update"]>(),
+  updateProfileFromCurrent:
+    vi.fn<ProfilesSlice["profiles"]["updateFromCurrent"]>(),
 }));
 
 vi.mock("~/renderer/store", async (importOriginal) => {
@@ -20,9 +21,9 @@ vi.mock("~/renderer/store", async (importOriginal) => {
     useProfilesShallow: (selector: unknown) =>
       (
         selector as (profiles: {
-          update: ProfilesSlice["profiles"]["update"];
+          updateFromCurrent: ProfilesSlice["profiles"]["updateFromCurrent"];
         }) => unknown
-      )({ update: storeMocks.updateProfile }),
+      )({ updateFromCurrent: storeMocks.updateProfileFromCurrent }),
   };
 });
 
@@ -70,7 +71,13 @@ describe("useAuraOverlayPlacementProperties", () => {
   });
 
   it("consumes rejected fire-and-forget profile updates", async () => {
-    storeMocks.updateProfile.mockRejectedValue(new Error("write failed"));
+    const createdInputs: Array<Omit<ProfileUpdateInput, "id"> | null> = [];
+    storeMocks.updateProfileFromCurrent.mockImplementation(
+      async (_id, createInput) => {
+        createdInputs.push(createInput(profile));
+        throw new Error("write failed");
+      },
+    );
     let handleChange:
       | ((placementId: string, patch: AuraPlacementPropertiesPatch) => void)
       | null = null;
@@ -98,14 +105,74 @@ describe("useAuraOverlayPlacementProperties", () => {
       await Promise.resolve();
     });
 
-    expect(storeMocks.updateProfile).toHaveBeenCalledWith(
+    expect(storeMocks.updateProfileFromCurrent).toHaveBeenCalledWith(
+      profile.id,
+      expect.any(Function),
+    );
+    expect(createdInputs.at(-1)).toEqual(
       expect.objectContaining({
-        id: profile.id,
         overlayPlacements: [expect.objectContaining({ opacity: 0.5 })],
       }),
     );
     expect(
       useBoundStore.getState().auraOverlay.editingHistory.undo,
     ).toHaveLength(1);
+  });
+
+  it("derives rapid property edits from the latest optimistic profile", async () => {
+    const latestProfile: Profile = {
+      ...profile,
+      overlayPlacements: [
+        {
+          ...profile.overlayPlacements[0]!,
+          height: 75,
+          rotationDegrees: 90,
+          width: 57,
+          x: 120,
+          y: 160,
+        },
+      ],
+    };
+    const createdInputs: Array<Omit<ProfileUpdateInput, "id"> | null> = [];
+    storeMocks.updateProfileFromCurrent.mockImplementation(
+      async (_id, createInput) => {
+        createdInputs.push(createInput(latestProfile));
+      },
+    );
+    let handleChange:
+      | ((placementId: string, patch: AuraPlacementPropertiesPatch) => void)
+      | null = null;
+
+    function HookHarness() {
+      ({ handlePlacementPropertiesChange: handleChange } =
+        useAuraOverlayPlacementProperties({
+          profile,
+          referenceViewport: null,
+          targetViewport: { height: 1080, width: 1920 },
+        }));
+
+      return null;
+    }
+
+    const container = document.createElement("div");
+    document.body.append(container);
+    root = createRoot(container);
+    await act(async () => {
+      root?.render(<HookHarness />);
+    });
+
+    await act(async () => {
+      handleChange?.("placement-1", { displayWidth: 100 });
+      await Promise.resolve();
+    });
+
+    expect(createdInputs.at(-1)?.overlayPlacements).toEqual([
+      expect.objectContaining({
+        height: 100,
+        width: 57,
+        x: 133,
+        y: 148,
+      }),
+    ]);
   });
 });

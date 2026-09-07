@@ -22,6 +22,7 @@ import {
   createDefaultSettings,
   normalizePersistedRecordingOutputResolution,
   normalizeRecordingEncoderChoice,
+  OverlayPlacementSchema,
   ProfileCreateInputSchema,
   ProfileDuplicateInputSchema,
   ProfileSchema,
@@ -46,7 +47,7 @@ describe("shared schemas", () => {
       recorderOverlayStartMinimized: false,
       recorderOverlayIgnoreGameFocus: false,
       auraOverlayIgnoreGameFocus: false,
-      auraOverlayIncludeInCaptures: false,
+      overlayWindowsIncludeInCaptures: false,
       auraOverlayEnableSnapping: false,
       auraOverlayHideLabels: false,
       auraOverlayHidePropertiesPanel: false,
@@ -117,7 +118,7 @@ describe("shared schemas", () => {
     expect(appSettingsKeys).toContain("recorderOverlayStartMinimized");
     expect(appSettingsKeys).toContain("recorderOverlayIgnoreGameFocus");
     expect(appSettingsKeys).toContain("auraOverlayIgnoreGameFocus");
-    expect(appSettingsKeys).toContain("auraOverlayIncludeInCaptures");
+    expect(appSettingsKeys).toContain("overlayWindowsIncludeInCaptures");
     expect(appSettingsKeys).toContain("auraOverlayEnableSnapping");
     expect(appSettingsKeys).toContain("auraOverlayHideLabels");
     expect(appSettingsKeys).toContain("auraOverlayHidePropertiesPanel");
@@ -547,6 +548,56 @@ describe("shared schemas", () => {
     });
   });
 
+  it("accepts optional per-aura editing and visual effects", () => {
+    const placement = {
+      clipShape: "shield",
+      contentZoomPercent: 75,
+      cornerRadius: 6,
+      cropRegionId: "crop-1",
+      hideResizeControls: true,
+      iconOffsetX: -12,
+      iconOffsetY: 8,
+      id: "placement-1",
+      opacity: 1,
+      outlineColor: "#12abef",
+      outlineThickness: 3,
+      scale: 1,
+      shadowColor: "#654321",
+      shadowSpread: 8,
+      x: 30,
+      y: 40,
+    };
+
+    expect(OverlayPlacementSchema.parse(placement)).toEqual(placement);
+    expect(() =>
+      OverlayPlacementSchema.parse({ ...placement, outlineThickness: 21 }),
+    ).toThrow();
+    expect(() =>
+      OverlayPlacementSchema.parse({ ...placement, shadowSpread: 33 }),
+    ).toThrow();
+    expect(() =>
+      OverlayPlacementSchema.parse({ ...placement, outlineColor: "black" }),
+    ).toThrow();
+    expect(() =>
+      OverlayPlacementSchema.parse({ ...placement, cornerRadius: 11 }),
+    ).toThrow();
+    expect(() =>
+      OverlayPlacementSchema.parse({ ...placement, clipShape: "triangle" }),
+    ).toThrow();
+    expect(() =>
+      OverlayPlacementSchema.parse({ ...placement, contentZoomPercent: 9 }),
+    ).toThrow();
+    expect(() =>
+      OverlayPlacementSchema.parse({ ...placement, contentZoomPercent: 201 }),
+    ).toThrow();
+    expect(() =>
+      OverlayPlacementSchema.parse({ ...placement, iconOffsetX: 1.5 }),
+    ).toThrow();
+    expect(() =>
+      OverlayPlacementSchema.parse({ ...placement, iconOffsetY: 100_001 }),
+    ).toThrow();
+  });
+
   it("defaults aura profiles to all games and accepts optional game scope updates", () => {
     const profile = {
       id: "profile-1",
@@ -920,6 +971,67 @@ describe("shared schemas", () => {
         },
       }),
     ).not.toThrow();
+  });
+
+  it("normalizes the legacy overlay capture preference in portable bundles", () => {
+    const settings = createDefaultSettings() as Record<string, unknown>;
+    delete settings.overlayWindowsIncludeInCaptures;
+    settings.auraOverlayIncludeInCaptures = true;
+
+    const bundle = StateBundleSchema.parse({
+      format: "hinekora-state",
+      formatVersion: 1,
+      exportedAt: new Date().toISOString(),
+      appVersion: "0.14.0",
+      sections: {
+        profiles: [],
+        settings,
+        replayClips: [],
+      },
+    });
+
+    expect(bundle.sections.settings.overlayWindowsIncludeInCaptures).toBe(true);
+    expect(bundle.sections.settings).not.toHaveProperty(
+      "auraOverlayIncludeInCaptures",
+    );
+  });
+
+  it("defaults a missing portable overlay capture preference", () => {
+    const bundle = StateBundleSchema.parse({
+      format: "hinekora-state",
+      formatVersion: 1,
+      exportedAt: new Date().toISOString(),
+      appVersion: "0.14.0",
+      sections: {
+        profiles: [],
+        settings: {},
+        replayClips: [],
+      },
+    });
+
+    expect(bundle.sections.settings.overlayWindowsIncludeInCaptures).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    null,
+    42,
+    [],
+  ])("rejects invalid portable settings input %#", (settings) => {
+    expect(() =>
+      StateBundleSchema.parse({
+        format: "hinekora-state",
+        formatVersion: 1,
+        exportedAt: new Date().toISOString(),
+        appVersion: "0.14.0",
+        sections: {
+          profiles: [],
+          settings,
+          replayClips: [],
+        },
+      }),
+    ).toThrow();
   });
 
   it("ignores obsolete ffmpeg job state in legacy portable bundles", () => {

@@ -103,6 +103,40 @@ export const AuraPlacementScaleSettings = {
   minScale: 1,
 } as const;
 
+export const AuraPlacementEffectSettings = {
+  defaultCornerRadius: 4,
+  defaultOutlineColor: "#000000",
+  defaultOutlineThickness: 1,
+  defaultShadowColor: "#000000",
+  defaultShadowSpread: 4,
+  maxCornerRadius: 10,
+  maxOutlineThickness: 20,
+  maxShadowSpread: 32,
+  minCornerRadius: 1,
+  minOutlineThickness: 1,
+  minShadowSpread: 1,
+} as const;
+
+export const AuraPlacementContentZoomSettings = {
+  defaultPercent: 100,
+  maxPercent: 200,
+  minPercent: 10,
+} as const;
+
+export const AuraPlacementEffectColorSchema = z
+  .string()
+  .regex(/^#[0-9a-f]{6}$/i)
+  .transform((value) => value.toLowerCase());
+
+export const AuraPlacementClipShapeSchema = z.enum([
+  "circle",
+  "shield",
+  "octagon",
+]);
+export type AuraPlacementClipShape = z.infer<
+  typeof AuraPlacementClipShapeSchema
+>;
+
 const minimumPersistedPointSampleSize = 1;
 export const AuraLabelSettings = { maxLength: 80 } as const;
 
@@ -209,6 +243,36 @@ export const OverlayPlacementSchema = z.object({
     .max(AuraPlacementScaleSettings.maxScale)
     .transform((value) => Math.max(value, AuraPlacementScaleSettings.minScale)),
   opacity: z.number().min(0).max(1),
+  cornerRadius: z
+    .number()
+    .int()
+    .min(AuraPlacementEffectSettings.minCornerRadius)
+    .max(AuraPlacementEffectSettings.maxCornerRadius)
+    .optional(),
+  clipShape: AuraPlacementClipShapeSchema.optional(),
+  contentZoomPercent: z
+    .number()
+    .int()
+    .min(AuraPlacementContentZoomSettings.minPercent)
+    .max(AuraPlacementContentZoomSettings.maxPercent)
+    .optional(),
+  iconOffsetX: z.number().int().min(-100_000).max(100_000).optional(),
+  iconOffsetY: z.number().int().min(-100_000).max(100_000).optional(),
+  hideResizeControls: z.boolean().optional(),
+  outlineColor: AuraPlacementEffectColorSchema.optional(),
+  outlineThickness: z
+    .number()
+    .int()
+    .min(AuraPlacementEffectSettings.minOutlineThickness)
+    .max(AuraPlacementEffectSettings.maxOutlineThickness)
+    .optional(),
+  shadowColor: AuraPlacementEffectColorSchema.optional(),
+  shadowSpread: z
+    .number()
+    .int()
+    .min(AuraPlacementEffectSettings.minShadowSpread)
+    .max(AuraPlacementEffectSettings.maxShadowSpread)
+    .optional(),
   arcVisibleThickness: z.number().int().min(1).max(100_000).optional(),
   arcStraightened: z.boolean().optional(),
   pointGap: z
@@ -625,7 +689,7 @@ export const AppSettingsSchema = z.object({
   recorderOverlayStartMinimized: z.boolean().default(false),
   recorderOverlayIgnoreGameFocus: z.boolean().default(false),
   auraOverlayIgnoreGameFocus: z.boolean().default(false),
-  auraOverlayIncludeInCaptures: z.boolean().default(false),
+  overlayWindowsIncludeInCaptures: z.boolean().default(false),
   auraOverlayShowEditingFrame: z.boolean().default(true),
   auraOverlayShowEditingGrid: z.boolean().default(false),
   auraOverlayShowCenterGuides: z.boolean().default(false),
@@ -807,6 +871,25 @@ export const ClientLogStatusSchema = z.object({
 });
 export type ClientLogStatus = z.infer<typeof ClientLogStatusSchema>;
 
+const StateBundleSettingsSchema = z.preprocess((value) => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return value;
+  }
+
+  const settings = value as Record<string, unknown>;
+  if (
+    Object.hasOwn(settings, "overlayWindowsIncludeInCaptures") ||
+    typeof settings.auraOverlayIncludeInCaptures !== "boolean"
+  ) {
+    return settings;
+  }
+
+  return {
+    ...settings,
+    overlayWindowsIncludeInCaptures: settings.auraOverlayIncludeInCaptures,
+  };
+}, AppSettingsSchema);
+
 export const StateBundleSchema = z.object({
   format: z.literal("hinekora-state"),
   formatVersion: z.literal(1),
@@ -815,7 +898,7 @@ export const StateBundleSchema = z.object({
   sections: z.object({
     profiles: z.array(ProfileSchema),
     captureProfiles: z.array(CaptureProfileSchema).default([]),
-    settings: AppSettingsSchema,
+    settings: StateBundleSettingsSchema,
     replayClips: z.array(ReplayClipSchema),
   }),
 });

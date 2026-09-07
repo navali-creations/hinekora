@@ -8,12 +8,14 @@ import type {
   AuraVideoSize,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import { useAuraOverlayArcThicknessResize } from "../useAuraOverlayArcThicknessResize/useAuraOverlayArcThicknessResize";
+import { useAuraOverlayAreaSelection } from "../useAuraOverlayAreaSelection/useAuraOverlayAreaSelection";
 import { useAuraOverlayPlacementDrag } from "../useAuraOverlayPlacementDrag/useAuraOverlayPlacementDrag";
 import { useAuraOverlayPlacementInteractionState } from "../useAuraOverlayPlacementInteractionState/useAuraOverlayPlacementInteractionState";
 import { useAuraOverlayPlacementProperties } from "../useAuraOverlayPlacementProperties/useAuraOverlayPlacementProperties";
 import { useAuraOverlayPlacementResize } from "../useAuraOverlayPlacementResize/useAuraOverlayPlacementResize";
 
 interface UseAuraOverlayPlacementEditorInput {
+  canEditAuras: boolean;
   gridCellSize: AuraSize;
   guideViewport: AuraVideoSize;
   profile: Profile | null;
@@ -23,6 +25,7 @@ interface UseAuraOverlayPlacementEditorInput {
 }
 
 function useAuraOverlayPlacementEditor({
+  canEditAuras,
   gridCellSize,
   guideViewport,
   profile,
@@ -35,6 +38,12 @@ function useAuraOverlayPlacementEditor({
   );
   const interaction = useAuraOverlayPlacementInteractionState();
   const { arcThicknessResizeState, dragState, resizeState } = interaction;
+  const areaSelection = useAuraOverlayAreaSelection({
+    canEditAuras,
+    profile,
+    referenceViewport,
+    targetViewport,
+  });
   const {
     handlePointerCancel,
     handlePointerDown,
@@ -81,15 +90,26 @@ function useAuraOverlayPlacementEditor({
   );
 
   const handleAuraClick = (event: MouseEvent<HTMLElement>) => {
+    if (interaction.dragStateRef.current?.areaSelectionDrag) {
+      return;
+    }
+
     const placementId = event.currentTarget.dataset.placementId;
     if (placementId) {
+      areaSelection.clearAreaSelection();
       selectPlacement(placementId);
     }
   };
 
   return {
     arcThicknessResizeState,
+    areaSelectionDraftRef: areaSelection.draftSelectionRef,
     dragState,
+    handleAreaContextMenu: areaSelection.handleAreaContextMenu,
+    handleAreaPointerCancel: areaSelection.handleAreaPointerCancel,
+    handleAreaPointerDown: areaSelection.handleAreaPointerDown,
+    handleAreaPointerMove: areaSelection.handleAreaPointerMove,
+    handleAreaPointerUp: areaSelection.handleAreaPointerUp,
     handleAuraClick,
     handlePointerCancel,
     handlePointerDown,

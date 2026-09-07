@@ -774,7 +774,7 @@ test("persists per-overlay game focus preferences", async ({ page }) => {
   const auraToggle = page.getByLabel(
     "Keep aura overlay visible while a game is running",
   );
-  const auraCaptureToggle = page.getByLabel("Include aura overlay in captures");
+  const overlayCaptureToggle = page.getByLabel("Include overlays in captures");
   const clipPreviewToggle = page.getByLabel(
     "Keep clip previews visible while a game is running",
   );
@@ -785,7 +785,7 @@ test("persists per-overlay game focus preferences", async ({ page }) => {
   await expect(recorderToggle).not.toBeChecked();
   await expect(recorderStartMinimizedToggle).not.toBeChecked();
   await expect(auraToggle).not.toBeChecked();
-  await expect(auraCaptureToggle).not.toBeChecked();
+  await expect(overlayCaptureToggle).not.toBeChecked();
   await expect(clipPreviewToggle).not.toBeChecked();
   await expect(gridLinesToggle).not.toBeChecked();
   await expect(page.getByText("Hidden when game is not focused")).toHaveCount(
@@ -797,8 +797,8 @@ test("persists per-overlay game focus preferences", async ({ page }) => {
 
   await recorderStartMinimizedToggle.click();
   await expect(recorderStartMinimizedToggle).toBeChecked();
-  await auraCaptureToggle.click();
-  await expect(auraCaptureToggle).toBeChecked();
+  await overlayCaptureToggle.click();
+  await expect(overlayCaptureToggle).toBeChecked();
 
   for (const toggle of [
     recorderToggle,
@@ -817,7 +817,7 @@ test("persists per-overlay game focus preferences", async ({ page }) => {
     .toEqual(
       expect.arrayContaining([
         { recorderOverlayStartMinimized: true },
-        { auraOverlayIncludeInCaptures: true },
+        { overlayWindowsIncludeInCaptures: true },
         { recorderOverlayIgnoreGameFocus: true },
         { auraOverlayIgnoreGameFocus: true },
         { clipPreviewOverlayIgnoreGameFocus: true },

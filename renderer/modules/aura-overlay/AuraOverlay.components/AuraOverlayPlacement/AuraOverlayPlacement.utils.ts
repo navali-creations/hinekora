@@ -5,7 +5,11 @@ import type {
   SyntheticEvent,
 } from "react";
 
-import type { CropRegion, OverlayPlacement } from "~/types";
+import type {
+  AuraPlacementClipShape,
+  CropRegion,
+  OverlayPlacement,
+} from "~/types";
 import type {
   AuraOverlayScaleSnapContext,
   AuraOverlaySnapContext,
@@ -17,7 +21,10 @@ import type {
 import type { AuraPlacementPropertiesPatch } from "../AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel";
 
 interface AuraOverlayDragState {
+  areaSelectionDrag?: boolean;
+  initialDisplayPositions?: Readonly<Record<string, { x: number; y: number }>>;
   placementId: string;
+  placementIds?: readonly string[];
   startX: number;
   startY: number;
   initialDisplayX: number;
@@ -52,6 +59,32 @@ interface AuraArcThicknessResizeState {
   maxDisplayThickness: number;
   isReleased: boolean;
 }
+
+const auraPlacementClipShapePoints: Record<
+  Exclude<AuraPlacementClipShape, "circle">,
+  readonly { x: number; y: number }[]
+> = {
+  octagon: [
+    { x: 30, y: 0 },
+    { x: 70, y: 0 },
+    { x: 100, y: 30 },
+    { x: 100, y: 70 },
+    { x: 70, y: 100 },
+    { x: 30, y: 100 },
+    { x: 0, y: 70 },
+    { x: 0, y: 30 },
+  ],
+  shield: [
+    { x: 50, y: 0 },
+    { x: 92, y: 12 },
+    { x: 88, y: 58 },
+    { x: 72, y: 82 },
+    { x: 50, y: 100 },
+    { x: 28, y: 82 },
+    { x: 12, y: 58 },
+    { x: 8, y: 12 },
+  ],
+};
 
 interface AuraOverlayPlacementProps {
   arcThicknessResizeState: AuraArcThicknessResizeState | null;
@@ -105,12 +138,54 @@ function createPlacementContentStyle(
   const contentTransform = createPlacementContentTransform(placement);
 
   return {
+    ...(placement.cornerRadius !== undefined
+      ? { borderRadius: `${placement.cornerRadius}px` }
+      : {}),
     height: `${contentSize.height}px`,
     left: "50%",
     top: "50%",
-    transform: `translate(-50%, -50%)${contentTransform ? ` ${contentTransform}` : ""}`,
+    transform: `translate(-50%, -50%)${
+      contentTransform ? ` ${contentTransform}` : ""
+    }`,
     width: `${contentSize.width}px`,
   };
+}
+
+function resolveAuraPlacementClipPath(
+  clipShape: AuraPlacementClipShape | undefined,
+): string | undefined {
+  if (clipShape === "circle") {
+    return "ellipse(50% 50% at 50% 50%)";
+  }
+  if (!clipShape) {
+    return undefined;
+  }
+
+  return `polygon(${auraPlacementClipShapePoints[clipShape]
+    .map((point) => `${point.x}% ${point.y}%`)
+    .join(", ")})`;
+}
+
+function createAuraPlacementClipShapePolygonPoints(
+  clipShape: AuraPlacementClipShape,
+  displaySize: AuraSize,
+): string | null {
+  if (clipShape === "circle") {
+    return null;
+  }
+
+  return auraPlacementClipShapePoints[clipShape]
+    .map(
+      (point) =>
+        `${roundAuraCoordinate(
+          (point.x / 100) * displaySize.width,
+        )},${roundAuraCoordinate((point.y / 100) * displaySize.height)}`,
+    )
+    .join(" ");
+}
+
+function roundAuraCoordinate(value: number): number {
+  return Math.round(value * 10) / 10;
 }
 
 export type {
@@ -119,4 +194,9 @@ export type {
   AuraOverlayPlacementProps,
   AuraOverlayResizeState,
 };
-export { createPlacementContentStyle };
+export {
+  createAuraPlacementClipShapePolygonPoints,
+  createPlacementContentStyle,
+  resolveAuraPlacementClipPath,
+  roundAuraCoordinate,
+};

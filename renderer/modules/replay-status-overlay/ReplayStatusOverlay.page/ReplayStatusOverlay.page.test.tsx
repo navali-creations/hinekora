@@ -47,6 +47,9 @@ describe("ReplayStatusOverlayPage", () => {
 
     const initialNotification = container.querySelector('[role="status"]');
     expect(initialNotification?.textContent).toContain("Processing replay");
+    expect(initialNotification?.textContent).not.toContain(
+      "Finishing your clip.",
+    );
     expect(initialNotification?.getAttribute("data-status")).toBe("processing");
 
     await act(async () => {
@@ -59,7 +62,7 @@ describe("ReplayStatusOverlayPage", () => {
     const replacementNotification = container.querySelector('[role="status"]');
     expect(replacementNotification).not.toBe(initialNotification);
     expect(replacementNotification?.textContent).toContain("Replay saved");
-    expect(replacementNotification?.textContent).toContain(
+    expect(replacementNotification?.textContent).not.toContain(
       "You can edit it later.",
     );
 
@@ -91,6 +94,7 @@ describe("ReplayStatusOverlayPage", () => {
     });
 
     expect(container.textContent).toContain("Replay save failed");
+    expect(container.textContent).toContain("Open Hinekora for details.");
     expect(container.querySelector('[data-status="failed"]')).not.toBeNull();
 
     await act(async () => {

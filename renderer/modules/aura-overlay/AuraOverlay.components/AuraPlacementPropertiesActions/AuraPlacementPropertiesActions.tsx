@@ -1,49 +1,48 @@
-import type { ChangeEventHandler, MouseEventHandler } from "react";
+import type { ChangeEvent } from "react";
 
+import type { OverlayPlacement } from "~/types";
 import styles from "../AuraOverlayPlacement/AuraOverlayPlacement.module.css";
+import type { AuraPlacementPropertiesPatch } from "../AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel.utils";
 
 interface AuraPlacementPropertiesActionsProps {
-  arcStraightened: boolean;
   canStraighten: boolean;
-  mirrored: boolean;
-  rotationDegrees: number;
-  onMirrorChange: ChangeEventHandler<HTMLInputElement>;
-  onRotateClick: MouseEventHandler<HTMLButtonElement>;
-  onStraightenChange: ChangeEventHandler<HTMLInputElement>;
+  placement: OverlayPlacement;
+  onChange: (placementId: string, patch: AuraPlacementPropertiesPatch) => void;
 }
 
 function AuraPlacementPropertiesActions({
-  arcStraightened,
   canStraighten,
-  mirrored,
-  rotationDegrees,
-  onMirrorChange,
-  onRotateClick,
-  onStraightenChange,
+  placement,
+  onChange,
 }: AuraPlacementPropertiesActionsProps) {
+  const handleMirrorChange = (event: ChangeEvent<HTMLInputElement>) => {
+    onChange(placement.id, { mirrored: event.currentTarget.checked });
+  };
+
+  const handleStraightenChange = (event: ChangeEvent<HTMLInputElement>) => {
+    onChange(placement.id, { arcStraightened: event.currentTarget.checked });
+  };
+
   return (
     <div className={styles.propertiesActions}>
       <label className={styles.propertiesToggle}>
-        <input checked={mirrored} type="checkbox" onChange={onMirrorChange} />
+        <input
+          checked={placement.mirrored === true}
+          type="checkbox"
+          onChange={handleMirrorChange}
+        />
         Mirror
       </label>
       {canStraighten && (
         <label className={styles.propertiesToggle}>
           <input
-            checked={arcStraightened}
+            checked={placement.arcStraightened === true}
             type="checkbox"
-            onChange={onStraightenChange}
+            onChange={handleStraightenChange}
           />
           Straighten
         </label>
       )}
-      <button
-        className={styles.propertiesButton}
-        type="button"
-        onClick={onRotateClick}
-      >
-        Rotate {rotationDegrees}deg
-      </button>
     </div>
   );
 }

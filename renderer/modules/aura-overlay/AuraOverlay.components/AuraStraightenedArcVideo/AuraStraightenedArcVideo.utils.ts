@@ -3,6 +3,7 @@ import {
   type AuraPoint,
   type AuraSize,
   type AuraVideoSize,
+  clamp,
   createAuraArcCurvePoints,
   projectAuraCropRegion,
   resolveAuraArcSourceThickness,
@@ -130,10 +131,6 @@ function createProjectedSourceThickness(
   );
 
   return Math.max(1, sourceThickness * sourceScale);
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 export {

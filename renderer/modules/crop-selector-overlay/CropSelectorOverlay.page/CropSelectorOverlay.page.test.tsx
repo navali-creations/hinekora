@@ -327,6 +327,47 @@ describe("CropSelectorOverlayPage", () => {
     });
   });
 
+  it("completes a pointer selection below the point limit with Escape", async () => {
+    const rendered = await renderCropSelectorPage("points");
+    root = rendered.root;
+    const { overlay } = rendered;
+
+    await act(async () => {
+      overlay.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          clientX: 100,
+          clientY: 120,
+        }),
+      );
+    });
+    await act(async () => {
+      overlay.dispatchEvent(
+        createPointerLikeEvent("pointerdown", {
+          clientX: 140,
+          clientY: 180,
+        }),
+      );
+    });
+
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+
+    expect(
+      overlayWindowsMocks.completeCropRegionSelection,
+    ).toHaveBeenCalledWith({
+      height: 80,
+      points: [
+        { x: 10, y: 10 },
+        { x: 50, y: 70 },
+      ],
+      shape: "points",
+      width: 60,
+      x: 90,
+      y: 110,
+    });
+  });
+
   it("resets a pointer selection with right click without closing the overlay", async () => {
     const rendered = await renderCropSelectorPage("points");
     root = rendered.root;

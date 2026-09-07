@@ -17,6 +17,13 @@ interface CreateAuraOverlaySnapContextInput {
   targetViewport: AuraVideoSize;
 }
 
+interface CreateAuraOverlayDragInitialPositionsInput {
+  fallbackReferenceViewport: AuraVideoSize | null;
+  placementIds: readonly string[];
+  profile: Profile;
+  targetViewport: AuraVideoSize;
+}
+
 interface ResolveAuraOverlayDragSnapInput {
   rawX: number;
   rawY: number;
@@ -32,6 +39,37 @@ interface AuraOverlayDragSnapResult {
 
 const auraOverlayGuideSnapThreshold = 5;
 
+function createAuraOverlayDragInitialPositions({
+  fallbackReferenceViewport,
+  placementIds,
+  profile,
+  targetViewport,
+}: CreateAuraOverlayDragInitialPositionsInput): Record<
+  string,
+  { x: number; y: number }
+> {
+  const selectedIds = new Set(placementIds);
+  const crops = new Map(profile.cropRegions.map((crop) => [crop.id, crop]));
+  const positions: Record<string, { x: number; y: number }> = {};
+
+  for (const placement of profile.overlayPlacements) {
+    const crop = crops.get(placement.cropRegionId);
+    if (!selectedIds.has(placement.id) || !crop) {
+      continue;
+    }
+
+    const { visualBounds } = resolveAuraPlacementGeometry(
+      crop,
+      placement,
+      targetViewport,
+      fallbackReferenceViewport,
+    );
+    positions[placement.id] = { x: visualBounds.x, y: visualBounds.y };
+  }
+
+  return positions;
+}
+
 function createAuraOverlaySnapContext({
   fallbackReferenceViewport,
   gridCellSize,
@@ -40,12 +78,15 @@ function createAuraOverlaySnapContext({
   profile,
   targetViewport,
 }: CreateAuraOverlaySnapContextInput): AuraOverlaySnapContext | null {
+  const cropRegionsById = new Map(
+    profile.cropRegions.map((crop) => [crop.id, crop] as const),
+  );
   const selectedPlacement = profile.overlayPlacements.find(
     (placement) => placement.id === placementId,
   );
-  const selectedCrop = profile.cropRegions.find(
-    (crop) => crop.id === selectedPlacement?.cropRegionId,
-  );
+  const selectedCrop = selectedPlacement
+    ? cropRegionsById.get(selectedPlacement.cropRegionId)
+    : undefined;
   if (!selectedPlacement || !selectedCrop) {
     return null;
   }
@@ -80,9 +121,7 @@ function createAuraOverlaySnapContext({
       continue;
     }
 
-    const crop = profile.cropRegions.find(
-      (candidate) => candidate.id === placement.cropRegionId,
-    );
+    const crop = cropRegionsById.get(placement.cropRegionId);
     if (!crop) {
       continue;
     }
@@ -211,4 +250,8 @@ function snapAuraOverlayCoordinateToGrid(
   return Math.round(coordinate / gridCellSize) * gridCellSize;
 }
 
-export { createAuraOverlaySnapContext, resolveAuraOverlayDragSnap };
+export {
+  createAuraOverlayDragInitialPositions,
+  createAuraOverlaySnapContext,
+  resolveAuraOverlayDragSnap,
+};

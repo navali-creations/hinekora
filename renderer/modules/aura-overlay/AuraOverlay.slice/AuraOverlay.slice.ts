@@ -17,6 +17,14 @@ interface AuraOverlayHistoryState {
   undo: AuraHistorySnapshot[];
 }
 
+interface AuraOverlayAreaSelection {
+  height: number;
+  placementIds: string[];
+  width: number;
+  x: number;
+  y: number;
+}
+
 interface AuraHistoryTransition {
   historyBeforeTransition: AuraOverlayHistoryState;
   revision: number;
@@ -30,9 +38,12 @@ interface AuraOverlaySlice {
     addAuraRequest: AuraAddRequest | null;
     addAuraSelectionError: string | null;
     addingAuraShape: CropRegionSelectionShape | null;
+    areaSelection: AuraOverlayAreaSelection | null;
     editingHistory: AuraOverlayHistoryState;
     selectedPlacementId: string | null;
+    clearAreaSelection: () => void;
     clearPlacementSelection: () => void;
+    moveAreaSelection: (deltaX: number, deltaY: number) => void;
     recordAuraHistory: (profile: Profile) => void;
     redoAuraHistory: (profile: Profile) => AuraHistoryTransition | null;
     resetAuraHistory: (profileId: string | null) => void;
@@ -41,6 +52,7 @@ interface AuraOverlaySlice {
     setAddAuraRequest: (request: AuraAddRequest | null) => void;
     setAddAuraSelectionError: (error: string | null) => void;
     setAddingAuraShape: (shape: CropRegionSelectionShape | null) => void;
+    setAreaSelection: (selection: AuraOverlayAreaSelection | null) => void;
     undoAuraHistory: (profile: Profile) => AuraHistoryTransition | null;
   };
 }
@@ -109,6 +121,7 @@ const createAuraOverlaySlice: BoundStoreStateCreator<AuraOverlaySlice> = (
     addAuraRequest: null,
     addAuraSelectionError: null,
     addingAuraShape: null,
+    areaSelection: null,
     editingHistory: {
       profileId: null,
       redo: [],
@@ -116,9 +129,23 @@ const createAuraOverlaySlice: BoundStoreStateCreator<AuraOverlaySlice> = (
       undo: [],
     },
     selectedPlacementId: null,
+    clearAreaSelection: () => {
+      set((state) => {
+        state.auraOverlay.areaSelection = null;
+      });
+    },
     clearPlacementSelection: () => {
       set((state) => {
         state.auraOverlay.selectedPlacementId = null;
+      });
+    },
+    moveAreaSelection: (deltaX, deltaY) => {
+      set((state) => {
+        const selection = state.auraOverlay.areaSelection;
+        if (selection) {
+          selection.x += deltaX;
+          selection.y += deltaY;
+        }
       });
     },
     recordAuraHistory: (profile) => {
@@ -164,6 +191,7 @@ const createAuraOverlaySlice: BoundStoreStateCreator<AuraOverlaySlice> = (
           revision,
           undo: [],
         };
+        state.auraOverlay.areaSelection = null;
         state.auraOverlay.selectedPlacementId = null;
       });
     },
@@ -192,6 +220,7 @@ const createAuraOverlaySlice: BoundStoreStateCreator<AuraOverlaySlice> = (
     },
     selectPlacement: (placementId) => {
       set((state) => {
+        state.auraOverlay.areaSelection = null;
         state.auraOverlay.selectedPlacementId = placementId;
       });
     },
@@ -208,6 +237,14 @@ const createAuraOverlaySlice: BoundStoreStateCreator<AuraOverlaySlice> = (
     setAddingAuraShape: (shape) => {
       set((state) => {
         state.auraOverlay.addingAuraShape = shape;
+      });
+    },
+    setAreaSelection: (selection) => {
+      set((state) => {
+        state.auraOverlay.areaSelection = selection;
+        if (selection) {
+          state.auraOverlay.selectedPlacementId = null;
+        }
       });
     },
     undoAuraHistory: (profile) => {
@@ -233,5 +270,9 @@ const createAuraOverlaySlice: BoundStoreStateCreator<AuraOverlaySlice> = (
   },
 });
 
-export type { AuraHistoryTransition, AuraOverlaySlice };
+export type {
+  AuraHistoryTransition,
+  AuraOverlayAreaSelection,
+  AuraOverlaySlice,
+};
 export { createAuraOverlaySlice };

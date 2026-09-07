@@ -23,11 +23,11 @@ function OverlaySettingsCard() {
         />
 
         <OverlayPreferenceToggleRow
-          ariaLabel="Include aura overlay in captures"
+          ariaLabel="Include overlays in captures"
           defaultValue={false}
-          description="Keep the aura overlay and selection grid visible in Windows screenshots, Hinekora rewinds and recordings, and other capture tools."
-          label="Include Aura Overlay in Captures"
-          preferenceKey="auraOverlayIncludeInCaptures"
+          description="Keep all Hinekora overlays visible in Windows screenshots, Hinekora rewinds and recordings, and other capture tools."
+          label="Include Overlays in Captures"
+          preferenceKey="overlayWindowsIncludeInCaptures"
         />
       </div>
 

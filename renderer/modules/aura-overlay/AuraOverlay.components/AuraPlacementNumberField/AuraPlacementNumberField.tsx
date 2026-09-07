@@ -1,11 +1,16 @@
 import type {
-  ChangeEventHandler,
+  ChangeEvent,
   FocusEventHandler,
+  KeyboardEvent,
   KeyboardEventHandler,
 } from "react";
+import { useEffect, useRef } from "react";
 
 import styles from "../AuraOverlayPlacement/AuraOverlayPlacement.module.css";
-import type { NumberFieldName } from "../AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel.utils";
+import type {
+  AuraPlacementNumberValueChange,
+  NumberFieldName,
+} from "../AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel.utils";
 
 interface AuraPlacementNumberFieldProps {
   label: string;
@@ -15,9 +20,9 @@ interface AuraPlacementNumberFieldProps {
   min: string;
   step?: string;
   onBlur: FocusEventHandler<HTMLInputElement>;
-  onChange: ChangeEventHandler<HTMLInputElement>;
   onFocus: FocusEventHandler<HTMLInputElement>;
   onKeyDown: KeyboardEventHandler<HTMLInputElement>;
+  onValueChange: AuraPlacementNumberValueChange;
 }
 
 function AuraPlacementNumberField({
@@ -28,10 +33,51 @@ function AuraPlacementNumberField({
   step,
   value,
   onBlur,
-  onChange,
   onFocus,
   onKeyDown,
+  onValueChange,
 }: AuraPlacementNumberFieldProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (!input) {
+      return;
+    }
+
+    const handleWheel = (event: WheelEvent) => {
+      if (event.deltaY === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      input.focus({ preventScroll: true });
+      if (event.deltaY < 0) {
+        input.stepUp();
+      } else {
+        input.stepDown();
+      }
+      onValueChange(name, input.value);
+    };
+    input.addEventListener("wheel", handleWheel, { passive: false });
+
+    return () => input.removeEventListener("wheel", handleWheel);
+  }, [name, onValueChange]);
+
+  const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
+    onValueChange(name, event.currentTarget.value);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "e" || event.key === "E") {
+      event.preventDefault();
+      return;
+    }
+
+    onKeyDown(event);
+  };
+
   return (
     <label className={styles.propertiesField}>
       {label}
@@ -40,13 +86,14 @@ function AuraPlacementNumberField({
         max={max}
         min={min}
         name={name}
+        ref={inputRef}
         step={step}
         type="number"
         value={value}
-        onChange={onChange}
+        onChange={handleChange}
         onBlur={onBlur}
         onFocus={onFocus}
-        onKeyDown={onKeyDown}
+        onKeyDown={handleKeyDown}
       />
     </label>
   );

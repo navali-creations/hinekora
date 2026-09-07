@@ -11,6 +11,7 @@ const storeMocks = vi.hoisted(() => ({
   useSettingsShallow: vi.fn(),
   updatePreference: vi.fn(),
   updateProfile: vi.fn(),
+  updateProfileFromCurrent: vi.fn(),
   useCapturePreviewShallow: vi.fn(),
   usePoeProcessSelector: vi.fn(),
   useProfilesShallow: vi.fn(),
@@ -155,11 +156,20 @@ describe("AuraOverlayPage", () => {
     electronMocks.setAuraLocked.mockResolvedValue(undefined);
     electronMocks.showAura.mockResolvedValue(undefined);
     storeMocks.updateProfile.mockResolvedValue(undefined);
+    storeMocks.updateProfileFromCurrent.mockImplementation(
+      async (id, createInput) => {
+        const input = createInput(profile);
+        if (input) {
+          await storeMocks.updateProfile({ ...input, id });
+        }
+      },
+    );
     storeMocks.useProfilesShallow.mockImplementation((selector) =>
       selector({
         items: [profile],
         selectedProfileId: "profile-1",
         update: storeMocks.updateProfile,
+        updateFromCurrent: storeMocks.updateProfileFromCurrent,
       }),
     );
     storeMocks.useCapturePreviewShallow.mockImplementation((selector) =>
@@ -608,6 +618,367 @@ describe("AuraOverlayPage", () => {
     );
   });
 
+  it("selects intersecting auras and moves them together", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    const areaProfile: Profile = {
+      ...structuredClone(profile),
+      cropRegions: [
+        ...structuredClone(profile.cropRegions),
+        {
+          height: 30,
+          id: "crop-2",
+          label: "Mana",
+          width: 60,
+          x: 120,
+          y: 20,
+        },
+      ],
+      overlayPlacements: [
+        ...structuredClone(profile.overlayPlacements),
+        {
+          cropRegionId: "crop-2",
+          id: "placement-2",
+          opacity: 1,
+          scale: 1,
+          x: 180,
+          y: 70,
+        },
+      ],
+    };
+    storeMocks.useProfilesShallow.mockImplementation((selector) =>
+      selector({
+        items: [areaProfile],
+        selectedProfileId: areaProfile.id,
+        update: storeMocks.updateProfile,
+        updateFromCurrent: storeMocks.updateProfileFromCurrent,
+      }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const overlay = container.querySelector<HTMLElement>(
+      'main[aria-label="Aura overlay"]',
+    );
+    await act(async () => {
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", { clientX: 20, clientY: 30 }),
+      );
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointermove", { clientX: 250, clientY: 120 }),
+      );
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointerup", { clientX: 250, clientY: 120 }),
+      );
+      await flushPromises();
+    });
+
+    const selection = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="2 auras selected"]',
+    );
+    expect(selection).toBeInstanceOf(HTMLButtonElement);
+    expect(useBoundStore.getState().auraOverlay.selectedPlacementId).toBeNull();
+
+    await act(async () => {
+      selection?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", { clientX: 40, clientY: 40 }),
+      );
+      selection?.dispatchEvent(
+        createPointerLikeEvent("pointermove", { clientX: 65, clientY: 55 }),
+      );
+      selection?.dispatchEvent(
+        createPointerLikeEvent("pointerup", { clientX: 65, clientY: 55 }),
+      );
+      await flushPromises();
+    });
+
+    expect(storeMocks.updateProfile).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        overlayPlacements: [
+          expect.objectContaining({ id: "placement-1", x: 55, y: 55 }),
+          expect.objectContaining({ id: "placement-2", x: 205, y: 85 }),
+        ],
+      }),
+    );
+    expect(
+      container.querySelector('button[aria-label="2 auras selected"]'),
+    ).toBeInstanceOf(HTMLButtonElement);
+
+    await act(async () => {
+      container
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="2 auras selected"]',
+        )
+        ?.click();
+    });
+    expect(
+      container.querySelector('button[aria-label="2 auras selected"]'),
+    ).toBeNull();
+  });
+
+  it("restores a group selection when its profile update is rejected", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    const secondCrop = {
+      height: 30,
+      id: "crop-2",
+      label: "Mana",
+      width: 60,
+      x: 120,
+      y: 20,
+    };
+    const areaProfile: Profile = {
+      ...structuredClone(profile),
+      cropRegions: [...structuredClone(profile.cropRegions), secondCrop],
+      overlayPlacements: [
+        ...structuredClone(profile.overlayPlacements),
+        {
+          cropRegionId: secondCrop.id,
+          id: "placement-2",
+          opacity: 1,
+          scale: 1,
+          x: 180,
+          y: 70,
+        },
+      ],
+    };
+    storeMocks.useProfilesShallow.mockImplementation((selector) =>
+      selector({
+        items: [areaProfile],
+        selectedProfileId: areaProfile.id,
+        update: storeMocks.updateProfile,
+        updateFromCurrent: storeMocks.updateProfileFromCurrent,
+      }),
+    );
+    storeMocks.updateProfile.mockRejectedValueOnce(new Error("write failed"));
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const overlay = container.querySelector<HTMLElement>(
+      'main[aria-label="Aura overlay"]',
+    );
+    await act(async () => {
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", { clientX: 20, clientY: 30 }),
+      );
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointerup", { clientX: 250, clientY: 120 }),
+      );
+    });
+
+    const selection = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="2 auras selected"]',
+    );
+    await act(async () => {
+      selection?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", { clientX: 40, clientY: 40 }),
+      );
+      selection?.dispatchEvent(
+        createPointerLikeEvent("pointermove", { clientX: 65, clientY: 55 }),
+      );
+      selection?.dispatchEvent(
+        createPointerLikeEvent("pointerup", { clientX: 65, clientY: 55 }),
+      );
+      await flushPromises();
+    });
+
+    expect(useBoundStore.getState().auraOverlay.areaSelection).toEqual({
+      height: 90,
+      placementIds: ["placement-1", "placement-2"],
+      width: 230,
+      x: 20,
+      y: 30,
+    });
+    expect(selection?.style.left).toBe("20px");
+  });
+
+  it("updates the marquee draft without rerendering the aura page", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    let pendingFrame: FrameRequestCallback | null = null;
+    vi.spyOn(window, "requestAnimationFrame").mockImplementation((callback) => {
+      pendingFrame = callback;
+      return 1;
+    });
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const overlay = container.querySelector<HTMLElement>(
+      'main[aria-label="Aura overlay"]',
+    );
+    await act(async () => {
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", { clientX: 20, clientY: 30 }),
+      );
+      await flushPromises();
+    });
+    const pageRenderCount = storeMocks.useProfilesShallow.mock.calls.length;
+
+    await act(async () => {
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointermove", { clientX: 140, clientY: 100 }),
+      );
+      pendingFrame?.(16);
+    });
+
+    const draft = container.querySelector<HTMLElement>(
+      "[data-aura-area-selection-draft]",
+    );
+    expect(draft?.hidden).toBe(false);
+    expect(draft?.style.left).toBe("20px");
+    expect(draft?.style.top).toBe("30px");
+    expect(draft?.style.width).toBe("120px");
+    expect(draft?.style.height).toBe("70px");
+    expect(container.textContent).not.toContain("120 x 70");
+    expect(storeMocks.useProfilesShallow).toHaveBeenCalledTimes(
+      pageRenderCount,
+    );
+    expect(
+      container.querySelector('button[aria-label="1 aura selected"]'),
+    ).toBeNull();
+
+    await act(async () => {
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointerup", { clientX: 140, clientY: 100 }),
+      );
+    });
+
+    expect(draft?.hidden).toBe(true);
+    expect(
+      container.querySelector('button[aria-label="1 aura selected"]'),
+    ).toBeInstanceOf(HTMLButtonElement);
+  });
+
+  it("discards the marquee draft when its pointer is canceled", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const overlay = container.querySelector<HTMLElement>(
+      'main[aria-label="Aura overlay"]',
+    );
+    await act(async () => {
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", { clientX: 20, clientY: 30 }),
+      );
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointercancel", { clientX: 140, clientY: 100 }),
+      );
+    });
+
+    expect(
+      container.querySelector<HTMLElement>("[data-aura-area-selection-draft]")
+        ?.hidden,
+    ).toBe(true);
+    expect(useBoundStore.getState().auraOverlay.areaSelection).toBeNull();
+  });
+
+  it("clears completed area selection when the profile scope changes", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    const secondProfile = {
+      ...structuredClone(profile),
+      id: "profile-2",
+      name: "Second",
+    };
+    storeMocks.useProfilesShallow.mockImplementation((selector) =>
+      selector({
+        items: [profile, secondProfile],
+        selectedProfileId: profile.id,
+        update: storeMocks.updateProfile,
+        updateFromCurrent: storeMocks.updateProfileFromCurrent,
+      }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const overlay = container.querySelector<HTMLElement>(
+      'main[aria-label="Aura overlay"]',
+    );
+    await act(async () => {
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", { clientX: 20, clientY: 30 }),
+      );
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointerup", { clientX: 140, clientY: 100 }),
+      );
+    });
+    expect(useBoundStore.getState().auraOverlay.areaSelection).not.toBeNull();
+
+    await act(async () => {
+      window.location.hash = "#/aura-overlay?profileId=profile-2";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+      await flushPromises();
+    });
+
+    expect(useBoundStore.getState().auraOverlay.areaSelection).toBeNull();
+    expect(
+      container.querySelector('button[aria-label="1 aura selected"]'),
+    ).toBeNull();
+  });
+
+  it("clears a completed area selection with right click", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const overlay = container.querySelector<HTMLElement>(
+      'main[aria-label="Aura overlay"]',
+    );
+    await act(async () => {
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", { clientX: 20, clientY: 30 }),
+      );
+      overlay?.dispatchEvent(
+        createPointerLikeEvent("pointerup", { clientX: 140, clientY: 100 }),
+      );
+    });
+    expect(
+      container.querySelector('button[aria-label="1 aura selected"]'),
+    ).toBeInstanceOf(HTMLButtonElement);
+
+    await act(async () => {
+      overlay?.dispatchEvent(
+        new MouseEvent("contextmenu", { bubbles: true, button: 2 }),
+      );
+    });
+    expect(
+      container.querySelector('button[aria-label="1 aura selected"]'),
+    ).toBeNull();
+  });
+
   it("projects legacy aura placements into the centered ultrawide safe area", async () => {
     storeMocks.useCapturePreviewShallow.mockImplementation((selector) =>
       selector({
@@ -642,11 +1013,20 @@ describe("AuraOverlayPage", () => {
     storeMocks.updateProfile.mockImplementation(async (input) => {
       currentProfile = { ...currentProfile, ...input };
     });
+    storeMocks.updateProfileFromCurrent.mockImplementation(
+      async (id, createInput) => {
+        const input = createInput(currentProfile);
+        if (input) {
+          await storeMocks.updateProfile({ ...input, id });
+        }
+      },
+    );
     storeMocks.useProfilesShallow.mockImplementation((selector) =>
       selector({
         items: [currentProfile],
         selectedProfileId: "profile-1",
         update: storeMocks.updateProfile,
+        updateFromCurrent: storeMocks.updateProfileFromCurrent,
       }),
     );
     const container = document.createElement("div");
@@ -665,10 +1045,11 @@ describe("AuraOverlayPage", () => {
       auraButton?.click();
       await flushPromises();
     });
-    const rotateButton = [...container.querySelectorAll("button")].find(
-      (button) => button.textContent === "Rotate 0deg",
+    const rotateButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Rotate aura"]',
     );
     expect(rotateButton).toBeDefined();
+    expect(rotateButton?.textContent?.trim()).toBe("0 deg");
 
     await act(async () => {
       rotateButton?.click();
@@ -935,6 +1316,67 @@ describe("AuraOverlayPage", () => {
 
     expect((auraFrame as HTMLDivElement).style.left).toBe("520px");
     expect(storeMocks.updateProfile).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveProfileUpdate?.();
+      await flushPromises();
+    });
+  });
+
+  it("does not double-apply a drag after the optimistic profile update", async () => {
+    electronMocks.isAuraLocked.mockResolvedValue(false);
+    let currentProfile = structuredClone(profile);
+    let resolveProfileUpdate: (() => void) | null = null;
+    storeMocks.updateProfile.mockImplementation((input) => {
+      currentProfile = { ...currentProfile, ...input };
+      return new Promise<void>((resolve) => {
+        resolveProfileUpdate = resolve;
+      });
+    });
+    storeMocks.useProfilesShallow.mockImplementation((selector) =>
+      selector({
+        items: [currentProfile],
+        selectedProfileId: currentProfile.id,
+        update: storeMocks.updateProfile,
+      }),
+    );
+    const container = document.createElement("div");
+    document.body.append(container);
+    const root = createTestRoot(container);
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    const auraFrame = container.querySelector<HTMLDivElement>(
+      'div[data-placement-id="placement-1"]',
+    );
+    const auraButton = container.querySelector<HTMLButtonElement>(
+      'button[data-placement-id="placement-1"]',
+    );
+    await act(async () => {
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerdown", { clientX: 30, clientY: 40 }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointermove", { clientX: 70, clientY: 60 }),
+      );
+      auraButton?.dispatchEvent(
+        createPointerLikeEvent("pointerup", { clientX: 70, clientY: 60 }),
+      );
+      await flushPromises();
+    });
+    expect(auraFrame?.style.left).toBe("70px");
+    expect(auraFrame?.style.top).toBe("60px");
+
+    await act(async () => {
+      root.render(<AuraOverlayPage />);
+      await flushPromises();
+    });
+
+    expect(auraFrame?.style.left).toBe("70px");
+    expect(auraFrame?.style.top).toBe("60px");
 
     await act(async () => {
       resolveProfileUpdate?.();

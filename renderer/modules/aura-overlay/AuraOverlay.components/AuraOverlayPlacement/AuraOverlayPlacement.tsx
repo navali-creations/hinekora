@@ -9,13 +9,16 @@ import {
   resolveAuraPlacementVisualPoint,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 import { AuraArcThicknessHandle } from "../AuraArcThicknessHandle/AuraArcThicknessHandle";
+import { AuraOverlayPlacementDetails } from "../AuraOverlayPlacementDetails/AuraOverlayPlacementDetails";
+import { AuraOverlayPlacementGuides } from "../AuraOverlayPlacementGuides/AuraOverlayPlacementGuides";
 import { AuraOverlayPlacementVideo } from "../AuraOverlayPlacementVideo/AuraOverlayPlacementVideo";
 import { AuraOverlayResizeHandles } from "../AuraOverlayResizeHandles/AuraOverlayResizeHandles";
-import { AuraPlacementPropertiesPanel } from "../AuraPlacementPropertiesPanel/AuraPlacementPropertiesPanel";
+import { AuraPlacementEffects } from "../AuraPlacementEffects/AuraPlacementEffects";
 import styles from "./AuraOverlayPlacement.module.css";
 import {
   type AuraOverlayPlacementProps,
   createPlacementContentStyle,
+  resolveAuraPlacementClipPath,
 } from "./AuraOverlayPlacement.utils";
 
 function AuraOverlayPlacement({
@@ -46,8 +49,12 @@ function AuraOverlayPlacement({
   onThicknessPointerUp,
   onVideoSizeChange,
 }: AuraOverlayPlacementProps) {
-  const selectedPlacementId = useAuraOverlayShallow(
-    (auraOverlay) => auraOverlay.selectedPlacementId,
+  const { isAreaSelected, isSelected } = useAuraOverlayShallow(
+    (auraOverlay) => ({
+      isAreaSelected:
+        auraOverlay.areaSelection?.placementIds.includes(placement.id) ?? false,
+      isSelected: auraOverlay.selectedPlacementId === placement.id,
+    }),
   );
   const currentResizeState =
     resizeState?.placementId === placement.id ? resizeState : null;
@@ -67,21 +74,33 @@ function AuraOverlayPlacement({
       referenceViewport,
     );
   const currentDragState =
-    dragState?.placementId === placement.id ? dragState : null;
-  const x = currentDragState
-    ? currentDragState.initialDisplayX + currentDragState.deltaX
+    dragState?.placementId === placement.id ||
+    dragState?.placementIds?.includes(placement.id)
+      ? dragState
+      : null;
+  const initialDragPosition = currentDragState
+    ? (currentDragState.initialDisplayPositions?.[placement.id] ?? {
+        x: currentDragState.initialDisplayX,
+        y: currentDragState.initialDisplayY,
+      })
+    : null;
+  const x = initialDragPosition
+    ? initialDragPosition.x + (currentDragState?.deltaX ?? 0)
     : visualBounds.x;
-  const y = currentDragState
-    ? currentDragState.initialDisplayY + currentDragState.deltaY
+  const y = initialDragPosition
+    ? initialDragPosition.y + (currentDragState?.deltaY ?? 0)
     : visualBounds.y;
   const isResizing = currentResizeState !== null;
-  const isSelected = selectedPlacementId === placement.id;
   const displayWidth = Math.round(visualBounds.width);
   const displayHeight = Math.round(visualBounds.height);
   const width = displayWidth;
   const height = displayHeight;
   const left = Math.round(x);
   const top = Math.round(y);
+  const centerOffsetX =
+    x + visualBounds.width / 2 - effectiveVideoSize.width / 2;
+  const centerOffsetY =
+    effectiveVideoSize.height / 2 - (y + visualBounds.height / 2);
   const visibleArcThickness = resolveAuraPlacementArcVisibleThickness(
     crop,
     effectivePlacement,
@@ -91,6 +110,10 @@ function AuraOverlayPlacement({
     effectivePlacement,
     placementSize,
   );
+  const supportsClipShapes = crop.shape === undefined || crop.shape === "rect";
+  const placementClipPath = supportsClipShapes
+    ? resolveAuraPlacementClipPath(effectivePlacement.clipShape)
+    : undefined;
   const isStraightenedArc =
     effectivePlacement.arcStraightened === true &&
     crop.shape === "arc" &&
@@ -121,15 +144,29 @@ function AuraOverlayPlacement({
         height: `${visualBounds.height}px`,
       }}
     >
+      <AuraPlacementEffects
+        contentStyle={contentStyle}
+        crop={crop}
+        displaySize={placementSize}
+        isStraightenedArc={isStraightenedArc}
+        placement={effectivePlacement}
+        {...(visibleArcThickness !== undefined
+          ? { visibleThickness: visibleArcThickness }
+          : {})}
+      />
       <button
         className={clsx(
           styles.box,
           crop.shape === "arc" && styles.boxArc,
+          placementClipPath && styles.boxCustomShape,
           auraOverlayLocked && styles.boxLocked,
-          canEditAuras && isSelected && styles.boxSelected,
+          canEditAuras && (isSelected || isAreaSelected) && styles.boxSelected,
         )}
         data-placement-id={placement.id}
         style={{
+          ...(effectivePlacement.cornerRadius !== undefined
+            ? { borderRadius: `${effectivePlacement.cornerRadius}px` }
+            : {}),
           opacity: effectivePlacement.opacity,
         }}
         type="button"
@@ -153,83 +190,58 @@ function AuraOverlayPlacement({
             onVideoSizeChange={onVideoSizeChange}
           />
         )}
-        {arcBoundaryPaths && (
-          <svg
-            aria-hidden="true"
-            className={styles.arcBoundaryOverlay}
-            style={contentStyle}
-            viewBox={`0 0 ${placementSize.width} ${placementSize.height}`}
-          >
-            <path
-              className={styles.arcBoundaryPath}
-              d={arcBoundaryPaths.outer}
-            />
-            <path
-              className={styles.arcBoundaryPath}
-              d={arcBoundaryPaths.inner}
-            />
-          </svg>
-        )}
-        {canEditAuras && (
-          <AuraOverlayResizeHandles
-            compact={crop.shape === "points"}
-            placementId={placement.id}
-            onPointerCancel={onResizePointerCancel}
-            onPointerDown={onResizePointerDown}
-            onPointerMove={onResizePointerMove}
-            onPointerUp={onResizePointerUp}
-          />
-        )}
-        {canEditAuras && arcControlPoint && (
-          <AuraArcThicknessHandle
-            controlXPercent={arcControlPoint.x}
-            controlYPercent={arcControlPoint.y}
-            placementId={placement.id}
-            onPointerCancel={onThicknessPointerCancel}
-            onPointerDown={onThicknessPointerDown}
-            onPointerMove={onThicknessPointerMove}
-            onPointerUp={onThicknessPointerUp}
-          />
-        )}
-      </button>
-      {!auraOverlayLocked && (
-        <span className={styles.label} data-aura-label>
-          {crop.label}
-        </span>
-      )}
-      {!auraOverlayLocked && isResizing && (
-        <span className={styles.resizeReadout}>
-          x: {left} y: {top}
-          <br />
-          {width} x {height}
-        </span>
-      )}
-      {!auraOverlayLocked &&
-        currentThicknessResizeState &&
-        visibleArcThickness !== undefined && (
-          <span className={styles.resizeReadout}>
-            thickness: {Math.round(visibleArcThickness)}px
-          </span>
-        )}
-      {!auraOverlayLocked && canEditAuras && isSelected && (
-        <AuraPlacementPropertiesPanel
-          anchorBounds={{
-            height: displayHeight,
-            left,
-            top,
-            width: displayWidth,
-          }}
-          displayHeight={displayHeight}
-          displayWidth={displayWidth}
-          label={crop.label}
-          placement={effectivePlacement}
-          pointControls={crop.shape === "points"}
-          {...(visibleArcThickness !== undefined
-            ? { visibleThickness: visibleArcThickness }
-            : {})}
-          onChange={onPlacementPropertiesChange}
+        <AuraOverlayPlacementGuides
+          arcBoundaryPaths={arcBoundaryPaths}
+          clipShape={effectivePlacement.clipShape}
+          contentStyle={contentStyle}
+          displaySize={placementSize}
+          showShapeFocus={canEditAuras && isSelected && !!placementClipPath}
         />
-      )}
+        {canEditAuras &&
+          !isAreaSelected &&
+          !effectivePlacement.hideResizeControls && (
+            <AuraOverlayResizeHandles
+              compact={crop.shape === "points"}
+              placementId={placement.id}
+              onPointerCancel={onResizePointerCancel}
+              onPointerDown={onResizePointerDown}
+              onPointerMove={onResizePointerMove}
+              onPointerUp={onResizePointerUp}
+            />
+          )}
+        {canEditAuras &&
+          !isAreaSelected &&
+          !effectivePlacement.hideResizeControls &&
+          arcControlPoint && (
+            <AuraArcThicknessHandle
+              controlXPercent={arcControlPoint.x}
+              controlYPercent={arcControlPoint.y}
+              placementId={placement.id}
+              onPointerCancel={onThicknessPointerCancel}
+              onPointerDown={onThicknessPointerDown}
+              onPointerMove={onThicknessPointerMove}
+              onPointerUp={onThicknessPointerUp}
+            />
+          )}
+      </button>
+      <AuraOverlayPlacementDetails
+        auraOverlayLocked={auraOverlayLocked}
+        canEditAuras={canEditAuras}
+        centerOffsetX={centerOffsetX}
+        centerOffsetY={centerOffsetY}
+        crop={crop}
+        displayHeight={height}
+        displayWidth={width}
+        isResizing={isResizing}
+        isSelected={isSelected}
+        isThicknessResizing={currentThicknessResizeState !== null}
+        left={left}
+        placement={effectivePlacement}
+        showClipShapeControls={supportsClipShapes}
+        top={top}
+        visibleThickness={visibleArcThickness}
+        onChange={onPlacementPropertiesChange}
+      />
     </div>
   );
 }

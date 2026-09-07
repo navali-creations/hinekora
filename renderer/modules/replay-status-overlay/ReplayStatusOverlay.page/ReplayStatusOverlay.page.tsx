@@ -23,23 +23,19 @@ function ReplayStatusOverlayPage() {
 
   const isProcessing = status.status === "processing";
   const isSaved = status.status === "saved";
+  const isFailed = status.status === "failed";
   const title = isProcessing
     ? "Processing replay…"
     : isSaved
       ? "Replay saved"
       : "Replay save failed";
-  const note = isProcessing
-    ? "Finishing your clip."
-    : isSaved
-      ? "You can edit it later."
-      : "Open Hinekora for details.";
 
   return (
     <OverlayNotice
       className={clsx(
         styles.notification,
         status.dismissing && styles.dismissing,
-        status.status === "failed" && styles.failed,
+        isFailed && styles.failed,
       )}
       data-dismissing={status.dismissing}
       data-status={status.status}
@@ -56,7 +52,9 @@ function ReplayStatusOverlayPage() {
         <FiAlertCircle aria-hidden="true" className={styles.icon} />
       )}
       <span className={styles.title}>{title}</span>
-      <span className={styles.note}>{note}</span>
+      {isFailed && (
+        <span className={styles.note}>Open Hinekora for details.</span>
+      )}
     </OverlayNotice>
   );
 }

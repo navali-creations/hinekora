@@ -9,7 +9,7 @@ import { SettingsToggleRow } from "../SettingsToggleRow/SettingsToggleRow";
 type OverlayPreferenceKey = keyof Pick<
   AppSettings,
   | "auraOverlayIgnoreGameFocus"
-  | "auraOverlayIncludeInCaptures"
+  | "overlayWindowsIncludeInCaptures"
   | "clipPreviewOverlayIgnoreGameFocus"
   | "gridLinesOverlayIgnoreGameFocus"
   | "recorderOverlayIgnoreGameFocus"

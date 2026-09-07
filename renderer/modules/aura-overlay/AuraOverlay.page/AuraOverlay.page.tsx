@@ -1,10 +1,12 @@
 import clsx from "clsx";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { OverlayExitNotice } from "~/renderer/components/OverlayExitNotice/OverlayExitNotice";
 import { AuraEditingNotice } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraEditingNotice/AuraEditingNotice";
 import { AuraLockHandoffNotice } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraLockHandoffNotice/AuraLockHandoffNotice";
 import { AuraOverlayAlignmentGuides } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraOverlayAlignmentGuides/AuraOverlayAlignmentGuides";
+import { AuraOverlayAreaSelection } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraOverlayAreaSelection/AuraOverlayAreaSelection";
+import { AuraOverlayAreaSelectionDraft } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraOverlayAreaSelectionDraft/AuraOverlayAreaSelectionDraft";
 import { AuraOverlayPlacement } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraOverlayPlacement/AuraOverlayPlacement";
 import { AuraPlacementFocusStrip } from "~/renderer/modules/aura-overlay/AuraOverlay.components/AuraPlacementFocusStrip/AuraPlacementFocusStrip";
 import { useAuraOverlayAddAuraSelection } from "~/renderer/modules/aura-overlay/AuraOverlay.hooks/useAuraOverlayAddAuraSelection/useAuraOverlayAddAuraSelection";
@@ -20,8 +22,8 @@ import { ProfileMutationError } from "~/renderer/modules/profiles/Profiles.compo
 import { useProfilesShallow, useSettingsShallow } from "~/renderer/store";
 
 import {
-  type AuraVideoSize,
   readAuraRouteParams,
+  resolveAuraProfileReferenceViewport,
   selectAuraOverlayPageSettings,
 } from "./AuraOverlay.page.utils";
 import styles from "./AuraOverlayPage.module.css";
@@ -50,13 +52,7 @@ function AuraOverlayPage() {
   const { auraOverlayLocked, lockAuraOverlay, showLockHandoffHint } =
     useAuraOverlayLockState();
 
-  const profileReferenceViewport: AuraVideoSize | null =
-    profile?.captureTarget?.width && profile.captureTarget.height
-      ? {
-          width: profile.captureTarget.width,
-          height: profile.captureTarget.height,
-        }
-      : null;
+  const profileReferenceViewport = resolveAuraProfileReferenceViewport(profile);
 
   const emptyMessage = !profile
     ? "No profile loaded"
@@ -86,7 +82,13 @@ function AuraOverlayPage() {
     useAuraOverlayEditingGeometry(effectiveVideoSize);
   const {
     arcThicknessResizeState,
+    areaSelectionDraftRef,
     dragState,
+    handleAreaContextMenu,
+    handleAreaPointerCancel,
+    handleAreaPointerDown,
+    handleAreaPointerMove,
+    handleAreaPointerUp,
     handleAuraClick,
     handlePointerCancel,
     handlePointerDown,
@@ -103,6 +105,7 @@ function AuraOverlayPage() {
     handleThicknessPointerUp,
     resizeState,
   } = useAuraOverlayPlacementEditor({
+    canEditAuras,
     gridCellSize,
     guideViewport: editingViewport,
     profile,
@@ -110,6 +113,13 @@ function AuraOverlayPage() {
     snapEnabled: auraSettings.enableSnapping,
     targetViewport: effectiveVideoSize,
   });
+  const cropRegionsById = useMemo(
+    () =>
+      new Map(
+        profile?.cropRegions.map((crop) => [crop.id, crop] as const) ?? [],
+      ),
+    [profile?.cropRegions],
+  );
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -134,17 +144,11 @@ function AuraOverlayPage() {
     routeStartAddingAura,
   });
 
-  const handleAddAuraClick = () => {
-    startAddAuraSelection({ shape: "rect" });
-  };
+  const handleAddAuraClick = () => startAddAuraSelection({ shape: "rect" });
 
-  const handleAddArchedAuraClick = () => {
-    startAddAuraSelection({ shape: "arc" });
-  };
+  const handleAddArcClick = () => startAddAuraSelection({ shape: "arc" });
 
-  const handleAddPointerAuraClick = () => {
-    startAddAuraSelection({ shape: "points" });
-  };
+  const addPointAura = () => startAddAuraSelection({ shape: "points" });
 
   return (
     <main
@@ -164,12 +168,15 @@ function AuraOverlayPage() {
       style={{
         backgroundSize: `${gridCellSize.width}px ${gridCellSize.height}px`,
       }}
+      onContextMenu={handleAreaContextMenu}
+      onPointerCancel={handleAreaPointerCancel}
+      onPointerDown={handleAreaPointerDown}
+      onPointerMove={handleAreaPointerMove}
+      onPointerUp={handleAreaPointerUp}
     >
       <ProfileMutationError className={styles.profileError ?? ""} />
       {profile?.overlayPlacements.map((placement) => {
-        const crop = profile.cropRegions.find(
-          (region) => region.id === placement.cropRegionId,
-        );
+        const crop = cropRegionsById.get(placement.cropRegionId);
         if (!crop) {
           return null;
         }
@@ -206,6 +213,18 @@ function AuraOverlayPage() {
           />
         );
       })}
+      {canEditAuras && (
+        <AuraOverlayAreaSelectionDraft ref={areaSelectionDraftRef} />
+      )}
+      {canEditAuras && (
+        <AuraOverlayAreaSelection
+          dragState={dragState}
+          onPointerCancel={handlePointerCancel}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+        />
+      )}
       <AuraPlacementFocusStrip
         cropRegions={profile?.cropRegions ?? []}
         placements={canEditAuras ? (profile?.overlayPlacements ?? []) : []}
@@ -217,8 +236,8 @@ function AuraOverlayPage() {
           <AuraEditingNotice
             canAddAura={!!profile}
             onAddAura={handleAddAuraClick}
-            onAddArchedAura={handleAddArchedAuraClick}
-            onAddPointerAura={handleAddPointerAuraClick}
+            onAddArchedAura={handleAddArcClick}
+            onAddPointerAura={addPointAura}
             onLockAuras={handleLockAurasClick}
           />
         </>

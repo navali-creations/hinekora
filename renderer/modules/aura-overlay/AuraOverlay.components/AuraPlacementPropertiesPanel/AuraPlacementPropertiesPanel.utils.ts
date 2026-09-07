@@ -1,4 +1,7 @@
 import {
+  type AuraPlacementClipShape,
+  AuraPlacementContentZoomSettings,
+  AuraPlacementEffectSettings,
   AuraPlacementScaleSettings,
   AuraPointPlacementSettings,
   type OverlayPlacement,
@@ -7,6 +10,7 @@ import {
   type AuraRotationDegrees,
   type AuraSize,
   auraRotationDegrees,
+  clamp,
   normalizeAuraPlacementNumberValue,
 } from "../../AuraOverlay.page/AuraOverlay.page.utils";
 
@@ -26,41 +30,81 @@ interface AuraPlacementPropertiesPanelLayout {
 interface AuraPlacementPropertiesPatch {
   arcStraightened?: boolean;
   arcVisibleThickness?: number;
+  clipShape?: AuraPlacementClipShape | null;
+  contentZoomPercent?: number;
+  cornerRadius?: number | null;
+  centerOffsetX?: number;
+  centerOffsetY?: number;
   displayHeight?: number;
   displayWidth?: number;
+  hideResizeControls?: boolean;
+  iconOffsetX?: number;
+  iconOffsetY?: number;
   label?: string;
   mirrored?: boolean;
   opacity?: number;
+  outlineColor?: string | null;
+  outlineThickness?: number | null;
   pointGap?: number;
   pointSampleSize?: number;
   recordHistory?: boolean;
+  resetToDefaults?: boolean;
   rotationDegrees?: AuraRotationDegrees;
   scale?: number;
+  shadowColor?: string | null;
+  shadowSpread?: number | null;
+}
+
+interface AuraPlacementPropertiesPanelProps {
+  anchorBounds: AuraPlacementPropertiesPanelBounds;
+  centerOffsetX: number;
+  centerOffsetY: number;
+  displayHeight: number;
+  displayWidth: number;
+  label: string;
+  placement: OverlayPlacement;
+  pointControls?: boolean;
+  showClipShapeControls?: boolean;
+  visibleThickness?: number;
+  onChange: (placementId: string, patch: AuraPlacementPropertiesPatch) => void;
 }
 
 type NumberFieldName =
+  | "contentZoomPercent"
+  | "cornerRadius"
   | "height"
+  | "iconOffsetX"
+  | "iconOffsetY"
   | "opacity"
+  | "outlineThickness"
   | "pointGap"
   | "pointSampleSize"
   | "scale"
+  | "shadowSpread"
   | "thickness"
-  | "width";
+  | "width"
+  | "x"
+  | "y";
+
+type AuraPlacementNumberValueChange = (
+  fieldName: NumberFieldName,
+  value: string,
+) => void;
 
 type AuraPlacementPropertiesDraft = Record<NumberFieldName, string>;
 
-const auraPlacementBaseNumberFields = [
+const auraPlacementSizeNumberFields = [
   { label: "Width", min: "10", name: "width" },
   { label: "Height", min: "10", name: "height" },
-  {
-    label: "Scale",
-    max: String(AuraPlacementScaleSettings.maxScale),
-    min: String(AuraPlacementScaleSettings.minScale),
-    name: "scale",
-    step: "0.1",
-  },
-  { label: "Opacity", max: "1", min: "0", name: "opacity", step: "0.05" },
 ] as const;
+
+const auraPlacementScaleNumberField = {
+  label: "Scale",
+  max: String(AuraPlacementScaleSettings.maxScale),
+  min: String(AuraPlacementScaleSettings.minScale),
+  name: "scale",
+  step: "0.1",
+} as const;
 
 function resolvePointSampleSize(placement: OverlayPlacement): number {
   return clamp(
@@ -73,38 +117,70 @@ function resolvePointSampleSize(placement: OverlayPlacement): number {
 }
 
 function createPropertiesDraft(
+  centerOffsetX: number,
+  centerOffsetY: number,
   displayWidth: number,
   displayHeight: number,
   placement: OverlayPlacement,
   thickness: number | null,
 ): AuraPlacementPropertiesDraft {
   return {
+    contentZoomPercent: String(
+      placement.contentZoomPercent ??
+        AuraPlacementContentZoomSettings.defaultPercent,
+    ),
+    cornerRadius: String(
+      placement.cornerRadius ?? AuraPlacementEffectSettings.defaultCornerRadius,
+    ),
     height: String(Math.round(displayHeight)),
+    iconOffsetX: String(placement.iconOffsetX ?? 0),
+    iconOffsetY: String(placement.iconOffsetY ?? 0),
     opacity: String(Number(placement.opacity.toFixed(2))),
+    outlineThickness: String(
+      placement.outlineThickness ??
+        AuraPlacementEffectSettings.defaultOutlineThickness,
+    ),
     pointGap: String(
       placement.pointGap ?? AuraPointPlacementSettings.defaultGap,
     ),
     pointSampleSize: String(resolvePointSampleSize(placement)),
     scale: String(Number(resolvePlacementScale(placement).toFixed(2))),
+    shadowSpread: String(
+      placement.shadowSpread ?? AuraPlacementEffectSettings.defaultShadowSpread,
+    ),
     thickness: thickness !== null ? String(thickness) : "",
     width: String(Math.round(displayWidth)),
+    x: String(Math.round(centerOffsetX)),
+    y: String(Math.round(centerOffsetY)),
   };
 }
 
 function createCurrentNumericValues(
+  centerOffsetX: number,
+  centerOffsetY: number,
   displayWidth: number,
   displayHeight: number,
   placement: OverlayPlacement,
   thickness: number | null,
 ): Record<NumberFieldName, number | null> {
   return {
+    contentZoomPercent:
+      placement.contentZoomPercent ??
+      AuraPlacementContentZoomSettings.defaultPercent,
+    cornerRadius: placement.cornerRadius ?? null,
     height: Math.round(displayHeight),
+    iconOffsetX: placement.iconOffsetX ?? 0,
+    iconOffsetY: placement.iconOffsetY ?? 0,
     opacity: Number(placement.opacity.toFixed(2)),
+    outlineThickness: placement.outlineThickness ?? null,
     pointGap: placement.pointGap ?? AuraPointPlacementSettings.defaultGap,
     pointSampleSize: resolvePointSampleSize(placement),
     scale: Number(resolvePlacementScale(placement).toFixed(2)),
+    shadowSpread: placement.shadowSpread ?? null,
     thickness,
     width: Math.round(displayWidth),
+    x: Math.round(centerOffsetX),
+    y: Math.round(centerOffsetY),
   };
 }
 
@@ -120,6 +196,10 @@ function createNumberFieldPatch(
   value: number,
   recordHistory: boolean,
 ): AuraPlacementPropertiesPatch {
+  if (fieldName === "contentZoomPercent") {
+    return { contentZoomPercent: value, recordHistory };
+  }
+
   if (fieldName === "width") {
     return { displayWidth: value, recordHistory };
   }
@@ -128,12 +208,40 @@ function createNumberFieldPatch(
     return { displayHeight: value, recordHistory };
   }
 
+  if (fieldName === "x") {
+    return { centerOffsetX: value, recordHistory };
+  }
+
+  if (fieldName === "y") {
+    return { centerOffsetY: value, recordHistory };
+  }
+
+  if (fieldName === "iconOffsetX") {
+    return { iconOffsetX: value, recordHistory };
+  }
+
+  if (fieldName === "iconOffsetY") {
+    return { iconOffsetY: value, recordHistory };
+  }
+
   if (fieldName === "scale") {
     return { recordHistory, scale: value };
   }
 
   if (fieldName === "opacity") {
     return { opacity: value, recordHistory };
+  }
+
+  if (fieldName === "outlineThickness") {
+    return { outlineThickness: value, recordHistory };
+  }
+
+  if (fieldName === "cornerRadius") {
+    return { cornerRadius: value, recordHistory };
+  }
+
+  if (fieldName === "shadowSpread") {
+    return { recordHistory, shadowSpread: value };
   }
 
   if (fieldName === "pointSampleSize") {
@@ -149,13 +257,21 @@ function createNumberFieldPatch(
 
 function readNumberFieldName(value: string): NumberFieldName | null {
   if (
+    value === "contentZoomPercent" ||
+    value === "cornerRadius" ||
     value === "height" ||
+    value === "iconOffsetX" ||
+    value === "iconOffsetY" ||
     value === "opacity" ||
+    value === "outlineThickness" ||
     value === "pointGap" ||
     value === "pointSampleSize" ||
     value === "scale" ||
+    value === "shadowSpread" ||
     value === "thickness" ||
-    value === "width"
+    value === "width" ||
+    value === "x" ||
+    value === "y"
   ) {
     return value;
   }
@@ -171,10 +287,6 @@ function resolveNextRotationDegrees(
   return (
     auraRotationDegrees[(rotationIndex + 1) % auraRotationDegrees.length] ?? 0
   );
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(Math.max(value, min), max);
 }
 
 function resolvePlacementScale(placement: OverlayPlacement): number {
@@ -228,13 +340,16 @@ function resolveAuraPlacementPropertiesPanelLayout(
 }
 
 export type {
+  AuraPlacementNumberValueChange,
   AuraPlacementPropertiesDraft,
   AuraPlacementPropertiesPanelBounds,
+  AuraPlacementPropertiesPanelProps,
   AuraPlacementPropertiesPatch,
   NumberFieldName,
 };
 export {
-  auraPlacementBaseNumberFields,
+  auraPlacementScaleNumberField,
+  auraPlacementSizeNumberFields,
   createCurrentNumericValues,
   createNumberFieldPatch,
   createPropertiesDraft,

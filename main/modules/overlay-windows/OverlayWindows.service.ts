@@ -84,7 +84,7 @@ class OverlayWindowsService {
   private static instance: OverlayWindowsService | null = null;
 
   private overlayCaptureProtectionEnabled = false;
-  private auraOverlayIncludeInCaptures = false;
+  private includeOverlaysInCaptures = false;
   private overlayCaptureProtectionSettings: Pick<
     AppSettings,
     "recordingHideOverlaysFromRecording" | "recordingHideOverlaysFromRewind"
@@ -113,9 +113,7 @@ class OverlayWindowsService {
     runRecordingActive: false,
   };
   private readonly getOverlayCaptureProtectionEnabled = () =>
-    this.overlayCaptureProtectionEnabled;
-  private readonly getAuraOverlayCaptureProtectionEnabled = () =>
-    this.overlayCaptureProtectionEnabled && !this.auraOverlayIncludeInCaptures;
+    this.overlayCaptureProtectionEnabled && !this.includeOverlaysInCaptures;
   private readonly shouldRecorderOverlayIgnoreGameFocus = () =>
     this.overlayFocusSettings.recorderOverlayIgnoreGameFocus;
   private readonly shouldClipPreviewOverlayIgnoreGameFocus = () =>
@@ -149,13 +147,13 @@ class OverlayWindowsService {
   );
   private readonly gridLinesOverlay = new GridLinesOverlayService(
     this.coordinator,
-    this.getAuraOverlayCaptureProtectionEnabled,
+    this.getOverlayCaptureProtectionEnabled,
     () => this.startActiveGameFocusHandoff("crop-selector-hidden"),
     this.shouldGridLinesOverlayIgnoreGameFocus,
   );
   private readonly auraManagerOverlays = new AuraManagerOverlaysService(
     this.coordinator,
-    this.getAuraOverlayCaptureProtectionEnabled,
+    this.getOverlayCaptureProtectionEnabled,
     (active) =>
       this.setRecorderOverlaySuppressed(
         RECORDER_SUPPRESSION_AURA_OVERLAY,
@@ -183,8 +181,8 @@ class OverlayWindowsService {
     const managedRecorder = ManagedRecorderService.getInstance();
     const settings = settingsStore.get();
     this.overlayCaptureProtectionSettings = settings;
-    this.auraOverlayIncludeInCaptures =
-      settings.auraOverlayIncludeInCaptures === true;
+    this.includeOverlaysInCaptures =
+      settings.overlayWindowsIncludeInCaptures === true;
     this.overlayFocusSettings = settings;
     this.updateManagedRecorderSnapshot({
       captureMode: managedRecorder.getCaptureMode(),
@@ -196,8 +194,8 @@ class OverlayWindowsService {
         const focusSettingsChanged =
           this.haveOverlayFocusSettingsChanged(nextSettings);
         this.overlayCaptureProtectionSettings = nextSettings;
-        this.auraOverlayIncludeInCaptures =
-          nextSettings.auraOverlayIncludeInCaptures === true;
+        this.includeOverlaysInCaptures =
+          nextSettings.overlayWindowsIncludeInCaptures === true;
         this.overlayFocusSettings = nextSettings;
         this.applyOverlayCaptureProtection();
         if (focusSettingsChanged) {
@@ -607,16 +605,19 @@ class OverlayWindowsService {
 
   private setOverlayCaptureProtectionEnabled(enabled: boolean): void {
     this.overlayCaptureProtectionEnabled = enabled;
-    const auraOverlayProtectionEnabled =
-      this.getAuraOverlayCaptureProtectionEnabled();
-    this.recordingControlsOverlay.setContentProtectionEnabled(enabled);
-    this.deathClipsOverlay.setContentProtectionEnabled(enabled);
-    this.replayStatusOverlay.setContentProtectionEnabled(enabled);
-    this.gridLinesOverlay.setContentProtectionEnabled(
-      auraOverlayProtectionEnabled,
+    const contentProtectionEnabled = this.getOverlayCaptureProtectionEnabled();
+    this.recordingControlsOverlay.setContentProtectionEnabled(
+      contentProtectionEnabled,
     );
+    this.deathClipsOverlay.setContentProtectionEnabled(
+      contentProtectionEnabled,
+    );
+    this.replayStatusOverlay.setContentProtectionEnabled(
+      contentProtectionEnabled,
+    );
+    this.gridLinesOverlay.setContentProtectionEnabled(contentProtectionEnabled);
     this.auraManagerOverlays.setContentProtectionEnabled(
-      auraOverlayProtectionEnabled,
+      contentProtectionEnabled,
     );
   }
 
