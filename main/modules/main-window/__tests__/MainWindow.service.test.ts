@@ -101,24 +101,31 @@ class FakeWindow {
   beforeInputListener:
     | ((event: { preventDefault(): void }, input: Electron.Input) => void)
     | null = null;
+  willNavigateListener:
+    | ((details: { preventDefault(): void; url: string }) => void)
+    | null = null;
+  willRedirectListener: ((event: { preventDefault(): void }) => void) | null =
+    null;
 
   webContents = {
     closeDevTools: vi.fn(),
     executeJavaScript: vi.fn().mockResolvedValue(undefined),
+    getURL: vi.fn(() => "http://localhost:5173/"),
     isDevToolsOpened: vi.fn(() => false),
-    on: vi.fn(
-      (
-        event: string,
-        listener: (
-          event: { preventDefault(): void },
-          input: Electron.Input,
-        ) => void,
-      ) => {
-        if (event === "before-input-event") {
-          this.beforeInputListener = listener;
-        }
-      },
-    ),
+    on: vi.fn((event: string, listener: (...args: never[]) => void) => {
+      if (event === "before-input-event") {
+        this.beforeInputListener =
+          listener as unknown as typeof this.beforeInputListener;
+      }
+      if (event === "will-navigate") {
+        this.willNavigateListener =
+          listener as unknown as typeof this.willNavigateListener;
+      }
+      if (event === "will-redirect") {
+        this.willRedirectListener =
+          listener as unknown as typeof this.willRedirectListener;
+      }
+    }),
     openDevTools: vi.fn(),
     reloadIgnoringCache: vi.fn(),
     setWindowOpenHandler: vi.fn(
@@ -226,6 +233,7 @@ afterEach(() => {
   trayMocks.createTray.mockClear();
   trayMocks.destroyTray.mockClear();
   updaterMocks.initialize.mockClear();
+  electronMocks.openExternal.mockResolvedValue(undefined);
   vi.unstubAllGlobals();
 });
 
@@ -299,12 +307,60 @@ describe("MainWindowService", () => {
     ).toEqual({ action: "deny" });
     expect(electronMocks.openExternal).toHaveBeenCalledTimes(2);
 
+    const preventNavigation = vi.fn();
+    fakeWindow.willNavigateListener?.({
+      preventDefault: preventNavigation,
+      url: "http://localhost:5173/",
+    });
+    expect(preventNavigation).not.toHaveBeenCalled();
+
+    fakeWindow.willNavigateListener?.({
+      preventDefault: preventNavigation,
+      url: "https://github.com/navali-creations/hinekora/issues",
+    });
+    fakeWindow.willRedirectListener?.({ preventDefault: preventNavigation });
+    expect(preventNavigation).toHaveBeenCalledTimes(2);
+    expect(electronMocks.openExternal).toHaveBeenLastCalledWith(
+      "https://github.com/navali-creations/hinekora/issues",
+    );
+    fakeWindow.willNavigateListener?.({
+      preventDefault: preventNavigation,
+      url: "https://example.com/phishing",
+    });
+    expect(electronMocks.openExternal).toHaveBeenCalledTimes(3);
+
     fakeWindow.close();
     expect(electronMocks.quit).toHaveBeenCalledTimes(1);
     expect(service.getMainWindow()).toBe(fakeWindow);
 
     fakeWindow.closedListener?.();
     expect(electronMocks.quit).toHaveBeenCalledTimes(1);
+  });
+
+  it("records rejected external URL launches without an unhandled rejection", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const fakeWindow = new FakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(fakeWindow);
+    electronMocks.openExternal.mockRejectedValueOnce(
+      new Error("shell integration unavailable"),
+    );
+    const service = new MainWindowService();
+    await service.createMainWindow();
+
+    fakeWindow.windowOpenHandler?.({
+      url: "https://github.com/navali-creations/hinekora",
+    });
+
+    try {
+      await vi.waitFor(() => {
+        expect(warn).toHaveBeenCalledWith(
+          expect.stringContaining("Could not open external URL"),
+          { error: "shell integration unavailable" },
+        );
+      });
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("restores saved main window bounds when they overlap a current display", async () => {
@@ -587,6 +643,43 @@ describe("MainWindowService", () => {
 
     expect(fakeWindow.show).not.toHaveBeenCalled();
     expect(trayMocks.createTray).toHaveBeenCalled();
+    fakeWindow.closedListener?.();
+  });
+
+  it("logs when a mounted main renderer does not report ready", async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    const { handlers } = mockIpcMainHandlers();
+    const fakeWindow = new FakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(fakeWindow);
+    const service = new MainWindowService();
+
+    try {
+      await service.createMainWindow();
+      fakeWindow.readyListener?.();
+      fakeWindow.readyListener?.();
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("Main renderer did not report ready"),
+        { timeoutMs: 30_000 },
+      );
+
+      handlers.get(MainWindowChannel.RendererReady)?.({});
+      handlers.get(MainWindowChannel.RendererReady)?.({});
+      expect(info).toHaveBeenCalledTimes(1);
+
+      fakeWindow.willNavigateListener?.({
+        preventDefault: vi.fn(),
+        url: fakeWindow.webContents.getURL(),
+      });
+      fakeWindow.destroyed = true;
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("starts minimized from the hidden launch argument and tolerates settings failures", () => {
@@ -810,6 +903,19 @@ describe("MainWindowService", () => {
     expect(fakeWindow.webContents.openDevTools).not.toHaveBeenCalled();
   });
 
+  it("does not open main window devtools after the window is destroyed", () => {
+    const service = new MainWindowService();
+    const fakeWindow = new FakeWindow();
+    const internals = service as unknown as {
+      openMainWindowDevTools(window: FakeWindow): void;
+    };
+    fakeWindow.destroyed = true;
+
+    internals.openMainWindowDevTools(fakeWindow);
+
+    expect(fakeWindow.webContents.openDevTools).not.toHaveBeenCalled();
+  });
+
   it("registers IPC handlers for window controls", async () => {
     const { handlers } = mockIpcMainHandlers();
     const fakeWindow = new FakeWindow();
@@ -831,11 +937,12 @@ describe("MainWindowService", () => {
     expect(fakeWindow.close).toHaveBeenCalled();
     expect(electronMocks.quit).toHaveBeenCalledTimes(1);
 
-    handlers.get(MainWindowChannel.OpenDevTools)?.({});
-    expect(fakeWindow.webContents.openDevTools).toHaveBeenCalledWith({
-      mode: "detach",
-      activate: true,
-    });
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    handlers.get(MainWindowChannel.RendererReady)?.({});
+    expect(info).toHaveBeenCalledWith(
+      expect.stringContaining("Main renderer ready"),
+      expect.objectContaining({ elapsedMs: expect.any(Number) }),
+    );
 
     fakeWindow.destroyed = true;
     await service.createMainWindow();
@@ -857,7 +964,7 @@ describe("MainWindowService", () => {
     handlers.get(MainWindowChannel.Close)?.({});
     expect(electronMocks.quit).toHaveBeenCalled();
 
-    handlers.get(MainWindowChannel.OpenDevTools)?.({});
+    handlers.get(MainWindowChannel.RendererReady)?.({});
   });
 
   it("opens the editor for a replay clip from the clip preview overlay", async () => {

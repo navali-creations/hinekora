@@ -25,9 +25,12 @@ import {
   type GameOverlayParticipant,
 } from "../GameOverlayCoordinator";
 import {
+  configureGameOverlayWindow,
+  createOverlayWebPreferences,
   hideGameOverlayWindow,
   isOverlayRendererWindow,
   loadOverlayRenderer,
+  setOverlayDevToolsEnabled,
   showGameOverlayWindow,
   suspendGameOverlayWindow,
 } from "../OverlayWindow.shared";
@@ -56,7 +59,6 @@ const electronMocks = vi.hoisted(() => {
     getPrimaryDisplay: vi.fn(),
     globalShortcutRegister: vi.fn(() => true),
     globalShortcutUnregister: vi.fn(),
-    isPackaged: true,
   };
 });
 
@@ -77,11 +79,7 @@ const managedRecorderMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("electron", () => ({
-  app: {
-    get isPackaged() {
-      return electronMocks.isPackaged;
-    },
-  },
+  app: {},
   BrowserWindow: electronMocks.BrowserWindow,
   globalShortcut: {
     register: electronMocks.globalShortcutRegister,
@@ -243,6 +241,7 @@ beforeEach(() => {
   managedRecorderMocks.onDidChange.mockReset();
   managedRecorderMocks.onDidChange.mockReturnValue(vi.fn());
   electronMocks.getAllWindows.mockReturnValue([]);
+  setOverlayDevToolsEnabled(false);
   mockDisplay();
   vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
     list: () => [],
@@ -259,7 +258,6 @@ afterEach(() => {
   electronMocks.globalShortcutRegister.mockReset();
   electronMocks.globalShortcutRegister.mockReturnValue(true);
   electronMocks.globalShortcutUnregister.mockReset();
-  electronMocks.isPackaged = true;
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -598,6 +596,41 @@ describe("OverlayWindowsService", () => {
     });
 
     expectContentProtection(false);
+  });
+
+  it("applies overlay DevTools setting changes to existing overlay windows", () => {
+    let handleSettingsChange: ((settings: AppSettings) => void) | null = null;
+    const initialSettings = createDefaultSettings();
+    const overlayWindow = createFakeWindow();
+    electronMocks.getAllWindows.mockReturnValue([overlayWindow]);
+    configureGameOverlayWindow(
+      overlayWindow as unknown as Electron.BrowserWindow,
+    );
+
+    settingsStoreMocks.get.mockReturnValue(initialSettings);
+    settingsStoreMocks.onDidChange.mockImplementation((listener) => {
+      handleSettingsChange = listener;
+      return vi.fn();
+    });
+    new OverlayWindowsService();
+
+    const notifySettingsChange = handleSettingsChange as unknown as (
+      settings: AppSettings,
+    ) => void;
+    notifySettingsChange({
+      ...initialSettings,
+      overlayDevToolsEnabled: true,
+    });
+
+    expect(overlayWindow.webContents.openDevTools).toHaveBeenCalledWith({
+      activate: false,
+      mode: "detach",
+    });
+
+    overlayWindow.webContents.isDevToolsOpened.mockReturnValue(true);
+    notifySettingsChange(initialSettings);
+
+    expect(overlayWindow.webContents.closeDevTools).toHaveBeenCalledOnce();
   });
 
   it("reapplies recorder focus visibility when its setting changes", async () => {
@@ -2647,6 +2680,131 @@ describe("GameOverlayCoordinator", () => {
 });
 
 describe("OverlayWindow shared helpers", () => {
+  it("keeps packaged overlay DevTools available and syncs detached inspectors", () => {
+    const overlayWindow = createFakeWindow();
+    const mainWindow = createFakeWindow({
+      url: "app://-/dashboard?next=aura-overlay",
+    });
+    registerIpcWindowRole(
+      overlayWindow.webContents,
+      WindowName.RecorderOverlay,
+    );
+    electronMocks.getAllWindows.mockReturnValue([overlayWindow, mainWindow]);
+
+    expect(
+      createOverlayWebPreferences(WindowName.RecorderOverlay),
+    ).toMatchObject({
+      additionalArguments: ["--hinekora-window-role=recorder-overlay"],
+      devTools: true,
+    });
+    configureGameOverlayWindow(
+      overlayWindow as unknown as Electron.BrowserWindow,
+    );
+
+    const navigationHandler = overlayWindow.webContents.on.mock.calls.find(
+      ([event]) => event === "will-navigate",
+    )?.[1] as
+      | ((details: { preventDefault(): void; url: string }) => void)
+      | undefined;
+    const preventNavigation = vi.fn();
+    navigationHandler?.({
+      preventDefault: preventNavigation,
+      url: overlayWindow.webContents.getURL(),
+    });
+    expect(preventNavigation).not.toHaveBeenCalled();
+    navigationHandler?.({
+      preventDefault: preventNavigation,
+      url: "https://example.com/untrusted",
+    });
+    expect(preventNavigation).toHaveBeenCalledOnce();
+    const redirectHandler = overlayWindow.webContents.on.mock.calls.find(
+      ([event]) => event === "will-redirect",
+    )?.[1] as ((event: { preventDefault(): void }) => void) | undefined;
+    redirectHandler?.({ preventDefault: preventNavigation });
+    expect(preventNavigation).toHaveBeenCalledTimes(2);
+    expect(
+      overlayWindow.webContents.setWindowOpenHandler.mock.calls[0]?.[0]({
+        url: "https://example.com",
+      }),
+    ).toEqual({ action: "deny" });
+
+    setOverlayDevToolsEnabled(true);
+
+    expect(overlayWindow.webContents.openDevTools).toHaveBeenCalledWith({
+      activate: false,
+      mode: "detach",
+    });
+    expect(mainWindow.webContents.openDevTools).not.toHaveBeenCalled();
+
+    overlayWindow.webContents.isDevToolsOpened.mockReturnValue(true);
+    setOverlayDevToolsEnabled(false);
+
+    expect(overlayWindow.webContents.closeDevTools).toHaveBeenCalledOnce();
+    expect(mainWindow.webContents.closeDevTools).not.toHaveBeenCalled();
+  });
+
+  it("opens DevTools for overlays configured after the setting is enabled", () => {
+    const window = createFakeWindow();
+    const destroyedWindow = createFakeWindow({ destroyed: true });
+    const alreadyOpenWindow = createFakeWindow();
+    alreadyOpenWindow.webContents.isDevToolsOpened.mockReturnValue(true);
+
+    setOverlayDevToolsEnabled(true);
+    configureGameOverlayWindow(window as unknown as Electron.BrowserWindow);
+    configureGameOverlayWindow(
+      destroyedWindow as unknown as Electron.BrowserWindow,
+    );
+    configureGameOverlayWindow(
+      alreadyOpenWindow as unknown as Electron.BrowserWindow,
+    );
+
+    expect(window.webContents.openDevTools).toHaveBeenCalledWith({
+      activate: false,
+      mode: "detach",
+    });
+    expect(destroyedWindow.webContents.openDevTools).not.toHaveBeenCalled();
+    expect(alreadyOpenWindow.webContents.openDevTools).not.toHaveBeenCalled();
+  });
+
+  it("contains overlay DevTools failures", () => {
+    const window = createFakeWindow();
+    registerIpcWindowRole(window.webContents, WindowName.RecorderOverlay);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    window.webContents.openDevTools.mockImplementationOnce(() => {
+      throw new Error("inspector unavailable");
+    });
+
+    setOverlayDevToolsEnabled(true);
+
+    expect(() =>
+      configureGameOverlayWindow(window as unknown as Electron.BrowserWindow),
+    ).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Could not update overlay DevTools"),
+      {
+        enabled: true,
+        error: "inspector unavailable",
+        window: WindowName.RecorderOverlay,
+      },
+    );
+
+    const unregisteredWindow = createFakeWindow();
+    unregisteredWindow.webContents.openDevTools.mockImplementationOnce(() => {
+      throw new Error("unregistered inspector unavailable");
+    });
+    configureGameOverlayWindow(
+      unregisteredWindow as unknown as Electron.BrowserWindow,
+    );
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("Could not update overlay DevTools"),
+      {
+        enabled: true,
+        error: "unregistered inspector unavailable",
+        window: "unknown",
+      },
+    );
+  });
+
   it("shows, hides, and suspends overlay windows without changing destroyed windows", () => {
     const window = createFakeWindow();
     const destroyedWindow = createFakeWindow({ destroyed: true });
@@ -2679,9 +2837,18 @@ describe("OverlayWindow shared helpers", () => {
     expect(destroyedWindow.setAlwaysOnTop).not.toHaveBeenCalled();
   });
 
-  it("recognizes overlay routes", () => {
+  it("recognizes registered overlay windows without URL heuristics", () => {
     const overlayWindow = createFakeWindow();
-    const mainWindow = createFakeWindow({ url: "app://-/dashboard" });
+    const mainWindow = createFakeWindow({
+      url: "app://-/dashboard?next=aura-overlay",
+    });
+    registerIpcWindowRole(
+      overlayWindow.webContents,
+      WindowName.RecorderOverlay,
+    );
+    configureGameOverlayWindow(
+      overlayWindow as unknown as Electron.BrowserWindow,
+    );
 
     expect(
       isOverlayRendererWindow(
@@ -2694,7 +2861,6 @@ describe("OverlayWindow shared helpers", () => {
   });
 
   it("loads renderer URLs and files", async () => {
-    electronMocks.isPackaged = false;
     const window = createFakeWindow();
 
     vi.stubGlobal("MAIN_WINDOW_VITE_DEV_SERVER_URL", "http://localhost:5173");

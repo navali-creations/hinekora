@@ -9,6 +9,12 @@ enum WindowName {
   CropSelectorOverlay = "crop-selector-overlay",
 }
 
+const WINDOW_ROLE_ARGUMENT_PREFIX = "--hinekora-window-role=";
+
+function createWindowRoleArgument(windowName: WindowName): string {
+  return `${WINDOW_ROLE_ARGUMENT_PREFIX}${windowName}`;
+}
+
 type MainWindowOpenEditorClipOptions =
   | {
       title?: string | null;
@@ -20,4 +26,4 @@ type MainWindowOpenEditorClipOptions =
     };
 
 export type { MainWindowOpenEditorClipOptions };
-export { WindowName };
+export { createWindowRoleArgument, WINDOW_ROLE_ARGUMENT_PREFIX, WindowName };

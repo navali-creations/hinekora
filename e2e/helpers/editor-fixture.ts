@@ -1192,6 +1192,7 @@ async function setupEditorE2E(page: Page, options: SetupEditorE2EOptions = {}) {
           "mainWindow",
           {
             isMaximized: async () => false,
+            rendererReady: async () => undefined,
           },
         ),
         managedRecorder: createBridgeDomain<

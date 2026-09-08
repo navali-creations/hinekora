@@ -6,7 +6,7 @@ enum MainWindowChannel {
   IsMaximized = "main-window:is-maximized",
   OpenEditorClip = "main-window:open-editor-clip",
   OpenClip = "main-window:open-clip",
-  OpenDevTools = "main-window:open-devtools",
+  RendererReady = "main-window:renderer-ready",
 }
 
 export { MainWindowChannel };

@@ -5,8 +5,17 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const rendererUrl = process.env.HINEKORA_E2E_RENDERER_URL;
 const preloadPath = process.env.HINEKORA_E2E_PRELOAD_PATH;
 const overlayKind = process.env.HINEKORA_E2E_OVERLAY_KIND ?? "recorder";
+const recorderWindowRoleArgument =
+  process.env.HINEKORA_E2E_RECORDER_WINDOW_ROLE_ARGUMENT;
+const clipPreviewWindowRoleArgument =
+  process.env.HINEKORA_E2E_CLIP_PREVIEW_WINDOW_ROLE_ARGUMENT;
 
-if (!rendererUrl || !preloadPath) {
+if (
+  !rendererUrl ||
+  !preloadPath ||
+  !recorderWindowRoleArgument ||
+  !clipPreviewWindowRoleArgument
+) {
   throw new Error("Native overlay Electron smoke environment is incomplete");
 }
 
@@ -97,6 +106,7 @@ async function createRecorderOverlayWindow() {
     show: false,
     backgroundColor: "#00000000",
     webPreferences: {
+      additionalArguments: [recorderWindowRoleArgument],
       preload: path.resolve(preloadPath),
       nodeIntegration: false,
       contextIsolation: true,
@@ -121,6 +131,7 @@ async function createClipPreviewOverlayWindow() {
     show: true,
     backgroundColor: "#00000000",
     webPreferences: {
+      additionalArguments: [clipPreviewWindowRoleArgument],
       preload: path.resolve(preloadPath),
       nodeIntegration: false,
       contextIsolation: true,

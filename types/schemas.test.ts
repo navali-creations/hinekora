@@ -43,6 +43,7 @@ describe("shared schemas", () => {
       appStartMinimized: false,
       mainWindowBounds: null,
       recorderOverlayBounds: null,
+      overlayDevToolsEnabled: false,
       recorderOverlayShowOnStartup: true,
       recorderOverlayStartMinimized: false,
       recorderOverlayIgnoreGameFocus: false,
@@ -118,6 +119,7 @@ describe("shared schemas", () => {
     expect(appSettingsKeys).toContain("recorderOverlayStartMinimized");
     expect(appSettingsKeys).toContain("recorderOverlayIgnoreGameFocus");
     expect(appSettingsKeys).toContain("auraOverlayIgnoreGameFocus");
+    expect(appSettingsKeys).toContain("overlayDevToolsEnabled");
     expect(appSettingsKeys).toContain("overlayWindowsIncludeInCaptures");
     expect(appSettingsKeys).toContain("auraOverlayEnableSnapping");
     expect(appSettingsKeys).toContain("auraOverlayHideLabels");

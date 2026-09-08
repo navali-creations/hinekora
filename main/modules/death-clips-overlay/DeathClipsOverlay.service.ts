@@ -187,7 +187,7 @@ class DeathClipsOverlayService {
       focusable: true,
       show: false,
       webPreferences: {
-        ...createOverlayWebPreferences(),
+        ...createOverlayWebPreferences(WindowName.ClipPreviewOverlay),
         backgroundThrottling: false,
       },
     });

@@ -1,8 +1,17 @@
 import { execFileSync } from "node:child_process";
-import { resolve } from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import { expect, test } from "@playwright/test";
 import { _electron as electron } from "playwright";
+
+import {
+  createWindowRoleArgument,
+  WindowName,
+} from "~/main/modules/main-window/MainWindow.types";
+
+import type { NativeOverlayDevToolsGlobal } from "~/e2e/helpers/native-overlay-devtools.types";
 
 const projectRoot = resolve(__dirname, "../..");
 const preloadPath = resolve(
@@ -17,54 +26,163 @@ const nativeReplayStatusMainPath = resolve(
   projectRoot,
   ".vite/e2e-native-overlays/native-replay-status-main.js",
 );
+const nativeOverlayDevToolsMainPath = resolve(
+  projectRoot,
+  ".vite/e2e-native-overlays/native-overlay-devtools-main.js",
+);
+const nativeOverlayWindowRoleEnvironment = {
+  HINEKORA_E2E_CLIP_PREVIEW_WINDOW_ROLE_ARGUMENT: createWindowRoleArgument(
+    WindowName.ClipPreviewOverlay,
+  ),
+  HINEKORA_E2E_RECORDER_WINDOW_ROLE_ARGUMENT: createWindowRoleArgument(
+    WindowName.RecorderOverlay,
+  ),
+};
 
 test.beforeAll(() => {
   if (process.platform !== "win32") {
     return;
   }
 
-  execFileSync(
-    process.execPath,
-    [
-      resolve(projectRoot, "node_modules/vite/bin/vite.js"),
-      "build",
-      "--config",
-      "e2e/helpers/vite.native-overlays-preload.config.mts",
-    ],
-    {
+  const vitePath = resolve(projectRoot, "node_modules/vite/bin/vite.js");
+  const fixtureConfigs = [
+    "e2e/helpers/vite.native-overlays-preload.config.mts",
+    "e2e/helpers/vite.native-replay-status-main.config.mts",
+    "e2e/helpers/vite.native-capture-main.config.mts",
+    "e2e/helpers/vite.native-overlay-devtools-main.config.mts",
+  ];
+  for (const config of fixtureConfigs) {
+    execFileSync(process.execPath, [vitePath, "build", "--config", config], {
       cwd: projectRoot,
       stdio: "pipe",
       timeout: 60_000,
-    },
+    });
+  }
+});
+
+test("persists overlay DevTools across native Electron launches", async () => {
+  test.skip(process.platform !== "win32", "Hinekora targets Windows capture");
+
+  const settingsDirectory = mkdtempSync(
+    join(tmpdir(), "hinekora-e2e-settings-"),
   );
-  execFileSync(
-    process.execPath,
-    [
-      resolve(projectRoot, "node_modules/vite/bin/vite.js"),
-      "build",
-      "--config",
-      "e2e/helpers/vite.native-replay-status-main.config.mts",
-    ],
-    {
-      cwd: projectRoot,
-      stdio: "pipe",
-      timeout: 60_000,
-    },
-  );
-  execFileSync(
-    process.execPath,
-    [
-      resolve(projectRoot, "node_modules/vite/bin/vite.js"),
-      "build",
-      "--config",
-      "e2e/helpers/vite.native-capture-main.config.mts",
-    ],
-    {
-      cwd: projectRoot,
-      stdio: "pipe",
-      timeout: 60_000,
-    },
-  );
+  const settingsPath = join(settingsDirectory, "settings.sqlite");
+  const launchApp = () =>
+    electron.launch({
+      args: [nativeOverlayDevToolsMainPath],
+      env: {
+        ...process.env,
+        HINEKORA_E2E_SETTINGS_DB_PATH: settingsPath,
+      },
+    });
+  let electronApp: Awaited<ReturnType<typeof launchApp>> | null = null;
+
+  try {
+    electronApp = await launchApp();
+    const firstApp = electronApp;
+    await expect
+      .poll(() => firstApp.windows().map((window) => window.url()))
+      .toEqual(
+        expect.arrayContaining([
+          expect.stringContaining("#/main"),
+          expect.stringContaining("#/recorder-overlay"),
+        ]),
+      );
+    const overlayWindow = firstApp
+      .windows()
+      .find((window) => window.url().endsWith("#/recorder-overlay"));
+    const controllerWindow = firstApp
+      .windows()
+      .find((window) => window.url().endsWith("#/main"));
+    if (!overlayWindow || !controllerWindow) {
+      throw new Error("Native controller and overlay windows were not created");
+    }
+    await controllerWindow.evaluate(async () => {
+      await window.electron.settings.update({ overlayDevToolsEnabled: true });
+    });
+
+    await expect
+      .poll(() =>
+        firstApp.evaluate(() => {
+          const harness = (globalThis as NativeOverlayDevToolsGlobal)
+            .__HINEKORA_OVERLAY_DEVTOOLS_E2E__;
+          return harness.getState();
+        }),
+      )
+      .toMatchObject({
+        overlays: [
+          {
+            devToolsOpened: true,
+            focused: true,
+          },
+        ],
+      });
+
+    await firstApp.evaluate(async () => {
+      const harness = (globalThis as NativeOverlayDevToolsGlobal)
+        .__HINEKORA_OVERLAY_DEVTOOLS_E2E__;
+      await harness.createOverlay();
+    });
+
+    await expect
+      .poll(() =>
+        firstApp.evaluate(() => {
+          const harness = (globalThis as NativeOverlayDevToolsGlobal)
+            .__HINEKORA_OVERLAY_DEVTOOLS_E2E__;
+          return harness
+            .getState()
+            .overlays.map((overlay) => overlay.devToolsOpened);
+        }),
+      )
+      .toEqual([true, true]);
+
+    await firstApp.close();
+    electronApp = null;
+
+    const relaunchedApp = await launchApp();
+    try {
+      await expect
+        .poll(() =>
+          relaunchedApp.evaluate(() => {
+            const harness = (globalThis as NativeOverlayDevToolsGlobal)
+              .__HINEKORA_OVERLAY_DEVTOOLS_E2E__;
+            return harness
+              .getState()
+              .overlays.map((overlay) => overlay.devToolsOpened);
+          }),
+        )
+        .toEqual([true]);
+
+      const relaunchedController = relaunchedApp
+        .windows()
+        .find((window) => window.url().endsWith("#/main"));
+      expect(relaunchedController).toBeDefined();
+      await relaunchedController!.evaluate(async () => {
+        await window.electron.settings.update({
+          overlayDevToolsEnabled: false,
+        });
+      });
+
+      await expect
+        .poll(() =>
+          relaunchedApp.evaluate(() => {
+            const harness = (globalThis as NativeOverlayDevToolsGlobal)
+              .__HINEKORA_OVERLAY_DEVTOOLS_E2E__;
+            return harness
+              .getState()
+              .overlays.map((overlay) => overlay.devToolsOpened);
+          }),
+        )
+        .toEqual([false]);
+    } finally {
+      await relaunchedApp.close();
+    }
+  } finally {
+    if (electronApp) {
+      await electronApp.close();
+    }
+    rmSync(settingsDirectory, { force: true, recursive: true });
+  }
 });
 
 test("loads the recorder overlay through a native sandboxed window", async ({
@@ -78,6 +196,7 @@ test("loads the recorder overlay through a native sandboxed window", async ({
     ],
     env: {
       ...process.env,
+      ...nativeOverlayWindowRoleEnvironment,
       HINEKORA_E2E_PRELOAD_PATH: preloadPath,
       HINEKORA_E2E_RENDERER_URL: baseURL ?? "http://127.0.0.1:5173",
     },
@@ -142,6 +261,7 @@ test("leaves clip-preview fullscreen and restores its native window bounds", asy
     ],
     env: {
       ...process.env,
+      ...nativeOverlayWindowRoleEnvironment,
       HINEKORA_E2E_OVERLAY_KIND: "clip-preview",
       HINEKORA_E2E_PRELOAD_PATH: preloadPath,
       HINEKORA_E2E_RENDERER_URL: baseURL ?? "http://127.0.0.1:5173",

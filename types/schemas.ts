@@ -685,6 +685,7 @@ export const AppSettingsSchema = z.object({
   appStartMinimized: z.boolean().default(false),
   mainWindowBounds: MainWindowBoundsSchema.nullable().default(null),
   recorderOverlayBounds: RecorderOverlayBoundsSchema.nullable().default(null),
+  overlayDevToolsEnabled: z.boolean().default(false),
   recorderOverlayShowOnStartup: z.boolean().default(true),
   recorderOverlayStartMinimized: z.boolean().default(false),
   recorderOverlayIgnoreGameFocus: z.boolean().default(false),

@@ -7,29 +7,19 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
+import { RendererReadyReporter } from "./components/RendererReadyReporter/RendererReadyReporter";
 import { routeTree } from "./routeTree.gen";
 import "./styles.css";
 import { initTelemetry } from "./telemetry";
+import { getOverlayRendererRoute } from "./utils/overlay-window";
 
 void initTelemetry();
 
 document.documentElement.dataset.theme = "hinekora";
 document.body.dataset.theme = "hinekora";
 
-const overlayRoutes = [
-  { name: "recorder-overlay", routeClassName: null },
-  {
-    name: "replay-status-overlay",
-    routeClassName: "is-replay-status-overlay-route",
-  },
-  { name: "clip-preview-overlay", routeClassName: "is-clip-preview-route" },
-  { name: "crop-selector-overlay", routeClassName: "is-crop-selector-route" },
-  { name: "aura-overlay", routeClassName: "is-aura-overlay-route" },
-] as const;
-const overlayRoute = overlayRoutes.find((route) =>
-  window.location.hash.includes(route.name),
-);
-const isOverlayRoute = overlayRoute !== undefined;
+const overlayRoute = getOverlayRendererRoute(window.location.hash);
+const isOverlayRoute = overlayRoute !== null;
 
 if (overlayRoute?.routeClassName) {
   document.documentElement.classList.add(overlayRoute.routeClassName);
@@ -53,6 +43,7 @@ const renderer = isOverlayRoute ? (
   <App />
 ) : (
   <React.StrictMode>
+    <RendererReadyReporter />
     <RouterProvider router={router} />
   </React.StrictMode>
 );

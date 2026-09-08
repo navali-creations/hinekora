@@ -149,7 +149,9 @@ class GridLinesOverlayService implements GameOverlayParticipant {
       skipTaskbar: true,
       focusable: true,
       show: false,
-      webPreferences: createOverlayWebPreferences(),
+      webPreferences: createOverlayWebPreferences(
+        WindowName.CropSelectorOverlay,
+      ),
     });
 
     const cropSelectorWindow = this.cropSelectorWindow;

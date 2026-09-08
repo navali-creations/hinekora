@@ -29,8 +29,8 @@ const MainWindowAPI = {
     unwrapIpcResult(
       await ipcRenderer.invoke(MainWindowChannel.OpenClip, clipId),
     ),
-  openDevTools: (): Promise<void> =>
-    ipcRenderer.invoke(MainWindowChannel.OpenDevTools),
+  rendererReady: (): Promise<void> =>
+    ipcRenderer.invoke(MainWindowChannel.RendererReady),
 };
 
 export { MainWindowAPI };

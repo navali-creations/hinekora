@@ -139,11 +139,17 @@ class ReplayStatusOverlayService {
       show: false,
       skipTaskbar: true,
       transparent: true,
-      webPreferences: createOverlayWebPreferences(),
+      webPreferences: createOverlayWebPreferences(
+        WindowName.ReplayStatusOverlay,
+      ),
     });
     const webContents = notificationWindow.webContents;
     this.window = notificationWindow;
     this.windowLoaded = false;
+    registerIpcWindowRole(webContents, WindowName.ReplayStatusOverlay);
+    configureGameOverlayWindow(notificationWindow, {
+      contentProtection: this.getContentProtectionEnabled(),
+    });
     this.windowLoadPromise = loadOverlayRenderer(
       notificationWindow,
       `#/${WindowName.ReplayStatusOverlay}?clipId=${encodeURIComponent(clipId)}`,
@@ -156,10 +162,6 @@ class ReplayStatusOverlayService {
       }
     });
 
-    registerIpcWindowRole(webContents, WindowName.ReplayStatusOverlay);
-    configureGameOverlayWindow(notificationWindow, {
-      contentProtection: this.getContentProtectionEnabled(),
-    });
     notificationWindow.setIgnoreMouseEvents(true);
     notificationWindow.on("closed", () => {
       unregisterIpcWindowRole(webContents);

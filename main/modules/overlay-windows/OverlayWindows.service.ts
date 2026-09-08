@@ -32,6 +32,7 @@ import { registerGuardedIpcHandler } from "~/main/utils/ipc-window-roles";
 
 import type { AppSettings, GameId, ReplayClip } from "~/types";
 import { GameOverlayCoordinator } from "./GameOverlayCoordinator";
+import { setOverlayDevToolsEnabled } from "./OverlayWindow.shared";
 import { OverlayWindowsChannel } from "./OverlayWindows.channels";
 import type {
   CropRegionSelection,
@@ -183,6 +184,7 @@ class OverlayWindowsService {
     this.overlayCaptureProtectionSettings = settings;
     this.includeOverlaysInCaptures =
       settings.overlayWindowsIncludeInCaptures === true;
+    setOverlayDevToolsEnabled(settings.overlayDevToolsEnabled);
     this.overlayFocusSettings = settings;
     this.updateManagedRecorderSnapshot({
       captureMode: managedRecorder.getCaptureMode(),
@@ -198,6 +200,7 @@ class OverlayWindowsService {
           nextSettings.overlayWindowsIncludeInCaptures === true;
         this.overlayFocusSettings = nextSettings;
         this.applyOverlayCaptureProtection();
+        setOverlayDevToolsEnabled(nextSettings.overlayDevToolsEnabled);
         if (focusSettingsChanged) {
           void this.coordinator.applyFocusGateToGameOverlays();
         }

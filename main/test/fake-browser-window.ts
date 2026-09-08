@@ -4,9 +4,12 @@ interface FakeBrowserWindowOptions {
   bounds?: Electron.Rectangle;
   destroyed?: boolean;
   focused?: boolean;
+  webContentsId?: number;
   url?: string;
   visible?: boolean;
 }
+
+let nextWebContentsId = 10_000;
 
 function createFakeBrowserWindow(options: FakeBrowserWindowOptions = {}) {
   let visible = options.visible ?? false;
@@ -50,10 +53,14 @@ function createFakeBrowserWindow(options: FakeBrowserWindowOptions = {}) {
       visible = true;
     }),
     webContents: {
+      id: options.webContentsId ?? nextWebContentsId++,
+      closeDevTools: vi.fn(),
       getURL: vi.fn(() => options.url ?? "app://-/recorder-overlay"),
       isDevToolsOpened: vi.fn(() => false),
+      on: vi.fn(),
       openDevTools: vi.fn(),
       send: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
     },
   };
 }

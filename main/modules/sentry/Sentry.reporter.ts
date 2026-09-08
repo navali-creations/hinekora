@@ -29,9 +29,9 @@ function captureSentryException(...args: CaptureExceptionArgs): void {
   reportWithSentry((Sentry) => Sentry.captureException(...args));
 }
 
-async function initSentry(...args: InitArgs): Promise<void> {
+async function initSentry(options: InitArgs[0]): Promise<void> {
   const Sentry = await loadSentryModule();
-  Sentry.init(...args);
+  Sentry.init({ ...options, ipcMode: Sentry.IPCMode.Classic });
 }
 
 export { captureSentryException, formatSentryErrorMessage, initSentry };

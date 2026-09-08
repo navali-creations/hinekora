@@ -244,7 +244,7 @@ class RecordingControlsOverlayService {
       skipTaskbar: true,
       focusable: false,
       show: false,
-      webPreferences: createOverlayWebPreferences(),
+      webPreferences: createOverlayWebPreferences(WindowName.RecorderOverlay),
     });
 
     const recorderWindow = this.recorderWindow;

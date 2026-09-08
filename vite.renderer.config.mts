@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 
 const renderer = resolve(__dirname, "renderer");
 const rendererDependencies = [
@@ -22,7 +22,23 @@ const rendererDependencies = [
   "react-icons/ti",
 ];
 
-export default defineConfig(({ mode }) => ({
+function developmentCspPlugin(command: "build" | "serve"): Plugin {
+  return {
+    name: "hinekora-development-csp",
+    transformIndexHtml(html) {
+      if (command !== "serve") {
+        return html;
+      }
+
+      return html.replace(
+        "connect-src 'self';",
+        "connect-src 'self' ws://localhost:* http://localhost:*;",
+      );
+    },
+  };
+}
+
+export default defineConfig(({ command, mode }) => ({
   root: renderer,
   envDir: __dirname,
   cacheDir: resolve(
@@ -34,6 +50,7 @@ export default defineConfig(({ mode }) => ({
     include: rendererDependencies,
   },
   plugins: [
+    developmentCspPlugin(command),
     tanstackRouter({
       target: "react",
       autoCodeSplitting: true,

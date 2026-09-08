@@ -7,6 +7,10 @@ import {
   createFakeBrowserWindow,
   type FakeBrowserWindowOptions,
 } from "~/main/test/fake-browser-window";
+import {
+  clearIpcWindowRolesForTests,
+  registerIpcWindowRole,
+} from "~/main/utils/ipc-window-roles";
 
 import { createDefaultSettings } from "~/types";
 import { RecordingControlsOverlayService } from "../RecordingControlsOverlay.service";
@@ -74,6 +78,7 @@ function mockPrimaryDisplay(): void {
 }
 
 beforeEach(() => {
+  clearIpcWindowRolesForTests();
   electronMocks.getAllWindows.mockReturnValue([]);
   mockPrimaryDisplay();
   settingsStoreMocks.get.mockReturnValue({
@@ -105,6 +110,10 @@ describe("RecordingControlsOverlayService", () => {
     const destroyedWindow = createFakeWindow({ destroyed: true });
     const overlayWindow = createFakeWindow();
     const mainWindow = createFakeWindow({ url: "app://-/dashboard" });
+    registerIpcWindowRole(
+      overlayWindow.webContents,
+      WindowName.RecorderOverlay,
+    );
     electronMocks.browserWindowFactory.mockReturnValue(recorderWindow);
     electronMocks.getAllWindows.mockReturnValue([
       destroyedWindow as unknown as Electron.BrowserWindow,

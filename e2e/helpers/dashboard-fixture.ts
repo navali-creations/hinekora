@@ -249,6 +249,7 @@ interface DashboardE2EOptions {
   skipDashboardShellChecks?: boolean;
   storageAnalysisAvailability?: StorageAnalysisAvailability;
   initialHash?: string;
+  overlayDevToolsEnabled?: boolean;
 }
 
 function getCurrentE2ELeagueName(
@@ -293,6 +294,8 @@ function createDashboardE2EFixture(
     activeLeague,
     installedGames: setupState.selectedGames,
     lastSeenAppVersion: "0.1.2",
+    overlayDevToolsEnabled:
+      options.overlayDevToolsEnabled ?? defaultSettings.overlayDevToolsEnabled,
     telemetryCrashReporting: false,
     poe1SelectedLeague: selectedLeagues.poe1,
     poe2SelectedLeague: selectedLeagues.poe2,
@@ -1381,6 +1384,7 @@ async function setupDashboardE2E(
                 ...(options?.trim ? { trim: clone(options.trim) } : {}),
               });
             },
+            rendererReady: async () => undefined,
           },
         ),
         managedRecorder: createBridgeDomain<

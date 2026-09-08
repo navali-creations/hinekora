@@ -277,7 +277,7 @@ class AuraManagerOverlaysService {
       skipTaskbar: true,
       focusable: false,
       show: false,
-      webPreferences: createOverlayWebPreferences(),
+      webPreferences: createOverlayWebPreferences(WindowName.AuraOverlay),
     });
 
     const auraWebContents = window.webContents;

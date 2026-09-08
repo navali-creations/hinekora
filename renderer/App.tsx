@@ -1,24 +1,21 @@
 import { useEffect } from "react";
 
+import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { AuraOverlayPage } from "~/renderer/modules/aura-overlay/AuraOverlay.page/AuraOverlay.page";
 import { ClipPreviewOverlayPage } from "~/renderer/modules/clip-preview-overlay/ClipPreviewOverlay.page/ClipPreviewOverlay.page";
 import { CropSelectorOverlayPage } from "~/renderer/modules/crop-selector-overlay/CropSelectorOverlay.page/CropSelectorOverlay.page";
 import { RecorderControlsOverlayPage } from "~/renderer/modules/recorder-controls-overlay/RecorderControlsOverlay.page/RecorderControlsOverlay.page";
 import { ReplayStatusOverlayPage } from "~/renderer/modules/replay-status-overlay/ReplayStatusOverlay.page/ReplayStatusOverlay.page";
 import { useBoundStore } from "~/renderer/store";
+import { getOverlayRendererRoute } from "~/renderer/utils/overlay-window";
 
 function App() {
-  const isRecorderOverlay = window.location.hash.includes("recorder-overlay");
-  const isReplayStatusOverlay = window.location.hash.includes(
-    "replay-status-overlay",
-  );
-  const isClipPreviewOverlay = window.location.hash.includes(
-    "clip-preview-overlay",
-  );
-  const isCropSelectorOverlay = window.location.hash.includes(
-    "crop-selector-overlay",
-  );
-  const isAuraOverlay = window.location.hash.includes("aura-overlay");
+  const windowName = getOverlayRendererRoute(window.location.hash)?.name;
+  const isRecorderOverlay = windowName === WindowName.RecorderOverlay;
+  const isReplayStatusOverlay = windowName === WindowName.ReplayStatusOverlay;
+  const isClipPreviewOverlay = windowName === WindowName.ClipPreviewOverlay;
+  const isCropSelectorOverlay = windowName === WindowName.CropSelectorOverlay;
+  const isAuraOverlay = windowName === WindowName.AuraOverlay;
   const hydrateManagedRecorder = useBoundStore(
     (state) => state.managedRecorder.hydrate,
   );

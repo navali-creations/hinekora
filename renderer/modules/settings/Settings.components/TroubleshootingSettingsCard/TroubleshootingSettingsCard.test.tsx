@@ -4,7 +4,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const settingsMocks = vi.hoisted(() => ({
   editorLogEnabled: false,
+  overlayDevToolsEnabled: false,
   preferenceError: null as string | null,
+  overlayDevToolsPreferenceError: null as string | null,
   update: vi.fn(),
 }));
 
@@ -15,9 +17,18 @@ vi.mock("~/renderer/store", () => ({
         ...(settingsMocks.preferenceError
           ? { editorLogEnabled: settingsMocks.preferenceError }
           : {}),
+        ...(settingsMocks.overlayDevToolsPreferenceError
+          ? {
+              overlayDevToolsEnabled:
+                settingsMocks.overlayDevToolsPreferenceError,
+            }
+          : {}),
       },
       updatePreference: settingsMocks.update,
-      value: { editorLogEnabled: settingsMocks.editorLogEnabled },
+      value: {
+        editorLogEnabled: settingsMocks.editorLogEnabled,
+        overlayDevToolsEnabled: settingsMocks.overlayDevToolsEnabled,
+      },
     }),
 }));
 
@@ -26,7 +37,6 @@ import { TroubleshootingSettingsCard } from "./TroubleshootingSettingsCard";
 let container: HTMLDivElement;
 let root: Root;
 const revealLogFile = vi.fn();
-const openDevTools = vi.fn();
 
 function getButtonByText(label: string): HTMLButtonElement {
   const button = [
@@ -51,18 +61,16 @@ describe("TroubleshootingSettingsCard", () => {
     document.body.append(container);
     root = createRoot(container);
     settingsMocks.editorLogEnabled = false;
+    settingsMocks.overlayDevToolsEnabled = false;
     settingsMocks.preferenceError = null;
+    settingsMocks.overlayDevToolsPreferenceError = null;
     settingsMocks.update.mockResolvedValue(true);
     revealLogFile.mockResolvedValue({ success: true });
-    openDevTools.mockResolvedValue(undefined);
     Object.defineProperty(window, "electron", {
       configurable: true,
       value: {
         diagLog: {
           revealLogFile,
-        },
-        mainWindow: {
-          openDevTools,
         },
       },
     });
@@ -102,31 +110,6 @@ describe("TroubleshootingSettingsCard", () => {
     expect(revealLogFile).toHaveBeenCalledTimes(1);
   });
 
-  it("opens developer tools through preload", async () => {
-    await renderCard();
-    const button = getButtonByText("Open DevTools");
-
-    await act(async () => {
-      button.click();
-    });
-
-    expect(container.textContent).toContain("Developer Tools");
-    expect(openDevTools).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows a failure message when developer tools cannot be opened", async () => {
-    openDevTools.mockRejectedValueOnce(new Error("devtools failed"));
-    await renderCard();
-    const button = getButtonByText("Open DevTools");
-
-    await act(async () => {
-      button.click();
-    });
-
-    expect(container.textContent).toContain("Could not open developer tools.");
-    expect(openDevTools).toHaveBeenCalledTimes(1);
-  });
-
   it("persists the editor log toggle", async () => {
     await renderCard();
     const toggle = container.querySelector<HTMLInputElement>(
@@ -138,6 +121,55 @@ describe("TroubleshootingSettingsCard", () => {
     });
 
     expect(settingsMocks.update).toHaveBeenCalledWith("editorLogEnabled", true);
+  });
+
+  it("persists the overlay Developer Tools toggle", async () => {
+    await renderCard();
+    const toggle = container.querySelector<HTMLInputElement>(
+      'input[aria-label="Overlay Developer Tools"]',
+    );
+
+    await act(async () => {
+      toggle?.click();
+    });
+
+    expect(settingsMocks.update).toHaveBeenCalledWith(
+      "overlayDevToolsEnabled",
+      true,
+    );
+  });
+
+  it("restores the persisted overlay Developer Tools preference", async () => {
+    settingsMocks.overlayDevToolsEnabled = true;
+
+    await renderCard();
+
+    expect(
+      container.querySelector<HTMLInputElement>(
+        'input[aria-label="Overlay Developer Tools"]',
+      )?.checked,
+    ).toBe(true);
+  });
+
+  it("reports when the overlay Developer Tools toggle cannot be saved", async () => {
+    settingsMocks.update.mockResolvedValueOnce(false);
+    await renderCard();
+
+    await act(async () => {
+      container
+        .querySelector<HTMLInputElement>(
+          'input[aria-label="Overlay Developer Tools"]',
+        )
+        ?.click();
+    });
+
+    settingsMocks.overlayDevToolsPreferenceError =
+      "Could not save this preference.";
+    await renderCard();
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toBe(
+      "Could not save this preference.",
+    );
   });
 
   it("reports when the editor log toggle cannot be saved", async () => {

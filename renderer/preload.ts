@@ -1,4 +1,5 @@
 import { contextBridge } from "electron";
+import "@sentry/electron/preload";
 
 import { AppAPI } from "~/main/modules/app/App.api";
 import { AppSetupAPI } from "~/main/modules/app-setup/AppSetup.api";
@@ -10,6 +11,7 @@ import { DiagLogAPI } from "~/main/modules/diag-log/DiagLog.api";
 import { EditorAPI } from "~/main/modules/editor/Editor.api";
 import { KeybindsAPI } from "~/main/modules/keybinds/Keybinds.api";
 import { MainWindowAPI } from "~/main/modules/main-window/MainWindow.api";
+import { WindowName } from "~/main/modules/main-window/MainWindow.types";
 import { ManagedRecorderAPI } from "~/main/modules/managed-recorder/ManagedRecorder.api";
 import { OverlayWindowsAPI } from "~/main/modules/overlay-windows/OverlayWindows.api";
 import { PoeLeaguesAPI } from "~/main/modules/poe-leagues/PoeLeagues.api";
@@ -29,6 +31,10 @@ import {
 import { StateTransferAPI } from "~/main/modules/state-transfer/StateTransfer.api";
 import { StorageAPI } from "~/main/modules/storage/Storage.api";
 import { UpdaterAPI } from "~/main/modules/updater/Updater.api";
+import {
+  isTrustedRendererUrl,
+  readPreloadWindowName,
+} from "~/renderer/preload.utils";
 
 const fullApi = {
   app: AppAPI,
@@ -56,14 +62,14 @@ const fullApi = {
   updater: UpdaterAPI,
 };
 
-function createScopedApi(hash: string) {
-  if (hash.includes("replay-status-overlay")) {
+function createScopedApi(windowName: WindowName) {
+  if (windowName === WindowName.ReplayStatusOverlay) {
     return {
       replayStatusOverlay: ReplayStatusOverlayAPI,
     };
   }
 
-  if (hash.includes("recorder-overlay")) {
+  if (windowName === WindowName.RecorderOverlay) {
     return {
       managedRecorder: {
         getCaptureMode: ManagedRecorderAPI.getCaptureMode,
@@ -103,7 +109,7 @@ function createScopedApi(hash: string) {
     };
   }
 
-  if (hash.includes("clip-preview-overlay")) {
+  if (windowName === WindowName.ClipPreviewOverlay) {
     return {
       diagLog: {
         writeClipPreviewEvent: DiagLogAPI.writeClipPreviewEvent,
@@ -132,7 +138,7 @@ function createScopedApi(hash: string) {
     };
   }
 
-  if (hash.includes("aura-overlay")) {
+  if (windowName === WindowName.AuraOverlay) {
     return {
       capturePreview: {
         listSources: CapturePreviewAPI.listSources,
@@ -164,7 +170,7 @@ function createScopedApi(hash: string) {
     };
   }
 
-  if (hash.includes("crop-selector-overlay")) {
+  if (windowName === WindowName.CropSelectorOverlay) {
     return {
       overlayWindows: {
         completeCropRegionSelection:
@@ -174,7 +180,7 @@ function createScopedApi(hash: string) {
     };
   }
 
-  return fullApi;
+  return windowName === WindowName.Main ? fullApi : {};
 }
 
 type NormalizeExposedMethod<T> = T extends (...args: infer Args) => infer Result
@@ -195,7 +201,10 @@ type ReplayStatusOverlayElectronAPI = NormalizeExposedMethod<{
   replayStatusOverlay: typeof ReplayStatusOverlayAPI;
 }>;
 
-const api: ElectronAPI = createScopedApi(globalThis.location?.hash ?? "");
+const trustedRenderer = isTrustedRendererUrl(globalThis.location?.href ?? "");
+const windowName = readPreloadWindowName(process.argv);
+const api: ElectronAPI =
+  trustedRenderer && windowName ? createScopedApi(windowName) : {};
 
 contextBridge.exposeInMainWorld("electron", api);
 

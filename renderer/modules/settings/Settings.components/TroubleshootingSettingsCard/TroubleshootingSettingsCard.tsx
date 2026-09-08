@@ -1,23 +1,30 @@
 import { type ChangeEvent, useCallback, useState } from "react";
-import { FiFileText, FiTerminal } from "react-icons/fi";
+import { FiFileText } from "react-icons/fi";
 
 import { useSettingsShallow } from "~/renderer/store";
 
+import { SettingsToggleRow } from "../SettingsToggleRow/SettingsToggleRow";
+
 type DiagnosticLogStatus = "idle" | "opening" | "error";
-type DevToolsStatus = "idle" | "opening" | "error";
 
 function TroubleshootingSettingsCard() {
   const [diagnosticLogStatus, setDiagnosticLogStatus] =
     useState<DiagnosticLogStatus>("idle");
-  const [devToolsStatus, setDevToolsStatus] = useState<DevToolsStatus>("idle");
   const isOpeningDiagnosticLog = diagnosticLogStatus === "opening";
-  const isOpeningDevTools = devToolsStatus === "opening";
-  const { editorLogError, isEditorLogEnabled, updatePreference } =
-    useSettingsShallow((settings) => ({
-      editorLogError: settings.preferenceErrors.editorLogEnabled ?? null,
-      isEditorLogEnabled: settings.value?.editorLogEnabled ?? false,
-      updatePreference: settings.updatePreference,
-    }));
+  const {
+    editorLogError,
+    isEditorLogEnabled,
+    isOverlayDevToolsEnabled,
+    overlayDevToolsError,
+    updatePreference,
+  } = useSettingsShallow((settings) => ({
+    editorLogError: settings.preferenceErrors.editorLogEnabled ?? null,
+    isEditorLogEnabled: settings.value?.editorLogEnabled ?? false,
+    isOverlayDevToolsEnabled: settings.value?.overlayDevToolsEnabled ?? false,
+    overlayDevToolsError:
+      settings.preferenceErrors.overlayDevToolsEnabled ?? null,
+    updatePreference: settings.updatePreference,
+  }));
 
   const handleOpenDiagnosticLog = useCallback(async () => {
     setDiagnosticLogStatus("opening");
@@ -30,21 +37,14 @@ function TroubleshootingSettingsCard() {
     }
   }, []);
 
-  const handleOpenDevTools = useCallback(async () => {
-    setDevToolsStatus("opening");
+  const handleEditorLogChange = (event: ChangeEvent<HTMLInputElement>) => {
+    void updatePreference("editorLogEnabled", event.target.checked);
+  };
 
-    try {
-      await window.electron.mainWindow.openDevTools();
-      setDevToolsStatus("idle");
-    } catch {
-      setDevToolsStatus("error");
-    }
-  }, []);
-
-  const handleEditorLogChange = async (
+  const handleOverlayDevToolsChange = (
     event: ChangeEvent<HTMLInputElement>,
   ) => {
-    await updatePreference("editorLogEnabled", event.target.checked);
+    void updatePreference("overlayDevToolsEnabled", event.target.checked);
   };
 
   return (
@@ -78,54 +78,27 @@ function TroubleshootingSettingsCard() {
           </button>
         </div>
 
-        <label className="flex cursor-pointer items-center justify-between gap-4 py-3">
-          <span className="min-w-0 [text-wrap:wrap]">
-            <span className="block font-bold text-base-content text-sm">
-              Editor log
-            </span>
-            <span className="mt-1 block text-base-content/60 text-sm">
-              Show the editor Debug action for copying workspace state when
-              diagnosing editor issues.
-            </span>
-            {editorLogError && (
-              <span className="mt-2 block text-error text-xs" role="status">
-                {editorLogError}
-              </span>
-            )}
-          </span>
-          <input
-            aria-label="Editor log"
-            checked={isEditorLogEnabled}
-            className="toggle toggle-primary toggle-sm shrink-0"
-            type="checkbox"
-            onChange={handleEditorLogChange}
-          />
-        </label>
+        <SettingsToggleRow
+          ariaLabel="Editor log"
+          checked={isEditorLogEnabled}
+          description="Show the editor Debug action for copying workspace state when diagnosing editor issues."
+          label="Editor log"
+          statusClassName="text-error"
+          statusLabel={editorLogError}
+          statusRole="alert"
+          onChange={handleEditorLogChange}
+        />
 
-        <div className="flex items-center justify-between gap-4 py-3">
-          <div className="min-w-0 [text-wrap:wrap]">
-            <h2 className="m-0 font-bold text-base-content text-sm">
-              Developer Tools
-            </h2>
-            <p className="mt-1 mb-0 text-base-content/60 text-sm">
-              Open the app inspector for checking renderer logs and UI state.
-            </p>
-            {devToolsStatus === "error" ? (
-              <p className="mt-2 mb-0 text-error text-xs" role="status">
-                Could not open developer tools.
-              </p>
-            ) : null}
-          </div>
-          <button
-            className="btn btn-secondary btn-sm shrink-0 gap-2"
-            disabled={isOpeningDevTools}
-            type="button"
-            onClick={handleOpenDevTools}
-          >
-            <FiTerminal size={15} />
-            {isOpeningDevTools ? "Opening..." : "Open DevTools"}
-          </button>
-        </div>
+        <SettingsToggleRow
+          ariaLabel="Overlay Developer Tools"
+          checked={isOverlayDevToolsEnabled}
+          description="Open a separate Developer Tools window for every overlay, including overlays opened while this setting is enabled."
+          label="Overlay Developer Tools"
+          statusClassName="text-error"
+          statusLabel={overlayDevToolsError}
+          statusRole="alert"
+          onChange={handleOverlayDevToolsChange}
+        />
       </div>
     </section>
   );

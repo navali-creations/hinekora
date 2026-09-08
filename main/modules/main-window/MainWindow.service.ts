@@ -5,7 +5,7 @@ import { app, BrowserWindow, Menu, screen, shell } from "electron";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { TrayService } from "~/main/modules/tray";
 import { UpdaterService } from "~/main/modules/updater";
-import { logWarn } from "~/main/utils/app-log";
+import { logInfo, logWarn } from "~/main/utils/app-log";
 import { validateBoundsOnDisplays } from "~/main/utils/display-geometry";
 import {
   assertNumber,
@@ -20,6 +20,8 @@ import {
   registerIpcWindowRole,
   unregisterIpcWindowRole,
 } from "~/main/utils/ipc-window-roles";
+import { registerRendererFailureDiagnostics } from "~/main/utils/renderer-diagnostics";
+import { isCurrentRendererDocument } from "~/main/utils/renderer-navigation";
 
 import {
   HINEKORA_DISCORD_URL,
@@ -29,6 +31,7 @@ import {
 } from "~/types";
 import { MainWindowChannel } from "./MainWindow.channels";
 import {
+  createWindowRoleArgument,
   type MainWindowOpenEditorClipOptions,
   WindowName,
 } from "./MainWindow.types";
@@ -43,6 +46,7 @@ const MAIN_WINDOW_DEFAULT_WIDTH = 1200;
 const MAIN_WINDOW_DEFAULT_HEIGHT = 800;
 const MAIN_WINDOW_BOUNDS_MIN_OVERLAP = 100;
 const MAIN_WINDOW_BOUNDS_SAVE_DEBOUNCE_MS = 500;
+const MAIN_WINDOW_RENDERER_READY_TIMEOUT_MS = 30_000;
 
 class MainWindowService {
   private static instance: MainWindowService | null = null;
@@ -53,6 +57,9 @@ class MainWindowService {
   private debouncedSaveBoundsTimer: ReturnType<typeof setTimeout> | null = null;
   private boundsMovedHandler: (() => void) | null = null;
   private boundsResizedHandler: (() => void) | null = null;
+  private rendererNavigationStartedAt = Date.now();
+  private rendererReady = false;
+  private rendererReadyTimer: ReturnType<typeof setTimeout> | null = null;
 
   static getInstance(): MainWindowService {
     if (!MainWindowService.instance) {
@@ -96,6 +103,7 @@ class MainWindowService {
       title: "Hinekora",
       show: false,
       webPreferences: {
+        additionalArguments: [createWindowRoleArgument(WindowName.Main)],
         preload: join(currentDir, "preload.js"),
         nodeIntegration: false,
         contextIsolation: true,
@@ -105,12 +113,18 @@ class MainWindowService {
     const mainWindow = this.mainWindow;
     const mainWindowWebContents = mainWindow.webContents;
     registerIpcWindowRole(mainWindowWebContents, WindowName.Main);
+    registerRendererFailureDiagnostics(mainWindowWebContents, {
+      logScope: MAIN_WINDOW_LOG_SCOPE,
+      windowKind: "Main window",
+    });
+    this.prepareRendererNavigation();
 
     mainWindow.once("ready-to-show", () => {
       if (mainWindow.isDestroyed()) {
         return;
       }
 
+      this.startRendererReadyWatchdog(mainWindow);
       if (this.shouldStartMinimized()) {
         return;
       }
@@ -119,10 +133,27 @@ class MainWindowService {
     });
     mainWindowWebContents.setWindowOpenHandler(({ url }) => {
       if (isAllowedExternalUrl(url)) {
-        void shell.openExternal(url);
+        this.openExternalUrl(url);
       }
 
       return { action: "deny" };
+    });
+    mainWindowWebContents.on("will-navigate", (details) => {
+      // Vite performs a full reload after its first dependency optimization.
+      // An exact document reload keeps the same trusted preload boundary.
+      if (isCurrentRendererDocument(mainWindowWebContents, details.url)) {
+        this.prepareRendererNavigation();
+        this.startRendererReadyWatchdog(mainWindow);
+        return;
+      }
+
+      details.preventDefault();
+      if (isAllowedExternalUrl(details.url)) {
+        this.openExternalUrl(details.url);
+      }
+    });
+    mainWindowWebContents.on("will-redirect", (event) => {
+      event.preventDefault();
     });
     mainWindow.on("close", (event) => {
       if (this.isQuitting) {
@@ -139,6 +170,7 @@ class MainWindowService {
       this.quitApplication();
     });
     mainWindow.on("closed", () => {
+      this.clearRendererReadyWatchdog();
       this.removeBoundsListeners(mainWindow);
       unregisterIpcWindowRole(mainWindowWebContents);
       if (this.mainWindow === mainWindow) {
@@ -254,10 +286,10 @@ class MainWindowService {
     );
 
     registerGuardedIpcHandler(
-      MainWindowChannel.OpenDevTools,
+      MainWindowChannel.RendererReady,
       [WindowName.Main],
       () => {
-        this.openMainWindowDevTools();
+        this.handleRendererReady();
       },
     );
   }
@@ -428,10 +460,8 @@ class MainWindowService {
     mainWindow.focus();
   }
 
-  private openMainWindowDevTools(
-    mainWindow: BrowserWindow | null = this.mainWindow,
-  ): void {
-    if (!mainWindow || mainWindow.isDestroyed()) {
+  private openMainWindowDevTools(mainWindow: BrowserWindow): void {
+    if (mainWindow.isDestroyed()) {
       return;
     }
 
@@ -454,14 +484,22 @@ class MainWindowService {
   private createTray(): void {
     TrayService.getInstance().createTray({
       openDiscord: () => {
-        void shell.openExternal(HINEKORA_DISCORD_URL);
+        this.openExternalUrl(HINEKORA_DISCORD_URL);
       },
       openGitHub: () => {
-        void shell.openExternal(HINEKORA_GITHUB_URL);
+        this.openExternalUrl(HINEKORA_GITHUB_URL);
       },
       openHelp: () => this.openSettingsHelp(),
       showMainWindow: () => this.showMainWindow(),
       quitApplication: () => this.quitApplication(),
+    });
+  }
+
+  private openExternalUrl(url: string): void {
+    void shell.openExternal(url).catch((error) => {
+      logWarn(MAIN_WINDOW_LOG_SCOPE, "Could not open external URL", {
+        error: safeErrorMessage(error),
+      });
     });
   }
 
@@ -567,6 +605,61 @@ class MainWindowService {
     }
   }
 
+  private prepareRendererNavigation(): void {
+    this.clearRendererReadyWatchdog();
+    this.rendererNavigationStartedAt = Date.now();
+    this.rendererReady = false;
+  }
+
+  private startRendererReadyWatchdog(mainWindow: BrowserWindow): void {
+    if (
+      this.rendererReady ||
+      this.rendererReadyTimer ||
+      mainWindow.isDestroyed()
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      this.rendererReadyTimer = null;
+      if (
+        this.rendererReady ||
+        this.mainWindow !== mainWindow ||
+        mainWindow.isDestroyed()
+      ) {
+        return;
+      }
+
+      logWarn(MAIN_WINDOW_LOG_SCOPE, "Main renderer did not report ready", {
+        timeoutMs: MAIN_WINDOW_RENDERER_READY_TIMEOUT_MS,
+      });
+    }, MAIN_WINDOW_RENDERER_READY_TIMEOUT_MS);
+    timer.unref?.();
+    this.rendererReadyTimer = timer;
+  }
+
+  private handleRendererReady(): void {
+    const mainWindow = this.mainWindow;
+    if (!mainWindow || mainWindow.isDestroyed() || this.rendererReady) {
+      return;
+    }
+
+    this.rendererReady = true;
+    this.clearRendererReadyWatchdog();
+    logInfo(MAIN_WINDOW_LOG_SCOPE, "Main renderer ready", {
+      elapsedMs: Math.max(0, Date.now() - this.rendererNavigationStartedAt),
+    });
+  }
+
+  private clearRendererReadyWatchdog(): void {
+    if (!this.rendererReadyTimer) {
+      return;
+    }
+
+    clearTimeout(this.rendererReadyTimer);
+    this.rendererReadyTimer = null;
+  }
+
   private async loadRenderer(window: BrowserWindow): Promise<void> {
     if (
       typeof MAIN_WINDOW_VITE_DEV_SERVER_URL !== "undefined" &&
@@ -620,6 +713,8 @@ class MainWindowService {
 
       if (shouldReload) {
         event.preventDefault();
+        this.prepareRendererNavigation();
+        this.startRendererReadyWatchdog(window);
         window.webContents.reloadIgnoringCache();
         return;
       }

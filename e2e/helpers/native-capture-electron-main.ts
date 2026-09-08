@@ -8,6 +8,10 @@ import {
   CapturePreviewDisplayMediaAuthorizer,
   registerCapturePreviewDisplayMediaHandler,
 } from "~/main/modules/capture-preview/CapturePreview.display-media";
+import {
+  createWindowRoleArgument,
+  WindowName,
+} from "~/main/modules/main-window/MainWindow.types";
 
 const preloadPath = process.env.HINEKORA_E2E_PRELOAD_PATH;
 
@@ -73,6 +77,7 @@ async function createCaptureHandshakeWindows(): Promise<void> {
     title: "Hinekora Native Capture Probe",
     width: 280,
     webPreferences: {
+      additionalArguments: [createWindowRoleArgument(WindowName.AuraOverlay)],
       preload: resolvedPreloadPath,
       nodeIntegration: false,
       contextIsolation: true,

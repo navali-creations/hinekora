@@ -826,6 +826,24 @@ test("persists per-overlay game focus preferences", async ({ page }) => {
     );
 });
 
+test("restores and persists overlay Developer Tools", async ({ page }) => {
+  await setupDashboardE2E(page, {
+    initialHash: "/#/settings?tab=troubleshooting",
+    overlayDevToolsEnabled: true,
+    skipDashboardShellChecks: true,
+  });
+
+  const toggle = page.getByLabel("Overlay Developer Tools");
+  await expect(toggle).toBeChecked();
+
+  await toggle.click();
+  await expect(toggle).not.toBeChecked();
+
+  await expect
+    .poll(async () => (await getDashboardE2ECalls(page)).settingsUpdates)
+    .toContainEqual({ overlayDevToolsEnabled: false });
+});
+
 test("shows and copies the pseudonymous user ID from privacy settings", async ({
   page,
 }) => {

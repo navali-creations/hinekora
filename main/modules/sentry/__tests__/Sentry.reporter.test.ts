@@ -25,6 +25,7 @@ describe("Sentry reporter", () => {
   it("initializes the Sentry SDK", async () => {
     vi.resetModules();
     const sentry = {
+      IPCMode: { Classic: 1 },
       captureException: vi.fn(),
       captureMessage: vi.fn(),
       close: vi.fn().mockResolvedValue(true),
@@ -36,7 +37,7 @@ describe("Sentry reporter", () => {
 
     await reporter.initSentry(options);
 
-    expect(sentry.init).toHaveBeenCalledWith(options);
+    expect(sentry.init).toHaveBeenCalledWith({ ...options, ipcMode: 1 });
   });
 
   it("logs lazy capture failures without throwing", async () => {

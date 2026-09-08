@@ -1,31 +1,82 @@
 import { join } from "node:path";
 
-import { app, type BrowserWindow } from "electron";
+import { BrowserWindow } from "electron";
 
-import { WindowName } from "~/main/modules/main-window/MainWindow.types";
+import {
+  createWindowRoleArgument,
+  WindowName,
+} from "~/main/modules/main-window/MainWindow.types";
+import { logWarn } from "~/main/utils/app-log";
+import { safeErrorMessage } from "~/main/utils/ipc-validation";
+import { getIpcWindowRole } from "~/main/utils/ipc-window-roles";
+import { registerRendererFailureDiagnostics } from "~/main/utils/renderer-diagnostics";
+import { isCurrentRendererDocument } from "~/main/utils/renderer-navigation";
 
 const currentDir = __dirname;
 const OVERLAY_TOPMOST_LEVEL = 1;
-const OVERLAY_ROUTE_NAMES = [
-  WindowName.RecorderOverlay,
-  WindowName.ReplayStatusOverlay,
-  WindowName.ClipPreviewOverlay,
-  WindowName.CropSelectorOverlay,
-  WindowName.AuraOverlay,
-];
+const OVERLAY_WINDOWS_SCOPE = "overlay-windows";
+const configuredOverlayWindows = new WeakSet<BrowserWindow>();
+let overlayDevToolsEnabled: boolean | undefined;
 
 interface GameOverlayWindowOptions {
   contentProtection?: boolean;
 }
 
-function createOverlayWebPreferences(): Electron.WebPreferences {
+function createOverlayWebPreferences(
+  windowName: Exclude<WindowName, WindowName.Main>,
+): Electron.WebPreferences {
   return {
+    additionalArguments: [createWindowRoleArgument(windowName)],
     preload: join(currentDir, "preload.js"),
     nodeIntegration: false,
     contextIsolation: true,
-    devTools: !app.isPackaged,
+    // The persisted troubleshooting toggle may attach after a packaged overlay
+    // is created, so capability stays available while visibility is gated below.
+    devTools: true,
     sandbox: true,
   };
+}
+
+function syncOverlayDevToolsForWindow(
+  window: BrowserWindow,
+  enabled: boolean,
+): void {
+  if (window.isDestroyed()) {
+    return;
+  }
+
+  try {
+    if (enabled) {
+      if (!window.webContents.isDevToolsOpened()) {
+        window.webContents.openDevTools({ activate: false, mode: "detach" });
+      }
+      return;
+    }
+
+    if (window.webContents.isDevToolsOpened()) {
+      window.webContents.closeDevTools();
+    }
+  } catch (error) {
+    logWarn(OVERLAY_WINDOWS_SCOPE, "Could not update overlay DevTools", {
+      enabled,
+      error: safeErrorMessage(error),
+      window: getIpcWindowRole({ sender: window.webContents }) ?? "unknown",
+    });
+  }
+}
+
+function setOverlayDevToolsEnabled(enabled: boolean): void {
+  if (overlayDevToolsEnabled === enabled) {
+    return;
+  }
+
+  overlayDevToolsEnabled = enabled;
+
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (configuredOverlayWindows.has(window)) {
+      syncOverlayDevToolsForWindow(window, enabled);
+    }
+  }
 }
 
 function applyGameOverlayContentProtection(
@@ -43,6 +94,25 @@ function configureGameOverlayWindow(
   window: BrowserWindow,
   options: GameOverlayWindowOptions = {},
 ): void {
+  if (!configuredOverlayWindows.has(window)) {
+    const windowRole = getIpcWindowRole({ sender: window.webContents });
+    registerRendererFailureDiagnostics(window.webContents, {
+      logScope: OVERLAY_WINDOWS_SCOPE,
+      windowKind: windowRole ? `${windowRole} window` : "Overlay window",
+    });
+    window.webContents.on("will-navigate", (details) => {
+      if (isCurrentRendererDocument(window.webContents, details.url)) {
+        return;
+      }
+
+      details.preventDefault();
+    });
+    window.webContents.on("will-redirect", (event) => {
+      event.preventDefault();
+    });
+    window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  }
+  configuredOverlayWindows.add(window);
   window.setAlwaysOnTop(true, "screen-saver", OVERLAY_TOPMOST_LEVEL);
   window.setVisibleOnAllWorkspaces(true, {
     visibleOnFullScreen: true,
@@ -52,6 +122,7 @@ function configureGameOverlayWindow(
   if (options.contentProtection !== undefined) {
     applyGameOverlayContentProtection(window, options.contentProtection);
   }
+  syncOverlayDevToolsForWindow(window, overlayDevToolsEnabled === true);
 }
 
 function showGameOverlayWindow(window: BrowserWindow | null): void {
@@ -119,9 +190,8 @@ async function loadOverlayRenderer(
 }
 
 function isOverlayRendererWindow(window: BrowserWindow): boolean {
-  const url = window.webContents.getURL();
-
-  return OVERLAY_ROUTE_NAMES.some((routeName) => url.includes(routeName));
+  const role = getIpcWindowRole({ sender: window.webContents });
+  return role !== null && role !== WindowName.Main;
 }
 
 export {
@@ -132,6 +202,7 @@ export {
   hideGameOverlayWindow,
   isOverlayRendererWindow,
   loadOverlayRenderer,
+  setOverlayDevToolsEnabled,
   showGameOverlayWindow,
   suspendGameOverlayWindow,
 };
