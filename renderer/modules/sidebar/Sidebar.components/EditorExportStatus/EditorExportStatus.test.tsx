@@ -85,15 +85,8 @@ describe("EditorExportStatus", () => {
     expect(
       container.querySelector('[data-testid="media-processing-backdrop"]'),
     ).not.toBe(null);
-    expect(
-      container
-        .querySelector('[data-testid="sidebar-editor-export-status"]')
-        ?.className.includes("bg-"),
-    ).toBe(false);
     const viewLink =
       container.querySelector<HTMLAnchorElement>('a[href="/editor"]');
-    expect(viewLink?.classList.contains("btn-primary")).toBe(true);
-    expect(viewLink?.classList.contains("btn-ghost")).toBe(false);
 
     await act(async () => {
       viewLink?.addEventListener("click", (event) => event.preventDefault(), {

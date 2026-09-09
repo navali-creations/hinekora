@@ -60,8 +60,7 @@ function EditorExportStatus() {
   return (
     <section
       aria-label="Background video processing"
-      className="isolate overflow-hidden rounded border border-base-content/15 p-2"
-      data-testid="sidebar-editor-export-status"
+      className="relative isolate overflow-hidden rounded border border-base-content/15 p-2"
     >
       <MediaProcessingBackdrop />
       <div className="relative z-[1] grid gap-2">
