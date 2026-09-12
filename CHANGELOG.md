@@ -1,3 +1,21 @@
+## 0.16.1
+
+### Patch Changes
+
+- [`5e56e0e`](https://github.com/navali-creations/hinekora/commit/5e56e0e1af0418b2a1ca2b1d4aa73d26374e702c) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Keep the video-saving animation inside its sidebar status card.
+
+  The animated background shown while a video is being saved or after it finishes no longer spreads across the entire sidebar.
+
+- [`3eef403`](https://github.com/navali-creations/hinekora/commit/3eef403be9c60e87246a59ffe20ae109deb6aba5) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Added:** Inspect every Hinekora overlay in its own Developer Tools window.
+
+  Turn on **Overlay Developer Tools** in Troubleshooting settings to inspect existing overlays immediately and automatically inspect overlays opened afterward. The preference remains enabled after restarting Hinekora.
+
+  This is mainly an enabling feature for maintainers of Hinekora to help them debug users' Windows-Electron related issues.
+
 ## 0.16.0
 
 ### Minor Changes
