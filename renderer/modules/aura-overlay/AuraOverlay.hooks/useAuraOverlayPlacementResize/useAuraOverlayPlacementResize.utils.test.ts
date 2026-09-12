@@ -175,42 +175,43 @@ describe("useAuraOverlayPlacementResize utilities", () => {
     ).toMatchObject({ scale: 1.5, x: 225, y: 263 });
   });
 
-  it.each([
-    90, 270,
-  ] as const)("snaps a %i-degree rectangular aura using its visual axes", (rotationDegrees) => {
-    const rotatedCrop = { ...crop, height: 20 };
-    const rotatedPlacement = { ...placement, rotationDegrees };
-    const rotatedScaleSnapContext = createAuraOverlayScaleSnapContext({
-      crop: rotatedCrop,
-      placement: rotatedPlacement,
-      profile: {
-        ...profile,
-        cropRegions: [rotatedCrop],
-        overlayPlacements: [
-          rotatedPlacement,
-          {
-            ...rotatedPlacement,
-            id: "placement-2",
-            scale: 1.5,
-            x: 600,
-          },
-        ],
-      },
-      referenceViewport: viewport,
-      targetViewport: viewport,
-    });
-
-    expect(
-      resizeAuraPlacementWithPeerScaleSnap({
-        corner: "se",
+  it.each([90, 270] as const)(
+    "snaps a %i-degree rectangular aura using its visual axes",
+    (rotationDegrees) => {
+      const rotatedCrop = { ...crop, height: 20 };
+      const rotatedPlacement = { ...placement, rotationDegrees };
+      const rotatedScaleSnapContext = createAuraOverlayScaleSnapContext({
         crop: rotatedCrop,
-        deltaX: 9,
-        deltaY: 49,
         placement: rotatedPlacement,
+        profile: {
+          ...profile,
+          cropRegions: [rotatedCrop],
+          overlayPlacements: [
+            rotatedPlacement,
+            {
+              ...rotatedPlacement,
+              id: "placement-2",
+              scale: 1.5,
+              x: 600,
+            },
+          ],
+        },
         referenceViewport: viewport,
-        scaleSnapContext: rotatedScaleSnapContext,
         targetViewport: viewport,
-      }),
-    ).toMatchObject({ scale: 1.5, x: 280, y: 320 });
-  });
+      });
+
+      expect(
+        resizeAuraPlacementWithPeerScaleSnap({
+          corner: "se",
+          crop: rotatedCrop,
+          deltaX: 9,
+          deltaY: 49,
+          placement: rotatedPlacement,
+          referenceViewport: viewport,
+          scaleSnapContext: rotatedScaleSnapContext,
+          targetViewport: viewport,
+        }),
+      ).toMatchObject({ scale: 1.5, x: 280, y: 320 });
+    },
+  );
 });

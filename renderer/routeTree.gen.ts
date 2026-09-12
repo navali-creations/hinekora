@@ -9,82 +9,27 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SetupRouteImport } from './routes/setup'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as SavedVideosRouteImport } from './routes/saved-videos'
-import { Route as SavedEditsRouteImport } from './routes/saved-edits'
-import { Route as RewindsRouteImport } from './routes/rewinds'
-import { Route as RecordingsRouteImport } from './routes/recordings'
-import { Route as EditorRouteImport } from './routes/editor'
-import { Route as CropOverlayRouteImport } from './routes/crop-overlay'
-import { Route as ClipsRouteImport } from './routes/clips'
-import { Route as ChangelogRouteImport } from './routes/changelog'
-import { Route as CaptureGuideRouteImport } from './routes/capture-guide'
-import { Route as BookmarksRouteImport } from './routes/bookmarks'
-import { Route as AttributionsRouteImport } from './routes/attributions'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as RewindRewindIdRouteImport } from './routes/rewind.$rewindId'
-import { Route as RecordingRecordingIdRouteImport } from './routes/recording.$recordingId'
+import { Route as AttributionsRouteImport } from './routes/attributions'
+import { Route as BookmarksRouteImport } from './routes/bookmarks'
+import { Route as CaptureGuideRouteImport } from './routes/capture-guide'
+import { Route as ChangelogRouteImport } from './routes/changelog'
+import { Route as ClipsRouteImport } from './routes/clips'
+import { Route as CropOverlayRouteImport } from './routes/crop-overlay'
+import { Route as EditorRouteImport } from './routes/editor'
+import { Route as RecordingsRouteImport } from './routes/recordings'
+import { Route as RewindsRouteImport } from './routes/rewinds'
+import { Route as SavedEditsRouteImport } from './routes/saved-edits'
+import { Route as SavedVideosRouteImport } from './routes/saved-videos'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as ClipClipIdRouteImport } from './routes/clip.$clipId'
+import { Route as RecordingRecordingIdRouteImport } from './routes/recording.$recordingId'
+import { Route as RewindRewindIdRouteImport } from './routes/rewind.$rewindId'
 
-const SetupRoute = SetupRouteImport.update({
-  id: '/setup',
-  path: '/setup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SavedVideosRoute = SavedVideosRouteImport.update({
-  id: '/saved-videos',
-  path: '/saved-videos',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SavedEditsRoute = SavedEditsRouteImport.update({
-  id: '/saved-edits',
-  path: '/saved-edits',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RewindsRoute = RewindsRouteImport.update({
-  id: '/rewinds',
-  path: '/rewinds',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RecordingsRoute = RecordingsRouteImport.update({
-  id: '/recordings',
-  path: '/recordings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EditorRoute = EditorRouteImport.update({
-  id: '/editor',
-  path: '/editor',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CropOverlayRoute = CropOverlayRouteImport.update({
-  id: '/crop-overlay',
-  path: '/crop-overlay',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClipsRoute = ClipsRouteImport.update({
-  id: '/clips',
-  path: '/clips',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChangelogRoute = ChangelogRouteImport.update({
-  id: '/changelog',
-  path: '/changelog',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CaptureGuideRoute = CaptureGuideRouteImport.update({
-  id: '/capture-guide',
-  path: '/capture-guide',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const BookmarksRoute = BookmarksRouteImport.update({
-  id: '/bookmarks',
-  path: '/bookmarks',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AttributionsRoute = AttributionsRouteImport.update({
@@ -92,14 +37,69 @@ const AttributionsRoute = AttributionsRouteImport.update({
   path: '/attributions',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const BookmarksRoute = BookmarksRouteImport.update({
+  id: '/bookmarks',
+  path: '/bookmarks',
   getParentRoute: () => rootRouteImport,
 } as any)
-const RewindRewindIdRoute = RewindRewindIdRouteImport.update({
-  id: '/rewind/$rewindId',
-  path: '/rewind/$rewindId',
+const CaptureGuideRoute = CaptureGuideRouteImport.update({
+  id: '/capture-guide',
+  path: '/capture-guide',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChangelogRoute = ChangelogRouteImport.update({
+  id: '/changelog',
+  path: '/changelog',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClipsRoute = ClipsRouteImport.update({
+  id: '/clips',
+  path: '/clips',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CropOverlayRoute = CropOverlayRouteImport.update({
+  id: '/crop-overlay',
+  path: '/crop-overlay',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EditorRoute = EditorRouteImport.update({
+  id: '/editor',
+  path: '/editor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RecordingsRoute = RecordingsRouteImport.update({
+  id: '/recordings',
+  path: '/recordings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RewindsRoute = RewindsRouteImport.update({
+  id: '/rewinds',
+  path: '/rewinds',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SavedEditsRoute = SavedEditsRouteImport.update({
+  id: '/saved-edits',
+  path: '/saved-edits',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SavedVideosRoute = SavedVideosRouteImport.update({
+  id: '/saved-videos',
+  path: '/saved-videos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClipClipIdRoute = ClipClipIdRouteImport.update({
+  id: '/clip/$clipId',
+  path: '/clip/$clipId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RecordingRecordingIdRoute = RecordingRecordingIdRouteImport.update({
@@ -107,9 +107,9 @@ const RecordingRecordingIdRoute = RecordingRecordingIdRouteImport.update({
   path: '/recording/$recordingId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ClipClipIdRoute = ClipClipIdRouteImport.update({
-  id: '/clip/$clipId',
-  path: '/clip/$clipId',
+const RewindRewindIdRoute = RewindRewindIdRouteImport.update({
+  id: '/rewind/$rewindId',
+  path: '/rewind/$rewindId',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -253,88 +253,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/setup': {
-      id: '/setup'
-      path: '/setup'
-      fullPath: '/setup'
-      preLoaderRoute: typeof SetupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/saved-videos': {
-      id: '/saved-videos'
-      path: '/saved-videos'
-      fullPath: '/saved-videos'
-      preLoaderRoute: typeof SavedVideosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/saved-edits': {
-      id: '/saved-edits'
-      path: '/saved-edits'
-      fullPath: '/saved-edits'
-      preLoaderRoute: typeof SavedEditsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rewinds': {
-      id: '/rewinds'
-      path: '/rewinds'
-      fullPath: '/rewinds'
-      preLoaderRoute: typeof RewindsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/recordings': {
-      id: '/recordings'
-      path: '/recordings'
-      fullPath: '/recordings'
-      preLoaderRoute: typeof RecordingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/editor': {
-      id: '/editor'
-      path: '/editor'
-      fullPath: '/editor'
-      preLoaderRoute: typeof EditorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/crop-overlay': {
-      id: '/crop-overlay'
-      path: '/crop-overlay'
-      fullPath: '/crop-overlay'
-      preLoaderRoute: typeof CropOverlayRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/clips': {
-      id: '/clips'
-      path: '/clips'
-      fullPath: '/clips'
-      preLoaderRoute: typeof ClipsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/changelog': {
-      id: '/changelog'
-      path: '/changelog'
-      fullPath: '/changelog'
-      preLoaderRoute: typeof ChangelogRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/capture-guide': {
-      id: '/capture-guide'
-      path: '/capture-guide'
-      fullPath: '/capture-guide'
-      preLoaderRoute: typeof CaptureGuideRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/bookmarks': {
-      id: '/bookmarks'
-      path: '/bookmarks'
-      fullPath: '/bookmarks'
-      preLoaderRoute: typeof BookmarksRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/attributions': {
@@ -344,18 +267,95 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AttributionsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/bookmarks': {
+      id: '/bookmarks'
+      path: '/bookmarks'
+      fullPath: '/bookmarks'
+      preLoaderRoute: typeof BookmarksRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/rewind/$rewindId': {
-      id: '/rewind/$rewindId'
-      path: '/rewind/$rewindId'
-      fullPath: '/rewind/$rewindId'
-      preLoaderRoute: typeof RewindRewindIdRouteImport
+    '/capture-guide': {
+      id: '/capture-guide'
+      path: '/capture-guide'
+      fullPath: '/capture-guide'
+      preLoaderRoute: typeof CaptureGuideRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/changelog': {
+      id: '/changelog'
+      path: '/changelog'
+      fullPath: '/changelog'
+      preLoaderRoute: typeof ChangelogRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/clips': {
+      id: '/clips'
+      path: '/clips'
+      fullPath: '/clips'
+      preLoaderRoute: typeof ClipsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/crop-overlay': {
+      id: '/crop-overlay'
+      path: '/crop-overlay'
+      fullPath: '/crop-overlay'
+      preLoaderRoute: typeof CropOverlayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/editor': {
+      id: '/editor'
+      path: '/editor'
+      fullPath: '/editor'
+      preLoaderRoute: typeof EditorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/recordings': {
+      id: '/recordings'
+      path: '/recordings'
+      fullPath: '/recordings'
+      preLoaderRoute: typeof RecordingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rewinds': {
+      id: '/rewinds'
+      path: '/rewinds'
+      fullPath: '/rewinds'
+      preLoaderRoute: typeof RewindsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/saved-edits': {
+      id: '/saved-edits'
+      path: '/saved-edits'
+      fullPath: '/saved-edits'
+      preLoaderRoute: typeof SavedEditsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/saved-videos': {
+      id: '/saved-videos'
+      path: '/saved-videos'
+      fullPath: '/saved-videos'
+      preLoaderRoute: typeof SavedVideosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/clip/$clipId': {
+      id: '/clip/$clipId'
+      path: '/clip/$clipId'
+      fullPath: '/clip/$clipId'
+      preLoaderRoute: typeof ClipClipIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/recording/$recordingId': {
@@ -365,11 +365,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RecordingRecordingIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/clip/$clipId': {
-      id: '/clip/$clipId'
-      path: '/clip/$clipId'
-      fullPath: '/clip/$clipId'
-      preLoaderRoute: typeof ClipClipIdRouteImport
+    '/rewind/$rewindId': {
+      id: '/rewind/$rewindId'
+      path: '/rewind/$rewindId'
+      fullPath: '/rewind/$rewindId'
+      preLoaderRoute: typeof RewindRewindIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

@@ -1,16 +1,16 @@
 import { useNavigate } from "@tanstack/react-router";
 import {
-  getCoreRowModel,
   type OnChangeFn,
   type PaginationState,
   type RowSelectionState,
   type SortingState,
-  useReactTable,
+  useTable,
 } from "@tanstack/react-table";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { RunRecordingLibraryQuery } from "~/main/modules/recording-storage/RecordingStorage.dto";
 import { MediaLibraryTable } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable";
+import { mediaLibraryTableFeatures } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable.features";
 import {
   ALL_LEAGUES_VALUE,
   type MediaLibraryScope,
@@ -181,11 +181,11 @@ function RecordingsPanel({ isScopeReady = true, scope }: RecordingsPanelProps) {
     ) : null;
 
   const columns = useRecordingsPanelColumns({ showLeagueColumn });
-  const table = useReactTable({
+  const table = useTable({
+    features: mediaLibraryTableFeatures,
     data: tableRecordings,
     columns,
     enableRowSelection: (row) => canOpenRecordingRow(row.original),
-    getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => row.id,
     manualPagination: true,
     manualSorting: true,

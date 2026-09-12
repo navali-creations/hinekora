@@ -1,12 +1,10 @@
 import { useNavigate } from "@tanstack/react-router";
 import {
-  type ColumnDef,
-  getCoreRowModel,
   type OnChangeFn,
   type PaginationState,
   type RowSelectionState,
   type SortingState,
-  useReactTable,
+  useTable,
 } from "@tanstack/react-table";
 import { useEffect, useMemo, useState } from "react";
 
@@ -15,6 +13,10 @@ import type {
   ReplayClipView,
 } from "~/main/modules/replay-clips";
 import { MediaLibraryTable } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable";
+import {
+  type MediaLibraryColumnDef,
+  mediaLibraryTableFeatures,
+} from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable.features";
 import {
   formatBytes,
   formatDateTime,
@@ -124,8 +126,8 @@ function ReplayClipsPanel({
     void navigate({ to: "/clip/$clipId", params: { clipId: clip.id } });
   };
 
-  const columns = useMemo<ColumnDef<ReplayClipView>[]>(() => {
-    const tableColumns: ColumnDef<ReplayClipView>[] = [
+  const columns = useMemo<MediaLibraryColumnDef<ReplayClipView>[]>(() => {
+    const tableColumns: MediaLibraryColumnDef<ReplayClipView>[] = [
       {
         id: "select",
         enableSorting: false,
@@ -202,11 +204,11 @@ function ReplayClipsPanel({
 
     return tableColumns;
   }, [showLeagueColumn]);
-  const table = useReactTable({
+  const table = useTable({
+    features: mediaLibraryTableFeatures,
     data: items,
     columns,
     enableRowSelection: true,
-    getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => row.id,
     manualPagination: true,
     manualSorting: true,

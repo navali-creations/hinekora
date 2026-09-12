@@ -328,42 +328,42 @@ describe("CapturePreviewService", () => {
         (processName) => ({ game, processName }),
       ),
     ),
-  )("uses the resolved $game for the process-only $processName capture source", async ({
-    game,
-    processName,
-  }) => {
-    settingsStoreMocks.activeGame = game === "poe1" ? "poe2" : "poe1";
-    poeProcessMocks.getSnapshot.mockReturnValue(
-      createCapturePreviewSnapshotFromState({
-        game,
-        isRunning: true,
-        processName,
-      }),
-    );
-    electronMocks.getAllDisplays.mockReturnValue([]);
-    electronMocks.getSources.mockResolvedValue([
-      createSource({
-        id: "window:chrome:1",
-        name: `${game === "poe2" ? "Path of Exile 2" : "Path of Exile"} - Google Chrome`,
-      }),
-      createSource({ id: "window:process:2", name: processName }),
-      createSource({ id: "window:poe-short:3", name: "PoE" }),
-    ]);
-    const service = new CapturePreviewService();
+  )(
+    "uses the resolved $game for the process-only $processName capture source",
+    async ({ game, processName }) => {
+      settingsStoreMocks.activeGame = game === "poe1" ? "poe2" : "poe1";
+      poeProcessMocks.getSnapshot.mockReturnValue(
+        createCapturePreviewSnapshotFromState({
+          game,
+          isRunning: true,
+          processName,
+        }),
+      );
+      electronMocks.getAllDisplays.mockReturnValue([]);
+      electronMocks.getSources.mockResolvedValue([
+        createSource({
+          id: "window:chrome:1",
+          name: `${game === "poe2" ? "Path of Exile 2" : "Path of Exile"} - Google Chrome`,
+        }),
+        createSource({ id: "window:process:2", name: processName }),
+        createSource({ id: "window:poe-short:3", name: "PoE" }),
+      ]);
+      const service = new CapturePreviewService();
 
-    await expect(service.listSources()).resolves.toEqual([
-      {
-        displayId: null,
-        game,
-        height: 1080,
-        id: "window:process:2",
-        kind: "window",
-        name: game === "poe2" ? "Path of Exile 2" : "Path of Exile 1",
-        thumbnailDataUrl: null,
-        width: 1920,
-      },
-    ]);
-  });
+      await expect(service.listSources()).resolves.toEqual([
+        {
+          displayId: null,
+          game,
+          height: 1080,
+          id: "window:process:2",
+          kind: "window",
+          name: game === "poe2" ? "Path of Exile 2" : "Path of Exile 1",
+          thumbnailDataUrl: null,
+          width: 1920,
+        },
+      ]);
+    },
+  );
 
   it("omits process-only capture sources when the process game is ambiguous", async () => {
     poeProcessMocks.getSnapshot.mockReturnValue(

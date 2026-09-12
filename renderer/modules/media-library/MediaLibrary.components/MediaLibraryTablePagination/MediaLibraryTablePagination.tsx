@@ -1,4 +1,4 @@
-import type { Table } from "@tanstack/react-table";
+import type { RowData } from "@tanstack/react-table";
 import {
   FiChevronLeft as ChevronLeft,
   FiChevronRight as ChevronRight,
@@ -6,18 +6,23 @@ import {
   FiChevronsRight as ChevronsRight,
 } from "react-icons/fi";
 
-interface MediaLibraryTablePaginationProps<TData> {
+import type { MediaLibraryReactTable } from "../MediaLibraryTable/MediaLibraryTable.features";
+
+const paginationButtonClass =
+  "btn btn-ghost btn-sm border-0 shadow-none focus-visible:bg-base-300 focus-visible:outline-none";
+
+interface MediaLibraryTablePaginationProps<TData extends RowData> {
   pinnedRowCount?: number;
-  table: Table<TData>;
+  table: MediaLibraryReactTable<TData>;
   totalCount: number;
 }
 
-function MediaLibraryTablePagination<TData>({
+function MediaLibraryTablePagination<TData extends RowData>({
   pinnedRowCount = 0,
   table,
   totalCount,
 }: MediaLibraryTablePaginationProps<TData>) {
-  const { pageIndex, pageSize } = table.getState().pagination;
+  const { pageIndex, pageSize } = table.state.pagination;
   const pageCount = Math.max(1, table.getPageCount());
   const displayTotalCount = totalCount + pinnedRowCount;
   const pageRowCount = table.getRowModel().rows.length + pinnedRowCount;
@@ -48,10 +53,10 @@ function MediaLibraryTablePagination<TData>({
       <div className="text-base-content/70 text-sm">
         Showing {startRow} to {endRow} of {displayTotalCount} results
       </div>
-      <div className="join no-drag">
+      <div className="no-drag flex items-center gap-0.5">
         <button
           aria-label="First page"
-          className="btn btn-ghost btn-sm join-item"
+          className={paginationButtonClass}
           disabled={!table.getCanPreviousPage()}
           type="button"
           onClick={handleFirstPage}
@@ -60,19 +65,19 @@ function MediaLibraryTablePagination<TData>({
         </button>
         <button
           aria-label="Previous page"
-          className="btn btn-ghost btn-sm join-item"
+          className={paginationButtonClass}
           disabled={!table.getCanPreviousPage()}
           type="button"
           onClick={handlePreviousPage}
         >
           <ChevronLeft size={16} />
         </button>
-        <div className="join-item flex h-8 min-w-28 items-center justify-center bg-base-200 px-3 text-sm">
+        <div className="flex h-8 min-w-28 items-center justify-center px-3 text-sm">
           Page {Math.min(pageIndex + 1, pageCount)} of {pageCount}
         </div>
         <button
           aria-label="Next page"
-          className="btn btn-ghost btn-sm join-item"
+          className={paginationButtonClass}
           disabled={!table.getCanNextPage()}
           type="button"
           onClick={handleNextPage}
@@ -81,7 +86,7 @@ function MediaLibraryTablePagination<TData>({
         </button>
         <button
           aria-label="Last page"
-          className="btn btn-ghost btn-sm join-item"
+          className={paginationButtonClass}
           disabled={!table.getCanNextPage()}
           type="button"
           onClick={handleLastPage}

@@ -1,9 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import {
-  type ColumnDef,
-  getCoreRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
+import { useTable } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo } from "react";
 
 import type {
@@ -11,6 +7,10 @@ import type {
   SavedEditsLibraryQuery,
 } from "~/main/modules/saved-edits";
 import { MediaLibraryTable } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable";
+import {
+  type MediaLibraryColumnDef,
+  mediaLibraryTableFeatures,
+} from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable.features";
 import {
   type ServerMediaLibraryTableQueryInput,
   useServerMediaLibraryTableState,
@@ -102,7 +102,7 @@ function SavedEditsPanel({ isScopeReady = true, scope }: SavedEditsPanelProps) {
     void navigate({ to: "/editor", search: { projectId: edit.id } });
   };
 
-  const columns = useMemo<ColumnDef<SavedEditItem>[]>(
+  const columns = useMemo<MediaLibraryColumnDef<SavedEditItem>[]>(
     () => [
       {
         accessorKey: "title",
@@ -147,10 +147,10 @@ function SavedEditsPanel({ isScopeReady = true, scope }: SavedEditsPanelProps) {
     ],
     [],
   );
-  const table = useReactTable({
+  const table = useTable({
+    features: mediaLibraryTableFeatures,
     data: currentItems,
     columns,
-    getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => row.id,
     manualPagination: true,
     manualSorting: true,

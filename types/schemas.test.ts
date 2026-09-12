@@ -1016,25 +1016,24 @@ describe("shared schemas", () => {
     );
   });
 
-  it.each([
-    null,
-    42,
-    [],
-  ])("rejects invalid portable settings input %#", (settings) => {
-    expect(() =>
-      StateBundleSchema.parse({
-        format: "hinekora-state",
-        formatVersion: 1,
-        exportedAt: new Date().toISOString(),
-        appVersion: "0.14.0",
-        sections: {
-          profiles: [],
-          settings,
-          replayClips: [],
-        },
-      }),
-    ).toThrow();
-  });
+  it.each([null, 42, []])(
+    "rejects invalid portable settings input %#",
+    (settings) => {
+      expect(() =>
+        StateBundleSchema.parse({
+          format: "hinekora-state",
+          formatVersion: 1,
+          exportedAt: new Date().toISOString(),
+          appVersion: "0.14.0",
+          sections: {
+            profiles: [],
+            settings,
+            replayClips: [],
+          },
+        }),
+      ).toThrow();
+    },
+  );
 
   it("ignores obsolete ffmpeg job state in legacy portable bundles", () => {
     const settings = createDefaultSettings();

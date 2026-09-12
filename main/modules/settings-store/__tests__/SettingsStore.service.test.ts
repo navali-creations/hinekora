@@ -430,14 +430,12 @@ describe("SettingsStoreService", () => {
       service.update({ appLaunchOnStartup: true });
       expect(electronMocks.setLoginItemSettings).toHaveBeenLastCalledWith({
         args: [],
-        openAsHidden: false,
         openAtLogin: true,
       });
 
       service.update({ appStartMinimized: true });
       expect(electronMocks.setLoginItemSettings).toHaveBeenLastCalledWith({
         args: ["--hidden"],
-        openAsHidden: true,
         openAtLogin: true,
       });
     } finally {

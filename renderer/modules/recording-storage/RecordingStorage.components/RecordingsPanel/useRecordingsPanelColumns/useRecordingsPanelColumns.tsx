@@ -1,6 +1,6 @@
-import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo } from "react";
 
+import type { MediaLibraryColumnDef } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable.features";
 import {
   formatBytes,
   formatDateTime,
@@ -22,8 +22,8 @@ interface UseRecordingsPanelColumnsInput {
 
 function useRecordingsPanelColumns({
   showLeagueColumn,
-}: UseRecordingsPanelColumnsInput): ColumnDef<RecordingTableRow>[] {
-  return useMemo<ColumnDef<RecordingTableRow>[]>(() => {
+}: UseRecordingsPanelColumnsInput): MediaLibraryColumnDef<RecordingTableRow>[] {
+  return useMemo<MediaLibraryColumnDef<RecordingTableRow>[]>(() => {
     return resolveRecordingTableColumnIds(showLeagueColumn).map((columnId) => {
       switch (columnId) {
         case "select":

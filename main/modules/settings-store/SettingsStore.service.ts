@@ -146,7 +146,6 @@ class SettingsStoreService {
   applyStartupSettings(settings = this.get()): void {
     app.setLoginItemSettings({
       args: settings.appStartMinimized ? [START_MINIMIZED_ARG] : [],
-      openAsHidden: settings.appStartMinimized,
       openAtLogin: settings.appLaunchOnStartup,
     });
   }

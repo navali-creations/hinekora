@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { getCoreRowModel, useReactTable } from "@tanstack/react-table";
+import { useTable } from "@tanstack/react-table";
 import { useCallback, useMemo, useState } from "react";
 
 import type {
@@ -15,6 +15,7 @@ import {
   bookmarkCategoryLabels,
 } from "~/renderer/modules/bookmarks/Bookmarks.utils";
 import { MediaLibraryTable } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable";
+import { mediaLibraryTableFeatures } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable.features";
 import {
   type ServerMediaLibraryTableQueryInput,
   useServerMediaLibraryTableState,
@@ -168,10 +169,10 @@ function BookmarksTable({ isScopeReady = true, scope }: BookmarksTableProps) {
   };
 
   const columns = useBookmarksTableColumns({ showLeagueColumn });
-  const table = useReactTable({
+  const table = useTable({
+    features: mediaLibraryTableFeatures,
     data: items,
     columns,
-    getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => row.id,
     manualPagination: true,
     manualSorting: true,

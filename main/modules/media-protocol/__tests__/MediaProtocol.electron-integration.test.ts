@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import ts from "typescript";
+import { transformWithOxc } from "vite";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { isWindowsOS } from "~/main/utils/platform";
@@ -40,21 +40,24 @@ describe.runIf(isWindowsOS())("hinekora media Electron integration", () => {
 
 async function transpileMediaModules(outputDirectory: string): Promise<string> {
   const sourceDirectory = resolve("main/modules/media-protocol");
+  await writeFile(
+    join(outputDirectory, "package.json"),
+    JSON.stringify({ type: "module" }),
+    "utf8",
+  );
   for (const fileName of [
     "MediaProtocol.range.ts",
     "MediaProtocol.response.ts",
   ]) {
     const source = await readFile(join(sourceDirectory, fileName), "utf8");
-    const output = ts.transpileModule(source, {
-      compilerOptions: {
-        module: ts.ModuleKind.CommonJS,
-        target: ts.ScriptTarget.ES2022,
-      },
-      fileName,
-    }).outputText;
+    const output = await transformWithOxc(source, fileName, {
+      lang: "ts",
+      sourceType: "module",
+      target: "es2022",
+    });
     await writeFile(
       join(outputDirectory, fileName.replace(/\.ts$/, ".js")),
-      output,
+      output.code,
       "utf8",
     );
   }

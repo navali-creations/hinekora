@@ -24,25 +24,28 @@ describe("squirrel-startup", () => {
     ["--squirrel-install", "--createShortcut"],
     ["--squirrel-updated", "--createShortcut"],
     ["--squirrel-uninstall", "--removeShortcut"],
-  ] as const)("runs %s shortcut command and suppresses normal startup", (eventArgument, shortcutCommand) => {
-    const options = createSquirrelOptions(["hinekora.exe", eventArgument]);
+  ] as const)(
+    "runs %s shortcut command and suppresses normal startup",
+    (eventArgument, shortcutCommand) => {
+      const options = createSquirrelOptions(["hinekora.exe", eventArgument]);
 
-    expect(handleSquirrelStartupEvent(options)).toBe(true);
+      expect(handleSquirrelStartupEvent(options)).toBe(true);
 
-    expect(options.spawnProcess).toHaveBeenCalledWith(
-      parentUpdateExePath,
-      [shortcutCommand, "hinekora.exe"],
-      {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true,
-      },
-    );
-    expect(
-      options.spawnProcess.mock.results[0]?.value.unref,
-    ).toHaveBeenCalled();
-    expect(options.quit).toHaveBeenCalledTimes(1);
-  });
+      expect(options.spawnProcess).toHaveBeenCalledWith(
+        parentUpdateExePath,
+        [shortcutCommand, "hinekora.exe"],
+        {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: true,
+        },
+      );
+      expect(
+        options.spawnProcess.mock.results[0]?.value.unref,
+      ).toHaveBeenCalled();
+      expect(options.quit).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("uses Update.exe beside the executable when it exists there", () => {
     const options = createSquirrelOptions([

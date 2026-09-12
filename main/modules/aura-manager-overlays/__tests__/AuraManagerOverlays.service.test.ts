@@ -964,43 +964,44 @@ describe("AuraManagerOverlaysService", () => {
     ["clip preview starts", (service) => service.setClipPreviewSuspended(true)],
     ["the system suspends", (service) => service.suspendForSystem()],
     ["the service is destroyed", (service) => service.destroy()],
-  ] satisfies Array<
-    [string, (service: AuraManagerOverlaysService) => void]
-  >)("does not recreate an aura window from queued work after %s", async (_name, invalidate) => {
-    const profile = createAuraProfile();
-    vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
-      list: () => [profile],
-      update: vi.fn(),
-    } as unknown as ProfilesService);
-    let resolveLoad!: () => void;
-    const pendingLoad = new Promise<void>((resolve) => {
-      resolveLoad = resolve;
-    });
-    const auraWindow = createFakeWindow();
-    const staleWindow = createFakeWindow();
-    auraWindow.loadFile.mockReturnValue(pendingLoad);
-    electronMocks.browserWindowFactory
-      .mockReturnValueOnce(auraWindow)
-      .mockReturnValueOnce(staleWindow);
-    const coordinator = new GameOverlayCoordinator();
-    const service = new AuraManagerOverlaysService(coordinator);
-    coordinator.setGameRunningActive(true);
-    service.setGameRunningActive(true);
-    coordinator.setPoeFocusActive(true);
+  ] satisfies Array<[string, (service: AuraManagerOverlaysService) => void]>)(
+    "does not recreate an aura window from queued work after %s",
+    async (_name, invalidate) => {
+      const profile = createAuraProfile();
+      vi.spyOn(ProfilesService, "getInstance").mockReturnValue({
+        list: () => [profile],
+        update: vi.fn(),
+      } as unknown as ProfilesService);
+      let resolveLoad!: () => void;
+      const pendingLoad = new Promise<void>((resolve) => {
+        resolveLoad = resolve;
+      });
+      const auraWindow = createFakeWindow();
+      const staleWindow = createFakeWindow();
+      auraWindow.loadFile.mockReturnValue(pendingLoad);
+      electronMocks.browserWindowFactory
+        .mockReturnValueOnce(auraWindow)
+        .mockReturnValueOnce(staleWindow);
+      const coordinator = new GameOverlayCoordinator();
+      const service = new AuraManagerOverlaysService(coordinator);
+      coordinator.setGameRunningActive(true);
+      service.setGameRunningActive(true);
+      coordinator.setPoeFocusActive(true);
 
-    const showRequest = service.show(profile.id);
-    await vi.waitFor(() => {
-      expect(auraWindow.loadFile).toHaveBeenCalledOnce();
-    });
-    const queuedRestore = service.restoreRequestedOverlay();
-    invalidate(service);
-    resolveLoad();
-    await Promise.all([showRequest, queuedRestore]);
+      const showRequest = service.show(profile.id);
+      await vi.waitFor(() => {
+        expect(auraWindow.loadFile).toHaveBeenCalledOnce();
+      });
+      const queuedRestore = service.restoreRequestedOverlay();
+      invalidate(service);
+      resolveLoad();
+      await Promise.all([showRequest, queuedRestore]);
 
-    expect(electronMocks.BrowserWindow).toHaveBeenCalledTimes(1);
-    expect(staleWindow.loadFile).not.toHaveBeenCalled();
-    expect(staleWindow.showInactive).not.toHaveBeenCalled();
-  });
+      expect(electronMocks.BrowserWindow).toHaveBeenCalledTimes(1);
+      expect(staleWindow.loadFile).not.toHaveBeenCalled();
+      expect(staleWindow.showInactive).not.toHaveBeenCalled();
+    },
+  );
 
   it("ignores aura overlay load failures after the window is destroyed", async () => {
     const profile = createAuraProfile();

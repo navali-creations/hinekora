@@ -253,7 +253,7 @@ export interface ReplayClipsSlice {
     libraryItems: ReplayClipView[];
     libraryLeagues: string[];
     activeClip: ReplayClipView | null;
-    selectedClipIds: Record<string, boolean>;
+    selectedClipIds: Record<string, true>;
     error: string | null;
     hydrateLibrary: (query: ReplayClipLibraryQuery) => Promise<void>;
     refreshLibrary: () => Promise<void>;
@@ -262,7 +262,7 @@ export interface ReplayClipsSlice {
     revealClip: (id: string) => Promise<void>;
     deleteClip: (id: string) => Promise<void>;
     deleteSelectedClips: () => Promise<void>;
-    setSelectedClipIds: (ids: Record<string, boolean>) => void;
+    setSelectedClipIds: (ids: Record<string, true>) => void;
     clearSelectedClips: () => void;
     startListening: () => () => void;
   };
@@ -285,7 +285,7 @@ export interface RecordingStorageSlice {
     recordingsPage: RunRecordingLibraryPage | null;
     recordingsQuery: RunRecordingLibraryQuery | null;
     recordingLeagues: string[];
-    selectedRecordingIds: Record<string, boolean>;
+    selectedRecordingIds: Record<string, true>;
     isLoading: boolean;
     error: string | null;
     isUsageLoading: boolean;
@@ -297,7 +297,7 @@ export interface RecordingStorageSlice {
     revealRecording: (path: string) => Promise<void>;
     deleteRecording: (path: string) => Promise<void>;
     deleteSelectedRecordings: () => Promise<void>;
-    setSelectedRecordingIds: (ids: Record<string, boolean>) => void;
+    setSelectedRecordingIds: (ids: Record<string, true>) => void;
     clearSelectedRecordings: () => void;
   };
 }

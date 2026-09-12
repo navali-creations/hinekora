@@ -1,8 +1,9 @@
 import {
   type ColumnDef,
+  columnVisibilityFeature,
   flexRender,
-  getCoreRowModel,
-  useReactTable,
+  tableFeatures,
+  useTable,
 } from "@tanstack/react-table";
 import clsx from "clsx";
 import { AnimatePresence, motion } from "motion/react";
@@ -22,6 +23,15 @@ interface CaptureStorageRow {
   id: string;
   resolution: string;
 }
+
+const captureStorageTableFeatures = tableFeatures({
+  columnVisibilityFeature,
+});
+
+type CaptureStorageColumnDef = ColumnDef<
+  typeof captureStorageTableFeatures,
+  CaptureStorageRow
+>;
 
 interface CaptureStorageTableProps {
   estimate: ManagedRecordingStorageEstimate | undefined;
@@ -57,7 +67,7 @@ function CaptureStorageTable({ estimate, status }: CaptureStorageTableProps) {
       }),
     [estimate, status],
   );
-  const columns = useMemo<ColumnDef<CaptureStorageRow>[]>(
+  const columns = useMemo<CaptureStorageColumnDef[]>(
     () => [
       {
         accessorKey: "resolution",
@@ -72,20 +82,18 @@ function CaptureStorageTable({ estimate, status }: CaptureStorageTableProps) {
         header: "Resolution",
         id: "resolution",
       },
-      ...captureEstimateDurations.map<ColumnDef<CaptureStorageRow>>(
-        (duration) => ({
-          accessorFn: (row) => row.estimates[duration.minutes],
-          header: duration.label,
-          id: `duration-${duration.minutes}`,
-        }),
-      ),
+      ...captureEstimateDurations.map<CaptureStorageColumnDef>((duration) => ({
+        accessorFn: (row) => row.estimates[duration.minutes],
+        header: duration.label,
+        id: `duration-${duration.minutes}`,
+      })),
     ],
     [],
   );
-  const table = useReactTable({
+  const table = useTable({
+    features: captureStorageTableFeatures,
     columns,
     data: rows,
-    getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => row.id,
   });
   const isLoading = status === "loading";

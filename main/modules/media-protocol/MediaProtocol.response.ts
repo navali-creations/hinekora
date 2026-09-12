@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { extname } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import { parseMediaRange } from "./MediaProtocol.range";
+import { parseMediaRange } from "./MediaProtocol.range.js";
 
 type MediaFileFetcher = (url: string, init: RequestInit) => Promise<Response>;
 

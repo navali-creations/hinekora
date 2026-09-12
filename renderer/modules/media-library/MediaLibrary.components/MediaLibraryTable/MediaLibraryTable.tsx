@@ -2,7 +2,7 @@ import {
   flexRender,
   type Header,
   type Row,
-  type Table,
+  type RowData,
 } from "@tanstack/react-table";
 import clsx from "clsx";
 import {
@@ -17,10 +17,14 @@ import {
 } from "react-icons/fi";
 
 import { MediaLibraryTablePagination } from "../MediaLibraryTablePagination/MediaLibraryTablePagination";
+import type {
+  MediaLibraryReactTable,
+  mediaLibraryTableFeatures,
+} from "./MediaLibraryTable.features";
 import { isInteractiveTableTarget } from "./MediaLibraryTable.utils";
 
-interface MediaLibraryTableProps<TData> {
-  table: Table<TData>;
+interface MediaLibraryTableProps<TData extends RowData> {
+  table: MediaLibraryReactTable<TData>;
   canRowClick?: (row: TData) => boolean;
   emptyMessage: string;
   getHeaderClassName: (columnId: string) => string;
@@ -36,7 +40,7 @@ interface MediaLibraryTableProps<TData> {
   totalCount: number;
 }
 
-function MediaLibraryTable<TData>({
+function MediaLibraryTable<TData extends RowData>({
   table,
   canRowClick,
   emptyMessage,
@@ -50,7 +54,9 @@ function MediaLibraryTable<TData>({
   totalCount,
 }: MediaLibraryTableProps<TData>) {
   const pinnedTopRows = renderPinnedTopRows?.() ?? null;
-  const renderHeaderContent = (header: Header<TData, unknown>) => {
+  const renderHeaderContent = (
+    header: Header<typeof mediaLibraryTableFeatures, TData, unknown>,
+  ) => {
     if (header.isPlaceholder) {
       return null;
     }
@@ -93,11 +99,12 @@ function MediaLibraryTable<TData>({
     );
   };
 
-  const isRowClickable = (row: Row<TData>) =>
+  const isRowClickable = (row: Row<typeof mediaLibraryTableFeatures, TData>) =>
     Boolean(onRowClick && (!canRowClick || canRowClick(row.original)));
 
   const handleRowClick =
-    (row: Row<TData>) => (event: MouseEvent<HTMLTableRowElement>) => {
+    (row: Row<typeof mediaLibraryTableFeatures, TData>) =>
+    (event: MouseEvent<HTMLTableRowElement>) => {
       if (
         !onRowClick ||
         !isRowClickable(row) ||
@@ -110,7 +117,8 @@ function MediaLibraryTable<TData>({
     };
 
   const handleRowKeyDown =
-    (row: Row<TData>) => (event: KeyboardEvent<HTMLTableRowElement>) => {
+    (row: Row<typeof mediaLibraryTableFeatures, TData>) =>
+    (event: KeyboardEvent<HTMLTableRowElement>) => {
       if (
         !onRowClick ||
         !isRowClickable(row) ||

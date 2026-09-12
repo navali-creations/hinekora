@@ -1,4 +1,3 @@
-import type { ColumnDef } from "@tanstack/react-table";
 import { useMemo } from "react";
 
 import type { BookmarkLibraryItem } from "~/main/modules/bookmarks";
@@ -6,6 +5,7 @@ import { BookmarkCategoryIcon } from "~/renderer/modules/bookmarks/Bookmarks.com
 import { BookmarksDurationCell } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksDurationCell/BookmarksDurationCell";
 import { BookmarksRecordingTimeCell } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksRecordingTimeCell/BookmarksRecordingTimeCell";
 import { BookmarksTableActions } from "~/renderer/modules/bookmarks/Bookmarks.components/BookmarksTableActions/BookmarksTableActions";
+import type { MediaLibraryColumnDef } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable.features";
 import { formatDateTime } from "~/renderer/modules/media-library/MediaLibrary.utils/MediaLibrary.utils";
 
 interface UseBookmarksTableColumnsInput {
@@ -14,9 +14,9 @@ interface UseBookmarksTableColumnsInput {
 
 function useBookmarksTableColumns({
   showLeagueColumn,
-}: UseBookmarksTableColumnsInput): ColumnDef<BookmarkLibraryItem>[] {
-  return useMemo<ColumnDef<BookmarkLibraryItem>[]>(() => {
-    const tableColumns: ColumnDef<BookmarkLibraryItem>[] = [
+}: UseBookmarksTableColumnsInput): MediaLibraryColumnDef<BookmarkLibraryItem>[] {
+  return useMemo<MediaLibraryColumnDef<BookmarkLibraryItem>[]>(() => {
+    const tableColumns: MediaLibraryColumnDef<BookmarkLibraryItem>[] = [
       {
         id: "categoryIcon",
         enableSorting: false,

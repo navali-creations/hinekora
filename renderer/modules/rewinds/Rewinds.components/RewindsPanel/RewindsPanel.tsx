@@ -1,9 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import {
-  type ColumnDef,
-  getCoreRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
+import { useTable } from "@tanstack/react-table";
 import { useCallback, useMemo } from "react";
 
 import type {
@@ -11,6 +7,10 @@ import type {
   ActivitySessionLibraryQuery,
 } from "~/main/modules/bookmarks";
 import { MediaLibraryTable } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable";
+import {
+  type MediaLibraryColumnDef,
+  mediaLibraryTableFeatures,
+} from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable.features";
 import {
   type ServerMediaLibraryTableQueryInput,
   useServerMediaLibraryTableState,
@@ -85,8 +85,10 @@ function RewindsPanel({ isScopeReady = true, scope }: RewindsPanelProps) {
     });
   };
 
-  const columns = useMemo<ColumnDef<ActivitySessionLibraryItem>[]>(() => {
-    const tableColumns: ColumnDef<ActivitySessionLibraryItem>[] = [
+  const columns = useMemo<
+    MediaLibraryColumnDef<ActivitySessionLibraryItem>[]
+  >(() => {
+    const tableColumns: MediaLibraryColumnDef<ActivitySessionLibraryItem>[] = [
       {
         accessorKey: "startedAt",
         header: "Started",
@@ -136,10 +138,10 @@ function RewindsPanel({ isScopeReady = true, scope }: RewindsPanelProps) {
 
     return tableColumns;
   }, [showLeagueColumn]);
-  const table = useReactTable({
+  const table = useTable({
+    features: mediaLibraryTableFeatures,
     data: items,
     columns,
-    getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => row.id,
     manualPagination: true,
     manualSorting: true,

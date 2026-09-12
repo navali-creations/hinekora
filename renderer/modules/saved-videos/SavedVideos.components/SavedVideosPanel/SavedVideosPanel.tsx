@@ -1,8 +1,4 @@
-import {
-  type ColumnDef,
-  getCoreRowModel,
-  useReactTable,
-} from "@tanstack/react-table";
+import { useTable } from "@tanstack/react-table";
 import { useCallback, useEffect, useMemo } from "react";
 
 import type {
@@ -10,6 +6,10 @@ import type {
   SavedVideosLibraryQuery,
 } from "~/main/modules/saved-videos";
 import { MediaLibraryTable } from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable";
+import {
+  type MediaLibraryColumnDef,
+  mediaLibraryTableFeatures,
+} from "~/renderer/modules/media-library/MediaLibrary.components/MediaLibraryTable/MediaLibraryTable.features";
 import {
   type ServerMediaLibraryTableQueryInput,
   useServerMediaLibraryTableState,
@@ -86,7 +86,7 @@ function SavedVideosPanel() {
     void refreshLibrary();
   };
 
-  const columns = useMemo<ColumnDef<SavedVideoItem>[]>(
+  const columns = useMemo<MediaLibraryColumnDef<SavedVideoItem>[]>(
     () => [
       {
         accessorKey: "fileName",
@@ -116,10 +116,10 @@ function SavedVideosPanel() {
     ],
     [],
   );
-  const table = useReactTable({
+  const table = useTable({
+    features: mediaLibraryTableFeatures,
     columns,
     data: items,
-    getCoreRowModel: getCoreRowModel(),
     getRowId: (row) => row.id,
     manualPagination: true,
     manualSorting: true,

@@ -167,36 +167,36 @@ describe("RunRecordingFinalizationCoordinator", () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
-  it.each([
-    false,
-    true,
-  ])("discards invalid durable metadata when clear throws: %s", (clearThrows) => {
-    const { coordinator, dependencies } = createHarness();
-    dependencies.store.load.mockImplementation(() => {
-      throw new Error("invalid recovery");
-    });
-    if (clearThrows) {
-      dependencies.store.clear.mockImplementation(() => {
-        throw new Error("recovery file is locked");
+  it.each([false, true])(
+    "discards invalid durable metadata when clear throws: %s",
+    (clearThrows) => {
+      const { coordinator, dependencies } = createHarness();
+      dependencies.store.load.mockImplementation(() => {
+        throw new Error("invalid recovery");
       });
-    }
-    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+      if (clearThrows) {
+        dependencies.store.clear.mockImplementation(() => {
+          throw new Error("recovery file is locked");
+        });
+      }
+      const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
 
-    coordinator.restore();
+      coordinator.restore();
 
-    expect(logWarn).toHaveBeenCalledWith(
-      "managed-recorder",
-      "Invalid run recording finalization recovery was discarded",
-      { error: "invalid recovery" },
-    );
-    if (clearThrows) {
       expect(logWarn).toHaveBeenCalledWith(
         "managed-recorder",
-        "Invalid run recording finalization recovery could not be removed",
-        { error: "recovery file is locked" },
+        "Invalid run recording finalization recovery was discarded",
+        { error: "invalid recovery" },
       );
-    }
-  });
+      if (clearThrows) {
+        expect(logWarn).toHaveBeenCalledWith(
+          "managed-recorder",
+          "Invalid run recording finalization recovery could not be removed",
+          { error: "recovery file is locked" },
+        );
+      }
+    },
+  );
 
   it("discards recovery metadata that references unmanaged storage", () => {
     const { coordinator, dependencies } = createHarness();
@@ -229,44 +229,44 @@ describe("RunRecordingFinalizationCoordinator", () => {
     expect(dependencies.finalize).not.toHaveBeenCalled();
   });
 
-  it.each([
-    false,
-    true,
-  ])("discards invalid queued metadata without retrying when clear throws: %s", (clearThrows) => {
-    vi.useFakeTimers();
-    const { coordinator, dependencies } = createHarness();
-    const input = createInput();
-    dependencies.isValid.mockReturnValue(false);
-    if (clearThrows) {
-      dependencies.store.clear.mockImplementation(() => {
-        throw new Error("recovery file is locked");
-      });
-    }
-    const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
+  it.each([false, true])(
+    "discards invalid queued metadata without retrying when clear throws: %s",
+    (clearThrows) => {
+      vi.useFakeTimers();
+      const { coordinator, dependencies } = createHarness();
+      const input = createInput();
+      dependencies.isValid.mockReturnValue(false);
+      if (clearThrows) {
+        dependencies.store.clear.mockImplementation(() => {
+          throw new Error("recovery file is locked");
+        });
+      }
+      const logWarn = vi.spyOn(AppLog, "logWarn").mockImplementation(() => {});
 
-    coordinator.queue(input, "invalid metadata");
+      coordinator.queue(input, "invalid metadata");
 
-    expect(dependencies.setError).toHaveBeenCalledWith(
-      "Run recording recovery metadata is invalid or references unmanaged storage",
-    );
-    expect(dependencies.store.clear).toHaveBeenCalledOnce();
-    expect(dependencies.store.save).not.toHaveBeenCalled();
-    expect(dependencies.finalize).not.toHaveBeenCalled();
-    expect(vi.getTimerCount()).toBe(0);
-    expect(coordinator.retry()).toBe(true);
-    expect(logWarn).toHaveBeenCalledWith(
-      "managed-recorder",
-      "Invalid run recording finalization was not retried",
-      expect.objectContaining({ recordingHash: expect.any(String) }),
-    );
-    if (clearThrows) {
+      expect(dependencies.setError).toHaveBeenCalledWith(
+        "Run recording recovery metadata is invalid or references unmanaged storage",
+      );
+      expect(dependencies.store.clear).toHaveBeenCalledOnce();
+      expect(dependencies.store.save).not.toHaveBeenCalled();
+      expect(dependencies.finalize).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      expect(coordinator.retry()).toBe(true);
       expect(logWarn).toHaveBeenCalledWith(
         "managed-recorder",
-        "Invalid run recording finalization recovery could not be removed",
-        { error: "recovery file is locked" },
+        "Invalid run recording finalization was not retried",
+        expect.objectContaining({ recordingHash: expect.any(String) }),
       );
-    }
-  });
+      if (clearThrows) {
+        expect(logWarn).toHaveBeenCalledWith(
+          "managed-recorder",
+          "Invalid run recording finalization recovery could not be removed",
+          { error: "recovery file is locked" },
+        );
+      }
+    },
+  );
 
   it("discards staged metadata if it becomes invalid before retry", () => {
     vi.useFakeTimers();

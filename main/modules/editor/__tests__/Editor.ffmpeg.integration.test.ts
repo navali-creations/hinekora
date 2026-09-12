@@ -50,29 +50,28 @@ describe.runIf(isWindowsOS())(
       }
     });
 
-    it.each(
-      playbackRateRenderCases,
-    )("renders and decodes a $shape timeline at $playbackRate x", async ({
-      playbackRate,
-      shape,
-    }) => {
-      const outputPath = join(
-        directory,
-        `${shape}-${String(playbackRate).replace(".", "-")}x.mp4`,
-      );
-      const { durationSeconds, segments } = createPlaybackRateSegments({
-        playbackRate,
-        shape,
-        sourcePath,
-      });
+    it.each(playbackRateRenderCases)(
+      "renders and decodes a $shape timeline at $playbackRate x",
+      async ({ playbackRate, shape }) => {
+        const outputPath = join(
+          directory,
+          `${shape}-${String(playbackRate).replace(".", "-")}x.mp4`,
+        );
+        const { durationSeconds, segments } = createPlaybackRateSegments({
+          playbackRate,
+          shape,
+          sourcePath,
+        });
 
-      await renderEditorExportWithFfmpeg({
-        outputPath,
-        resolution: "720p",
-        segments,
-      });
-      await expectPlayableEditorExport(outputPath, durationSeconds);
-    }, 30_000);
+        await renderEditorExportWithFfmpeg({
+          outputPath,
+          resolution: "720p",
+          segments,
+        });
+        await expectPlayableEditorExport(outputPath, durationSeconds);
+      },
+      30_000,
+    );
   },
 );
 

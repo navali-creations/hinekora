@@ -789,29 +789,32 @@ describe("CaptureProfiles slice", () => {
     "profile-only selection",
     "profile and preview-source selection",
     "game selection",
-  ] as const)("blocks %s while recording or rewind is active", async (label) => {
-    const store = createTestStore();
-    store.setState((state) => ({
-      managedRecorder: {
-        ...state.managedRecorder,
-        status: createManagedRecorderStatus({ runRecordingActive: true }),
-      },
-    }));
+  ] as const)(
+    "blocks %s while recording or rewind is active",
+    async (label) => {
+      const store = createTestStore();
+      store.setState((state) => ({
+        managedRecorder: {
+          ...state.managedRecorder,
+          status: createManagedRecorderStatus({ runRecordingActive: true }),
+        },
+      }));
 
-    if (label === "profile-only selection") {
-      store.getState().captureProfiles.select("poe2-alt");
-    } else if (label === "profile and preview-source selection") {
-      store.getState().captureProfiles.selectWithPreviewSource("poe2-alt");
-    } else {
-      await store.getState().captureProfiles.selectForGame("poe2");
-    }
+      if (label === "profile-only selection") {
+        store.getState().captureProfiles.select("poe2-alt");
+      } else if (label === "profile and preview-source selection") {
+        store.getState().captureProfiles.selectWithPreviewSource("poe2-alt");
+      } else {
+        await store.getState().captureProfiles.selectForGame("poe2");
+      }
 
-    expect(store.getState().captureProfiles.selectedProfileId).toBe("poe1");
-    expect(store.getState().capturePreview.selectedSourceId).toBe(
-      poe1Source.id,
-    );
-    expect(updateSettings).not.toHaveBeenCalled();
-  });
+      expect(store.getState().captureProfiles.selectedProfileId).toBe("poe1");
+      expect(store.getState().capturePreview.selectedSourceId).toBe(
+        poe1Source.id,
+      );
+      expect(updateSettings).not.toHaveBeenCalled();
+    },
+  );
 
   it("blocks profile creation while recording or rewind is active", async () => {
     const store = createTestStore();
@@ -1349,24 +1352,25 @@ describe("CaptureProfiles slice", () => {
     ["recording is active", { recording: true }],
     ["recording is starting", { isStartingRecording: true }],
     ["recording is stopping", { isStoppingRecording: true }],
-  ] satisfies Array<
-    [string, Partial<ManagedRecorderStatus>]
-  >)("does not unlock while %s", async (_label, status) => {
-    const store = createTestStore();
-    store.setState((state) => ({
-      managedRecorder: {
-        ...state.managedRecorder,
-        status: createManagedRecorderStatus(status),
-      },
-    }));
+  ] satisfies Array<[string, Partial<ManagedRecorderStatus>]>)(
+    "does not unlock while %s",
+    async (_label, status) => {
+      const store = createTestStore();
+      store.setState((state) => ({
+        managedRecorder: {
+          ...state.managedRecorder,
+          status: createManagedRecorderStatus(status),
+        },
+      }));
 
-    store.getState().captureProfiles.setProfileUnlocked(true);
+      store.getState().captureProfiles.setProfileUnlocked(true);
 
-    await vi.waitFor(() => {
-      expect(updateCaptureProfile).not.toHaveBeenCalled();
-    });
-    expect(store.getState().captureProfiles.isProfileUnlocked).toBe(false);
-  });
+      await vi.waitFor(() => {
+        expect(updateCaptureProfile).not.toHaveBeenCalled();
+      });
+      expect(store.getState().captureProfiles.isProfileUnlocked).toBe(false);
+    },
+  );
 
   it("ignores stale unlock persistence after the selection changes", async () => {
     let resolveUpdate: (profile: CaptureProfile) => void = () => undefined;

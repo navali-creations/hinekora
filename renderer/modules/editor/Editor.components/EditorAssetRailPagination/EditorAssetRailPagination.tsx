@@ -4,6 +4,9 @@ import { useEditorShallow } from "~/renderer/store";
 
 import type { EditorAssetRailPageModel } from "../EditorAssetRail/useEditorAssetRailPageModel/useEditorAssetRailPageModel";
 
+const paginationButtonClass =
+  "btn btn-ghost btn-xs border-0 shadow-none focus-visible:bg-base-300 focus-visible:outline-none";
+
 type EditorAssetRailPaginationModel = Pick<
   EditorAssetRailPageModel,
   | "isSavedEditsFilter"
@@ -70,22 +73,22 @@ function EditorAssetRailPagination({
       <span className="text-base-content/55 text-xs">
         {totalCount} item{totalCount === 1 ? "" : "s"}
       </span>
-      <div className="join items-center">
+      <div className="flex items-center gap-0.5">
         <button
           aria-label="Previous media page"
-          className="btn btn-ghost btn-xs join-item"
+          className={paginationButtonClass}
           disabled={!canGoPrevious}
           type="button"
           onClick={handlePrevious}
         >
           <FiChevronLeft aria-hidden size={14} />
         </button>
-        <span className="join-item border-base-content/10 border-x px-2 text-base-content/65 text-xs leading-6">
+        <span className="px-2 text-base-content/65 text-xs leading-6">
           {normalizedPageIndex + 1} / {normalizedPageCount}
         </span>
         <button
           aria-label="Next media page"
-          className="btn btn-ghost btn-xs join-item"
+          className={paginationButtonClass}
           disabled={!canGoNext}
           type="button"
           onClick={handleNext}

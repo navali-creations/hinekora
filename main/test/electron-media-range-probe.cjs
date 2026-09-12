@@ -1,4 +1,5 @@
 const { app, net, protocol } = require("electron");
+const { pathToFileURL } = require("node:url");
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -20,7 +21,9 @@ async function run() {
     throw new Error("Media probe arguments are missing");
   }
 
-  const { createMediaFileResponse } = require(mediaModulePath);
+  const { createMediaFileResponse } = await import(
+    pathToFileURL(mediaModulePath).href
+  );
   await app.whenReady();
   protocol.handle("hinekora-media", (request) =>
     createMediaFileResponse(mediaPath, request, (url, init) =>

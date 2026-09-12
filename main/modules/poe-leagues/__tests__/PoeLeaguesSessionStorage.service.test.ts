@@ -261,20 +261,18 @@ describe("EncryptedPoeLeaguesSessionStorage", () => {
     });
   });
 
-  it.each([
-    Number.NaN,
-    -1,
-    32 * 1024 + 1,
-  ])("deletes persisted sessions with an invalid file size (%s)", (size) => {
-    const { fileSystem, sessionPath, storage } = createEncryptedStorageHarness(
-      Buffer.from("encrypted:{}", "utf8"),
-    );
-    fileSystem.statSync.mockReturnValue({ size });
+  it.each([Number.NaN, -1, 32 * 1024 + 1])(
+    "deletes persisted sessions with an invalid file size (%s)",
+    (size) => {
+      const { fileSystem, sessionPath, storage } =
+        createEncryptedStorageHarness(Buffer.from("encrypted:{}", "utf8"));
+      fileSystem.statSync.mockReturnValue({ size });
 
-    expect(storage.load()).toBeNull();
-    expect(fileSystem.readFileSync).not.toHaveBeenCalled();
-    expect(fileSystem.unlinkSync).toHaveBeenCalledWith(sessionPath);
-  });
+      expect(storage.load()).toBeNull();
+      expect(fileSystem.readFileSync).not.toHaveBeenCalled();
+      expect(fileSystem.unlinkSync).toHaveBeenCalledWith(sessionPath);
+    },
+  );
 
   it("rechecks persisted session size after reading", () => {
     const { fileSystem, sessionPath, storage } = createEncryptedStorageHarness(

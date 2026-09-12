@@ -4,12 +4,11 @@
     "jsx": "react-jsx",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "types": ["node", "vite/client", "vitest/globals"],
-    "baseUrl": ".",
     "paths": {
-      "~/main/*": ["main/*"],
-      "~/renderer/*": ["renderer/*"],
-      "~/types": ["types/index.ts"],
-      "~/types/*": ["types/*"],
+      "~/main/*": ["./main/*"],
+      "~/renderer/*": ["./renderer/*"],
+      "~/types": ["./types/index.ts"],
+      "~/types/*": ["./types/*"],
       "~/*": ["./*"]
     },
     "allowImportingTsExtensions": true
