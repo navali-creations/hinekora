@@ -111,6 +111,45 @@ afterEach(() => {
 });
 
 describe("DeathClipsOverlayService", () => {
+  it("permits a retry after native window creation fails", async () => {
+    const recoveredWindow = createFakeWindow();
+    electronMocks.browserWindowFactory
+      .mockImplementationOnce(() => {
+        throw new Error("Native window creation failed");
+      })
+      .mockReturnValueOnce(recoveredWindow);
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+
+    await expect(service.showClip(createClip())).rejects.toThrow(
+      "Native window creation failed",
+    );
+    expect(service.isRequested()).toBe(false);
+    await service.showClip(createClip());
+    expect(recoveredWindow.showInactive).toHaveBeenCalledOnce();
+    expect(service.isRequested()).toBe(true);
+    service.destroy();
+  });
+
+  it("preserves the preview if a protection preference update fails outside a save", async () => {
+    const clipWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(clipWindow);
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+    await service.showClip(createClip());
+    service.setContentProtectionEnabled(true);
+    clipWindow.setContentProtection.mockImplementation(() => {
+      throw new Error("Capture protection update failed");
+    });
+
+    expect(() => service.setContentProtectionEnabled(false)).toThrow(
+      "Capture protection update failed",
+    );
+    expect(clipWindow.close).not.toHaveBeenCalled();
+    expect(service.isRequested()).toBe(true);
+    service.destroy();
+  });
+
   it("closes an existing preview if capture protection cannot be applied", async () => {
     const clipWindow = createFakeWindow();
     electronMocks.browserWindowFactory.mockReturnValue(clipWindow);

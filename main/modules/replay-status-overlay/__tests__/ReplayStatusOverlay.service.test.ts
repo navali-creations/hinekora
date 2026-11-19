@@ -92,6 +92,30 @@ afterEach(() => {
 });
 
 describe("ReplayStatusOverlayService", () => {
+  it("ignores repeated saving requests and late updates without delaying dismissal", async () => {
+    vi.useFakeTimers();
+    const notificationWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(notificationWindow);
+    const { service } = createService();
+    await service.showSaving("manual-repeat");
+    notificationWindow.webContents.send.mockClear();
+
+    await service.showSaving("manual-repeat");
+    service.finish("manual-repeat", "saved");
+    await service.showProcessing("manual-repeat");
+    expect(service.getSnapshot()?.status).toBe("saving");
+    expect(notificationWindow.webContents.send).not.toHaveBeenCalled();
+    expect(notificationWindow.loadFile).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(600);
+    expect(service.getSnapshot()?.status).toBe("saved");
+    await service.showSaving("manual-repeat");
+    await vi.advanceTimersByTimeAsync(3_420);
+    expect(service.getSnapshot()).toBeNull();
+    expect(notificationWindow.isVisible()).toBe(false);
+    service.destroy();
+  });
+
   it("hides only the matching clip and does not reopen it when loading finishes", async () => {
     let resolveLoad!: () => void;
     const notificationWindow = createFakeWindow();

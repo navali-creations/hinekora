@@ -17,6 +17,7 @@ let directory: string;
 let replayPath: string;
 let releaseSave: () => void;
 let service: ReplayClipCreationService;
+let dependencies: ConstructorParameters<typeof ReplayClipCreationService>[0];
 const overlay = {
   finishReplayStatusOverlay: vi.fn(),
   setReplaySaveActive: vi.fn<(id: string, active: boolean) => void>(),
@@ -60,7 +61,7 @@ beforeEach(() => {
   vi.spyOn(BookmarksService, "getInstance").mockReturnValue({
     rememberReplayClipSession: vi.fn(),
   } as unknown as BookmarksService);
-  service = new ReplayClipCreationService({
+  dependencies = {
     persistAndPublish: vi.fn(),
     preparePreview: async () => undefined,
     readDuration: () => 10,
@@ -68,7 +69,8 @@ beforeEach(() => {
     resolveStoredPath: (path) => path,
     runClipOperation: (_id, operation) => operation(),
     updateClip: (clip, update) => ({ ...clip, ...update }),
-  });
+  };
+  service = new ReplayClipCreationService(dependencies);
 });
 
 afterEach(() => {
@@ -77,6 +79,70 @@ afterEach(() => {
 });
 
 describe("Replay clip preview recovery", () => {
+  it("releases capture protection and clears pending state if persistence fails", async () => {
+    dependencies.persistAndPublish = () => {
+      throw new Error("Replay storage unavailable");
+    };
+
+    await expect(service.execute(deathEvent)).rejects.toThrow(
+      "Replay storage unavailable",
+    );
+
+    const clipId = overlay.setReplaySaveActive.mock.calls[0]![0];
+    expect(overlay.setReplaySaveActive.mock.calls).toEqual([
+      [clipId, true],
+      [clipId, false],
+    ]);
+    service.showPendingClipPreviewOverlay();
+    expect(overlay.showClipPreviewOverlay).not.toHaveBeenCalled();
+    expect(saveReplay).not.toHaveBeenCalled();
+  });
+
+  it("preserves the newer pending preview when an older queued creation completes", async () => {
+    let releaseOlderOperation!: () => void;
+    const olderOperationGate = new Promise<void>((resolve) => {
+      releaseOlderOperation = resolve;
+    });
+    let releaseNewerSave!: () => void;
+    const newerSaveGate = new Promise<void>((resolve) => {
+      releaseNewerSave = resolve;
+    });
+    let operationCount = 0;
+    dependencies.runClipOperation = async (_id, operation) => {
+      if (operationCount++ === 0) {
+        await olderOperationGate;
+      }
+      return operation();
+    };
+    const savedReplay = { error: null, ok: true, path: replayPath };
+    saveReplay
+      .mockImplementationOnce(async () => {
+        await newerSaveGate;
+        return savedReplay;
+      })
+      .mockResolvedValueOnce(savedReplay);
+    overlay.showClipPreviewOverlay.mockResolvedValueOnce(false);
+
+    const olderSaving = service.execute({
+      ...deathEvent,
+      kind: "manual",
+      lineHash: "older-manual",
+    });
+    const newerSaving = service.execute(deathEvent);
+    const newerClipId = overlay.setReplaySaveActive.mock.calls[1]![0];
+    releaseOlderOperation();
+    expect((await olderSaving)?.status).toBe("ready");
+
+    service.showPendingClipPreviewOverlay();
+    expect(overlay.showClipPreviewOverlay).toHaveBeenCalledTimes(2);
+    expect(overlay.showClipPreviewOverlay).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: newerClipId, status: "saving_replay" }),
+    );
+
+    releaseNewerSave();
+    expect((await newerSaving)?.id).toBe(newerClipId);
+  });
+
   it("permits a retry when the preview closed before it could be presented", async () => {
     overlay.showClipPreviewOverlay.mockResolvedValueOnce(false);
     const clip = createReplayClip();

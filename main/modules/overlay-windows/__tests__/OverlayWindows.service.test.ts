@@ -264,6 +264,31 @@ afterEach(() => {
 });
 
 describe("OverlayWindowsService", () => {
+  it("protects the preview through the facade until its matching save completes", async () => {
+    settingsStoreMocks.get.mockReturnValue({
+      ...createDefaultSettings(),
+      recordingHideOverlaysFromRecording: false,
+      recordingHideOverlaysFromRewind: false,
+    });
+    const clipWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(clipWindow);
+    const service = new OverlayWindowsService();
+    service.setRunningGame("poe1");
+    service.setPoeFocusActive(true);
+
+    service.setReplaySaveActive("clip-1", true);
+    await expect(service.showClipPreviewOverlay(createClip())).resolves.toBe(
+      true,
+    );
+    expect(clipWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+    expect(clipWindow.showInactive).toHaveBeenCalled();
+    service.setReplaySaveActive("older-clip", false);
+    expect(clipWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+    service.setReplaySaveActive("clip-1", false);
+    expect(clipWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+    service.destroyAll();
+  });
+
   it("creates and reuses the singleton instance", () => {
     const singletonAccess = OverlayWindowsService as unknown as {
       instance: OverlayWindowsService | null;
