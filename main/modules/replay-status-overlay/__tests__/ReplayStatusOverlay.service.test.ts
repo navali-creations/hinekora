@@ -6,6 +6,11 @@ import {
   createFakeBrowserWindow,
   type FakeBrowserWindowOptions,
 } from "~/main/test/fake-browser-window";
+import { mockIpcMainHandlers } from "~/main/test/ipc";
+import {
+  clearIpcWindowRolesForTests,
+  registerIpcWindowRole,
+} from "~/main/utils/ipc-window-roles";
 
 import { ReplayStatusOverlayChannel } from "../ReplayStatusOverlay.channels";
 import { ReplayStatusOverlayService } from "../ReplayStatusOverlay.service";
@@ -76,6 +81,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  clearIpcWindowRolesForTests();
   vi.useRealTimers();
   electronMocks.BrowserWindow.mockClear();
   electronMocks.browserWindowFactory.mockReset();
@@ -86,6 +92,194 @@ afterEach(() => {
 });
 
 describe("ReplayStatusOverlayService", () => {
+  it("hides only the matching clip and does not reopen it when loading finishes", async () => {
+    let resolveLoad!: () => void;
+    const notificationWindow = createFakeWindow();
+    notificationWindow.loadFile.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveLoad = resolve;
+      }),
+    );
+    electronMocks.browserWindowFactory.mockReturnValue(notificationWindow);
+    const { service } = createService();
+    const showing = service.showSaving("death-preview");
+    service.hide("older-clip");
+    expect(service.getSnapshot()?.clipId).toBe("death-preview");
+    service.hide("death-preview");
+    expect(service.getSnapshot()).toBeNull();
+    resolveLoad();
+    await showing;
+    expect(notificationWindow.showInactive).not.toHaveBeenCalled();
+    await service.showSaving("next-clip");
+    expect(service.getSnapshot()?.clipId).toBe("next-clip");
+    expect(notificationWindow.showInactive).toHaveBeenCalledOnce();
+    service.destroy();
+  });
+
+  it("keeps snapshots aligned with active, final, dismissing, and hidden states", async () => {
+    vi.useFakeTimers();
+    const notificationWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(notificationWindow);
+    const { service } = createService();
+    expect(service.getSnapshot()).toBeNull();
+    await service.showSaving("manual-snapshot");
+    expect(service.getSnapshot()).toEqual({
+      clipId: "manual-snapshot",
+      dismissing: false,
+      status: "saving",
+    });
+    await service.showProcessing("manual-snapshot");
+    expect(service.getSnapshot()?.status).toBe("processing");
+    service.finish("manual-snapshot", "saved");
+    expect(service.getSnapshot()?.status).toBe("processing");
+    await vi.advanceTimersByTimeAsync(600);
+    expect(service.getSnapshot()).toEqual({
+      clipId: "manual-snapshot",
+      dismissing: false,
+      status: "saved",
+    });
+    service.finish("manual-snapshot", "failed");
+    expect(service.getSnapshot()?.status).toBe("saved");
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(service.getSnapshot()).toEqual({
+      clipId: "manual-snapshot",
+      dismissing: true,
+      status: "saved",
+    });
+    await vi.advanceTimersByTimeAsync(420);
+    expect(service.getSnapshot()).toBeNull();
+    await service.showSaving("manual-next");
+    expect(service.getSnapshot()).toEqual({
+      clipId: "manual-next",
+      dismissing: false,
+      status: "saving",
+    });
+    notificationWindow.isDestroyed.mockReturnValue(true);
+    expect(service.getSnapshot()).toBeNull();
+    service.destroy();
+    expect(service.getSnapshot()).toBeNull();
+  });
+
+  it("only exposes the snapshot to its own replay-status renderer", async () => {
+    const { handlers } = mockIpcMainHandlers();
+    const notificationWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(notificationWindow);
+    const { service } = createService();
+    await service.showSaving("manual-private");
+    const readSnapshot = handlers.get(ReplayStatusOverlayChannel.GetSnapshot)!;
+    expect(readSnapshot({ sender: notificationWindow.webContents })).toEqual({
+      clipId: "manual-private",
+      dismissing: false,
+      status: "saving",
+    });
+    const otherWindow = createFakeWindow();
+    expect(() => readSnapshot({ sender: otherWindow.webContents })).toThrow(
+      "not available",
+    );
+    registerIpcWindowRole(otherWindow.webContents, WindowName.Main);
+    expect(() => readSnapshot({ sender: otherWindow.webContents })).toThrow(
+      "not available",
+    );
+    registerIpcWindowRole(
+      otherWindow.webContents,
+      WindowName.ReplayStatusOverlay,
+    );
+    expect(readSnapshot({ sender: otherWindow.webContents })).toBeNull();
+    service.destroy();
+  });
+
+  it("protects the saving notice from capture and transitions in the same window", async () => {
+    vi.useFakeTimers();
+    const notificationWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(notificationWindow);
+    const { service } = createService(false);
+
+    await service.showSaving("manual-1");
+    expect(notificationWindow.webContents.send).toHaveBeenLastCalledWith(
+      ReplayStatusOverlayChannel.StatusChanged,
+      { clipId: "manual-1", dismissing: false, status: "saving" },
+    );
+    expect(notificationWindow.setContentProtection).toHaveBeenLastCalledWith(
+      true,
+    );
+    expect(
+      notificationWindow.setContentProtection.mock.invocationCallOrder[0],
+    ).toBeLessThan(
+      notificationWindow.showInactive.mock.invocationCallOrder[0]!,
+    );
+    service.setContentProtectionEnabled(false);
+    expect(notificationWindow.setContentProtection).toHaveBeenLastCalledWith(
+      true,
+    );
+
+    await vi.advanceTimersByTimeAsync(1_000);
+    await service.showProcessing("manual-1");
+    expect(electronMocks.BrowserWindow).toHaveBeenCalledOnce();
+    expect(notificationWindow.showInactive).toHaveBeenCalledOnce();
+    expect(notificationWindow.setContentProtection).toHaveBeenLastCalledWith(
+      false,
+    );
+    expect(notificationWindow.webContents.send).toHaveBeenLastCalledWith(
+      ReplayStatusOverlayChannel.StatusChanged,
+      { clipId: "manual-1", dismissing: false, status: "processing" },
+    );
+
+    service.finish("manual-1", "saved");
+    await vi.advanceTimersByTimeAsync(599);
+    expect(notificationWindow.webContents.send).not.toHaveBeenCalledWith(
+      ReplayStatusOverlayChannel.StatusChanged,
+      expect.objectContaining({ status: "saved" }),
+    );
+    await vi.advanceTimersByTimeAsync(1);
+    expect(notificationWindow.webContents.send).toHaveBeenLastCalledWith(
+      ReplayStatusOverlayChannel.StatusChanged,
+      { clipId: "manual-1", dismissing: false, status: "saved" },
+    );
+
+    await service.showSaving("manual-2");
+    expect(electronMocks.BrowserWindow).toHaveBeenCalledOnce();
+    expect(notificationWindow.setContentProtection).toHaveBeenLastCalledWith(
+      true,
+    );
+    service.finish("manual-2", "failed");
+    await vi.advanceTimersByTimeAsync(600);
+    expect(notificationWindow.webContents.send).toHaveBeenLastCalledWith(
+      ReplayStatusOverlayChannel.StatusChanged,
+      { clipId: "manual-2", dismissing: false, status: "failed" },
+    );
+    service.destroy();
+  });
+
+  it("keeps the latest phase when saving completes before the window loads", async () => {
+    vi.useFakeTimers();
+    let resolveLoad!: () => void;
+    const notificationWindow = createFakeWindow();
+    notificationWindow.loadFile.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveLoad = resolve;
+      }),
+    );
+    electronMocks.browserWindowFactory.mockReturnValue(notificationWindow);
+    const { service } = createService();
+
+    const showing = service.showSaving("manual-fast");
+    await service.showProcessing("manual-fast");
+    service.finish("manual-fast", "saved");
+    resolveLoad();
+    await showing;
+
+    expect(notificationWindow.webContents.send).toHaveBeenCalledExactlyOnceWith(
+      ReplayStatusOverlayChannel.StatusChanged,
+      { clipId: "manual-fast", dismissing: false, status: "processing" },
+    );
+    await vi.advanceTimersByTimeAsync(600);
+    expect(notificationWindow.webContents.send).toHaveBeenLastCalledWith(
+      ReplayStatusOverlayChannel.StatusChanged,
+      { clipId: "manual-fast", dismissing: false, status: "saved" },
+    );
+    service.destroy();
+  });
+
   it("shows a centered click-through status, hides it, and reuses its window", async () => {
     vi.useFakeTimers();
     vi.setSystemTime("2026-09-04T10:00:00.000Z");

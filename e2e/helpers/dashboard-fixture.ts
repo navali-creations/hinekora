@@ -242,6 +242,7 @@ interface DashboardE2EOptions {
   recorderOverlayVisible?: boolean;
   replayClipDetails?: Record<string, ReplayClipDetail>;
   replayClipOperationDelayMs?: number;
+  manualReplayShowPreview?: boolean;
   selectedPaths?: Array<string | null>;
   poeProcessState?: PoeProcessState;
   profile?: Profile;
@@ -290,6 +291,9 @@ function createDashboardE2EFixture(
   };
   const settings: AppSettings = {
     ...defaultSettings,
+    manualReplayShowPreview:
+      options.manualReplayShowPreview ??
+      defaultSettings.manualReplayShowPreview,
     activeGame,
     activeLeague,
     installedGames: setupState.selectedGames,

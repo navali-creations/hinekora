@@ -12,31 +12,35 @@ import {
 import { logWarn } from "~/main/utils/app-log";
 import { safeErrorMessage } from "~/main/utils/ipc-validation";
 import {
+  registerGuardedIpcHandler,
   registerIpcWindowRole,
   unregisterIpcWindowRole,
 } from "~/main/utils/ipc-window-roles";
 
 import { ReplayStatusOverlayChannel } from "./ReplayStatusOverlay.channels";
 import type {
+  ReplayStatusOverlayActiveStatus,
   ReplayStatusOverlayEvent,
   ReplayStatusOverlayFinalStatus,
 } from "./ReplayStatusOverlay.dto";
 
 const REPLAY_STATUS_OVERLAY_WIDTH = 420;
 const REPLAY_STATUS_OVERLAY_HEIGHT = 260;
-const REPLAY_STATUS_MINIMUM_PROCESSING_MS = 600;
+const REPLAY_STATUS_MINIMUM_ACTIVE_MS = 600;
 const REPLAY_STATUS_SAVED_HOLD_MS = 3_000;
 const REPLAY_STATUS_DISMISS_ANIMATION_MS = 420;
 const REPLAY_STATUS_OVERLAY_SCOPE = "replay-status-overlay";
 
 class ReplayStatusOverlayService {
+  private activeStatus: ReplayStatusOverlayActiveStatus = "processing";
   private clipId: string | null = null;
+  private dismissing = false;
   private dismissTimer: ReturnType<typeof setTimeout> | null = null;
   private finalPublishTimer: ReturnType<typeof setTimeout> | null = null;
   private finalPublished = false;
   private finalStatus: ReplayStatusOverlayFinalStatus | null = null;
   private hideTimer: ReturnType<typeof setTimeout> | null = null;
-  private processingPublishedAt: number | null = null;
+  private statusPublishedAt: number | null = null;
   private requested = false;
   private window: BrowserWindow | null = null;
   private windowLoadPromise: Promise<void> | null = null;
@@ -48,17 +52,70 @@ class ReplayStatusOverlayService {
     private readonly getContentProtectionEnabled = () => false,
   ) {
     this.coordinator.register(this);
+    registerGuardedIpcHandler(
+      ReplayStatusOverlayChannel.GetSnapshot,
+      [WindowName.ReplayStatusOverlay],
+      (event) =>
+        event.sender === this.window?.webContents ? this.getSnapshot() : null,
+    );
   }
 
-  async showProcessing(clipId: string): Promise<void> {
+  getSnapshot(): ReplayStatusOverlayEvent | null {
+    if (
+      !this.requested ||
+      !this.clipId ||
+      !this.window ||
+      this.window.isDestroyed()
+    ) {
+      return null;
+    }
+
+    return {
+      clipId: this.clipId,
+      dismissing: this.dismissing,
+      status:
+        this.finalPublished && this.finalStatus
+          ? this.finalStatus
+          : this.activeStatus,
+    };
+  }
+
+  showSaving(clipId: string): Promise<void> {
+    return this.showStatus(clipId, "saving");
+  }
+
+  showProcessing(clipId: string): Promise<void> {
+    return this.showStatus(clipId, "processing");
+  }
+
+  private async showStatus(
+    clipId: string,
+    status: ReplayStatusOverlayActiveStatus,
+  ): Promise<void> {
+    if (this.requested && this.clipId === clipId) {
+      if (
+        this.activeStatus === "saving" &&
+        status === "processing" &&
+        !this.finalStatus
+      ) {
+        this.activeStatus = status;
+        this.setContentProtectionEnabled(this.getContentProtectionEnabled());
+        this.publishActiveStatus();
+      }
+      return;
+    }
+
     this.clearTimers();
+    this.activeStatus = status;
     this.clipId = clipId;
+    this.dismissing = false;
     this.finalPublished = false;
     this.finalStatus = null;
-    this.processingPublishedAt = null;
+    this.statusPublishedAt = null;
     this.requested = true;
 
     const notificationWindow = this.getOrCreateWindow(clipId);
+    this.setContentProtectionEnabled(this.getContentProtectionEnabled());
 
     try {
       await this.ensureWindowLoaded(notificationWindow);
@@ -81,14 +138,12 @@ class ReplayStatusOverlayService {
       return;
     }
 
-    this.processingPublishedAt = Date.now();
-    this.publishStatus("processing", false);
+    this.publishActiveStatus();
     this.showOrSuspendWindow(notificationWindow);
-    this.scheduleFinalStatusIfReady();
   }
 
   finish(clipId: string, status: ReplayStatusOverlayFinalStatus): void {
-    if (!this.requested || this.clipId !== clipId) {
+    if (!this.requested || this.clipId !== clipId || this.finalStatus) {
       return;
     }
 
@@ -96,8 +151,18 @@ class ReplayStatusOverlayService {
     this.scheduleFinalStatusIfReady();
   }
 
+  hide(clipId: string): void {
+    if (this.clipId === clipId) {
+      this.hideCurrentRequest();
+    }
+  }
+
   setContentProtectionEnabled(enabled: boolean): void {
-    applyGameOverlayContentProtection(this.window, enabled);
+    // Saving is shown before OBS finishes the clip, so it must stay excluded.
+    applyGameOverlayContentProtection(
+      this.window,
+      enabled || this.activeStatus === "saving",
+    );
   }
 
   suspendRequestedOverlay(): void {
@@ -148,7 +213,8 @@ class ReplayStatusOverlayService {
     this.windowLoaded = false;
     registerIpcWindowRole(webContents, WindowName.ReplayStatusOverlay);
     configureGameOverlayWindow(notificationWindow, {
-      contentProtection: this.getContentProtectionEnabled(),
+      contentProtection:
+        this.activeStatus === "saving" || this.getContentProtectionEnabled(),
     });
     this.windowLoadPromise = loadOverlayRenderer(
       notificationWindow,
@@ -220,17 +286,16 @@ class ReplayStatusOverlayService {
     if (
       !this.windowLoaded ||
       !this.finalStatus ||
-      this.processingPublishedAt === null ||
+      this.statusPublishedAt === null ||
       this.finalPublishTimer ||
       this.finalPublished
     ) {
       return;
     }
 
-    const remainingProcessingMs = Math.max(
+    const remainingActiveMs = Math.max(
       0,
-      REPLAY_STATUS_MINIMUM_PROCESSING_MS -
-        (Date.now() - this.processingPublishedAt),
+      REPLAY_STATUS_MINIMUM_ACTIVE_MS - (Date.now() - this.statusPublishedAt),
     );
     const finalStatus = this.finalStatus;
     this.finalPublishTimer = setTimeout(() => {
@@ -238,7 +303,7 @@ class ReplayStatusOverlayService {
       this.finalPublished = true;
       this.publishStatus(finalStatus, false);
       this.scheduleDismissal(finalStatus);
-    }, remainingProcessingMs);
+    }, remainingActiveMs);
     this.finalPublishTimer.unref?.();
   }
 
@@ -256,10 +321,21 @@ class ReplayStatusOverlayService {
     this.hideTimer.unref?.();
   }
 
+  private publishActiveStatus(): void {
+    if (!this.windowLoaded) {
+      return;
+    }
+
+    this.statusPublishedAt = Date.now();
+    this.publishStatus(this.activeStatus, false);
+    this.scheduleFinalStatusIfReady();
+  }
+
   private publishStatus(
     status: ReplayStatusOverlayEvent["status"],
     dismissing: boolean,
   ): void {
+    this.dismissing = dismissing;
     if (
       !this.clipId ||
       !this.window ||
@@ -306,10 +382,12 @@ class ReplayStatusOverlayService {
   }
 
   private resetRequestState(): void {
+    this.activeStatus = "processing";
     this.clipId = null;
+    this.dismissing = false;
     this.finalPublished = false;
     this.finalStatus = null;
-    this.processingPublishedAt = null;
+    this.statusPublishedAt = null;
     this.requested = false;
   }
 

@@ -17,6 +17,7 @@ import {
 } from "~/main/modules/profiles";
 import { RecordingControlsOverlayService } from "~/main/modules/recording-controls-overlay";
 import {
+  type ReplayStatusOverlayActiveStatus,
   type ReplayStatusOverlayFinalStatus,
   ReplayStatusOverlayService,
 } from "~/main/modules/replay-status-overlay";
@@ -280,10 +281,19 @@ class OverlayWindowsService {
     }
   }
 
-  async showClipPreviewOverlay(clip: ReplayClip): Promise<void> {
+  setReplaySaveActive(clipId: string, active: boolean): void {
+    this.deathClipsOverlay.setReplaySaveActive(clipId, active);
+  }
+
+  async showClipPreviewOverlay(clip: ReplayClip): Promise<boolean> {
     this.suspendClipPreviewResources();
     try {
       await this.deathClipsOverlay.showClip(clip);
+      const requested = this.deathClipsOverlay.isRequested();
+      if (requested) {
+        this.replayStatusOverlay.hide(clip.id);
+      }
+      return requested;
     } finally {
       if (!this.deathClipsOverlay.isRequested()) {
         this.restoreClipPreviewResources();
@@ -291,8 +301,13 @@ class OverlayWindowsService {
     }
   }
 
-  showReplayStatusOverlay(clipId: string): Promise<void> {
-    return this.replayStatusOverlay.showProcessing(clipId);
+  showReplayStatusOverlay(
+    clipId: string,
+    status: ReplayStatusOverlayActiveStatus = "processing",
+  ): Promise<void> {
+    return status === "saving"
+      ? this.replayStatusOverlay.showSaving(clipId)
+      : this.replayStatusOverlay.showProcessing(clipId);
   }
 
   finishReplayStatusOverlay(

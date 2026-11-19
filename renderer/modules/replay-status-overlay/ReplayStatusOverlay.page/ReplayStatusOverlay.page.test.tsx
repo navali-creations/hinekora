@@ -23,6 +23,11 @@ describe("ReplayStatusOverlayPage", () => {
       configurable: true,
       value: {
         replayStatusOverlay: {
+          getSnapshot: vi.fn().mockResolvedValue({
+            clipId: "manual-1",
+            dismissing: false,
+            status: "saving",
+          }),
           onStatusChanged: (
             callback: (status: ReplayStatusOverlayEvent) => void,
           ) => {
@@ -40,16 +45,29 @@ describe("ReplayStatusOverlayPage", () => {
     document.body.replaceChildren();
   });
 
-  it("shows processing and replaces it for each reused-window replay", async () => {
+  it("shows saving then processing and replaces it for each reused-window replay", async () => {
     await act(async () => {
       root?.render(<ReplayStatusOverlayPage />);
     });
 
     const initialNotification = container.querySelector('[role="status"]');
-    expect(initialNotification?.textContent).toContain("Processing replay");
+    expect(initialNotification?.textContent).toContain("Saving clip");
     expect(initialNotification?.textContent).not.toContain(
       "Finishing your clip.",
     );
+    expect(initialNotification?.getAttribute("data-status")).toBe("saving");
+
+    await act(async () => {
+      listener?.({
+        clipId: "manual-1",
+        dismissing: false,
+        status: "processing",
+      });
+    });
+    expect(container.querySelector('[role="status"]')).toBe(
+      initialNotification,
+    );
+    expect(initialNotification?.textContent).toContain("Processing replay");
     expect(initialNotification?.getAttribute("data-status")).toBe("processing");
 
     await act(async () => {

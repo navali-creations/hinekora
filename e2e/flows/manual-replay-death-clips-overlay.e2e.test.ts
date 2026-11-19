@@ -263,28 +263,35 @@ test.afterEach(async ({ page }) => {
   await expectNoUnexpectedDashboardBridgeCalls(page);
 });
 
-test("shows live preview preparation progress", async ({ page }) => {
-  const clipId = "clip-preparing";
-  await setupDashboardE2E(page, {
-    initialHash: `/#/clip-preview-overlay?clipId=${clipId}`,
-    replayClipDetails: {
-      [clipId]: createReplayClipDetail(clipId, "saving_replay", 12),
-    },
-    skipDashboardShellChecks: true,
-  });
-  await waitForClipPreviewOverlayToLoad(page);
+for (const manualReplayShowPreview of [true, false]) {
+  test(`shows live preview preparation progress for deaths (manual previews: ${manualReplayShowPreview})`, async ({
+    page,
+  }) => {
+    const clipId = "clip-preparing";
+    const detail = createReplayClipDetail(clipId, "saving_replay", 12);
+    detail.clip.kind = "death";
+    await setupDashboardE2E(page, {
+      initialHash: `/#/clip-preview-overlay?clipId=${clipId}`,
+      manualReplayShowPreview,
+      replayClipDetails: {
+        [clipId]: detail,
+      },
+      skipDashboardShellChecks: true,
+    });
+    await waitForClipPreviewOverlayToLoad(page);
 
-  const progress = page.getByRole("progressbar", {
-    name: "Preview preparation progress",
+    const progress = page.getByRole("progressbar", {
+      name: "Preview preparation progress",
+    });
+    await expect(progress).toHaveAttribute("aria-valuenow", "0");
+    await emitDashboardReplayClipPreviewProgress(page, {
+      clipId,
+      progress: 0.42,
+    });
+    await expect(progress).toHaveAttribute("aria-valuenow", "42");
+    await expect(page.getByText("42%")).toBeVisible();
   });
-  await expect(progress).toHaveAttribute("aria-valuenow", "0");
-  await emitDashboardReplayClipPreviewProgress(page, {
-    clipId,
-    progress: 0.42,
-  });
-  await expect(progress).toHaveAttribute("aria-valuenow", "42");
-  await expect(page.getByText("42%")).toBeVisible();
-});
+}
 
 test("covers manual replay and death clip overlay actions", async ({
   page,

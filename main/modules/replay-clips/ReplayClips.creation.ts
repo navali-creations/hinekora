@@ -4,7 +4,10 @@ import { stat } from "node:fs/promises";
 import { BookmarksService } from "~/main/modules/bookmarks";
 import { ManagedRecorderService } from "~/main/modules/managed-recorder";
 import { OverlayWindowsService } from "~/main/modules/overlay-windows";
-import type { ReplayStatusOverlayFinalStatus } from "~/main/modules/replay-status-overlay";
+import type {
+  ReplayStatusOverlayActiveStatus,
+  ReplayStatusOverlayFinalStatus,
+} from "~/main/modules/replay-status-overlay";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import {
   createSafePathLogFields,
@@ -36,8 +39,16 @@ interface ReplayClipCreationDependencies {
   updateClip: (clip: ReplayClip, update: Partial<ReplayClip>) => ReplayClip;
 }
 
+interface PendingReplayClipCreation {
+  clip: ReplayClip;
+  captureProtected: boolean;
+  previewRequested: boolean;
+}
+
 class ReplayClipCreationService {
   private readonly duplicateTracker = new ReplayClipDuplicateTracker();
+  private lastPreviewClipId: string | null = null;
+  private pendingCreation: PendingReplayClipCreation | null = null;
 
   constructor(private readonly dependencies: ReplayClipCreationDependencies) {}
 
@@ -81,14 +92,35 @@ class ReplayClipCreationService {
       requestedDurationSeconds,
       recorderStatus.fps,
     );
-    return this.dependencies.runClipOperation(clip.id, () =>
-      this.createStoredClip(
-        clip,
-        event,
-        requestedDurationSeconds,
-        settings.manualReplayShowPreview,
-      ),
-    );
+    const pendingCreation: PendingReplayClipCreation = {
+      clip,
+      captureProtected: this.setReplaySaveActive(clip, true),
+      previewRequested: false,
+    };
+    this.pendingCreation = pendingCreation;
+    let createdClip: ReplayClip | null = null;
+    try {
+      createdClip = await this.dependencies.runClipOperation(clip.id, () =>
+        this.createStoredClip(
+          clip,
+          event,
+          requestedDurationSeconds,
+          settings.manualReplayShowPreview,
+        ),
+      );
+      return createdClip;
+    } finally {
+      this.setReplaySaveActive(clip, false);
+      if (createdClip) {
+        pendingCreation.clip = createdClip;
+      }
+      if (this.pendingCreation === pendingCreation) {
+        this.pendingCreation = null;
+      }
+      if (pendingCreation.previewRequested && createdClip?.status === "ready") {
+        this.showClipPreviewOverlay(createdClip);
+      }
+    }
   }
 
   private async createStoredClip(
@@ -98,14 +130,18 @@ class ReplayClipCreationService {
     manualReplayShowPreview: boolean,
   ): Promise<ReplayClip> {
     let clip = initialClip;
+    const showPreview = event.kind === "death" || manualReplayShowPreview;
     this.dependencies.persistAndPublish(clip);
 
     try {
       clip = this.dependencies.updateClip(clip, { status: "saving_replay" });
-      if (event.kind === "death" || manualReplayShowPreview) {
+      if (this.pendingCreation?.clip.id === clip.id) {
+        this.pendingCreation.clip = clip;
+      }
+      if (showPreview) {
         this.showClipPreviewOverlay(clip);
       } else {
-        this.showReplayStatusOverlay(clip);
+        this.showReplayStatusOverlay(clip, "saving");
       }
       logInfo("replay-clips", "Saving replay for trigger", {
         backend: "managed",
@@ -137,6 +173,9 @@ class ReplayClipCreationService {
         ...createSafePathLogFields(storedReplayPath, "recording"),
       });
       const durationSeconds = this.dependencies.readDuration(storedReplayPath);
+      if (!this.pendingCreation?.previewRequested) {
+        this.showReplayStatusOverlay(clip, "processing");
+      }
       await this.dependencies.preparePreview(
         clip,
         storedReplayPath,
@@ -146,7 +185,7 @@ class ReplayClipCreationService {
         durationSeconds,
         status: "ready",
       });
-      if (event.kind === "manual" && !manualReplayShowPreview) {
+      if (!showPreview) {
         this.finishReplayStatusOverlay(readyClip, "saved");
       }
       logInfo("replay-clips", "Replay clip ready", { clipId: readyClip.id });
@@ -160,7 +199,7 @@ class ReplayClipCreationService {
         error: safeErrorMessage(error),
         status: "failed",
       });
-      if (event.kind === "manual" && !manualReplayShowPreview) {
+      if (!showPreview) {
         this.finishReplayStatusOverlay(failedClip, "failed");
       }
       return failedClip;
@@ -235,35 +274,79 @@ class ReplayClipCreationService {
     return result.path;
   }
 
-  private showClipPreviewOverlay(clip: ReplayClip): void {
-    this.runOverlayRequest(clip, "Replay clip overlay failed", () =>
+  showPendingClipPreviewOverlay(): void {
+    if (this.pendingCreation) {
+      this.showClipPreviewOverlay(this.pendingCreation.clip);
+    }
+  }
+
+  showClipPreviewOverlay(clip: ReplayClip): void {
+    const pendingCreation =
+      this.pendingCreation?.clip.id === clip.id ? this.pendingCreation : null;
+    if (pendingCreation) {
+      pendingCreation.previewRequested = true;
+      if (!pendingCreation.captureProtected) {
+        return;
+      }
+    }
+    // A coalesced death can request the same preview again after saving.
+    if (this.lastPreviewClipId === clip.id) {
+      return;
+    }
+    this.lastPreviewClipId = clip.id;
+    void this.runOverlayRequest(clip, "Replay clip overlay failed", () =>
       OverlayWindowsService.getInstance().showClipPreviewOverlay(clip),
+    ).then((opened) => {
+      if (!opened && this.lastPreviewClipId === clip.id) {
+        this.lastPreviewClipId = null;
+        if (
+          pendingCreation?.clip.status === "ready" &&
+          this.pendingCreation === null
+        ) {
+          this.showClipPreviewOverlay(pendingCreation.clip);
+        }
+      }
+    });
+  }
+
+  private setReplaySaveActive(clip: ReplayClip, active: boolean): boolean {
+    try {
+      OverlayWindowsService.getInstance().setReplaySaveActive(clip.id, active);
+      return true;
+    } catch (error) {
+      logWarn("replay-clips", "Could not update replay capture protection", {
+        clipId: clip.id,
+        error: safeErrorMessage(error),
+      });
+      return false;
+    }
+  }
+
+  private showReplayStatusOverlay(
+    clip: ReplayClip,
+    status: ReplayStatusOverlayActiveStatus,
+  ): void {
+    void this.runOverlayRequest(clip, "Replay status overlay failed", () =>
+      OverlayWindowsService.getInstance().showReplayStatusOverlay(
+        clip.id,
+        status,
+      ),
     );
   }
 
-  private showReplayStatusOverlay(clip: ReplayClip): void {
-    this.runOverlayRequest(clip, "Replay status overlay failed", () =>
-      OverlayWindowsService.getInstance().showReplayStatusOverlay(clip.id),
-    );
-  }
-
-  private runOverlayRequest(
+  private async runOverlayRequest<T>(
     clip: ReplayClip,
     failureMessage: string,
-    request: () => Promise<void>,
-  ): void {
+    request: () => Promise<T>,
+  ): Promise<boolean> {
     try {
-      void request().catch((error: unknown) => {
-        logWarn("replay-clips", failureMessage, {
-          clipId: clip.id,
-          error: safeErrorMessage(error),
-        });
-      });
+      return (await request()) !== false;
     } catch (error) {
       logWarn("replay-clips", failureMessage, {
         clipId: clip.id,
         error: safeErrorMessage(error),
       });
+      return false;
     }
   }
 

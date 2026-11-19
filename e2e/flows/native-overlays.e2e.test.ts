@@ -10,8 +10,10 @@ import {
   createWindowRoleArgument,
   WindowName,
 } from "~/main/modules/main-window/MainWindow.types";
+import type { ReplayStatusOverlayFinalStatus } from "~/main/modules/replay-status-overlay";
 
 import type { NativeOverlayDevToolsGlobal } from "~/e2e/helpers/native-overlay-devtools.types";
+import type { NativeReplayStatusE2EGlobal } from "~/e2e/helpers/native-replay-status.types";
 
 const projectRoot = resolve(__dirname, "../..");
 const preloadPath = resolve(
@@ -38,6 +40,39 @@ const nativeOverlayWindowRoleEnvironment = {
     WindowName.RecorderOverlay,
   ),
 };
+
+async function launchNativeReplayFixture(
+  baseURL: string | undefined,
+  environment: Record<string, string> = {},
+) {
+  const profileDirectory = mkdtempSync(
+    join(tmpdir(), "hinekora-replay-status-profile-"),
+  );
+  let electronApp: Awaited<ReturnType<typeof electron.launch>>;
+  try {
+    electronApp = await electron.launch({
+      args: [nativeReplayStatusMainPath, `--user-data-dir=${profileDirectory}`],
+      env: {
+        ...process.env,
+        HINEKORA_E2E_RENDERER_URL: baseURL ?? "http://127.0.0.1:5173",
+        ...environment,
+      },
+    });
+  } catch (error) {
+    rmSync(profileDirectory, { force: true, recursive: true });
+    throw error;
+  }
+  return {
+    electronApp,
+    dispose: async () => {
+      try {
+        await electronApp.close();
+      } finally {
+        rmSync(profileDirectory, { force: true, recursive: true });
+      }
+    },
+  };
+}
 
 test.beforeAll(() => {
   if (process.platform !== "win32") {
@@ -298,92 +333,254 @@ test("leaves clip-preview fullscreen and restores its native window bounds", asy
   }
 });
 
-test("runs the replay-status lifecycle in a native sandboxed window", async ({
-  baseURL,
-}) => {
-  test.skip(process.platform !== "win32", "Hinekora targets Windows capture");
+for (const saveResult of ["saved", "failed"] as const) {
+  test(`runs the ${saveResult} replay-status lifecycle in a native sandboxed window`, async ({
+    baseURL,
+  }) => {
+    test.skip(process.platform !== "win32", "Hinekora targets Windows capture");
 
-  const electronApp = await electron.launch({
-    args: [nativeReplayStatusMainPath],
-    env: {
-      ...process.env,
-      HINEKORA_E2E_RENDERER_URL: baseURL ?? "http://127.0.0.1:5173",
-    },
-  });
+    const fixture = await launchNativeReplayFixture(baseURL);
+    const { electronApp } = fixture;
 
-  try {
-    const overlayWindow = await electronApp.firstWindow();
-    const notification = overlayWindow.getByRole("status");
+    try {
+      const overlayWindow = await electronApp.firstWindow();
+      const notification = overlayWindow.getByRole("status");
 
-    await expect(notification).toContainText("Processing replay");
-    await expect(notification).toHaveAttribute("data-status", "processing");
-    await expect(notification).toContainText("Replay saved");
-    await expect(notification).toHaveAttribute("data-status", "saved");
-    await expect(notification).toHaveAttribute("data-dismissing", "true", {
-      timeout: 5_000,
-    });
+      await expect(notification).toContainText("Saving clip");
+      await expect(notification).toHaveAttribute("data-status", "saving");
+      expect(
+        await electronApp.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()[0]?.isContentProtected(),
+        ),
+      ).toBe(true);
+      expect(
+        await electronApp.evaluate(() =>
+          (
+            globalThis as NativeReplayStatusE2EGlobal
+          ).__HINEKORA_REPLAY_STATUS_E2E__.getState(),
+        ),
+      ).toMatchObject({ clipStatus: "saving_replay", finalStatus: null });
 
-    await expect
-      .poll(() =>
-        electronApp.evaluate(() => {
-          return (
-            globalThis as typeof globalThis & {
-              __HINEKORA_REPLAY_STATUS_E2E__?: unknown;
-            }
-          ).__HINEKORA_REPLAY_STATUS_E2E__;
-        }),
-      )
-      .toEqual({
-        clipStatus: "ready",
-        finalStatus: "saved",
-        manualReplayShowPreview: false,
-        previewRequested: false,
-        statusRequested: true,
+      await electronApp.evaluate(
+        (_electron, result: ReplayStatusOverlayFinalStatus) => {
+          (
+            globalThis as NativeReplayStatusE2EGlobal
+          ).__HINEKORA_REPLAY_STATUS_E2E__.releaseSave(result);
+        },
+        saveResult,
+      );
+      if (saveResult === "saved") {
+        await expect(notification).toContainText("Processing replay");
+        await expect(notification).toHaveAttribute("data-status", "processing");
+        expect(
+          await electronApp.evaluate(({ BrowserWindow }) =>
+            BrowserWindow.getAllWindows()[0]?.isContentProtected(),
+          ),
+        ).toBe(false);
+        await electronApp.evaluate(() => {
+          (
+            globalThis as NativeReplayStatusE2EGlobal
+          ).__HINEKORA_REPLAY_STATUS_E2E__.releaseProcessing();
+        });
+        await expect(notification).toContainText("Replay saved");
+      } else {
+        await expect(notification).toContainText("Replay save failed");
+        await expect(notification).toContainText("Open Hinekora for details.");
+      }
+      await expect(notification).toHaveAttribute("data-status", saveResult);
+      await expect(notification).toHaveAttribute("data-dismissing", "true", {
+        timeout: 5_000,
       });
 
-    const nativeWindowState = await electronApp.evaluate(
-      ({ BrowserWindow }) => {
-        const window = BrowserWindow.getAllWindows()[0];
-        const preferences = (
-          window?.webContents as unknown as
-            | {
-                getLastWebPreferences(): {
-                  contextIsolation?: boolean;
-                  nodeIntegration?: boolean;
-                  sandbox?: boolean;
-                };
-              }
-            | undefined
-        )?.getLastWebPreferences();
+      await expect
+        .poll(() =>
+          electronApp.evaluate(() => {
+            return (
+              globalThis as NativeReplayStatusE2EGlobal
+            ).__HINEKORA_REPLAY_STATUS_E2E__.getState();
+          }),
+        )
+        .toEqual({
+          clipStatus: saveResult === "saved" ? "ready" : "failed",
+          finalStatus: saveResult,
+          manualReplayShowPreview: false,
+          previewRequested: false,
+          previewAttempts: 0,
+          previewFailures: 0,
+          processingStarted: saveResult === "saved",
+          statusRequested: true,
+        });
 
-        return {
-          contextIsolation: preferences?.contextIsolation,
-          focusable: window?.isFocusable(),
-          nodeIntegration: preferences?.nodeIntegration,
-          sandbox: preferences?.sandbox,
-          size: window?.getSize(),
-        };
-      },
-    );
-    expect(nativeWindowState).toEqual({
-      contextIsolation: true,
-      focusable: false,
-      nodeIntegration: false,
-      sandbox: true,
-      size: [420, 260],
+      const nativeWindowState = await electronApp.evaluate(
+        ({ BrowserWindow }) => {
+          const window = BrowserWindow.getAllWindows()[0];
+          const preferences = (
+            window?.webContents as unknown as
+              | {
+                  getLastWebPreferences(): {
+                    contextIsolation?: boolean;
+                    nodeIntegration?: boolean;
+                    sandbox?: boolean;
+                  };
+                }
+              | undefined
+          )?.getLastWebPreferences();
+
+          return {
+            contextIsolation: preferences?.contextIsolation,
+            focusable: window?.isFocusable(),
+            nodeIntegration: preferences?.nodeIntegration,
+            sandbox: preferences?.sandbox,
+            size: window?.getSize(),
+          };
+        },
+      );
+      expect(nativeWindowState).toEqual({
+        contextIsolation: true,
+        focusable: false,
+        nodeIntegration: false,
+        sandbox: true,
+        size: [420, 260],
+      });
+
+      await expect
+        .poll(() =>
+          electronApp.evaluate(({ BrowserWindow }) => {
+            return BrowserWindow.getAllWindows()[0]?.isVisible();
+          }),
+        )
+        .toBe(false);
+    } finally {
+      await fixture.dispose();
+    }
+  });
+}
+
+for (const scenario of [
+  "saved",
+  "failed",
+  "retry",
+  "protection-failure",
+] as const) {
+  test(`protects the native death preview during a ${scenario} save`, async ({
+    baseURL,
+  }) => {
+    test.skip(process.platform !== "win32", "Hinekora targets Windows capture");
+    const fixture = await launchNativeReplayFixture(baseURL, {
+      HINEKORA_E2E_REPLAY_KIND: "death",
+      HINEKORA_E2E_FAIL_FIRST_PREVIEW_LOAD: scenario === "retry" ? "1" : "0",
+      HINEKORA_E2E_FAIL_FIRST_PROTECTION:
+        scenario === "protection-failure" ? "1" : "0",
     });
+    const { electronApp } = fixture;
+    const readState = () =>
+      electronApp.evaluate(() =>
+        (
+          globalThis as NativeReplayStatusE2EGlobal
+        ).__HINEKORA_REPLAY_STATUS_E2E__.getState(),
+      );
+    const previewWindows = () =>
+      electronApp
+        .windows()
+        .filter(
+          (window) =>
+            !window.isClosed() && window.url().includes("clip-preview-overlay"),
+        );
+    const isProtected = () =>
+      electronApp.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()
+          .find((window) =>
+            window.webContents.getURL().includes("clip-preview-overlay"),
+          )
+          ?.isContentProtected(),
+      );
+    try {
+      if (scenario === "retry" || scenario === "protection-failure") {
+        await expect
+          .poll(async () => (await readState()).previewFailures)
+          .toBe(1);
+        await expect
+          .poll(
+            () =>
+              electronApp.windows().filter((window) => !window.isClosed())
+                .length,
+          )
+          .toBe(0);
+        if (scenario === "retry") {
+          await electronApp.evaluate(() => {
+            (
+              globalThis as NativeReplayStatusE2EGlobal
+            ).__HINEKORA_REPLAY_STATUS_E2E__.requestPreview();
+          });
+        }
+      }
 
-    await expect
-      .poll(() =>
-        electronApp.evaluate(({ BrowserWindow }) => {
-          return BrowserWindow.getAllWindows()[0]?.isVisible();
-        }),
-      )
-      .toBe(false);
-  } finally {
-    await electronApp.close();
-  }
-});
+      if (scenario !== "protection-failure") {
+        await expect.poll(() => previewWindows().length).toBe(1);
+        const preview = previewWindows()[0]!;
+        const progress = preview.getByRole("progressbar", {
+          name: "Preview preparation progress",
+        });
+        await expect(progress).toHaveAttribute("aria-valuenow", "0");
+        expect(await isProtected()).toBe(true);
+        expect(await readState()).toMatchObject({
+          clipStatus: "saving_replay",
+          statusRequested: false,
+          manualReplayShowPreview: false,
+        });
+        for (const enabled of [true, false]) {
+          await electronApp.evaluate((_electron, enabled) => {
+            (
+              globalThis as NativeReplayStatusE2EGlobal
+            ).__HINEKORA_REPLAY_STATUS_E2E__.setCaptureProtection(enabled);
+          }, enabled);
+          expect(await isProtected()).toBe(true);
+        }
+      }
+
+      await electronApp.evaluate(
+        (_electron, result: ReplayStatusOverlayFinalStatus) => {
+          (
+            globalThis as NativeReplayStatusE2EGlobal
+          ).__HINEKORA_REPLAY_STATUS_E2E__.releaseSave(result);
+        },
+        scenario === "failed" ? "failed" : "saved",
+      );
+      if (scenario !== "failed") {
+        await expect
+          .poll(async () => (await readState()).processingStarted)
+          .toBe(true);
+        if (scenario !== "protection-failure") {
+          await expect(
+            previewWindows()[0]!.getByRole("progressbar", {
+              name: "Preview preparation progress",
+            }),
+          ).toHaveAttribute("aria-valuenow", "42");
+          expect(await isProtected()).toBe(true);
+        }
+        await electronApp.evaluate(() => {
+          (
+            globalThis as NativeReplayStatusE2EGlobal
+          ).__HINEKORA_REPLAY_STATUS_E2E__.releaseProcessing();
+        });
+      }
+      await expect
+        .poll(async () => (await readState()).clipStatus)
+        .toBe(scenario === "failed" ? "failed" : "ready");
+      await expect.poll(() => previewWindows().length).toBe(1);
+      await expect.poll(isProtected).toBe(false);
+      expect(await readState()).toMatchObject({
+        statusRequested: false,
+        previewAttempts:
+          scenario === "retry" || scenario === "protection-failure" ? 2 : 1,
+        previewFailures:
+          scenario === "retry" || scenario === "protection-failure" ? 1 : 0,
+      });
+    } finally {
+      await fixture.dispose();
+    }
+  });
+}
 
 test("authorizes native display capture once for the prepared source", async () => {
   test.skip(process.platform !== "win32", "Hinekora targets Windows capture");

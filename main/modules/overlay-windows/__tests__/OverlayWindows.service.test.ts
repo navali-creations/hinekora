@@ -350,7 +350,7 @@ describe("OverlayWindowsService", () => {
     expect(service.setRecorderOverlayMode("minimized")).toBe("minimized");
     service.setRunningGame("poe1");
     service.setPoeFocusActive(true);
-    await expect(service.showClipPreviewOverlay(clip)).resolves.toBeUndefined();
+    await expect(service.showClipPreviewOverlay(clip)).resolves.toBe(false);
     await expect(service.showAuraOverlay("profile-1")).resolves.toBeUndefined();
     await expect(
       service.showAuraOverlay("profile-1", { startAddingAura: true }),
@@ -383,6 +383,36 @@ describe("OverlayWindowsService", () => {
     expect(deathClipsOverlay.hide).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps saving feedback until the death preview opens, then hides the notice", async () => {
+    const notificationWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(notificationWindow);
+    const service = new OverlayWindowsService();
+    const internals = getInternals(service);
+    const deathClipsOverlay = internals.deathClipsOverlay as {
+      showClip(clip: ReplayClip): Promise<void>;
+      isRequested(): boolean;
+    };
+    const replayStatusOverlay = internals.replayStatusOverlay as {
+      getSnapshot(): { clipId: string } | null;
+    };
+    let resolvePreview!: () => void;
+    vi.spyOn(deathClipsOverlay, "showClip").mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolvePreview = resolve;
+      }),
+    );
+    vi.spyOn(deathClipsOverlay, "isRequested").mockReturnValue(true);
+    const clip = { id: "death-preview" } as ReplayClip;
+    await service.showReplayStatusOverlay(clip.id, "saving");
+    const showing = service.showClipPreviewOverlay(clip);
+    expect(replayStatusOverlay.getSnapshot()?.clipId).toBe(clip.id);
+    resolvePreview();
+    await showing;
+    expect(replayStatusOverlay.getSnapshot()).toBeNull();
+    expect(notificationWindow.hide).toHaveBeenCalledOnce();
+    service.destroyAll();
+  });
+
   it("delegates replay status lifecycle updates through its reusable native overlay", async () => {
     vi.useFakeTimers();
     const notificationWindow = createFakeWindow();
@@ -401,7 +431,17 @@ describe("OverlayWindowsService", () => {
     service.setRunningGame("poe1");
     service.setPoeFocusActive(true);
 
+    await service.showReplayStatusOverlay("manual-overlay-facade", "saving");
+    expect(notificationWindow.webContents.send).toHaveBeenLastCalledWith(
+      "replay-status-overlay:status-changed",
+      {
+        clipId: "manual-overlay-facade",
+        dismissing: false,
+        status: "saving",
+      },
+    );
     await service.showReplayStatusOverlay("manual-overlay-facade");
+    expect(notificationWindow.showInactive).toHaveBeenCalledOnce();
     service.finishReplayStatusOverlay("manual-overlay-facade", "saved");
     await vi.advanceTimersByTimeAsync(600);
 

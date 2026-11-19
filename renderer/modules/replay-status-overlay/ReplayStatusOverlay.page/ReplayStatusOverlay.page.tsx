@@ -21,14 +21,17 @@ function ReplayStatusOverlayPage() {
     return null;
   }
 
-  const isProcessing = status.status === "processing";
+  const isSaving = status.status === "saving";
+  const isActive = isSaving || status.status === "processing";
   const isSaved = status.status === "saved";
   const isFailed = status.status === "failed";
-  const title = isProcessing
-    ? "Processing replay…"
-    : isSaved
-      ? "Replay saved"
-      : "Replay save failed";
+  const title = isSaving
+    ? "Saving clip…"
+    : isActive
+      ? "Processing replay…"
+      : isSaved
+        ? "Replay saved"
+        : "Replay save failed";
 
   return (
     <OverlayNotice
@@ -41,7 +44,7 @@ function ReplayStatusOverlayPage() {
       data-status={status.status}
       key={status.clipId}
     >
-      {isProcessing ? (
+      {isActive ? (
         <FiLoader
           aria-hidden="true"
           className={`${styles.icon} animate-spin motion-reduce:animate-none`}

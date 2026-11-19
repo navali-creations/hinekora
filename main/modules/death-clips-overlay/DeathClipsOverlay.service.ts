@@ -36,6 +36,7 @@ function createClipPreviewRoute(clipId: string): string {
 }
 
 type ClipPreviewOverlayCloseReason =
+  | "capture-protection-failed"
   | "destroy"
   | "hide-requested"
   | "window-closed";
@@ -47,6 +48,7 @@ class DeathClipsOverlayService {
   private clipPreviewWindowedBounds: Electron.Rectangle | null = null;
   private clipPreviewWindow: BrowserWindow | null = null;
   private clipPreviewOverlayRequested = false;
+  private activeReplaySaveClipId: string | null = null;
 
   constructor(
     private readonly coordinator: GameOverlayCoordinator,
@@ -72,10 +74,19 @@ class DeathClipsOverlayService {
       status: clip.status,
       wasRequested,
     });
-    if (!this.clipPreviewWindow || this.clipPreviewWindow.isDestroyed()) {
-      await this.createWindow(bounds);
-    } else {
-      this.clipPreviewWindow.setBounds(bounds, false);
+    try {
+      if (!this.clipPreviewWindow || this.clipPreviewWindow.isDestroyed()) {
+        await this.createWindow(bounds);
+      } else {
+        this.setContentProtectionEnabled(this.getContentProtectionEnabled());
+        this.clipPreviewWindow.setBounds(bounds, false);
+      }
+    } catch (error) {
+      if (this.clipPreviewWindow) {
+        unregisterIpcWindowRole(this.clipPreviewWindow.webContents);
+      }
+      this.closeWindow("capture-protection-failed");
+      throw error;
     }
 
     if (!this.clipPreviewWindow || this.clipPreviewWindow.isDestroyed()) {
@@ -164,7 +175,26 @@ class DeathClipsOverlayService {
   }
 
   setContentProtectionEnabled(enabled: boolean): void {
-    applyGameOverlayContentProtection(this.clipPreviewWindow, enabled);
+    try {
+      applyGameOverlayContentProtection(
+        this.clipPreviewWindow,
+        enabled || this.activeReplaySaveClipId !== null,
+      );
+    } catch (error) {
+      if (this.activeReplaySaveClipId !== null) {
+        this.closeWindow("capture-protection-failed");
+      }
+      throw error;
+    }
+  }
+
+  setReplaySaveActive(clipId: string, active: boolean): void {
+    if (active) {
+      this.activeReplaySaveClipId = clipId;
+    } else if (this.activeReplaySaveClipId === clipId) {
+      this.activeReplaySaveClipId = null;
+    }
+    this.setContentProtectionEnabled(this.getContentProtectionEnabled());
   }
 
   destroy(): void {
@@ -172,7 +202,9 @@ class DeathClipsOverlayService {
   }
 
   private async createWindow(bounds: Electron.Rectangle): Promise<void> {
-    const contentProtection = this.getContentProtectionEnabled();
+    const contentProtection =
+      this.activeReplaySaveClipId !== null ||
+      this.getContentProtectionEnabled();
     this.clipPreviewWindow = new BrowserWindow({
       ...bounds,
       minWidth: 320,

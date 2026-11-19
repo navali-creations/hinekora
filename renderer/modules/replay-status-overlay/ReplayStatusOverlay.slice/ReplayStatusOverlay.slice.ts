@@ -23,24 +23,39 @@ const createReplayStatusOverlaySlice: BoundStoreStateCreator<
   replayStatusOverlay: {
     startListening: (clipId) => {
       set((state) => {
-        state.replayStatusOverlay.status = clipId
-          ? { clipId, dismissing: false, status: "processing" }
-          : null;
+        state.replayStatusOverlay.status = null;
       });
       if (!clipId) {
         return () => {};
       }
 
-      const unsubscribe =
-        getReplayStatusOverlayElectronAPI().replayStatusOverlay.onStatusChanged(
-          (status) => {
+      let disposed = false;
+      let receivedStatus = false;
+      const api = getReplayStatusOverlayElectronAPI().replayStatusOverlay;
+      const unsubscribe = api.onStatusChanged((status) => {
+        if (disposed) {
+          return;
+        }
+        receivedStatus = true;
+        set((state) => {
+          state.replayStatusOverlay.status = status;
+        });
+      });
+
+      // Subscribe first; a newer event must win over a delayed snapshot.
+      void api
+        .getSnapshot()
+        .then((status) => {
+          if (!disposed && !receivedStatus) {
             set((state) => {
               state.replayStatusOverlay.status = status;
             });
-          },
-        );
+          }
+        })
+        .catch(() => undefined);
 
       return () => {
+        disposed = true;
         unsubscribe();
         set((state) => {
           state.replayStatusOverlay.status = null;

@@ -111,6 +111,75 @@ afterEach(() => {
 });
 
 describe("DeathClipsOverlayService", () => {
+  it("closes an existing preview if capture protection cannot be applied", async () => {
+    const clipWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(clipWindow);
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+    await service.showClip(createClip());
+    clipWindow.setContentProtection.mockImplementation((enabled: boolean) => {
+      if (enabled) {
+        throw new Error("capture protection unavailable");
+      }
+    });
+    expect(() => service.setReplaySaveActive("next-clip", true)).toThrow(
+      "capture protection unavailable",
+    );
+    expect(clipWindow.close).toHaveBeenCalledOnce();
+    expect(service.isRequested()).toBe(false);
+  });
+
+  it("disposes a newly created unprotected window and permits a clean retry", async () => {
+    const failedWindow = createFakeWindow();
+    failedWindow.setContentProtection.mockImplementation(() => {
+      throw new Error("capture protection unavailable");
+    });
+    const recoveredWindow = createFakeWindow();
+    electronMocks.browserWindowFactory
+      .mockReturnValueOnce(failedWindow)
+      .mockReturnValueOnce(recoveredWindow);
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+    service.setReplaySaveActive("clip-1", true);
+    await expect(service.showClip(createClip())).rejects.toThrow(
+      "capture protection unavailable",
+    );
+    expect(failedWindow.showInactive).not.toHaveBeenCalled();
+    expect(failedWindow.close).toHaveBeenCalledOnce();
+    service.setReplaySaveActive("clip-1", false);
+    await service.showClip(createClip());
+    expect(recoveredWindow.showInactive).toHaveBeenCalledOnce();
+    expect(recoveredWindow.setContentProtection).toHaveBeenLastCalledWith(
+      false,
+    );
+    service.destroy();
+  });
+
+  it("excludes the immediate preview throughout clip preparation despite capture setting changes", async () => {
+    const clipWindow = createFakeWindow();
+    electronMocks.browserWindowFactory.mockReturnValue(clipWindow);
+    const { coordinator, service } = createService();
+    coordinator.setPoeFocusActive(true);
+    service.setReplaySaveActive("clip-pending", true);
+    await service.showClip(
+      createClip({ id: "clip-pending", status: "saving_replay" }),
+    );
+
+    expect(clipWindow.showInactive).toHaveBeenCalledOnce();
+    expect(clipWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+    expect(
+      clipWindow.setContentProtection.mock.invocationCallOrder[0],
+    ).toBeLessThan(clipWindow.showInactive.mock.invocationCallOrder[0]!);
+    service.setContentProtectionEnabled(false);
+    expect(clipWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+    service.setReplaySaveActive("next-clip", true);
+    service.setReplaySaveActive("clip-pending", false);
+    expect(clipWindow.setContentProtection).toHaveBeenLastCalledWith(true);
+    service.setReplaySaveActive("next-clip", false);
+    expect(clipWindow.setContentProtection).toHaveBeenLastCalledWith(false);
+    service.destroy();
+  });
+
   it("creates a clip preview overlay using recorder anchor bounds", async () => {
     const clipWindow = createFakeWindow();
     electronMocks.browserWindowFactory.mockReturnValue(clipWindow);

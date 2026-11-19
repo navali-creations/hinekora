@@ -9,7 +9,11 @@ import { RecordingStorageService } from "~/main/modules/recording-storage";
 import { SettingsStoreService } from "~/main/modules/settings-store";
 import { createReplayClip } from "~/main/test/factories/replayClip";
 
-import { createDefaultSettings, type ManagedRecorderStatus } from "~/types";
+import {
+  createDefaultSettings,
+  type ManagedRecorderStatus,
+  type ReplayClip,
+} from "~/types";
 import { ReplayClipsChannel } from "../ReplayClips.channels";
 import {
   createDeferred,
@@ -96,6 +100,119 @@ describe("ReplayClipsService replay-trigger workflow", () => {
     );
   });
 
+  it.each([
+    { kind: "death", manualReplayShowPreview: true },
+    { kind: "death", manualReplayShowPreview: false },
+    { kind: "manual", manualReplayShowPreview: true },
+    { kind: "manual", manualReplayShowPreview: false },
+  ] as const)(
+    "shows the correct overlay during the $kind replay save (preview: $manualReplayShowPreview)",
+    async ({ kind, manualReplayShowPreview }) => {
+      const showPreview = kind === "death" || manualReplayShowPreview;
+      const replayPath = join(root, "2026-06-12_10-29-00.mp4");
+      const saveGate = createDeferred();
+      writeFileSync(replayPath, "video");
+      vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+        get: () => ({
+          ...createDefaultSettings(),
+          manualReplayShowPreview,
+          recordingStoragePath: root,
+        }),
+      } as unknown as SettingsStoreService);
+      const saveReplay = vi.fn(async () => {
+        await saveGate.promise;
+        return { ok: true, path: replayPath, error: null };
+      });
+      vi.spyOn(ManagedRecorderService, "getInstance").mockReturnValue({
+        getStatus: createActiveManagedRecorderStatus,
+        saveReplay,
+      } as unknown as ManagedRecorderService);
+      const showClipPreviewOverlay = vi.fn().mockResolvedValue(undefined);
+      const showReplayStatusOverlay = vi.fn().mockResolvedValue(undefined);
+      const finishReplayStatusOverlay = vi.fn();
+      const setReplaySaveActive = vi.fn();
+      vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
+        finishReplayStatusOverlay,
+        setReplaySaveActive,
+        showClipPreviewOverlay,
+        showReplayStatusOverlay,
+      } as unknown as OverlayWindowsService);
+      vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+        noteReplayClipUsageChange: vi.fn(),
+        scheduleCleanup: vi.fn(),
+        publishUsageChanged: vi.fn(),
+      } as unknown as RecordingStorageService);
+
+      const pendingClip = service.handleReplayTrigger({
+        detectedAt: "2026-06-12T10:00:00.000Z",
+        game: "poe1",
+        kind,
+        line: "Replay trigger",
+        lineHash: "overlay-save-order",
+      });
+      await vi.waitFor(() => expect(saveReplay).toHaveBeenCalledOnce());
+      try {
+        expect(setReplaySaveActive).toHaveBeenCalledExactlyOnceWith(
+          expect.any(String),
+          true,
+        );
+        const showOverlay = showPreview
+          ? showClipPreviewOverlay
+          : showReplayStatusOverlay;
+        expect(showOverlay).toHaveBeenCalledOnce();
+        expect(setReplaySaveActive.mock.invocationCallOrder[0]).toBeLessThan(
+          showOverlay.mock.invocationCallOrder[0]!,
+        );
+        expect(showOverlay.mock.invocationCallOrder[0]).toBeLessThan(
+          saveReplay.mock.invocationCallOrder[0]!,
+        );
+        if (showPreview) {
+          expect(showClipPreviewOverlay).toHaveBeenCalledWith(
+            expect.objectContaining({ status: "saving_replay" }),
+          );
+          expect(showReplayStatusOverlay).not.toHaveBeenCalled();
+        } else {
+          expect(showClipPreviewOverlay).not.toHaveBeenCalled();
+          expect(showReplayStatusOverlay).toHaveBeenCalledWith(
+            expect.any(String),
+            "saving",
+          );
+        }
+      } finally {
+        saveGate.resolve();
+        await pendingClip;
+      }
+
+      const clip = await pendingClip;
+      expect(clip?.status).toBe("ready");
+      if (showPreview) {
+        expect(showClipPreviewOverlay).toHaveBeenCalledExactlyOnceWith(
+          expect.objectContaining({ id: clip?.id, status: "saving_replay" }),
+        );
+        expect(showReplayStatusOverlay).not.toHaveBeenCalled();
+        expect(finishReplayStatusOverlay).not.toHaveBeenCalled();
+      } else {
+        expect(showReplayStatusOverlay).toHaveBeenCalledTimes(2);
+        expect(showReplayStatusOverlay).toHaveBeenNthCalledWith(
+          1,
+          clip?.id,
+          "saving",
+        );
+        expect(showReplayStatusOverlay).toHaveBeenNthCalledWith(
+          2,
+          clip?.id,
+          "processing",
+        );
+        expect(showClipPreviewOverlay).not.toHaveBeenCalled();
+        expect(finishReplayStatusOverlay).toHaveBeenCalledWith(
+          clip?.id,
+          "saved",
+        );
+      }
+      expect(setReplaySaveActive).toHaveBeenLastCalledWith(clip?.id, false);
+    },
+  );
+
   it("skips the preview overlay when manual replay previews are disabled", async () => {
     const replayPath = join(root, "2026-06-12_10-29-00.mp4");
     writeFileSync(replayPath, "video");
@@ -121,6 +238,7 @@ describe("ReplayClipsService replay-trigger workflow", () => {
     const finishReplayStatusOverlay = vi.fn();
     vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
       finishReplayStatusOverlay,
+      setReplaySaveActive: vi.fn(),
       showClipPreviewOverlay,
       showReplayStatusOverlay,
     } as unknown as OverlayWindowsService);
@@ -136,7 +254,14 @@ describe("ReplayClipsService replay-trigger workflow", () => {
       processedClipPath: resolve(replayPath),
     });
     expect(showClipPreviewOverlay).not.toHaveBeenCalled();
-    expect(showReplayStatusOverlay).toHaveBeenCalledWith(expect.any(String));
+    expect(showReplayStatusOverlay).toHaveBeenCalledWith(
+      expect.any(String),
+      "saving",
+    );
+    expect(showReplayStatusOverlay).toHaveBeenCalledWith(
+      expect.any(String),
+      "processing",
+    );
     expect(finishReplayStatusOverlay).toHaveBeenCalledWith(
       expect.any(String),
       "saved",
@@ -165,8 +290,10 @@ describe("ReplayClipsService replay-trigger workflow", () => {
       throw new Error("status overlay unavailable");
     });
     const showReplayStatusOverlay = vi.fn().mockResolvedValue(undefined);
+    const setReplaySaveActive = vi.fn();
     vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
       finishReplayStatusOverlay,
+      setReplaySaveActive,
       showReplayStatusOverlay,
     } as unknown as OverlayWindowsService);
 
@@ -177,105 +304,160 @@ describe("ReplayClipsService replay-trigger workflow", () => {
       kind: "manual",
       status: "failed",
     });
-    expect(showReplayStatusOverlay).toHaveBeenCalledWith(failed?.id);
+    expect(showReplayStatusOverlay).toHaveBeenCalledExactlyOnceWith(
+      failed?.id,
+      "saving",
+    );
     expect(finishReplayStatusOverlay).toHaveBeenCalledWith(
       failed?.id,
       "failed",
     );
+    expect(setReplaySaveActive).toHaveBeenLastCalledWith(failed?.id, false);
   });
 
-  it("coalesces overlapping manual and death triggers into one clip", async () => {
-    const replayPath = join(root, "2026-06-12_10-30-00.mp4");
-    const saveGate = createDeferred();
-    writeFileSync(replayPath, "video");
-    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
-      get: () => ({
-        ...createDefaultSettings(),
-        activeGame: "poe1",
-        activeLeague: "Standard",
-        deathClipSeconds: 10,
-        manualReplaySeconds: 27,
-        recordingStoragePath: root,
-      }),
-    } as unknown as SettingsStoreService);
-    const saveReplay = vi.fn().mockImplementation(async () => {
-      await saveGate.promise;
-      return { ok: true, path: replayPath, error: null };
-    });
-    vi.spyOn(ManagedRecorderService, "getInstance").mockReturnValue({
-      getStatus: () => ({
-        available: true,
-        initialized: true,
-        bufferActive: true,
-        gameRunning: true,
-        recording: true,
-        isStartingRecording: false,
-        isStoppingRecording: false,
-        runRecordingActive: false,
-        runtime: "packaged_obs",
-        runtimePath: null,
-        outputDirectory: root,
-        outputResolution: "native",
-        fps: 60,
-        encoder: "hardware_h264",
-        lastRecordingPath: null,
-        runRecordingSession: null,
-        activeSessionDirectory: null,
-        recordingStartedAt: null,
-        error: null,
-      }),
-      saveReplay,
-    } as unknown as ManagedRecorderService);
-    vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
-      showClipPreviewOverlay: vi.fn(),
-    } as unknown as OverlayWindowsService);
-    vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
-      noteReplayClipUsageChange: vi.fn(),
-      scheduleCleanup: vi.fn(),
-      publishUsageChanged: vi.fn(),
-    } as unknown as RecordingStorageService);
-
-    const first = service.saveManualReplay();
-    await vi.waitFor(() => expect(saveReplay).toHaveBeenCalledTimes(1));
-    const savingClip = repository.list()[0];
-    expect(savingClip).toBeDefined();
-    let updateSettled = false;
-    const update = service
-      .updateClipFile({ id: savingClip!.id, name: "Coalesced replay" })
-      .finally(() => {
-        updateSettled = true;
+  it.each([
+    { manualReplayShowPreview: true, deathDuring: "saving" },
+    { manualReplayShowPreview: false, deathDuring: "saving" },
+    { manualReplayShowPreview: false, deathDuring: "processing" },
+  ] as const)(
+    "previews a coalesced death during $deathDuring (manual preview: $manualReplayShowPreview)",
+    async ({ manualReplayShowPreview, deathDuring }) => {
+      const replayPath = join(root, "2026-06-12_10-30-00.mp4");
+      const saveGate = createDeferred();
+      const processingGate = createDeferred();
+      const preparePreview = vi
+        .spyOn(
+          service as unknown as {
+            prepareClipPreview(
+              clip: ReplayClip,
+              path: string,
+              duration: number | null,
+            ): Promise<void>;
+          },
+          "prepareClipPreview",
+        )
+        .mockImplementation(() => processingGate.promise);
+      writeFileSync(replayPath, "video");
+      vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+        get: () => ({
+          ...createDefaultSettings(),
+          activeGame: "poe1",
+          activeLeague: "Standard",
+          deathClipSeconds: 10,
+          manualReplaySeconds: 27,
+          manualReplayShowPreview,
+          recordingStoragePath: root,
+        }),
+      } as unknown as SettingsStoreService);
+      const saveReplay = vi.fn().mockImplementation(async () => {
+        await saveGate.promise;
+        return { ok: true, path: replayPath, error: null };
       });
-    const second = service.handleDeathEvent({
-      game: "poe1",
-      line: "You have died.",
-      lineHash: "overlapping-death",
-      detectedAt: "2026-06-12T10:00:00.000Z",
-    });
-    const third = service.saveManualReplay();
-    await Promise.resolve();
-    expect(updateSettled).toBe(false);
-    saveGate.resolve();
+      vi.spyOn(ManagedRecorderService, "getInstance").mockReturnValue({
+        getStatus: () => ({
+          available: true,
+          initialized: true,
+          bufferActive: true,
+          gameRunning: true,
+          recording: true,
+          isStartingRecording: false,
+          isStoppingRecording: false,
+          runRecordingActive: false,
+          runtime: "packaged_obs",
+          runtimePath: null,
+          outputDirectory: root,
+          outputResolution: "native",
+          fps: 60,
+          encoder: "hardware_h264",
+          lastRecordingPath: null,
+          runRecordingSession: null,
+          activeSessionDirectory: null,
+          recordingStartedAt: null,
+          error: null,
+        }),
+        saveReplay,
+      } as unknown as ManagedRecorderService);
+      const showClipPreviewOverlay = vi.fn().mockResolvedValue(undefined);
+      const showReplayStatusOverlay = vi.fn().mockResolvedValue(undefined);
+      vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
+        showClipPreviewOverlay,
+        showReplayStatusOverlay,
+        finishReplayStatusOverlay: vi.fn(),
+        setReplaySaveActive: vi.fn(),
+      } as unknown as OverlayWindowsService);
+      vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
+        noteReplayClipUsageChange: vi.fn(),
+        scheduleCleanup: vi.fn(),
+        publishUsageChanged: vi.fn(),
+      } as unknown as RecordingStorageService);
 
-    const [manualClip, deathClip, coalescedManualClip, updateResult] =
-      await Promise.all([first, second, third, update]);
-    expect(manualClip?.id).toBe(deathClip?.id);
-    expect(coalescedManualClip?.id).toBe(deathClip?.id);
-    expect(manualClip).toMatchObject({
-      deathTimestamp: "2026-06-12T10:00:00.000Z",
-      kind: "death",
-      triggerLineHash: "overlapping-death",
-    });
-    expect(repository.list()[0]).toMatchObject({
-      kind: "death",
-      processedClipPath: expect.stringContaining("Coalesced replay.mp4"),
-      triggerLineHash: "overlapping-death",
-    });
-    expect(updateResult.ok).toBe(true);
-    expect(repository.list()).toHaveLength(1);
-    expect(saveReplay).toHaveBeenCalledOnce();
-    expect(saveReplay).toHaveBeenCalledWith(27, "manual");
-    expect(manualClip?.targetDurationSeconds).toBe(27);
-  });
+      const first = service.saveManualReplay();
+      await vi.waitFor(() => expect(saveReplay).toHaveBeenCalledTimes(1));
+      if (manualReplayShowPreview) {
+        expect(showReplayStatusOverlay).not.toHaveBeenCalled();
+        expect(showClipPreviewOverlay).toHaveBeenCalledOnce();
+      } else {
+        expect(showReplayStatusOverlay).toHaveBeenCalledWith(
+          expect.any(String),
+          "saving",
+        );
+        expect(showClipPreviewOverlay).not.toHaveBeenCalled();
+      }
+      if (deathDuring === "processing") {
+        saveGate.resolve();
+        await vi.waitFor(() => expect(preparePreview).toHaveBeenCalledOnce());
+        expect(showClipPreviewOverlay).not.toHaveBeenCalled();
+      }
+      const savingClip = repository.list()[0];
+      expect(savingClip).toBeDefined();
+      let updateSettled = false;
+      const update = service
+        .updateClipFile({ id: savingClip!.id, name: "Coalesced replay" })
+        .finally(() => {
+          updateSettled = true;
+        });
+      const second = service.handleDeathEvent({
+        game: "poe1",
+        line: "You have died.",
+        lineHash: "overlapping-death",
+        detectedAt: "2026-06-12T10:00:00.000Z",
+      });
+      expect(showClipPreviewOverlay).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({
+          id: savingClip!.id,
+          status: "saving_replay",
+        }),
+      );
+      const third = service.saveManualReplay();
+      await Promise.resolve();
+      expect(updateSettled).toBe(false);
+      saveGate.resolve();
+      processingGate.resolve();
+
+      const [manualClip, deathClip, coalescedManualClip, updateResult] =
+        await Promise.all([first, second, third, update]);
+      expect(manualClip?.id).toBe(deathClip?.id);
+      expect(coalescedManualClip?.id).toBe(deathClip?.id);
+      expect(manualClip).toMatchObject({
+        deathTimestamp: "2026-06-12T10:00:00.000Z",
+        kind: "death",
+        triggerLineHash: "overlapping-death",
+      });
+      expect(repository.list()[0]).toMatchObject({
+        kind: "death",
+        processedClipPath: expect.stringContaining("Coalesced replay.mp4"),
+        triggerLineHash: "overlapping-death",
+      });
+      expect(updateResult.ok).toBe(true);
+      expect(repository.list()).toHaveLength(1);
+      expect(saveReplay).toHaveBeenCalledOnce();
+      expect(saveReplay).toHaveBeenCalledWith(27, "manual");
+      expect(manualClip?.targetDurationSeconds).toBe(27);
+      expect(showClipPreviewOverlay).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ id: deathClip?.id }),
+      );
+    },
+  );
 
   it("does not trigger automatic replay creation when death clips are disabled", async () => {
     vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
@@ -615,6 +797,7 @@ describe("ReplayClipsService replay-trigger workflow", () => {
     } as unknown as ManagedRecorderService);
     vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
       showClipPreviewOverlay: vi.fn(),
+      setReplaySaveActive: vi.fn(),
     } as unknown as OverlayWindowsService);
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({
       noteReplayClipUsageChange: vi.fn(),
@@ -689,6 +872,7 @@ describe("ReplayClipsService replay-trigger workflow", () => {
     } as unknown as ManagedRecorderService);
     vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
       showClipPreviewOverlay,
+      setReplaySaveActive: vi.fn(),
     } as unknown as OverlayWindowsService);
     const noteReplayClipUsageChange = vi.fn();
     vi.spyOn(RecordingStorageService, "getInstance").mockReturnValue({

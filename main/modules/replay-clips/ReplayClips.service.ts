@@ -335,6 +335,7 @@ class ReplayClipsService {
             game: coalescedEvent.game,
             triggerLineHash: coalescedEvent.lineHash,
           });
+          this.creationService.showPendingClipPreviewOverlay();
         }
         logInfo(REPLAY_CLIPS_LOG_SCOPE, "Replay trigger coalesced", {
           game: coalescedEvent.game,
@@ -380,6 +381,9 @@ class ReplayClipsService {
           })
         : clip;
 
+    if (deathEvent && clip.kind !== "death") {
+      this.creationService.showClipPreviewOverlay(resolvedClip);
+    }
     BookmarksService.getInstance().linkReplayClip(resolvedClip);
     this.scheduleRecordingStorageCleanupForClip(resolvedClip);
     return resolvedClip;

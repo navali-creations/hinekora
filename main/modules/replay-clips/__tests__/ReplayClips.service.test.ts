@@ -1361,6 +1361,7 @@ describe("ReplayClipsService file actions", () => {
     } as unknown as RecordingStorageService);
     vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
       showClipPreviewOverlay: vi.fn(),
+      setReplaySaveActive: vi.fn(),
     } as unknown as OverlayWindowsService);
 
     await expect(
@@ -1386,6 +1387,7 @@ describe("ReplayClipsService file actions", () => {
     const showClipPreviewOverlay = vi.fn();
     vi.spyOn(OverlayWindowsService, "getInstance").mockReturnValue({
       showClipPreviewOverlay,
+      setReplaySaveActive: vi.fn(),
     } as unknown as OverlayWindowsService);
     const destroyedSend = vi.fn();
     electronMocks.getAllWindows.mockReturnValue([
