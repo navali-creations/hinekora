@@ -201,6 +201,7 @@ interface DashboardE2EFixture {
   replayClipDetails: Record<string, ReplayClipDetail>;
   replayClipOperationDelayMs: number;
   settings: AppSettings;
+  settingsUpdateDelayMs: number;
   selectedPaths: Array<string | null>;
   setupState: SetupState;
   sources: CapturePreviewSource[];
@@ -243,6 +244,7 @@ interface DashboardE2EOptions {
   replayClipDetails?: Record<string, ReplayClipDetail>;
   replayClipOperationDelayMs?: number;
   manualReplayShowPreview?: boolean;
+  settingsUpdateDelayMs?: number;
   selectedPaths?: Array<string | null>;
   poeProcessState?: PoeProcessState;
   profile?: Profile;
@@ -501,6 +503,7 @@ function createDashboardE2EFixture(
     replayClipOperationDelayMs: options.replayClipOperationDelayMs ?? 0,
     selectedPaths: options.selectedPaths ?? [],
     settings,
+    settingsUpdateDelayMs: options.settingsUpdateDelayMs ?? 0,
     setupState,
     sources,
     storageAnalysisAvailability: options.storageAnalysisAvailability ?? "ready",
@@ -1914,6 +1917,11 @@ async function setupDashboardE2E(
             },
             update: async (input) => {
               calls.settingsUpdates.push(clone(input));
+              if (fixture.settingsUpdateDelayMs > 0) {
+                await new Promise<void>((resolve) => {
+                  setTimeout(resolve, fixture.settingsUpdateDelayMs);
+                });
+              }
               const normalizedInput = await normalizeLeagueSettingsUpdate(
                 clone(settings),
                 clone(input),

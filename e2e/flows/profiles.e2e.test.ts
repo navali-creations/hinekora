@@ -168,7 +168,7 @@ test.afterEach(async ({ page }) => {
 test("covers capture profile game switching, source sync, field persistence, and locking", async ({
   page,
 }) => {
-  await setupDashboardE2E(page);
+  await setupDashboardE2E(page, { settingsUpdateDelayMs: 100 });
   await setDashboardCaptureSources(page, [
     profileScreenSource,
     poe1WindowSource,
@@ -246,15 +246,35 @@ test("covers capture profile game switching, source sync, field persistence, and
     .selectOption("low");
 
   await openCaptureSettingsTab(page, "Recording");
-  await page.getByLabel("Start recording automatically").check();
-  await page.getByLabel("Hide Hinekora overlays from recording").uncheck();
+  const startRecordingAutomatically = page.getByLabel(
+    "Start recording automatically",
+  );
+  await expect(startRecordingAutomatically).not.toBeChecked();
+  await startRecordingAutomatically.click();
+  await expect(startRecordingAutomatically).toBeChecked();
+  const hideOverlaysFromRecording = page.getByLabel(
+    "Hide Hinekora overlays from recording",
+  );
+  await expect(hideOverlaysFromRecording).toBeChecked();
+  await hideOverlaysFromRecording.click();
+  await expect(hideOverlaysFromRecording).not.toBeChecked();
 
   await openCaptureSettingsTab(page, "Rewind");
   await page
     .getByRole("button", { name: "45 second death clip duration" })
     .click();
-  await page.getByLabel("Start rewind automatically").check();
-  await page.getByLabel("Hide Hinekora overlays from rewind").uncheck();
+  const startRewindAutomatically = page.getByLabel(
+    "Start rewind automatically",
+  );
+  await expect(startRewindAutomatically).not.toBeChecked();
+  await startRewindAutomatically.click();
+  await expect(startRewindAutomatically).toBeChecked();
+  const hideOverlaysFromRewind = page.getByLabel(
+    "Hide Hinekora overlays from rewind",
+  );
+  await expect(hideOverlaysFromRewind).toBeChecked();
+  await hideOverlaysFromRewind.click();
+  await expect(hideOverlaysFromRewind).not.toBeChecked();
 
   await openCaptureSettingsTab(page, "Audio");
   await page
