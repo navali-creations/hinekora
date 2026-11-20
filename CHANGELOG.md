@@ -1,3 +1,15 @@
+## 0.16.2
+
+### Patch Changes
+
+- [`1a447b9`](https://github.com/navali-creations/hinekora/commit/1a447b9fd796fe25f90e6a017481fdb80d5e4276) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Cleaner clip endings and immediate replay save feedback.
+
+  Manual replay and death clip previews open immediately with shimmer and preparation progress, while staying out of the saved clip's final frames. Death previews remain enabled when manual replay previews are turned off.
+
+  With **Show manual replay preview** turned off, the notification shows **Saving clip…** as soon as you save a replay, followed by **Processing replay…** and **Replay saved**. The saving notification stays out of the clip.
+
 ## 0.16.1
 
 ### Patch Changes
