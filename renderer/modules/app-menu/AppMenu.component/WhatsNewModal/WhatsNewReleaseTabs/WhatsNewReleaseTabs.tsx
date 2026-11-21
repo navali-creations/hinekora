@@ -34,7 +34,7 @@ export const WhatsNewReleaseTabs = () => {
       role="tablist"
       aria-label="Release versions"
     >
-      {whatsNewReleases.map((release) => {
+      {whatsNewReleases.toReversed().map((release) => {
         const isSelected = release.version === whatsNewSelectedVersion;
 
         return (
