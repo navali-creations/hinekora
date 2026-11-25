@@ -1,6 +1,19 @@
+import type { ManagedRecorderAudioOutputState } from "~/main/modules/managed-recorder/ManagedRecorder.dto";
+
 import { type QuickClipTrimRange, quickClipTrimMinimumSeconds } from "~/types";
 
 export type ClipPreviewTrimRange = QuickClipTrimRange;
+export type ClipPreviewAudioOutputState =
+  | ManagedRecorderAudioOutputState
+  | "checking"
+  | "error";
+
+export function isClipPreviewAudioMuted(state: {
+  audioOutputState: ClipPreviewAudioOutputState;
+  isMuted: boolean;
+}): boolean {
+  return state.isMuted || state.audioOutputState !== "available";
+}
 
 export function calculateClipPreviewTimelinePercent(
   seconds: number,

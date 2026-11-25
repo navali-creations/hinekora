@@ -11,10 +11,21 @@ vi.mock("electron", () => ({
 }));
 
 import { ManagedRecorderAPI } from "../ManagedRecorder.api";
+import { ManagedRecorderChannel } from "../ManagedRecorder.channels";
 
 describe("ManagedRecorderAPI", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("requests the read-only audio output state", async () => {
+    electronMocks.invoke.mockResolvedValue("unavailable");
+    await expect(ManagedRecorderAPI.getAudioOutputState()).resolves.toBe(
+      "unavailable",
+    );
+    expect(electronMocks.invoke).toHaveBeenCalledWith(
+      ManagedRecorderChannel.GetAudioOutputState,
+    );
   });
 
   it("rejects storage estimate validation failures", async () => {

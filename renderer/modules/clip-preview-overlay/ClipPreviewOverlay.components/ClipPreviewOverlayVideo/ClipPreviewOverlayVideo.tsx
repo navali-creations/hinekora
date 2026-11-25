@@ -4,15 +4,15 @@ import {
   FiPause as Pause,
   FiPlay as Play,
   FiRefreshCw as Retry,
-  FiVolume2 as Volume,
-  FiVolumeX as VolumeMuted,
 } from "react-icons/fi";
 
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
 import styles from "../../ClipPreviewOverlay.page/ClipPreviewOverlayPage.module.css";
 import { resolveClipPreviewMediaState } from "../../ClipPreviewOverlay.page/useClipPreviewOverlayMediaWorkflow/useClipPreviewOverlayMediaWorkflow.utils";
+import { isClipPreviewAudioMuted } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { ClipPreviewFullscreenButton } from "../ClipPreviewFullscreenButton/ClipPreviewFullscreenButton";
+import { ClipPreviewMuteControl } from "../ClipPreviewMuteControl/ClipPreviewMuteControl";
 import { useClipPreviewOverlayMediaContext } from "../ClipPreviewOverlayWorkflowProvider/ClipPreviewOverlayWorkflowProvider";
 import { ClipPreviewPlaybackSpeedControl } from "../ClipPreviewPlaybackSpeedControl/ClipPreviewPlaybackSpeedControl";
 import { ClipPreviewPreparingState } from "../ClipPreviewPreparingState/ClipPreviewPreparingState";
@@ -34,7 +34,7 @@ function ClipPreviewOverlayVideo() {
     durationOverrideSeconds: clipPreviewOverlay.durationOverrideSeconds,
     isCopying: clipPreviewOverlay.isCopying,
     isMediaReady: clipPreviewOverlay.isMediaReady,
-    isMuted: clipPreviewOverlay.isMuted,
+    isMuted: isClipPreviewAudioMuted(clipPreviewOverlay),
     isPlaying: clipPreviewOverlay.isPlaying,
     isSaving: clipPreviewOverlay.isSaving,
     mediaError: clipPreviewOverlay.mediaError,
@@ -50,7 +50,6 @@ function ClipPreviewOverlayVideo() {
       mediaError,
       mediaVersion,
     });
-  const muteLabel = isMuted ? "Unmute replay" : "Mute replay";
   const playbackLabel = isPlaying ? "Pause replay" : "Play replay";
 
   return (
@@ -106,22 +105,7 @@ function ClipPreviewOverlayVideo() {
             onTimeUpdate={workflow.handleTimeUpdate}
           />
           <div className={styles.videoControls}>
-            <button
-              aria-label={muteLabel}
-              className={clsx(
-                styles.videoIconButton,
-                styles.muteButton,
-                styles.videoSecondaryButton,
-                isMuted && styles.videoSecondaryButtonActive,
-                "tooltip tooltip-right btn btn-circle btn-sm",
-              )}
-              data-tip={isMuted ? "Unmute" : "Mute"}
-              disabled={!canUseClip || isProcessing}
-              type="button"
-              onClick={workflow.handleToggleMuted}
-            >
-              {isMuted ? <VolumeMuted size={16} /> : <Volume size={16} />}
-            </button>
+            <ClipPreviewMuteControl />
             <ClipPreviewPlaybackSpeedControl
               disabled={!canUseClip || isProcessing}
             />

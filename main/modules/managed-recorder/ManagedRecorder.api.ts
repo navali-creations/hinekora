@@ -6,6 +6,7 @@ import type { ManagedRecorderStatus } from "~/types";
 import { ManagedRecorderChannel } from "./ManagedRecorder.channels";
 import type {
   ManagedRecorderAudioDevices,
+  ManagedRecorderAudioOutputState,
   ManagedRecorderCaptureMode,
   ManagedRecorderListAudioDevicesOptions,
   ManagedRecordingStorageEstimateRequest,
@@ -13,6 +14,8 @@ import type {
 } from "./ManagedRecorder.dto";
 
 const ManagedRecorderAPI = {
+  getAudioOutputState: (): Promise<ManagedRecorderAudioOutputState> =>
+    ipcRenderer.invoke(ManagedRecorderChannel.GetAudioOutputState),
   getCaptureMode: (): Promise<ManagedRecorderCaptureMode> =>
     ipcRenderer.invoke(ManagedRecorderChannel.GetCaptureMode),
   getStatus: (): Promise<ManagedRecorderStatus> =>

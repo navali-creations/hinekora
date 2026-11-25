@@ -74,7 +74,6 @@ function useClipPreviewOverlayOperations(
       canCopy,
       clip,
       hasTrimChanges,
-      isMuted,
       ...(exportPlaybackRate ? { playbackRate: exportPlaybackRate } : {}),
       trim,
     });
@@ -84,7 +83,6 @@ function useClipPreviewOverlayOperations(
     durationSeconds,
     hasTitleChange,
     hasTrimChanges,
-    isMuted,
     ...(exportPlaybackRate ? { playbackRate: exportPlaybackRate } : {}),
     prepareForFileMutation: mediaLifecycle.prepareForFileMutation,
     reloadAfterFileMutation: mediaLifecycle.reloadAfterFileMutation,

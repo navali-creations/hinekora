@@ -8,6 +8,7 @@ import { createRoot } from "react-dom/client";
 
 import { App } from "./App";
 import { RendererReadyReporter } from "./components/RendererReadyReporter/RendererReadyReporter";
+import { TooltipLayer } from "./components/TooltipLayer/TooltipLayer";
 import { routeTree } from "./routeTree.gen";
 import "./styles.css";
 import { initTelemetry } from "./telemetry";
@@ -48,4 +49,9 @@ const renderer = isOverlayRoute ? (
   </React.StrictMode>
 );
 
-createRoot(document.getElementById("root") as HTMLElement).render(renderer);
+createRoot(document.getElementById("root") as HTMLElement).render(
+  <>
+    <TooltipLayer />
+    {renderer}
+  </>,
+);

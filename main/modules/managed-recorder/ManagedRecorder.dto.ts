@@ -13,6 +13,10 @@ import {
 export type ManagedReplayKind = "death" | "manual";
 export type ManagedRecorderCaptureMode = "session" | "rewind";
 export type ManagedRecorderAudioDeviceKind = "input" | "output";
+export type ManagedRecorderAudioOutputState =
+  | "available"
+  | "disabled"
+  | "unavailable";
 
 export interface ManagedRecorderAudioDevice {
   id: string;

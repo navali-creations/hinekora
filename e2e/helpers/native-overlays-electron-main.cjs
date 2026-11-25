@@ -59,12 +59,14 @@ const overlaySettings = {
 
 ipcMain.handle("settings-store:get-overlay-snapshot", () => overlaySettings);
 ipcMain.handle("managed-recorder:get-capture-mode", () => "rewind");
+ipcMain.handle("managed-recorder:get-audio-output-state", () => "disabled");
 ipcMain.handle("managed-recorder:get-status", () => recorderStatus);
 ipcMain.handle("profiles:list", () => []);
 ipcMain.handle("overlay-windows:get-recorder-mode", () => "expanded");
 
 const clipPreviewSettings = {
   clipPreviewInfoAlertDismissed: true,
+  recordingAudioOutputDeviceId: null,
   telemetryCrashReporting: false,
 };
 const clip = {

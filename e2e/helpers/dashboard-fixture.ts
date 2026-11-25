@@ -25,6 +25,7 @@ import type {
 import type { ClientLogPathInput } from "../../main/modules/client-log/ClientLog.dto";
 import {
   type ManagedRecorderAudioDevices,
+  type ManagedRecorderAudioOutputState,
   type ManagedRecorderCaptureMode,
   type ManagedRecorderListAudioDevicesOptions,
   managedRecordingStorageEstimateDurations,
@@ -43,6 +44,7 @@ import type {
   ReplayClipTrimInput,
   ReplayClipUpdateInput,
 } from "../../main/modules/replay-clips";
+import type { SettingsStoreClipPreviewOverlaySnapshot } from "../../main/modules/settings-store/SettingsStore.dto";
 import { normalizeLeagueSettingsUpdate } from "../../main/modules/settings-store/SettingsStore.normalization";
 import type {
   StorageAnalysisAvailability,
@@ -138,6 +140,7 @@ interface DashboardE2ECalls {
 }
 
 interface DashboardE2EApi {
+  setAudioOutputState: (state: ManagedRecorderAudioOutputState) => void;
   emitAuraLockChanged: (locked: boolean) => void;
   emitPoeProcessStart: (state: PoeProcessState) => void;
   emitPoeProcessStop: (state?: PoeProcessState) => void;
@@ -181,6 +184,7 @@ interface DashboardE2EFixture {
   appSetupTransitions: AppSetupE2ETransition[];
   appSetupValidation: StepValidationResult;
   audioDevices: ManagedRecorderAudioDevices;
+  audioOutputState: ManagedRecorderAudioOutputState;
   auraLocked: boolean;
   bookmarks: BookmarkLibraryItem[];
   clientLogStatus: ClientLogStatus;
@@ -212,17 +216,21 @@ interface DashboardE2EFixture {
 }
 
 type DashboardE2EElectron = Omit<Window["electron"], "settings"> & {
-  settings: Window["electron"]["settings"] & {
-    dismissClipPreviewInfoAlert: () => Promise<{
-      clipPreviewInfoAlertDismissed: boolean;
-      telemetryCrashReporting: boolean;
-    }>;
+  settings: Omit<Window["electron"]["settings"], "get" | "onChanged"> & {
+    get: () => Promise<AppSettings | SettingsStoreClipPreviewOverlaySnapshot>;
+    onChanged: (
+      callback: (
+        settings: AppSettings | SettingsStoreClipPreviewOverlaySnapshot,
+      ) => void,
+    ) => () => void;
+    dismissClipPreviewInfoAlert: () => Promise<SettingsStoreClipPreviewOverlaySnapshot>;
   };
 };
 
 const dashboardE2ENow = "2026-06-25T00:00:00.000Z";
 
 interface DashboardE2EOptions {
+  audioOutputState?: ManagedRecorderAudioOutputState;
   activeGame?: GameId;
   activeGameFocused?: boolean;
   activitySessions?: ActivitySessionLibraryItem[];
@@ -233,6 +241,7 @@ interface DashboardE2EOptions {
   bookmarks?: BookmarkLibraryItem[];
   editorExportMaxStorageGb?: number;
   recordingMaxStorageGb?: number;
+  recordingAudioOutputDeviceId?: string | null;
   recordingStorageUsageDeferred?: boolean;
   recordingStorageUsage?: Partial<RecordingStorageUsage>;
   recordingStorageEstimateDelayMs?: number;
@@ -308,6 +317,9 @@ function createDashboardE2EFixture(
     recordingClipQuality: "high",
     recordingEncoder: "hardware_h264",
     recordingFps: 60,
+    recordingAudioOutputDeviceId:
+      options.recordingAudioOutputDeviceId ??
+      defaultSettings.recordingAudioOutputDeviceId,
     recordingMaxStorageGb:
       options.recordingMaxStorageGb ?? defaultSettings.recordingMaxStorageGb,
     editorExportMaxStorageGb:
@@ -447,6 +459,7 @@ function createDashboardE2EFixture(
       errors: [],
       isValid: true,
     },
+    audioOutputState: options.audioOutputState ?? "available",
     audioDevices: {
       input: [{ id: "{mic-1}", label: "Microphone Array" }],
       output: [
@@ -581,6 +594,7 @@ async function setupDashboardE2E(
       )() as () => E2EPoeProcessSnapshotFactory;
       const poeProcessSnapshotFactory = createPoeProcessSnapshotFactory();
       let settings = clone(fixture.settings);
+      let audioOutputState = fixture.audioOutputState;
       let appSetupTransitionIndex = 0;
       let appSetupValidation = clone(fixture.appSetupValidation);
       let selectedPathIndex = 0;
@@ -689,6 +703,15 @@ async function setupDashboardE2E(
         updateAvailable?: (info: UpdateInfo) => void;
         updateProgress?: (progress: DownloadProgress) => void;
       } = {};
+      const getRendererSettings = (value: AppSettings) =>
+        window.location.hash.startsWith("#/clip-preview-overlay")
+          ? {
+              clipPreviewInfoAlertDismissed:
+                value.clipPreviewInfoAlertDismissed,
+              recordingAudioOutputDeviceId: value.recordingAudioOutputDeviceId,
+              telemetryCrashReporting: value.telemetryCrashReporting,
+            }
+          : clone(value);
       let clipPreviewFullscreen = false;
       const calls: DashboardE2ECalls = {
         audioDeviceRequests: [],
@@ -1397,6 +1420,7 @@ async function setupDashboardE2E(
         managedRecorder: createBridgeDomain<
           DashboardE2EElectron["managedRecorder"]
         >("managedRecorder", {
+          getAudioOutputState: async () => audioOutputState,
           getCaptureMode: async () => captureMode,
           getRecordingStorageEstimates: async ({ configurations }) => {
             await waitForRecordingStorageEstimate();
@@ -1906,12 +1930,15 @@ async function setupDashboardE2E(
 
               return {
                 clipPreviewInfoAlertDismissed: true,
+                recordingAudioOutputDeviceId:
+                  settings.recordingAudioOutputDeviceId,
                 telemetryCrashReporting: settings.telemetryCrashReporting,
               };
             },
-            get: async () => clone(settings),
+            get: async () => getRendererSettings(settings),
             onChanged: (callback) => {
-              listeners.settingsChanged = callback;
+              listeners.settingsChanged = (value) =>
+                callback(getRendererSettings(value));
 
               return unsubscribe;
             },
@@ -2005,6 +2032,9 @@ async function setupDashboardE2E(
           __HINEKORA_DASHBOARD_E2E_API__: DashboardE2EApi;
         }
       ).__HINEKORA_DASHBOARD_E2E_API__ = {
+        setAudioOutputState: (state) => {
+          audioOutputState = state;
+        },
         emitAuraLockChanged: (locked) => {
           emitAuraLock(locked);
         },
@@ -2136,6 +2166,18 @@ async function getDashboardE2ECalls(page: Page): Promise<DashboardE2ECalls> {
 
     return e2eWindow.__HINEKORA_DASHBOARD_E2E__;
   });
+}
+
+async function setDashboardAudioOutputState(
+  page: Page,
+  state: ManagedRecorderAudioOutputState,
+) {
+  await page.evaluate((nextState) => {
+    const e2eWindow = window as unknown as {
+      __HINEKORA_DASHBOARD_E2E_API__: DashboardE2EApi;
+    };
+    e2eWindow.__HINEKORA_DASHBOARD_E2E_API__.setAudioOutputState(nextState);
+  }, state);
 }
 
 async function emitDashboardRecorderOverlayVisibility(
@@ -2350,6 +2392,7 @@ export {
   getDashboardE2ECalls,
   scheduleDashboardCaptureSources,
   setDashboardAppSetupValidation,
+  setDashboardAudioOutputState,
   setDashboardCaptureSources,
   setupDashboardE2E,
 };

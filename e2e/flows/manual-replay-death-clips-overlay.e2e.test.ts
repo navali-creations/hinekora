@@ -1,11 +1,16 @@
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
+import type { ManagedRecorderAudioOutputState } from "../../main/modules/managed-recorder/ManagedRecorder.dto";
 import type { ReplayClipDetail } from "../../main/modules/replay-clips";
 import {
   emitDashboardReplayClipPreviewProgress,
   emitDashboardReplayClipProgress,
   expectNoUnexpectedDashboardBridgeCalls,
   getDashboardE2ECalls,
+  setDashboardAudioOutputState,
   setupDashboardE2E,
 } from "../helpers/dashboard-fixture";
 
@@ -171,7 +176,9 @@ async function setupReadyClipPreviewOverlay(
   page: Page,
   input: {
     clipId: string;
+    audioOutputState?: ManagedRecorderAudioOutputState;
     durationSeconds?: number;
+    recordingAudioOutputDeviceId?: string | null;
     replayClipOperationDelayMs?: number;
   },
 ) {
@@ -192,6 +199,11 @@ async function setupReadyClipPreviewOverlay(
 
   await setupDashboardE2E(page, {
     replayClipDetails,
+    audioOutputState: input.audioOutputState ?? "available",
+    recordingAudioOutputDeviceId:
+      input.recordingAudioOutputDeviceId === undefined
+        ? "default"
+        : input.recordingAudioOutputDeviceId,
     initialHash: `/#/clip-preview-overlay?clipId=${input.clipId}`,
     ...(input.replayClipOperationDelayMs !== undefined
       ? { replayClipOperationDelayMs: input.replayClipOperationDelayMs }
@@ -290,6 +302,151 @@ for (const manualReplayShowPreview of [true, false]) {
     });
     await expect(progress).toHaveAttribute("aria-valuenow", "42");
     await expect(page.getByText("42%")).toBeVisible();
+  });
+}
+
+test("explains missing audio output in the clip overlay mute control", async ({
+  page,
+}) => {
+  await setupReadyClipPreviewOverlay(page, {
+    clipId: "clip-without-audio-output",
+    recordingAudioOutputDeviceId: null,
+    audioOutputState: "disabled",
+  });
+  await page.setViewportSize({ width: 560, height: 520 });
+  const muteButton = page.getByRole("button", {
+    name: "Replay muted: no audio output selected",
+  });
+  await expect(muteButton).toHaveAttribute("aria-pressed", "true");
+  await expect(muteButton).toBeDisabled();
+  await expect(muteButton).toHaveJSProperty("disabled", true);
+  await expect(page.locator("video")).toHaveJSProperty("muted", true);
+  const muteHelp = muteButton.locator("..");
+  await muteHelp.hover();
+  await expect(muteButton).toHaveAttribute(
+    "data-tip",
+    "No audio output is selected. Stop Rewind or Recording, then select an output in Dashboard → Audio settings for future clips.",
+  );
+  await expect(page.getByRole("tooltip")).toBeVisible();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "No audio output is selected",
+  );
+  await muteHelp.focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
+  await page.mouse.move(0, 0);
+  await expect(page.getByRole("tooltip")).toBeVisible();
+  await expect(muteButton).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("video")).toHaveJSProperty("muted", true);
+  await expect(page.getByRole("button", { name: "Save clip" })).toBeDisabled();
+  await page.getByRole("button", { name: "Dismiss clips page info" }).click();
+  await expect(muteButton).toHaveAttribute("aria-disabled", "true");
+  await expect(muteButton).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator("video")).toHaveJSProperty("muted", true);
+});
+
+test("explains an unavailable saved audio output in the clip overlay", async ({
+  page,
+}) => {
+  await setupReadyClipPreviewOverlay(page, {
+    clipId: "clip-with-unavailable-audio-output",
+    recordingAudioOutputDeviceId: "missing-output-device",
+    audioOutputState: "unavailable",
+  });
+  await page.setViewportSize({ width: 560, height: 520 });
+  const muteButton = page.getByRole("button", {
+    name: "Replay muted: audio output unavailable",
+  });
+  await expect(muteButton).toBeDisabled();
+  await expect(muteButton).toHaveJSProperty("disabled", true);
+  await expect(page.locator("video")).toHaveJSProperty("muted", true);
+  const muteHelp = muteButton.locator("..");
+  await muteHelp.hover();
+  await expect(page.getByRole("tooltip")).toContainText(
+    "The saved audio output device is unavailable",
+  );
+  await expect(page.getByRole("tooltip")).toContainText(
+    "Dashboard → Audio settings",
+  );
+  const bounds = await page.getByRole("tooltip").boundingBox();
+  if (!bounds) throw new Error("Expected visible audio output tooltip");
+  expect(bounds.x).toBeGreaterThanOrEqual(8);
+  expect(bounds.y).toBeGreaterThanOrEqual(8);
+  expect(bounds.x + bounds.width).toBeLessThanOrEqual(552);
+  expect(bounds.y + bounds.height).toBeLessThanOrEqual(512);
+  await muteHelp.focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
+  await page.mouse.move(0, 0);
+  await expect(page.getByRole("tooltip")).toBeVisible();
+  await expect(muteButton).toBeDisabled();
+  await expect(page.locator("video")).toHaveJSProperty("muted", true);
+});
+
+test("refreshes audio availability in an open preview without changing the selected ID", async ({
+  page,
+}) => {
+  await page.clock.install();
+  await setupReadyClipPreviewOverlay(page, {
+    clipId: "clip-reconnecting-output",
+    recordingAudioOutputDeviceId: "saved-output-device",
+    audioOutputState: "unavailable",
+  });
+  await expect(
+    page.getByRole("button", {
+      name: "Replay muted: audio output unavailable",
+    }),
+  ).toBeDisabled();
+  await setDashboardAudioOutputState(page, "available");
+  await page.clock.fastForward(5_001);
+  await expect(page.getByRole("button", { name: "Mute replay" })).toBeEnabled();
+  await expect(page.locator("video")).toHaveJSProperty("muted", false);
+  await setDashboardAudioOutputState(page, "unavailable");
+  await page.clock.fastForward(5_001);
+  await expect(
+    page.getByRole("button", {
+      name: "Replay muted: audio output unavailable",
+    }),
+  ).toBeDisabled();
+  await expect(page.locator("video")).toHaveJSProperty("muted", true);
+});
+
+for (const audioOutputState of ["disabled", "unavailable"] as const) {
+  test(`exports the muted preview of an audible source when audio is ${audioOutputState}`, async ({
+    page,
+  }) => {
+    const clipId = `audible-${audioOutputState}`;
+    const sourcePath = resolve("e2e/fixtures/clip-with-audio.mp4");
+    await page.route("**/__audible_clip.mp4*", async (route) =>
+      route.fulfill({
+        body: await readFile(sourcePath),
+        contentType: "video/mp4",
+      }),
+    );
+    const detail = createReplayClipDetail(clipId, "ready", 2);
+    detail.mediaUrl = "/__audible_clip.mp4";
+    await setupDashboardE2E(page, {
+      initialHash: `/#/clip-preview-overlay?clipId=${clipId}`,
+      replayClipDetails: { [clipId]: detail },
+      recordingAudioOutputDeviceId:
+        audioOutputState === "disabled" ? null : "missing-output-device",
+      audioOutputState,
+      skipDashboardShellChecks: true,
+    });
+    await expect(page.locator("video")).toHaveJSProperty("muted", true);
+    await page.getByRole("button", { name: "Copy to clipboard" }).click();
+    await expect
+      .poll(
+        async () => (await getDashboardE2ECalls(page)).replayClipCopyCalls[0],
+      )
+      .toMatchObject({ id: clipId, muteAudio: true });
+    await page.getByRole("textbox").fill("Muted clip");
+    await page.getByRole("button", { name: "Save clip" }).click();
+    await expect
+      .poll(
+        async () => (await getDashboardE2ECalls(page)).replayClipUpdateCalls[0],
+      )
+      .toMatchObject({ id: clipId, muteAudio: true, name: "Muted clip" });
   });
 }
 

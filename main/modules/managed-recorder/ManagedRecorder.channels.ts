@@ -1,6 +1,7 @@
 enum ManagedRecorderChannel {
   CaptureModeChanged = "managed-recorder:capture-mode-changed",
   GetCaptureMode = "managed-recorder:get-capture-mode",
+  GetAudioOutputState = "managed-recorder:get-audio-output-state",
   GetRecordingStorageEstimates = "managed-recorder:get-recording-storage-estimates",
   ListAudioDevices = "managed-recorder:list-audio-devices",
   GetStatus = "managed-recorder:get-status",

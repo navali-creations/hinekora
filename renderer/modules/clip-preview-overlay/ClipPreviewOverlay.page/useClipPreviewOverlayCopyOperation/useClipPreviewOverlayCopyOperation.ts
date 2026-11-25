@@ -4,25 +4,29 @@ import type { ReplayClipView } from "~/main/modules/replay-clips";
 import { useClipPreviewOverlayShallow } from "~/renderer/store";
 
 import type { ReplayClipPlaybackRate } from "~/types";
-import type { ClipPreviewTrimRange } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+import {
+  type ClipPreviewTrimRange,
+  isClipPreviewAudioMuted,
+} from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { useClipPreviewOverlayOperation } from "../useClipPreviewOverlayOperation/useClipPreviewOverlayOperation";
 
 function useClipPreviewOverlayCopyOperation(input: {
   canCopy: boolean;
   clip: ReplayClipView | null;
   hasTrimChanges: boolean;
-  isMuted: boolean;
   playbackRate?: ReplayClipPlaybackRate;
   trim: ClipPreviewTrimRange;
 }) {
   const copiedTimeoutRef = useRef<number | null>(null);
   const {
+    isAudioMuted,
     hasCopied,
     setCopied,
     setCopying,
     setOperationProgress,
     setSaveMessage,
   } = useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
+    isAudioMuted: isClipPreviewAudioMuted(clipPreviewOverlay),
     hasCopied: clipPreviewOverlay.hasCopied,
     setCopied: clipPreviewOverlay.setCopied,
     setCopying: clipPreviewOverlay.setCopying,
@@ -63,7 +67,7 @@ function useClipPreviewOverlayCopyOperation(input: {
         window.electron.replayClips.copy({
           id: input.clip?.id ?? "",
           operationRequestId: requestId,
-          ...(input.isMuted ? { muteAudio: true } : {}),
+          ...(isAudioMuted ? { muteAudio: true } : {}),
           ...(input.playbackRate ? { playbackRate: input.playbackRate } : {}),
           ...(input.hasTrimChanges
             ? {
@@ -88,7 +92,7 @@ function useClipPreviewOverlayCopyOperation(input: {
     input.canCopy,
     input.clip,
     input.hasTrimChanges,
-    input.isMuted,
+    isAudioMuted,
     input.playbackRate,
     input.trim.inSeconds,
     input.trim.outSeconds,

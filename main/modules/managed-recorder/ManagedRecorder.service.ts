@@ -46,6 +46,7 @@ import { resolveNativeDisplayResolution } from "./ManagedRecorder.display";
 import type {
   ManagedRecorderAudioDeviceKind,
   ManagedRecorderAudioDevices,
+  ManagedRecorderAudioOutputState,
   ManagedRecorderCaptureMode,
   ManagedRecorderListAudioDevicesOptions,
   ManagedRecordingStorageEstimateResponse,
@@ -123,6 +124,7 @@ const RECORDING_FILE_STABLE_MS = 1_000;
 const REPLAY_CONVERSION_STOP_DELAY_MS = 250;
 const AUDIO_DEVICE_PROBE_RETRY_MS = 250;
 const AUDIO_DEVICE_PROBE_EMPTY_COOLDOWN_MS = 3_000;
+const AUDIO_DEVICE_CACHE_TTL_MS = 5_000;
 const AUTO_START_CAPTURE_RETRY_MS = 2_500;
 const CAPTURE_WINDOW_UNAVAILABLE_ERROR =
   "Selected capture window is not available yet";
@@ -236,6 +238,8 @@ class ManagedRecorderService {
   private audioDeviceListRequest: Promise<ManagedRecorderAudioDevices> | null =
     null;
   private audioDevicesCache: ManagedRecorderAudioDevices | null = null;
+  private audioDevicesCacheExpiresAtMs = 0;
+  private audioDeviceProbeFailed = false;
   private audioDeviceProbeCooldownUntilMs = 0;
   private gameRunningRefreshRequest: Promise<boolean> | null = null;
   private gameRunningRefreshVersion = 0;
@@ -329,6 +333,21 @@ class ManagedRecorderService {
       });
   }
 
+  async getAudioOutputState(): Promise<ManagedRecorderAudioOutputState> {
+    const deviceId =
+      SettingsStoreService.getInstance().get().recordingAudioOutputDeviceId;
+    if (!deviceId) return "disabled";
+    if (deviceId === "default") return "available";
+
+    const devices = await this.listAudioDevices();
+    if (this.audioDeviceProbeFailed) {
+      throw new Error("Audio output availability could not be refreshed");
+    }
+    return devices.output.some((device) => device.id === deviceId)
+      ? "available"
+      : "unavailable";
+  }
+
   async listAudioDevices(
     options: ManagedRecorderListAudioDevicesOptions = {},
   ): Promise<ManagedRecorderAudioDevices> {
@@ -343,7 +362,11 @@ class ManagedRecorderService {
       return this.audioDevicesCache ?? { input: [], output: [] };
     }
 
-    if (options.forceRefresh !== true && this.audioDevicesCache) {
+    if (
+      options.forceRefresh !== true &&
+      this.audioDevicesCache &&
+      this.audioDevicesCacheExpiresAtMs > Date.now()
+    ) {
       return this.audioDevicesCache;
     }
 
@@ -359,8 +382,11 @@ class ManagedRecorderService {
       await this.ensureNoobsRuntimeInitialized({ publishStatus: false });
 
       const devices = await this.resolveAudioDevicesFromSources();
+      this.audioDeviceProbeFailed = false;
+      this.audioDevicesCache = devices;
+      this.audioDevicesCacheExpiresAtMs =
+        Date.now() + AUDIO_DEVICE_CACHE_TTL_MS;
       if (devices.output.length > 0) {
-        this.audioDevicesCache = devices;
         this.audioDeviceProbeCooldownUntilMs = 0;
       } else {
         this.audioDeviceProbeCooldownUntilMs =
@@ -369,6 +395,7 @@ class ManagedRecorderService {
 
       return devices;
     } catch (error) {
+      this.audioDeviceProbeFailed = true;
       const message = safeErrorMessage(error);
       logWarn(MANAGED_RECORDER_LOG_SCOPE, "Failed to list audio devices", {
         error: message,
@@ -2643,6 +2670,11 @@ class ManagedRecorderService {
   }
 
   private setupHandlers(): void {
+    registerGuardedIpcHandler(
+      ManagedRecorderChannel.GetAudioOutputState,
+      [WindowName.Main, WindowName.ClipPreviewOverlay],
+      () => this.getAudioOutputState(),
+    );
     registerGuardedIpcHandler(
       ManagedRecorderChannel.GetCaptureMode,
       [WindowName.Main, WindowName.RecorderOverlay],

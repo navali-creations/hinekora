@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   createFfmpegTestSource,
   decodeFfmpegTestMedia,
+  measureFfmpegTestAudioVolume,
   probeFfmpegTestMedia,
 } from "~/main/test/ffmpeg-integration";
 import { isWindowsOS } from "~/main/utils/platform";
@@ -26,6 +27,38 @@ afterEach(async () => {
 describe.runIf(isWindowsOS())(
   "replay clip preview rendering integration",
   () => {
+    it.each([false, true])(
+      "renders an audible source with muteAudio=%s",
+      async (muteAudio) => {
+        const directory = await mkdtemp(
+          join(tmpdir(), "hinekora-audio-export-"),
+        );
+        temporaryDirectories.push(directory);
+        const sourcePath = join(directory, "source.mp4");
+        const outputPath = join(directory, "export.mp4");
+        await createFfmpegTestSource({
+          durationSeconds: 1,
+          outputPath: sourcePath,
+          withAudio: true,
+        });
+        expect(await measureFfmpegTestAudioVolume(sourcePath)).toBeGreaterThan(
+          -40,
+        );
+        await renderReplayClipQuickTrim({
+          muteAudio,
+          outputPath,
+          resolution: "720p",
+          sourcePath,
+          trim: { inSeconds: 0.1, outSeconds: 0.8 },
+        });
+        const volume = await measureFfmpegTestAudioVolume(outputPath);
+        if (muteAudio) expect(volume).toBeLessThan(-70);
+        else expect(volume).toBeGreaterThan(-40);
+        await decodeFfmpegTestMedia({ outputPath, withAudio: true });
+      },
+      20_000,
+    );
+
     it("renders a playable 720p H.264 proxy with the bundled ffmpeg", async () => {
       const directory = await mkdtemp(join(tmpdir(), "hinekora-preview-"));
       temporaryDirectories.push(directory);

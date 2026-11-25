@@ -5,7 +5,10 @@ import {
   defaultReplayClipPlaybackRate,
   type ReplayClipPlaybackRate,
 } from "~/types";
-import type { ClipPreviewTrimRange } from "../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
+import type {
+  ClipPreviewAudioOutputState,
+  ClipPreviewTrimRange,
+} from "../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 
 interface ClipPreviewOverlaySaveMessage {
   text: string;
@@ -13,6 +16,7 @@ interface ClipPreviewOverlaySaveMessage {
 }
 
 interface ClipPreviewOverlayState {
+  audioOutputState: ClipPreviewAudioOutputState;
   applyPlaybackRateToExport: boolean;
   detail: ReplayClipDetail | null;
   detailError: string | null;
@@ -38,6 +42,10 @@ interface ClipPreviewOverlayState {
 interface ClipPreviewOverlaySlice {
   clipPreviewOverlay: ClipPreviewOverlayState & {
     incrementMediaVersion: () => void;
+    refreshAudioOutputState: (
+      outputDeviceId?: string | null,
+      options?: { background?: boolean },
+    ) => Promise<void>;
     reset: () => void;
     resetLoadedClipState: (trim: ClipPreviewTrimRange) => void;
     setCopied: (hasCopied: boolean) => void;
@@ -70,6 +78,7 @@ const initialTrimRange: ClipPreviewTrimRange = {
 };
 
 const createInitialClipPreviewOverlayState = (): ClipPreviewOverlayState => ({
+  audioOutputState: "checking",
   applyPlaybackRateToExport: false,
   detail: null,
   detailError: null,
@@ -94,145 +103,173 @@ const createInitialClipPreviewOverlayState = (): ClipPreviewOverlayState => ({
 
 const createClipPreviewOverlaySlice: BoundStoreStateCreator<
   ClipPreviewOverlaySlice
-> = (set) => ({
-  clipPreviewOverlay: {
-    ...createInitialClipPreviewOverlayState(),
-    incrementMediaVersion: () => {
-      set((state) => {
-        state.clipPreviewOverlay.mediaVersion += 1;
-      });
-    },
-    reset: () => {
-      set((state) => {
-        Object.assign(
-          state.clipPreviewOverlay,
-          createInitialClipPreviewOverlayState(),
-        );
-      });
-    },
-    resetLoadedClipState: (trim) => {
-      set((state) => {
-        state.clipPreviewOverlay.hasCopied = false;
-        state.clipPreviewOverlay.operationProgress = 0;
-        state.clipPreviewOverlay.previewProgress = 0;
-        state.clipPreviewOverlay.saveMessage = null;
-        state.clipPreviewOverlay.isMediaReady = false;
-        state.clipPreviewOverlay.mediaError = null;
-        state.clipPreviewOverlay.isMuted = false;
-        state.clipPreviewOverlay.isPlaying = false;
-        state.clipPreviewOverlay.applyPlaybackRateToExport = false;
-        state.clipPreviewOverlay.playbackRate = defaultReplayClipPlaybackRate;
-        state.clipPreviewOverlay.titleDraft = "";
-        state.clipPreviewOverlay.trim = trim;
-      });
-    },
-    setCopied: (hasCopied) => {
-      set((state) => {
-        state.clipPreviewOverlay.hasCopied = hasCopied;
-      });
-    },
-    setApplyPlaybackRateToExport: (apply) => {
-      set((state) => {
-        state.clipPreviewOverlay.applyPlaybackRateToExport = apply;
-      });
-    },
-    setHasSavedClip: (hasSavedClip) => {
-      set((state) => {
-        state.clipPreviewOverlay.hasSavedClip = hasSavedClip;
-      });
-    },
-    setCopying: (isCopying) => {
-      set((state) => {
-        state.clipPreviewOverlay.isCopying = isCopying;
-      });
-    },
-    setDetail: (detail) => {
-      set((state) => {
-        state.clipPreviewOverlay.detail = detail;
-      });
-    },
-    setDetailError: (detailError) => {
-      set((state) => {
-        state.clipPreviewOverlay.detailError = detailError;
-      });
-    },
-    setFullscreen: (isFullscreen) => {
-      set((state) => {
-        state.clipPreviewOverlay.isFullscreen = isFullscreen;
-      });
-    },
-    setMediaReady: (isMediaReady) => {
-      set((state) => {
-        state.clipPreviewOverlay.isMediaReady = isMediaReady;
-      });
-    },
-    setMediaError: (mediaError) => {
-      set((state) => {
-        state.clipPreviewOverlay.mediaError = mediaError;
-      });
-    },
-    setMuted: (isMuted) => {
-      set((state) => {
-        state.clipPreviewOverlay.isMuted = isMuted;
-      });
-    },
-    setPlaying: (isPlaying) => {
-      set((state) => {
-        state.clipPreviewOverlay.isPlaying = isPlaying;
-      });
-    },
-    setDurationOverrideSeconds: (durationOverrideSeconds) => {
-      set((state) => {
-        state.clipPreviewOverlay.durationOverrideSeconds =
-          durationOverrideSeconds;
-      });
-    },
-    setOperationProgress: (operationProgress) => {
-      set((state) => {
-        state.clipPreviewOverlay.operationProgress = Math.min(
-          Math.max(operationProgress, 0),
-          1,
-        );
-      });
-    },
-    setPlaybackRate: (playbackRate) => {
-      set((state) => {
-        state.clipPreviewOverlay.playbackRate = playbackRate;
-        if (playbackRate === defaultReplayClipPlaybackRate) {
-          state.clipPreviewOverlay.applyPlaybackRateToExport = false;
+> = (set) => {
+  let audioOutputRequest = 0;
+  return {
+    clipPreviewOverlay: {
+      ...createInitialClipPreviewOverlayState(),
+      incrementMediaVersion: () => {
+        set((state) => {
+          state.clipPreviewOverlay.mediaVersion += 1;
+        });
+      },
+      reset: () => {
+        audioOutputRequest += 1;
+        set((state) => {
+          Object.assign(
+            state.clipPreviewOverlay,
+            createInitialClipPreviewOverlayState(),
+          );
+        });
+      },
+      refreshAudioOutputState: async (outputDeviceId, options = {}) => {
+        const request = ++audioOutputRequest;
+        set((state) => {
+          if (outputDeviceId === null) {
+            state.clipPreviewOverlay.audioOutputState = "disabled";
+          } else if (!options.background) {
+            state.clipPreviewOverlay.audioOutputState = "checking";
+          }
+        });
+        if (outputDeviceId === null) return;
+        try {
+          const audioOutputState =
+            await window.electron.managedRecorder.getAudioOutputState();
+          if (request !== audioOutputRequest) return;
+          set((state) => {
+            state.clipPreviewOverlay.audioOutputState = audioOutputState;
+          });
+        } catch {
+          if (request !== audioOutputRequest) return;
+          set((state) => {
+            state.clipPreviewOverlay.audioOutputState = "error";
+          });
         }
-      });
+      },
+      resetLoadedClipState: (trim) => {
+        set((state) => {
+          state.clipPreviewOverlay.hasCopied = false;
+          state.clipPreviewOverlay.operationProgress = 0;
+          state.clipPreviewOverlay.previewProgress = 0;
+          state.clipPreviewOverlay.saveMessage = null;
+          state.clipPreviewOverlay.isMediaReady = false;
+          state.clipPreviewOverlay.mediaError = null;
+          state.clipPreviewOverlay.isMuted = false;
+          state.clipPreviewOverlay.isPlaying = false;
+          state.clipPreviewOverlay.applyPlaybackRateToExport = false;
+          state.clipPreviewOverlay.playbackRate = defaultReplayClipPlaybackRate;
+          state.clipPreviewOverlay.titleDraft = "";
+          state.clipPreviewOverlay.trim = trim;
+        });
+      },
+      setCopied: (hasCopied) => {
+        set((state) => {
+          state.clipPreviewOverlay.hasCopied = hasCopied;
+        });
+      },
+      setApplyPlaybackRateToExport: (apply) => {
+        set((state) => {
+          state.clipPreviewOverlay.applyPlaybackRateToExport = apply;
+        });
+      },
+      setHasSavedClip: (hasSavedClip) => {
+        set((state) => {
+          state.clipPreviewOverlay.hasSavedClip = hasSavedClip;
+        });
+      },
+      setCopying: (isCopying) => {
+        set((state) => {
+          state.clipPreviewOverlay.isCopying = isCopying;
+        });
+      },
+      setDetail: (detail) => {
+        set((state) => {
+          state.clipPreviewOverlay.detail = detail;
+        });
+      },
+      setDetailError: (detailError) => {
+        set((state) => {
+          state.clipPreviewOverlay.detailError = detailError;
+        });
+      },
+      setFullscreen: (isFullscreen) => {
+        set((state) => {
+          state.clipPreviewOverlay.isFullscreen = isFullscreen;
+        });
+      },
+      setMediaReady: (isMediaReady) => {
+        set((state) => {
+          state.clipPreviewOverlay.isMediaReady = isMediaReady;
+        });
+      },
+      setMediaError: (mediaError) => {
+        set((state) => {
+          state.clipPreviewOverlay.mediaError = mediaError;
+        });
+      },
+      setMuted: (isMuted) => {
+        set((state) => {
+          state.clipPreviewOverlay.isMuted = isMuted;
+        });
+      },
+      setPlaying: (isPlaying) => {
+        set((state) => {
+          state.clipPreviewOverlay.isPlaying = isPlaying;
+        });
+      },
+      setDurationOverrideSeconds: (durationOverrideSeconds) => {
+        set((state) => {
+          state.clipPreviewOverlay.durationOverrideSeconds =
+            durationOverrideSeconds;
+        });
+      },
+      setOperationProgress: (operationProgress) => {
+        set((state) => {
+          state.clipPreviewOverlay.operationProgress = Math.min(
+            Math.max(operationProgress, 0),
+            1,
+          );
+        });
+      },
+      setPlaybackRate: (playbackRate) => {
+        set((state) => {
+          state.clipPreviewOverlay.playbackRate = playbackRate;
+          if (playbackRate === defaultReplayClipPlaybackRate) {
+            state.clipPreviewOverlay.applyPlaybackRateToExport = false;
+          }
+        });
+      },
+      setPreviewProgress: (previewProgress) => {
+        set((state) => {
+          state.clipPreviewOverlay.previewProgress = Math.min(
+            Math.max(previewProgress, 0),
+            1,
+          );
+        });
+      },
+      setSaveMessage: (saveMessage) => {
+        set((state) => {
+          state.clipPreviewOverlay.saveMessage = saveMessage;
+        });
+      },
+      setSaving: (isSaving) => {
+        set((state) => {
+          state.clipPreviewOverlay.isSaving = isSaving;
+        });
+      },
+      setTitleDraft: (titleDraft) => {
+        set((state) => {
+          state.clipPreviewOverlay.titleDraft = titleDraft;
+        });
+      },
+      setTrim: (trim) => {
+        set((state) => {
+          state.clipPreviewOverlay.trim = trim;
+        });
+      },
     },
-    setPreviewProgress: (previewProgress) => {
-      set((state) => {
-        state.clipPreviewOverlay.previewProgress = Math.min(
-          Math.max(previewProgress, 0),
-          1,
-        );
-      });
-    },
-    setSaveMessage: (saveMessage) => {
-      set((state) => {
-        state.clipPreviewOverlay.saveMessage = saveMessage;
-      });
-    },
-    setSaving: (isSaving) => {
-      set((state) => {
-        state.clipPreviewOverlay.isSaving = isSaving;
-      });
-    },
-    setTitleDraft: (titleDraft) => {
-      set((state) => {
-        state.clipPreviewOverlay.titleDraft = titleDraft;
-      });
-    },
-    setTrim: (trim) => {
-      set((state) => {
-        state.clipPreviewOverlay.trim = trim;
-      });
-    },
-  },
-});
+  };
+};
 
 export type { ClipPreviewOverlaySlice };
 export { createClipPreviewOverlaySlice };

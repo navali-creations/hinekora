@@ -1,9 +1,9 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { SettingsStoreClipPreviewOverlaySnapshot } from "~/main/modules/settings-store/SettingsStore.dto";
 import { createReplayClipView } from "~/main/test/factories/replayClip";
 
-import type { AppSettings } from "~/types";
 import { dispatchClipPreviewPointerEvent } from "../ClipPreviewOverlay.test-utils";
 
 const storeMocks = vi.hoisted(() => ({
@@ -11,6 +11,7 @@ const storeMocks = vi.hoisted(() => ({
   copyClip: vi.fn(),
   dismissClipPreviewInfoAlert: vi.fn(),
   getClip: vi.fn(),
+  getAudioOutputState: vi.fn(),
   onFullscreenChanged: vi.fn(),
   onOperationProgress: vi.fn(),
   onPreviewProgress: vi.fn(),
@@ -19,7 +20,7 @@ const storeMocks = vi.hoisted(() => ({
   openClip: vi.fn(),
   revealClip: vi.fn(),
   toggleClipPreviewFullscreen: vi.fn(),
-  settingsValue: null as AppSettings | null,
+  settingsValue: null as SettingsStoreClipPreviewOverlaySnapshot | null,
   updateClip: vi.fn(),
   useSettingsShallow: vi.fn(),
   writeClipPreviewEvent: vi.fn(),
@@ -53,6 +54,185 @@ import {
 setupClipPreviewOverlayTestHarness(storeMocks);
 
 describe("ClipPreviewOverlayPage", () => {
+  it.each(["manual", "death"] as const)(
+    "keeps the %s clip muted when no audio output is selected",
+    async (kind) => {
+      if (!storeMocks.settingsValue) {
+        throw new Error("Expected settings");
+      }
+      storeMocks.settingsValue.recordingAudioOutputDeviceId = null;
+      storeMocks.getClip.mockResolvedValue({
+        clip: createReplayClipView({
+          id: "clip-1",
+          kind,
+          durationSeconds: 10,
+          fileName: "clip-1.mp4",
+          hasMediaFile: true,
+        }),
+        durationSeconds: 10,
+        mediaUrl: "hinekora-media://replay-clip/clip-1",
+      });
+      await renderPage();
+      await flushPromises();
+      const video = await markPreviewVideoReady();
+      const muteButton = findButtonByLabel(
+        "Replay muted: no audio output selected",
+      );
+
+      expect(video.muted).toBe(true);
+      expect(muteButton.getAttribute("aria-pressed")).toBe("true");
+      expect(muteButton.getAttribute("aria-disabled")).toBe("true");
+      expect(muteButton.disabled).toBe(true);
+      expect(muteButton.dataset.tip).toBe(
+        "No audio output is selected. Stop Rewind or Recording, then select an output in Dashboard → Audio settings for future clips.",
+      );
+      expect(muteButton.getAttribute("aria-description")).toBe(
+        muteButton.dataset.tip,
+      );
+      await act(async () => {
+        muteButton.click();
+      });
+
+      expect(video.muted).toBe(true);
+      expect(findButton("Save clip").disabled).toBe(true);
+      expect(container.textContent).not.toContain(
+        "Muted clips are exported without audio.",
+      );
+
+      storeMocks.settingsValue.recordingAudioOutputDeviceId = "default";
+      await renderPage();
+      expect(findButtonByLabel("Mute replay").dataset.tip).toBe("Mute");
+      expect(video.muted).toBe(false);
+      await act(async () => {
+        findButtonByLabel("Mute replay").click();
+      });
+      expect(video.muted).toBe(true);
+      expect(findButtonByLabel("Unmute replay").dataset.tip).toBe("Unmute");
+    },
+  );
+
+  it("keeps mute disabled while checking audio output availability", async () => {
+    const audioOutput = createDeferred<"disabled">();
+    storeMocks.getAudioOutputState.mockReturnValue(audioOutput.promise);
+    await renderPage();
+    await flushPromises();
+    await markPreviewVideoReady();
+
+    expect(findButtonByLabel("Checking replay audio output").disabled).toBe(
+      true,
+    );
+    await act(async () => audioOutput.resolve("disabled"));
+
+    expect(
+      findButtonByLabel("Replay muted: no audio output selected").getAttribute(
+        "aria-pressed",
+      ),
+    ).toBe("true");
+  });
+
+  it("disables mute when the saved output device is no longer available", async () => {
+    if (!storeMocks.settingsValue) throw new Error("Expected settings");
+    storeMocks.settingsValue.recordingAudioOutputDeviceId =
+      "missing-output-device";
+    storeMocks.getAudioOutputState.mockResolvedValue("unavailable");
+    await renderPage();
+    await flushPromises();
+    const video = await markPreviewVideoReady();
+    const muteButton = findButtonByLabel(
+      "Replay muted: audio output unavailable",
+    );
+    expect(muteButton.disabled).toBe(true);
+    expect(video.muted).toBe(true);
+    expect(muteButton.parentElement?.dataset.tip).toContain(
+      "The saved audio output device is unavailable",
+    );
+    expect(muteButton.parentElement?.tabIndex).toBe(0);
+    await act(async () => muteButton.click());
+    expect(video.muted).toBe(true);
+    expect(findButton("Save clip").disabled).toBe(true);
+  });
+
+  it("keeps mute disabled after an audio check fails and retries automatically", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    storeMocks.getAudioOutputState.mockRejectedValue(
+      new Error("IPC unavailable"),
+    );
+    await renderPage();
+    await flushPromises();
+    const video = await markPreviewVideoReady();
+    expect(
+      findButtonByLabel("Replay audio output could not be checked").disabled,
+    ).toBe(true);
+    expect(video.muted).toBe(true);
+    storeMocks.getAudioOutputState.mockResolvedValue("available");
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(findButtonByLabel("Mute replay").disabled).toBe(false);
+    expect(video.muted).toBe(false);
+  });
+
+  it("refreshes device availability without flickering playback or losing manual mute", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    if (!storeMocks.settingsValue) throw new Error("Expected settings");
+    storeMocks.settingsValue.recordingAudioOutputDeviceId =
+      "saved-output-device";
+    await renderPage();
+    await flushPromises();
+    const video = await markPreviewVideoReady();
+    await act(async () => vi.advanceTimersByTimeAsync(0));
+    const initialChecks = storeMocks.getAudioOutputState.mock.calls.length;
+    const nextCheck = createDeferred<"unavailable">();
+    storeMocks.getAudioOutputState.mockReturnValueOnce(nextCheck.promise);
+
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(storeMocks.getAudioOutputState).toHaveBeenCalledTimes(
+      initialChecks + 1,
+    );
+    expect(findButtonByLabel("Mute replay").disabled).toBe(false);
+    expect(video.muted).toBe(false);
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    expect(storeMocks.getAudioOutputState).toHaveBeenCalledTimes(
+      initialChecks + 1,
+    );
+
+    await act(async () => nextCheck.resolve("unavailable"));
+    expect(
+      findButtonByLabel("Replay muted: audio output unavailable").disabled,
+    ).toBe(true);
+    expect(video.muted).toBe(true);
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(findButtonByLabel("Mute replay").disabled).toBe(false);
+    expect(video.muted).toBe(false);
+
+    await act(async () => findButtonByLabel("Mute replay").click());
+    storeMocks.getAudioOutputState.mockResolvedValueOnce("unavailable");
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(findButtonByLabel("Unmute replay").disabled).toBe(false);
+    expect(video.muted).toBe(true);
+  });
+
+  it("ignores an old audio check after the selected output changes", async () => {
+    const oldCheck = createDeferred<"available">();
+    storeMocks.getAudioOutputState
+      .mockReturnValueOnce(oldCheck.promise)
+      .mockResolvedValue("unavailable");
+    await renderPage();
+    await flushPromises();
+    const video = await markPreviewVideoReady();
+    if (!storeMocks.settingsValue) throw new Error("Expected settings");
+    storeMocks.settingsValue.recordingAudioOutputDeviceId =
+      "missing-output-device";
+    await renderPage();
+    await flushPromises();
+    await act(async () => oldCheck.resolve("available"));
+    expect(
+      findButtonByLabel("Replay muted: audio output unavailable").disabled,
+    ).toBe(true);
+    expect(video.muted).toBe(true);
+  });
+
   it("loads a new clip when a reused overlay window changes its hash", async () => {
     storeMocks.getClip.mockImplementation(async (id: string) => ({
       clip: createReplayClipView({

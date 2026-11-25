@@ -28,7 +28,9 @@ type SettingsStoreRecorderOverlaySnapshot = SettingsStoreCommonOverlaySnapshot &
   Pick<AppSettings, "manualReplayShowPreview">;
 type SettingsStoreClipPreviewOverlaySnapshot = Pick<
   AppSettings,
-  "clipPreviewInfoAlertDismissed" | "telemetryCrashReporting"
+  | "clipPreviewInfoAlertDismissed"
+  | "recordingAudioOutputDeviceId"
+  | "telemetryCrashReporting"
 >;
 export type SettingsUpdateInput = AppSettingsUpdate;
 export type {
@@ -82,6 +84,7 @@ export function createSettingsStoreClipPreviewOverlaySnapshot(
 ): SettingsStoreClipPreviewOverlaySnapshot {
   return {
     clipPreviewInfoAlertDismissed: settings.clipPreviewInfoAlertDismissed,
+    recordingAudioOutputDeviceId: settings.recordingAudioOutputDeviceId,
     telemetryCrashReporting: settings.telemetryCrashReporting,
   };
 }

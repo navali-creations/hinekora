@@ -321,7 +321,10 @@ describe("SettingsStoreService", () => {
     ]);
 
     try {
-      const updatedSettings = service.update({ activeGame: "poe2" });
+      const updatedSettings = service.update({
+        activeGame: "poe2",
+        recordingAudioOutputDeviceId: "default",
+      });
 
       expect(mainWindow.webContents.send).toHaveBeenCalledWith(
         SettingsStoreChannel.Changed,
@@ -379,6 +382,8 @@ describe("SettingsStoreService", () => {
         {
           clipPreviewInfoAlertDismissed:
             updatedSettings.clipPreviewInfoAlertDismissed,
+          recordingAudioOutputDeviceId:
+            updatedSettings.recordingAudioOutputDeviceId,
           telemetryCrashReporting: updatedSettings.telemetryCrashReporting,
         },
       );
@@ -514,6 +519,7 @@ describe("SettingsStoreService", () => {
       ).toEqual({
         clipPreviewInfoAlertDismissed:
           fullSettings.clipPreviewInfoAlertDismissed,
+        recordingAudioOutputDeviceId: fullSettings.recordingAudioOutputDeviceId,
         telemetryCrashReporting: fullSettings.telemetryCrashReporting,
       });
       expect(
@@ -596,6 +602,7 @@ describe("SettingsStoreService", () => {
         }),
       ).toEqual({
         clipPreviewInfoAlertDismissed: true,
+        recordingAudioOutputDeviceId: fullSettings.recordingAudioOutputDeviceId,
         telemetryCrashReporting: fullSettings.telemetryCrashReporting,
       });
       expect(
@@ -605,6 +612,15 @@ describe("SettingsStoreService", () => {
       ).toEqual({
         ok: false,
         error: "activeGame cannot be updated from this window",
+      });
+      expect(
+        await handlers.get(SettingsStoreChannel.Update)?.(clipPreviewEvent, {
+          recordingAudioOutputDeviceId: "default",
+        }),
+      ).toEqual({
+        ok: false,
+        error:
+          "recordingAudioOutputDeviceId cannot be updated from this window",
       });
       expect(() =>
         handlers.get(SettingsStoreChannel.Update)?.(recorderEvent, {

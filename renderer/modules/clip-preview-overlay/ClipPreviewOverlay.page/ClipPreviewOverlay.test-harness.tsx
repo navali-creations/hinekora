@@ -2,9 +2,13 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, type Mock, vi } from "vitest";
 
+import {
+  createSettingsStoreClipPreviewOverlaySnapshot,
+  type SettingsStoreClipPreviewOverlaySnapshot,
+} from "~/main/modules/settings-store/SettingsStore.dto";
 import { createReplayClipView } from "~/main/test/factories/replayClip";
 
-import { type AppSettings, createDefaultSettings } from "~/types";
+import { createDefaultSettings } from "~/types";
 import { getClipPreviewTrimRail } from "../ClipPreviewOverlay.test-utils";
 import { ClipPreviewOverlayPage } from "./ClipPreviewOverlay.page";
 
@@ -12,6 +16,7 @@ interface ClipPreviewOverlayStoreMocks {
   copyClip: Mock;
   dismissClipPreviewInfoAlert: Mock;
   getClip: Mock;
+  getAudioOutputState: Mock;
   hideClipPreview: Mock;
   onFullscreenChanged: Mock;
   onOperationProgress: Mock;
@@ -21,7 +26,7 @@ interface ClipPreviewOverlayStoreMocks {
   openEditorClip: Mock;
   toggleClipPreviewFullscreen: Mock;
   revealClip: Mock;
-  settingsValue: AppSettings | null;
+  settingsValue: SettingsStoreClipPreviewOverlaySnapshot | null;
   updateClip: Mock;
   useSettingsShallow: Mock;
   writeClipPreviewEvent: Mock;
@@ -60,7 +65,7 @@ function findButton(label: string): HTMLButtonElement {
 }
 
 function findButtonByLabel(label: string): HTMLButtonElement {
-  const button = container.querySelector(`[aria-label="${label}"]`);
+  const button = container.querySelector(`button[aria-label="${label}"]`);
   if (!(button instanceof HTMLButtonElement)) {
     throw new Error(`Could not find ${label} button`);
   }
@@ -242,15 +247,21 @@ function setupClipPreviewOverlayTestHarness(
 
       return requestedFullscreen;
     });
-    storeMocks.settingsValue = createDefaultSettings();
+    storeMocks.settingsValue = createSettingsStoreClipPreviewOverlaySnapshot({
+      ...createDefaultSettings(),
+      recordingAudioOutputDeviceId: "default",
+    });
+    storeMocks.getAudioOutputState.mockReset().mockResolvedValue("available");
     storeMocks.dismissClipPreviewInfoAlert.mockImplementation(() => {
       storeMocks.settingsValue = {
         ...storeMocks.settingsValue,
         clipPreviewInfoAlertDismissed: true,
-      } as AppSettings;
+      } as SettingsStoreClipPreviewOverlaySnapshot;
 
       return Promise.resolve({
         clipPreviewInfoAlertDismissed: true,
+        recordingAudioOutputDeviceId:
+          storeMocks.settingsValue.recordingAudioOutputDeviceId,
         telemetryCrashReporting:
           storeMocks.settingsValue.telemetryCrashReporting,
       });
@@ -271,7 +282,11 @@ function setupClipPreviewOverlayTestHarness(
       ok: true,
     });
     storeMocks.useSettingsShallow.mockImplementation(
-      (selector: (state: { value: AppSettings | null }) => unknown) =>
+      (
+        selector: (state: {
+          value: SettingsStoreClipPreviewOverlaySnapshot | null;
+        }) => unknown,
+      ) =>
         selector({
           value: storeMocks.settingsValue,
         }),
@@ -285,6 +300,9 @@ function setupClipPreviewOverlayTestHarness(
         mainWindow: {
           openEditorClip: storeMocks.openEditorClip,
           openClip: storeMocks.openClip,
+        },
+        managedRecorder: {
+          getAudioOutputState: storeMocks.getAudioOutputState,
         },
         overlayWindows: {
           hideClipPreview: storeMocks.hideClipPreview,

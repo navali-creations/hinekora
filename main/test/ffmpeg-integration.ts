@@ -111,4 +111,29 @@ async function probeFfmpegTestMedia(
   };
 }
 
-export { createFfmpegTestSource, decodeFfmpegTestMedia, probeFfmpegTestMedia };
+async function measureFfmpegTestAudioVolume(
+  outputPath: string,
+): Promise<number> {
+  const { stderr } = await execFileAsync(bundledFfmpegPath, [
+    "-hide_banner",
+    "-i",
+    outputPath,
+    "-vn",
+    "-af",
+    "volumedetect",
+    "-f",
+    "null",
+    "-",
+  ]);
+  const meanVolume = /mean_volume:\s*(-?[\d.]+|-inf) dB/.exec(stderr)?.[1];
+  if (meanVolume === undefined)
+    throw new Error("Audio volume could not be measured");
+  return meanVolume === "-inf" ? Number.NEGATIVE_INFINITY : Number(meanVolume);
+}
+
+export {
+  createFfmpegTestSource,
+  decodeFfmpegTestMedia,
+  measureFfmpegTestAudioVolume,
+  probeFfmpegTestMedia,
+};

@@ -768,6 +768,54 @@ describe("ManagedRecorderService", () => {
     );
   });
 
+  it.each([
+    { deviceId: null, expected: "disabled" },
+    { deviceId: "default", expected: "available" },
+    { deviceId: "{output-device}", expected: "available" },
+    { deviceId: "{disconnected-output-device}", expected: "unavailable" },
+  ] as const)(
+    "reports audio output state for $deviceId",
+    async ({ deviceId, expected }) => {
+      vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+        get: () => ({
+          ...createDefaultSettings(),
+          recordingAudioOutputDeviceId: deviceId,
+        }),
+      } as unknown as SettingsStoreService);
+      const service = createService();
+      const listAudioDevices = vi
+        .spyOn(service, "listAudioDevices")
+        .mockResolvedValue({
+          input: [],
+          output: [{ id: "{output-device}", label: "Available speakers" }],
+        });
+      await expect(service.getAudioOutputState()).resolves.toBe(expected);
+      if (deviceId === null || deviceId === "default") {
+        expect(listAudioDevices).not.toHaveBeenCalled();
+      }
+    },
+  );
+
+  it("exposes only the audio output state to clip previews and rejects unrelated windows", async () => {
+    const { handlers } = mockIpcMainHandlers();
+    const service = createService();
+    vi.spyOn(service, "getAudioOutputState").mockResolvedValue("unavailable");
+    const clipPreviewContents = { id: 23 };
+    registerIpcWindowRole(clipPreviewContents, WindowName.ClipPreviewOverlay);
+    await expect(
+      handlers.get(ManagedRecorderChannel.GetAudioOutputState)?.({
+        sender: clipPreviewContents,
+      }),
+    ).resolves.toBe("unavailable");
+    const auraContents = { id: 24 };
+    registerIpcWindowRole(auraContents, WindowName.AuraOverlay);
+    expect(() =>
+      handlers.get(ManagedRecorderChannel.GetAudioOutputState)?.({
+        sender: auraContents,
+      }),
+    ).toThrow("is not available from this window");
+  });
+
   it("lists audio devices through OBS audio source probes", async () => {
     const service = createService();
     const noobs = createNoobsApi();
@@ -825,6 +873,70 @@ describe("ManagedRecorderService", () => {
 
     await service.listAudioDevices({ forceRefresh: true });
     expect(noobs.CreateSource).toHaveBeenCalledTimes(4);
+  });
+
+  it("refreshes cached availability after disconnects, probe failures, and reconnects", async () => {
+    let now = Date.now();
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    vi.spyOn(SettingsStoreService, "getInstance").mockReturnValue({
+      get: () => ({
+        ...createDefaultSettings(),
+        recordingAudioOutputDeviceId: "{output-device}",
+      }),
+    } as unknown as SettingsStoreService);
+    const service = createService();
+    const noobs = createNoobsApi();
+    let connected = true;
+    noobs.CreateSource.mockImplementation((name: string) => name);
+    noobs.GetSourceProperties.mockImplementation((sourceName: string) => [
+      {
+        name: "device_id",
+        items:
+          connected && sourceName.includes("Output")
+            ? [{ name: "Headphones", value: "{output-device}" }]
+            : [],
+      },
+    ]);
+    const internals = service as unknown as {
+      ensureNoobsRuntimeInitialized(): Promise<string>;
+      noobs: ReturnType<typeof createNoobsApi>;
+      waitForAudioDeviceProbeRetry(): Promise<void>;
+    };
+    internals.noobs = noobs;
+    const initializeRuntime = vi
+      .fn()
+      .mockResolvedValue(join(directory, "runtime"));
+    internals.ensureNoobsRuntimeInitialized = initializeRuntime;
+    internals.waitForAudioDeviceProbeRetry = vi
+      .fn()
+      .mockResolvedValue(undefined);
+
+    await expect(service.getAudioOutputState()).resolves.toBe("available");
+    connected = false;
+    await expect(service.getAudioOutputState()).resolves.toBe("available");
+    expect(initializeRuntime).toHaveBeenCalledTimes(1);
+    now += 5_001;
+    await expect(service.getAudioOutputState()).resolves.toBe("unavailable");
+    await expect(service.getAudioOutputState()).resolves.toBe("unavailable");
+    expect(initializeRuntime).toHaveBeenCalledTimes(2);
+
+    connected = true;
+    now += 5_001;
+    await expect(service.getAudioOutputState()).resolves.toBe("available");
+    now += 5_001;
+    initializeRuntime.mockRejectedValueOnce(
+      new Error("private native failure"),
+    );
+    await expect(service.getAudioOutputState()).rejects.toThrow(
+      "Audio output availability could not be refreshed",
+    );
+    await expect(service.getAudioOutputState()).rejects.toThrow(
+      "Audio output availability could not be refreshed",
+    );
+    expect(initializeRuntime).toHaveBeenCalledTimes(4);
+    now += 5_001;
+    await expect(service.getAudioOutputState()).resolves.toBe("available");
+    expect(initializeRuntime).toHaveBeenCalledTimes(5);
   });
 
   it("shares an in-flight audio device list request", async () => {

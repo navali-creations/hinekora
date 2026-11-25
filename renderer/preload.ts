@@ -126,6 +126,9 @@ function createScopedApi(windowName: WindowName) {
           OverlayWindowsAPI.toggleClipPreviewFullscreen,
       },
       settings: SettingsStoreClipPreviewOverlayAPI,
+      managedRecorder: {
+        getAudioOutputState: ManagedRecorderAPI.getAudioOutputState,
+      },
       replayClips: {
         copy: ReplayClipsAPI.copy,
         get: ReplayClipsAPI.get,

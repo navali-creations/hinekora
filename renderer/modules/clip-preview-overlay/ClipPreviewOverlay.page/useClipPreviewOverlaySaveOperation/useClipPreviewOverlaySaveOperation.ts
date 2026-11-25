@@ -6,6 +6,7 @@ import { useClipPreviewOverlayShallow } from "~/renderer/store";
 import type { ReplayClipPlaybackRate } from "~/types";
 import {
   type ClipPreviewTrimRange,
+  isClipPreviewAudioMuted,
   roundClipPreviewSeconds,
 } from "../../ClipPreviewOverlay.utils/ClipPreviewOverlay.utils";
 import { useClipPreviewOverlayOperation } from "../useClipPreviewOverlayOperation/useClipPreviewOverlayOperation";
@@ -16,7 +17,6 @@ function useClipPreviewOverlaySaveOperation(input: {
   durationSeconds: number;
   hasTitleChange: boolean;
   hasTrimChanges: boolean;
-  isMuted: boolean;
   playbackRate?: ReplayClipPlaybackRate;
   prepareForFileMutation: () => void;
   reloadAfterFileMutation: () => void;
@@ -25,6 +25,7 @@ function useClipPreviewOverlaySaveOperation(input: {
   trimmedTitle: string;
 }) {
   const {
+    isAudioMuted,
     resetLoadedClipState,
     setDetail,
     setDurationOverrideSeconds,
@@ -33,6 +34,7 @@ function useClipPreviewOverlaySaveOperation(input: {
     setSaveMessage,
     setSaving,
   } = useClipPreviewOverlayShallow((clipPreviewOverlay) => ({
+    isAudioMuted: isClipPreviewAudioMuted(clipPreviewOverlay),
     resetLoadedClipState: clipPreviewOverlay.resetLoadedClipState,
     setDetail: clipPreviewOverlay.setDetail,
     setDurationOverrideSeconds: clipPreviewOverlay.setDurationOverrideSeconds,
@@ -58,7 +60,7 @@ function useClipPreviewOverlaySaveOperation(input: {
         return window.electron.replayClips.update({
           id: input.clip?.id ?? "",
           operationRequestId: requestId,
-          ...(input.isMuted ? { muteAudio: true } : {}),
+          ...(isAudioMuted ? { muteAudio: true } : {}),
           ...(input.playbackRate ? { playbackRate: input.playbackRate } : {}),
           ...(input.hasTitleChange ? { name: input.trimmedTitle } : {}),
           ...(input.hasTrimChanges
@@ -99,7 +101,7 @@ function useClipPreviewOverlaySaveOperation(input: {
     input.durationSeconds,
     input.hasTitleChange,
     input.hasTrimChanges,
-    input.isMuted,
+    isAudioMuted,
     input.prepareForFileMutation,
     input.playbackRate,
     input.reloadAfterFileMutation,

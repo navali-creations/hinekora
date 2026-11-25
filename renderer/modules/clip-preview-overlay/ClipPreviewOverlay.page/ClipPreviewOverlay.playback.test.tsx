@@ -1,10 +1,10 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+import type { SettingsStoreClipPreviewOverlaySnapshot } from "~/main/modules/settings-store/SettingsStore.dto";
 import { createReplayClipView } from "~/main/test/factories/replayClip";
 import { useBoundStore } from "~/renderer/store";
 
-import type { AppSettings } from "~/types";
 import { dispatchClipPreviewPointerEvent } from "../ClipPreviewOverlay.test-utils";
 import {
   container,
@@ -21,6 +21,7 @@ const storeMocks = vi.hoisted(() => ({
   copyClip: vi.fn(),
   dismissClipPreviewInfoAlert: vi.fn(),
   getClip: vi.fn(),
+  getAudioOutputState: vi.fn(),
   onFullscreenChanged: vi.fn(),
   onOperationProgress: vi.fn(),
   onPreviewProgress: vi.fn(),
@@ -29,7 +30,7 @@ const storeMocks = vi.hoisted(() => ({
   openClip: vi.fn(),
   revealClip: vi.fn(),
   toggleClipPreviewFullscreen: vi.fn(),
-  settingsValue: null as AppSettings | null,
+  settingsValue: null as SettingsStoreClipPreviewOverlaySnapshot | null,
   updateClip: vi.fn(),
   useSettingsShallow: vi.fn(),
   writeClipPreviewEvent: vi.fn(),

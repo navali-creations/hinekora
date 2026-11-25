@@ -8,10 +8,28 @@ import { resolveClipPreviewRouteClipId } from "../ClipPreviewOverlay.page/useCli
 import {
   clampClipPreviewTrimRange,
   formatClipPreviewTimestamp,
+  isClipPreviewAudioMuted,
   moveClipPreviewTrimRange,
 } from "./ClipPreviewOverlay.utils";
 
 describe("ClipPreviewOverlay utils", () => {
+  it.each([
+    "available",
+    "disabled",
+    "unavailable",
+    "checking",
+    "error",
+  ] as const)(
+    "keeps preview and export mute consistent when audio is %s",
+    (audioOutputState) => {
+      expect(
+        isClipPreviewAudioMuted({ audioOutputState, isMuted: false }),
+      ).toBe(audioOutputState !== "available");
+      expect(isClipPreviewAudioMuted({ audioOutputState, isMuted: true })).toBe(
+        true,
+      );
+    },
+  );
   it("parses the clip id from the overlay route hash", () => {
     expect(
       resolveClipPreviewRouteClipId("#/clip-preview-overlay?clipId=abc-123"),
