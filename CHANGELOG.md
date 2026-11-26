@@ -1,3 +1,23 @@
+## 0.16.3
+
+### Patch Changes
+
+- [`8000396`](https://github.com/navali-creations/hinekora/commit/800039699970d9ba76d81adee0fea2f6d589faf8) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Fixed:** Clearer clip audio status and tooltips that stay inside the window.
+
+  Manual replay and death clip previews now disable the mute button when no audio output is selected or the saved device is unavailable. The tooltip explains how to select an output in Dashboard → Audio after stopping Rewind or Recording.
+
+  - **Consistent audio:** Saved clips and videos copied to the clipboard follow the preview's mute state.
+  - **Device changes:** Audio controls update automatically when a device disconnects or reconnects, preserving your manual mute choice.
+  - **Readable tooltips:** Storage warnings and settings help stay within the window and follow their controls when the layout moves.
+
+- [`35fbc78`](https://github.com/navali-creations/hinekora/commit/35fbc784eb39cf492981368b464cc79fdd5a7856) Thanks [@sbsrnt](https://github.com/sbsrnt)!
+
+  **Improved:** Show the newest release first in What's New.
+
+  Release tabs now run from newest to oldest, making the latest release notes easier to find.
+
 ## 0.16.2
 
 ### Patch Changes
