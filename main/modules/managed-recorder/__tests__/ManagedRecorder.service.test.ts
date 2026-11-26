@@ -1010,6 +1010,11 @@ describe("ManagedRecorderService", () => {
       input: [],
       output: [],
     });
+    await expect(service.listAudioDevices()).resolves.toEqual({
+      input: [],
+      output: [],
+    });
+    expect(internals.ensureNoobsRuntimeInitialized).toHaveBeenCalledTimes(1);
     await expect(
       service.listAudioDevices({ forceRefresh: true }),
     ).resolves.toEqual({

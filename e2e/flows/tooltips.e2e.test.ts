@@ -6,19 +6,24 @@ import {
 } from "../helpers/dashboard-fixture";
 
 async function expectTooltipInViewport(page: Page) {
-  const tooltip = page.getByRole("tooltip");
-  await expect(tooltip).toBeVisible();
-  const bounds = await tooltip.boundingBox();
-  const viewport = page.viewportSize();
-  if (!bounds || !viewport)
-    throw new Error("Expected tooltip and viewport bounds");
-  expect(bounds.x).toBeGreaterThanOrEqual(8);
-  expect(bounds.y).toBeGreaterThanOrEqual(8);
-  expect(bounds.x + bounds.width).toBeLessThanOrEqual(viewport.width - 8);
-  expect(bounds.y + bounds.height).toBeLessThanOrEqual(viewport.height - 8);
-  expect(
-    await tooltip.evaluate((element) => element.matches(":popover-open")),
-  ).toBe(true);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const tooltip = document.querySelector('[role="tooltip"]');
+        if (!tooltip) return null;
+        const bounds = tooltip.getBoundingClientRect();
+        return {
+          open: tooltip.matches(":popover-open"),
+          visible: bounds.width > 0 && bounds.height > 0,
+          withinViewport:
+            bounds.left >= 8 &&
+            bounds.top >= 8 &&
+            bounds.right <= window.innerWidth - 8 &&
+            bounds.bottom <= window.innerHeight - 8,
+        };
+      }),
+    )
+    .toEqual({ open: true, visible: true, withinViewport: true });
 }
 
 test.afterEach(async ({ page }) => {
@@ -51,13 +56,31 @@ test("keeps capture quality help outside the settings panel clipping", async ({
 }) => {
   await setupDashboardE2E(page);
   await page.setViewportSize({ width: 1024, height: 768 });
-  await page
-    .locator('[data-onboarding="capture-settings"]')
+  const settingsPanel = page.locator('[data-onboarding="capture-settings"]');
+  await settingsPanel
     .getByRole("button", { name: "Unlock capture profile" })
     .click();
+  await expect(
+    settingsPanel.getByRole("button", { name: "Lock capture profile" }),
+  ).toBeVisible();
+  // The dashboard entrance animation starts after a staggered delay.
+  // Wait for it to finish so it cannot move the help icon away from the pointer.
+  const dashboardContent = page
+    .locator(".grid-cols-12")
+    .filter({ has: settingsPanel });
+  await expect(dashboardContent).toHaveCSS("opacity", "1");
+  await expect(dashboardContent).toHaveCSS("transform", "none");
   const help = page.getByRole("img", {
     name: "Controls the quality and file size of short clips.",
   });
+  await help.scrollIntoViewIfNeeded();
+  // Flush the queued scroll event before hovering: scrolling dismisses tooltips.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
   await help.hover();
   await expectTooltipInViewport(page);
   await expect(page.getByRole("tooltip")).toHaveText(
